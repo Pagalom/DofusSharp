@@ -8,7 +8,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BestCrush.Domain.Services;
 
-public class ItemsService(BestCrushDbContext context, IDofusDbClientsFactory dofusDbClientsFactory, IDofocusClientFactory dofocusClientFactory, ImageCache imageCache)
+public class ItemsService(BestCrushDbContext context, IDofusDbClientsFactory dofusDbClientsFactory, IDofocusClientFactory dofocusClientFactory, ImageCache imageCache,IHttpClientFactory httpClientFactory)
 {
     readonly ConcurrentDictionary<long, DofocusItem> _cachedItems = [];
 
@@ -42,6 +42,7 @@ public class ItemsService(BestCrushDbContext context, IDofusDbClientsFactory dof
     public async Task<string?> GetItemIconAsync(long iconId)
     {
         IDofusDbImagesClient<long> client = dofusDbClientsFactory.ItemImages();
+        client.HttpClientFactory = httpClientFactory;
         string cacheKey = $"item-icon-{iconId}.png";
         byte[] content = await imageCache.GetOrAddAsync(
             cacheKey,

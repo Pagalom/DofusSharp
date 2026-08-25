@@ -17,8 +17,8 @@ class DofocusItemsClient(Uri baseAddress) : IDofocusItemsClient
 
     public async Task<IReadOnlyCollection<DofocusItemMinimal>> GetItemsAsync(CancellationToken cancellationToken = default)
     {
-        using HttpClient httpClient = HttpClientUtils.CreateHttpClient(HttpClientFactory, BaseAddress);
-        httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Mozilla", "5.0"));
+        using HttpClient httpClient =
+        DofocusHttpClientFactory.Create(HttpClientFactory, BaseAddress);
 
         using HttpResponseMessage response = await httpClient.GetAsync("", cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -34,8 +34,8 @@ class DofocusItemsClient(Uri baseAddress) : IDofocusItemsClient
 
     public async Task<DofocusItem> GetItemAsync(long itemId, CancellationToken cancellationToken = default)
     {
-        using HttpClient httpClient = HttpClientUtils.CreateHttpClient(HttpClientFactory, BaseAddress);
-        httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Mozilla", "5.0"));
+        using HttpClient httpClient =
+        DofocusHttpClientFactory.Create(HttpClientFactory, BaseAddress);
 
         using HttpResponseMessage response = await httpClient.GetAsync($"{itemId}", cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -51,8 +51,8 @@ class DofocusItemsClient(Uri baseAddress) : IDofocusItemsClient
 
     public async Task<PutItemPriceResponse> PutItemPriceAsync(long itemId, PutItemPriceRequest request, CancellationToken cancellationToken = default)
     {
-        using HttpClient httpClient = HttpClientUtils.CreateHttpClient(HttpClientFactory, BaseAddress);
-        httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Mozilla", "5.0"));
+        using HttpClient httpClient =
+        DofocusHttpClientFactory.Create(HttpClientFactory, BaseAddress);
 
         using HttpResponseMessage response = await httpClient.PutAsync($"{itemId}/prices", JsonContent.Create(request, options: _options), cancellationToken);
         response.EnsureSuccessStatusCode();
@@ -68,8 +68,8 @@ class DofocusItemsClient(Uri baseAddress) : IDofocusItemsClient
 
     public async Task<PutItemCoefficientResponse> PutItemCoefficientAsync(long itemId, PutItemCoefficientRequest request, CancellationToken cancellationToken = default)
     {
-        using HttpClient httpClient = HttpClientUtils.CreateHttpClient(HttpClientFactory, BaseAddress);
-        httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Mozilla", "5.0"));
+        using HttpClient httpClient =
+        DofocusHttpClientFactory.Create(HttpClientFactory, BaseAddress);
 
         using HttpResponseMessage response = await httpClient.PutAsync($"{itemId}/coefficients", JsonContent.Create(request, options: _options), cancellationToken);
         response.EnsureSuccessStatusCode();

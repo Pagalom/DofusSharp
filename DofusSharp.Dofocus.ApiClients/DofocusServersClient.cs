@@ -13,18 +13,28 @@ class DofocusServersClient(Uri baseAddress) : IDofocusServersClient
     public Uri BaseAddress { get; } = baseAddress;
     public IHttpClientFactory? HttpClientFactory { get; set; }
 
-    public async Task<IReadOnlyCollection<DofocusServer>> GetServersAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<DofocusServer>> GetServersAsync(
+    CancellationToken cancellationToken = default)
     {
-        using HttpClient httpClient = HttpClientUtils.CreateHttpClient(HttpClientFactory, BaseAddress);
-        httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("Mozilla", "5.0"));
+        using HttpClient httpClient =
+        DofocusHttpClientFactory.Create(HttpClientFactory, BaseAddress);
 
-        using HttpResponseMessage response = await httpClient.GetAsync("", cancellationToken);
+        using HttpResponseMessage response =
+            await httpClient.GetAsync("", cancellationToken);
+
         response.EnsureSuccessStatusCode();
 
-        IReadOnlyCollection<DofocusServer>? result = await response.Content.ReadFromJsonAsync<IReadOnlyCollection<DofocusServer>>(_options, cancellationToken);
+        IReadOnlyCollection<DofocusServer>? result =
+            await response.Content.ReadFromJsonAsync<IReadOnlyCollection<DofocusServer>>(
+                _options,
+                cancellationToken
+            );
+
         if (result == null)
         {
-            throw new InvalidOperationException("Could not deserialize the results.");
+            throw new InvalidOperationException(
+                "Could not deserialize the results."
+            );
         }
 
         return result;

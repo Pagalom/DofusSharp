@@ -1,4 +1,6 @@
-﻿namespace BestCrush.Domain.Services;
+﻿using System.Collections.Concurrent;
+
+namespace BestCrush.Domain.Services;
 
 public class ImageCache(string imageCacheDirectory)
 {
@@ -18,6 +20,7 @@ public class ImageCache(string imageCacheDirectory)
     {
         string path = GetPath(key);
         string? directory = Path.GetDirectoryName(path);
+
         if (directory != null && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
@@ -31,16 +34,34 @@ public class ImageCache(string imageCacheDirectory)
 
 public static class ImageCacheExtensions
 {
-    public static async Task<byte[]> GetOrAddAsync(this ImageCache cache, string key, Func<Task<byte[]>> getAsync)
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> ImageLocks = new();
+
+    public static async Task<byte[]> GetOrAddAsync(
+        this ImageCache cache,
+        string key,
+        Func<Task<byte[]>> getAsync)
     {
-        if (await cache.HasImageAsync(key))
+        SemaphoreSlim imageLock =
+            ImageLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+
+        await imageLock.WaitAsync();
+
+        try
         {
-            return await cache.LoadImageAsync(key);
+            if (await cache.HasImageAsync(key))
+            {
+                return await cache.LoadImageAsync(key);
+            }
+
+            byte[] image = await getAsync();
+
+            await cache.StoreImageAsync(key, image);
+
+            return image;
         }
-
-        byte[] image = await getAsync();
-        await cache.StoreImageAsync(key, image);
-
-        return image;
+        finally
+        {
+            imageLock.Release();
+        }
     }
 }

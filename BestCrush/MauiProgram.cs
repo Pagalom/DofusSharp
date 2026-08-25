@@ -39,6 +39,7 @@ public static class MauiProgram
             builder.UseMauiApp<App>().ConfigureFonts(fonts => { fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular"); });
 
             builder.Services.AddMauiBlazorWebView();
+            builder.Services.AddHttpClient("DofusSharp");
 #if DEBUG
             builder.Services.AddBlazorWebViewDeveloperTools();
 #endif
@@ -77,10 +78,6 @@ public static class MauiProgram
         {
             Log.Fatal(ex, "Application start-up failed.");
             throw;
-        }
-        finally
-        {
-            Log.CloseAndFlush();
         }
     }
 
