@@ -3,6 +3,7 @@ using System;
 using BestCrush.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,42 +11,14 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BestCrush.Domain.Migrations
 {
     [DbContext(typeof(BestCrushDbContext))]
-    partial class BestCrushDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825155958_SyncMarketPriceModel")]
+    partial class SyncMarketPriceModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.8");
-
-            modelBuilder.Entity("BestCrush.Domain.Models.CoefficientObservation", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT");
-
-                    b.Property<double>("CoefficientPercent")
-                        .HasColumnType("REAL");
-
-                    b.Property<long>("DofusDbId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("ObservedAtUtc")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("ServerName")
-                        .IsRequired()
-                        .HasMaxLength(64)
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("Source")
-                        .HasColumnType("INTEGER");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("DofusDbId", "ServerName", "ObservedAtUtc");
-
-                    b.ToTable("CoefficientObservations");
-                });
 
             modelBuilder.Entity("BestCrush.Domain.Models.Equipment", b =>
                 {

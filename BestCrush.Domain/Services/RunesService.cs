@@ -2,6 +2,7 @@
 using DofusSharp.Dofocus.ApiClients;
 using DofusSharp.Dofocus.ApiClients.Models.Runes;
 using DofusSharp.DofusDb.ApiClients.Models.Characteristics;
+using Microsoft.EntityFrameworkCore;
 
 namespace BestCrush.Domain.Services;
 
@@ -34,6 +35,14 @@ public class RunesService(CharacteristicsService characteristicsService, BestCru
         {
             _runesByCharacteristicsSemaphore.Release();
         }
+    }
+    public async Task<IReadOnlyCollection<Rune>> GetLocalRunesAsync(
+    CancellationToken cancellationToken = default)
+    {
+        return await context.Runes
+            .AsNoTracking()
+            .OrderBy(r => r.Name)
+            .ToListAsync(cancellationToken);
     }
 
     public async Task<IReadOnlyDictionary<Rune, DofocusRunePriceRecord>> GetRunePricesAsync(string serverName)

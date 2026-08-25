@@ -1,0 +1,206 @@
+@page "/servers/{ServerName}/equipment-prices"
+
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+
+@inject ItemsService ItemsService
+@inject MarketPriceService MarketPriceService
+
+<div class="container-fluid py-4 px-5">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2>Prix locaux des équipements</h2>
+            <p class="text-secondary mb-0">
+                Serveur : <strong>@ServerName</strong>
+            </p>
+        </div>
+
+        <a class="btn btn-outline-secondary"
+           href="@($"/servers/{ServerName}")">
+            Retour
+        </a>
+    </div>
+
+    <p class="text-secondary">
+        Les prix sont enregistrés automatiquement lorsque vous quittez une case.
+    </p>
+
+    <div class="mb-3">
+        <input type="text"
+               class="form-control"
+               placeholder="Rechercher un équipement..."
+               @bind="_searchText"
+               @bind:event="oninput" />
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_lastSavedMessage))
+    {
+        <div class="alert alert-success py-2">
+            @_lastSavedMessage
+        </div>
+    }
+
+    @if (_rows is null)
+    {
+        <p>Chargement des équipements...</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+
+            <table class="table table-dark table-striped table-hover align-middle">
+
+                <thead>
+                    <tr>
+                        <th>Équipement</th>
+                        <th>Niveau</th>
+                        <th>Type</th>
+                        <th style="width: 25%;">Prix x1</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    @foreach (EquipmentPriceRow row in FilteredRows)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@row.Name</strong>
+                            </td>
+
+                            <td>
+                                @row.Level
+                            </td>
+
+                            <td>
+                                @row.Type
+                            </td>
+
+                            <td>
+                                <input type="number"
+                                       min="1"
+                                       class="form-control"
+                                       value="@row.Price"
+                                       @onchange="e => SavePriceAsync(row, e)" />
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+
+            </table>
+
+        </div>
+    }
+
+</div>
+
+@code
+{
+    [Parameter]
+    public required string ServerName { get; set; }
+
+    private List<EquipmentPriceRow>? _rows;
+
+    private string _searchText = "";
+
+    private string? _lastSavedMessage;
+
+    private IEnumerable<EquipmentPriceRow> FilteredRows
+    {
+        get
+        {
+            if (_rows is null)
+            {
+                return [];
+            }
+
+            IEnumerable<EquipmentPriceRow> result = _rows;
+
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                result = result.Where(row =>
+                    row.Name.Contains(
+                        _searchText,
+                        StringComparison.OrdinalIgnoreCase
+                    ));
+            }
+
+            return result.Take(200);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        IReadOnlyCollection<Equipment> equipments =
+            await ItemsService.GetEquipmentsAsync();
+
+        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation>
+            observations =
+                await MarketPriceService.GetLatestObservationsForServerAsync(
+                    MarketObjectType.Equipment,
+                    ServerName
+                );
+
+        _rows = equipments
+            .OrderBy(e => e.Name)
+            .Select(equipment =>
+            {
+                EquipmentPriceRow row = new()
+                {
+                    DofusDbId = equipment.DofusDbId,
+                    Name = equipment.Name,
+                    Level = equipment.Level,
+                    Type = equipment.Type.ToString()
+                };
+
+                if (observations.TryGetValue(
+                    (equipment.DofusDbId, 1),
+                    out MarketPriceObservation? observation))
+                {
+                    row.Price = observation.Price;
+                }
+
+                return row;
+            })
+            .ToList();
+    }
+
+    private async Task SavePriceAsync(
+        EquipmentPriceRow row,
+        ChangeEventArgs args)
+    {
+        string? value = args.Value?.ToString();
+
+        if (!long.TryParse(value, out long price) || price <= 0)
+        {
+            return;
+        }
+
+        await MarketPriceService.AddObservationAsync(
+            MarketObjectType.Equipment,
+            row.DofusDbId,
+            ServerName,
+            price,
+            1,
+            MarketPriceSource.Manual
+        );
+
+        row.Price = price;
+
+        _lastSavedMessage =
+            $"{row.Name} : {price:N0} kamas enregistré.";
+    }
+
+    private class EquipmentPriceRow
+    {
+        public required long DofusDbId { get; init; }
+
+        public required string Name { get; init; }
+
+        public required int Level { get; init; }
+
+        public required string Type { get; init; }
+
+        public long? Price { get; set; }
+    }
+}

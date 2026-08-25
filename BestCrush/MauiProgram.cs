@@ -51,6 +51,8 @@ public static class MauiProgram
             builder.Services.AddSingleton<RunesService>();
             builder.Services.AddSingleton<CharacteristicsService>();
             builder.Services.AddSingleton<CrushService>();
+            builder.Services.AddScoped<MarketPriceService>();
+            builder.Services.AddScoped<CoefficientService>();
             builder.Services.AddScoped<ApplicationUpgradesHandler>();
             builder.Services.AddScoped<GameDataUpgradeHandler>();
             builder.Services.AddScoped<ItemsService>();

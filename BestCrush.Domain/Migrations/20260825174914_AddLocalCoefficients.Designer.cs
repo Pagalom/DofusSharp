@@ -3,6 +3,7 @@ using System;
 using BestCrush.Domain;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace BestCrush.Domain.Migrations
 {
     [DbContext(typeof(BestCrushDbContext))]
-    partial class BestCrushDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260825174914_AddLocalCoefficients")]
+    partial class AddLocalCoefficients
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.8");

@@ -1,0 +1,272 @@
+@page "/servers/{ServerName}/rune-prices"
+
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+
+@inject RunesService RunesService
+@inject MarketPriceService MarketPriceService
+
+<div class="container-fluid py-4 px-5">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+
+        <div>
+            <h2>Prix locaux des runes</h2>
+
+            <p class="text-secondary mb-0">
+                Serveur : <strong>@ServerName</strong>
+            </p>
+        </div>
+
+        <a class="btn btn-outline-secondary"
+           href="@($"/servers/{ServerName}")">
+            Retour
+        </a>
+
+    </div>
+
+    <p class="text-secondary">
+        Les prix sont enregistrés automatiquement lorsque vous quittez une case.
+    </p>
+
+    @if (!string.IsNullOrWhiteSpace(_lastSavedMessage))
+    {
+        <div class="alert alert-success py-2">
+            @_lastSavedMessage
+        </div>
+    }
+
+    @if (_rows is null)
+    {
+        <p>Chargement des runes...</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+
+            <div class="mb-3">
+                <input type="text"
+                    class="form-control"
+                    placeholder="Rechercher une rune..."
+                    @bind="_searchText"
+                    @bind:event="oninput" />
+            </div>
+
+            <table class="table table-dark table-striped table-hover align-middle">
+
+                <thead>
+                    <tr>
+                        <th style="width: 36%;">Rune</th>
+                        <th style="width: 16%;">Prix x1</th>
+                        <th style="width: 16%;">Prix x10</th>
+                        <th style="width: 16%;">Prix x100</th>
+                        <th style="width: 16%;">Prix x1000</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    @foreach (RunePriceRow row in FilteredRows)
+                    {
+                        <tr>
+
+                            <td>
+                                <strong>@row.Name</strong>
+                            </td>
+
+                            <td>
+                                <input type="number"
+                                       min="1"
+                                       class="form-control"
+                                       value="@row.Price1"
+                                       @onchange="e => SavePriceAsync(row, 1, e)" />
+                            </td>
+
+                            <td>
+                                <input type="number"
+                                       min="1"
+                                       class="form-control"
+                                       value="@row.Price10"
+                                       @onchange="e => SavePriceAsync(row, 10, e)" />
+                            </td>
+
+                            <td>
+                                <input type="number"
+                                       min="1"
+                                       class="form-control"
+                                       value="@row.Price100"
+                                       @onchange="e => SavePriceAsync(row, 100, e)" />
+                            </td>
+
+                            <td>
+                                <input type="number"
+                                       min="1"
+                                       class="form-control"
+                                       value="@row.Price1000"
+                                       @onchange="e => SavePriceAsync(row, 1000, e)" />
+                            </td>
+
+                        </tr>
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+    }
+
+</div>
+
+@code
+{
+    [Parameter]
+    public required string ServerName { get; set; }
+
+    private List<RunePriceRow>? _rows;
+
+    private string? _lastSavedMessage;
+    private string _searchText = "";
+
+    private IEnumerable<RunePriceRow> FilteredRows
+    {
+        get
+        {
+            if (_rows is null)
+            {
+                return [];
+            }
+
+            IEnumerable<RunePriceRow> result = _rows;
+
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                result = result.Where(row =>
+                    row.Name.Contains(
+                        _searchText,
+                        StringComparison.OrdinalIgnoreCase
+                    ));
+            }
+
+            return result;
+        }
+    }
+    protected override async Task OnInitializedAsync()
+    {
+        IReadOnlyCollection<Rune> runes =
+            await RunesService.GetLocalRunesAsync();
+
+        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation>
+            observations =
+                await MarketPriceService.GetLatestObservationsForServerAsync(
+                    MarketObjectType.Rune,
+                    ServerName
+                );
+
+        _rows = runes
+            .OrderBy(r => r.Name)
+            .Select(rune =>
+            {
+                RunePriceRow row = new()
+                {
+                    DofusDbId = rune.DofusDbId,
+                    Name = rune.Name
+                };
+
+                if (observations.TryGetValue(
+                    (rune.DofusDbId, 1),
+                    out MarketPriceObservation? price1))
+                {
+                    row.Price1 = price1.Price;
+                }
+
+                if (observations.TryGetValue(
+                    (rune.DofusDbId, 10),
+                    out MarketPriceObservation? price10))
+                {
+                    row.Price10 = price10.Price;
+                }
+
+                if (observations.TryGetValue(
+                    (rune.DofusDbId, 100),
+                    out MarketPriceObservation? price100))
+                {
+                    row.Price100 = price100.Price;
+                }
+
+                if (observations.TryGetValue(
+                    (rune.DofusDbId, 1000),
+                    out MarketPriceObservation? price1000))
+                {
+                    row.Price1000 = price1000.Price;
+                }
+
+                return row;
+            })
+            .ToList();
+    }
+
+    private async Task SavePriceAsync(
+        RunePriceRow row,
+        int quantity,
+        ChangeEventArgs args)
+    {
+        string? value = args.Value?.ToString();
+
+        if (!long.TryParse(value, out long price) || price <= 0)
+        {
+            return;
+        }
+
+        await MarketPriceService.AddObservationAsync(
+            MarketObjectType.Rune,
+            row.DofusDbId,
+            ServerName,
+            price,
+            quantity,
+            MarketPriceSource.Manual
+        );
+
+        row.SetPrice(quantity, price);
+
+        _lastSavedMessage =
+            $"{row.Name} x{quantity} : {price:N0} kamas enregistré.";
+    }
+
+    private class RunePriceRow
+    {
+        public required long DofusDbId { get; init; }
+
+        public required string Name { get; init; }
+
+        public long? Price1 { get; set; }
+
+        public long? Price10 { get; set; }
+
+        public long? Price100 { get; set; }
+
+        public long? Price1000 { get; set; }
+
+        public void SetPrice(int quantity, long price)
+        {
+            switch (quantity)
+            {
+                case 1:
+                    Price1 = price;
+                    break;
+
+                case 10:
+                    Price10 = price;
+                    break;
+
+                case 100:
+                    Price100 = price;
+                    break;
+
+                case 1000:
+                    Price1000 = price;
+                    break;
+            }
+        }
+    }
+}

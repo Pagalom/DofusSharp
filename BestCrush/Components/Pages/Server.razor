@@ -2,6 +2,8 @@
 @inject RunesService RunesService
 @inject CrushService CrushService
 @inject ILogger<Server> Logger
+@inject CoefficientService CoefficientService
+@inject MarketPriceService MarketPriceService
 @page "/servers/{ServerName}"
 @using BestCrush.Components.Pure
 @using BestCrush.Domain.Models
@@ -12,6 +14,23 @@
 @using Microsoft.Extensions.Logging
 
 <div class="container">
+    <div class="d-flex justify-content-end gap-2 mb-3">
+
+        <a class="btn btn-outline-secondary"
+        href="@($"/servers/{ServerName}/equipment-prices")">
+            Prix locaux des équipements
+        </a>
+
+        <a class="btn btn-outline-secondary"
+        href="@($"/servers/{ServerName}/rune-prices")">
+            Prix locaux des runes
+        </a>
+        <a class="btn btn-outline-secondary"
+        href="@($"/servers/{ServerName}/coefficients")">
+            Coefficients
+        </a>
+
+    </div>
 
     <form method="post" @onsubmit="Count" @formname="search-form">
         <SearchItemsForm Model="Model" Disabled="_searching"></SearchItemsForm>
@@ -68,12 +87,94 @@
                     </div>
                 </div>
                 <ul class="list-group list-group-flush rounded">
-                    @foreach (ItemCrushResult item in bestLinesOrdered)
+                    @{
+                        ItemCrushResult[] completeLines =
+                            bestLinesOrdered
+                                .Where(item => !IsPartial(item))
+                                .ToArray();
+
+                        ItemCrushResult[] partialLines =
+                            bestLinesOrdered
+                                .Where(IsPartial)
+                                .ToArray();
+                    }
+                    @if (completeLines.Length > 0)
                     {
-                        <li class="list-group-item">
-                            <CrushResultLine Equipment="item.Equipment" Cost="item.Cost" Coefficient="item.Coefficient" FocusedCharacteristic="item.FocusedCharacteristic"
-                                             Runes="item.Runes" RunePrices="_runePrices" SortOrder="_sortOrder" NoImage="_searching" Refresh="() => Refresh(item.Equipment)"/>
-                        </li>
+                        <h5 class="mt-4 mb-3">
+                            Résultats complets
+                            <span class="badge text-bg-success">
+                                @completeLines.Length
+                            </span>
+                        </h5>
+
+                        @foreach (ItemCrushResult item in completeLines)
+                        {
+                            <li class="list-group-item">
+                                <CrushResultLine Equipment="item.Equipment"
+                                                Cost="item.Cost"
+                                                Coefficient="item.Coefficient"
+                                                FocusedCharacteristic="item.FocusedCharacteristic"
+                                                Runes="item.Runes"
+                                                RuneValues="item.RuneValues"
+                                                SortOrder="_sortOrder"
+                                                NoImage="_searching"
+                                                Refresh="() => Refresh(item.Equipment)" />
+                            </li>
+                        }
+                    }
+                    @if (partialLines.Length > 0)
+                    {
+                        <h5 class="mt-5 mb-1">
+                            Résultats partiels
+                            <span class="badge text-bg-warning">
+                                @partialLines.Length
+                            </span>
+                        </h5>
+
+                        <p class="text-secondary small">
+                            Hors classement : le meilleur scénario réel peut être différent tant que certains prix sont manquants.
+                        </p>
+
+                        @foreach (ItemCrushResult item in partialLines)
+                        {
+                            <li class="list-group-item">
+
+                                <CrushResultLine Equipment="item.Equipment"
+                                                Cost="item.Cost"
+                                                Coefficient="item.Coefficient"
+                                                FocusedCharacteristic="item.FocusedCharacteristic"
+                                                Runes="item.Runes"
+                                                RuneValues="item.RuneValues"
+                                                SortOrder="_sortOrder"
+                                                NoImage="_searching"
+                                                Refresh="() => Refresh(item.Equipment)" />
+
+                                @if (_missingDataByItem.TryGetValue(
+                                    item.Equipment.DofusDbId,
+                                    out HashSet<string>? warnings))
+                                {
+                                    <div class="alert alert-warning py-2 px-3 mt-2 mb-0 small">
+
+                                        <strong>
+                                            ⚠ Résultat partiel — meilleur scénario connu
+                                        </strong>
+
+                                        <div class="mt-1">
+                                            Certaines possibilités de brisage ne peuvent pas encore être valorisées :
+                                        </div>
+
+                                        <ul class="mb-0 mt-1">
+                                            @foreach (string warning in warnings)
+                                            {
+                                                <li>@warning</li>
+                                            }
+                                        </ul>
+
+                                    </div>
+                                }
+
+                            </li>
+                        }
                     }
                 </ul>
             </div>
@@ -82,13 +183,60 @@
         @if (_unrankedItems.Count > 0)
         {
             <div class="my-4">
-                <p>Aucun résultat pour les objets suivants:</p>
-                <ul class="text-secondary">
-                    @foreach (Equipment item in _unrankedItems.Take(10))
+
+                <h5>
+                    Objets avec données manquantes
+                    <span class="badge text-bg-secondary">
+                        @_unrankedItems.Count
+                    </span>
+                </h5>
+
+                <div class="list-group">
+
+                    @foreach (Equipment item in _unrankedItems)
                     {
-                        <li>@item.Name Niv. @item.Level</li>
+                        <div class="list-group-item">
+
+                            <div class="d-flex justify-content-between align-items-center">
+
+                                <div>
+                                    <strong>@item.Name</strong>
+                                    <span class="text-secondary">
+                                        Niv. @item.Level
+                                    </span>
+                                </div>
+
+                                <span class="badge text-bg-secondary">
+                                    Rentabilité indisponible
+                                </span>
+
+                            </div>
+
+                            @if (_missingDataByItem.TryGetValue(
+                                item.DofusDbId,
+                                out HashSet<string>? missingData))
+                            {
+                                <ul class="small text-secondary mb-0 mt-2">
+
+                                    @foreach (string message in missingData)
+                                    {
+                                        <li>@message</li>
+                                    }
+
+                                </ul>
+                            }
+                            else
+                            {
+                                <div class="small text-secondary mt-2">
+                                    Calcul indisponible pour une raison inconnue.
+                                </div>
+                            }
+
+                        </div>
                     }
-                </ul>
+
+                </div>
+
             </div>
         }
     }
@@ -100,7 +248,12 @@
     Equipment[]? _allItems;
     List<ItemCrushResult>? _rankedItems;
     List<Equipment>? _unrankedItems;
-    IReadOnlyDictionary<Rune, DofocusRunePriceRecord> _runePrices = new Dictionary<Rune, DofocusRunePriceRecord>();
+    Dictionary<long, HashSet<string>> _missingDataByItem = new();
+    IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> _runePrices =
+    new Dictionary<(long DofusDbId, int Quantity), MarketPriceObservation>();
+    IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> _equipmentPrices =
+    new Dictionary<(long DofusDbId, int Quantity), MarketPriceObservation>();
+    Dictionary<long, CoefficientObservation> _coefficients = new();
     SortOrder _sortOrder;
 
     [Parameter]
@@ -140,22 +293,48 @@
                 _rankedItems = null;
                 _unrankedItems = null;
                 _searching = true;
+                _missingDataByItem.Clear();
                 await InvokeAsync(StateHasChanged);
 
                 try
                 {
-                    Task<IReadOnlyCollection<Equipment>> itemsTask = ItemsService.GetEquipmentsAsync();
-                    Task<IReadOnlyDictionary<Characteristic, DofocusRune>> runesByCharacteristicAsync = RunesService.GetRunesByCharacteristicAsync();
-                    Task<IReadOnlyDictionary<Rune, DofocusRunePriceRecord>> runePricesTask = RunesService.GetRunePricesAsync(ServerName);
+                    Task<IReadOnlyCollection<Equipment>> itemsTask =
+                        ItemsService.GetEquipmentsAsync();
 
-                    await Task.WhenAll(itemsTask, runesByCharacteristicAsync, runePricesTask);
+                    Task<IReadOnlyDictionary<Characteristic, DofocusRune>> runesByCharacteristicAsync =
+                        RunesService.GetRunesByCharacteristicAsync();
+
+                    await Task.WhenAll(
+                        itemsTask,
+                        runesByCharacteristicAsync
+                    );
+
+                    _runePrices =
+                        await MarketPriceService.GetLatestObservationsForServerAsync(
+                            MarketObjectType.Rune,
+                            ServerName
+                        );
+
+                    _equipmentPrices =
+                        await MarketPriceService.GetLatestObservationsForServerAsync(
+                            MarketObjectType.Equipment,
+                            ServerName
+                        );
+                    
+                    _coefficients =
+                        (await CoefficientService.GetLatestObservationsForServerAsync(
+                            ServerName
+                        ))
+                        .ToDictionary(
+                            pair => pair.Key,
+                            pair => pair.Value
+                        );
 
                     Equipment[] items = FilterItems(itemsTask.Result).ToArray();
                     _allItems = items;
 
                     await InvokeAsync(StateHasChanged);
 
-                    _runePrices = runePricesTask.Result;
                     _rankedItems = [];
                     _unrankedItems = [];
 
@@ -163,7 +342,13 @@
                     {
                         try
                         {
-                            IReadOnlyCollection<ItemCrushResult> result = await ComputeBenefit(item, _runePrices, forceRefresh);
+                            IReadOnlyCollection<ItemCrushResult> result =
+                                await ComputeBenefit(
+                                    item,
+                                    _runePrices,
+                                    _equipmentPrices,
+                                    forceRefresh
+                                );
                             if (result.Count == 0)
                             {
                                 _unrankedItems.Add(item);
@@ -178,6 +363,10 @@
                         catch (Exception exn)
                         {
                             _unrankedItems.Add(item);
+                            AddMissingData(
+                                item,
+                                "Erreur lors de la récupération des données de brisage"
+                            );
                             Logger.LogError(exn, "Error while processing item {ItemName} ({ItemId})", item.Name, item.DofusDbId);
                         }
                     }
@@ -209,8 +398,24 @@
 
                 try
                 {
-                    _runePrices = await RunesService.GetRunePricesAsync(ServerName);
-                    IReadOnlyCollection<ItemCrushResult> result = await ComputeBenefit(equipment, _runePrices, true);
+                    _runePrices =
+                        await MarketPriceService.GetLatestObservationsForServerAsync(
+                            MarketObjectType.Rune,
+                            ServerName
+                        );
+                    _equipmentPrices =
+                        await MarketPriceService.GetLatestObservationsForServerAsync(
+                            MarketObjectType.Equipment,
+                            ServerName
+                        );
+                    _missingDataByItem.Remove(equipment.DofusDbId);
+                    IReadOnlyCollection<ItemCrushResult> result =
+                        await ComputeBenefit(
+                            equipment,
+                            _runePrices,
+                            _equipmentPrices,
+                            true
+                        );
                     _unrankedItems.Remove(equipment);
                     _rankedItems.RemoveAll(r => r.Equipment == equipment);
                     if (result.Count == 0)
@@ -235,32 +440,140 @@
         );
     }
 
-    async Task<IReadOnlyCollection<ItemCrushResult>> ComputeBenefit(Equipment equipment, IReadOnlyDictionary<Rune, DofocusRunePriceRecord> runePrices, bool forceRefresh)
+    void AddMissingData(Equipment equipment, string message)
     {
-        DofocusItem detailedItem = await ItemsService.GetItemAsync(equipment.DofusDbId, forceRefresh);
-
-        DofocusCoefficientRecord? itemCoefficient = detailedItem.Coefficients.Where(c => c.ServerName == ServerName).OrderByDescending(c => c.LastUpdate).FirstOrDefault();
-        if (itemCoefficient == null)
+        if (!_missingDataByItem.TryGetValue(
+            equipment.DofusDbId,
+            out HashSet<string>? messages))
         {
+            messages = [];
+            _missingDataByItem[equipment.DofusDbId] = messages;
+        }
+
+        messages.Add(message);
+    }
+
+    bool IsPartial(ItemCrushResult item)
+    {
+        return _missingDataByItem.TryGetValue(
+            item.Equipment.DofusDbId,
+            out HashSet<string>? warnings)
+            && warnings.Count > 0;
+    }
+
+    async Task<IReadOnlyCollection<ItemCrushResult>> ComputeBenefit(
+        Equipment equipment,
+        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> runePrices,
+        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> equipmentPrices,
+        bool forceRefresh)
+    {
+        CoefficientObservation? itemCoefficient;
+
+        if (!_coefficients.TryGetValue(
+            equipment.DofusDbId,
+            out itemCoefficient))
+        {
+            DofocusItem detailedItem;
+
+            try
+            {
+                detailedItem =
+                    await ItemsService.GetItemAsync(
+                        equipment.DofusDbId,
+                        forceRefresh
+                    );
+            }
+            catch
+            {
+                AddMissingData(
+                    equipment,
+                    "Coefficient de brisage indisponible"
+                );
+
+                return [];
+            }
+
+            DofocusCoefficientRecord? dofocusCoefficient =
+                detailedItem.Coefficients
+                    .Where(c => c.ServerName == ServerName)
+                    .OrderByDescending(c => c.LastUpdate)
+                    .FirstOrDefault();
+
+            if (dofocusCoefficient is null)
+            {
+                AddMissingData(
+                    equipment,
+                    "Coefficient de brisage indisponible"
+                );
+
+                return [];
+            }
+
+            itemCoefficient =
+                await CoefficientService.AddObservationAsync(
+                    equipment.DofusDbId,
+                    ServerName,
+                    dofocusCoefficient.Coefficient,
+                    CoefficientSource.DofocusInitial
+                );
+
+            _coefficients[equipment.DofusDbId] =
+                itemCoefficient;
+        }
+
+        double coefficient =
+            itemCoefficient.CoefficientPercent / 100;
+
+        if (!equipmentPrices.TryGetValue(
+            (equipment.DofusDbId, 1),
+            out MarketPriceObservation? itemCost))
+        {
+            AddMissingData(
+                equipment,
+                "Prix local de l'équipement manquant"
+            );
             return [];
         }
-        double coefficient = itemCoefficient.Coefficient / 100;
 
-        DofocusItemPriceRecord? itemCost = detailedItem.Prices.Where(r => r.ServerName == ServerName).OrderByDescending(r => r.LastUpdate).FirstOrDefault();
-        if (itemCost is null)
-        {
-            return [];
-        }
         double cost = itemCost.Price;
 
         List<ItemCrushResult> result = [];
         Dictionary<Characteristic, double> averageLines = equipment.Characteristics.ToDictionary(c => c.Characteristic, c => (double)(c.From + c.To) / 2);
         IReadOnlyDictionary<Rune, double> runesWithoutFocus = CrushService.GetCrushResult(averageLines, equipment.Level, coefficient);
-        double priceWithoutFocus = runesWithoutFocus.Sum(kv => (runePrices.GetValueOrDefault(kv.Key)?.Price ?? 0) * kv.Value);
-        double benefitWithoutFocus = priceWithoutFocus - cost;
-        double yieldWithoutFocus = itemCost.Price == 0 ? 0 : benefitWithoutFocus / itemCost.Price;
-        result.Add(new ItemCrushResult(equipment, itemCoefficient, itemCost, benefitWithoutFocus, yieldWithoutFocus, null, runesWithoutFocus));
+        
+        IReadOnlyDictionary<Rune, MarketValueResult>? valuesWithoutFocus =
+        CalculateRuneValues(
+            equipment,
+            runesWithoutFocus,
+            runePrices
+        );
+        if (valuesWithoutFocus is not null)
+        {
+            double priceWithoutFocus =
+                valuesWithoutFocus.Values.Sum(v => v.Value);
 
+            double benefitWithoutFocus =
+                priceWithoutFocus - cost;
+
+            double yieldWithoutFocus =
+                itemCost.Price == 0
+                    ? 0
+                    : benefitWithoutFocus / itemCost.Price;
+
+            result.Add(
+                new ItemCrushResult(
+                    equipment,
+                    itemCoefficient,
+                    itemCost,
+                    benefitWithoutFocus,
+                    yieldWithoutFocus,
+                    null,
+                    runesWithoutFocus,
+                    valuesWithoutFocus
+                )
+            );
+        }
+        
         foreach ((Characteristic characteristic, double value) in averageLines)
         {
             if (value <= 0)
@@ -269,13 +582,88 @@
             }
 
             IReadOnlyDictionary<Rune, double> runesWithFocus = CrushService.GetFocusedCrushResult(averageLines, characteristic, equipment.Level, coefficient);
-            double priceWithFocus = runesWithFocus.Sum(kv => (runePrices.GetValueOrDefault(kv.Key)?.Price ?? 0) * kv.Value);
-            double benefitWithFocus = priceWithFocus - cost;
-            double yieldWithFocus = itemCost.Price == 0 ? 0 : benefitWithFocus / itemCost.Price;
-            result.Add(new ItemCrushResult(equipment, itemCoefficient, itemCost, benefitWithFocus, yieldWithFocus, characteristic, runesWithFocus));
+            
+            
+            IReadOnlyDictionary<Rune, MarketValueResult>? valuesWithFocus =
+                CalculateRuneValues(
+                    equipment,
+                    runesWithFocus,
+                    runePrices
+                );
+
+            if (valuesWithFocus is null)
+            {
+                continue;
+            }
+
+            double priceWithFocus =
+                valuesWithFocus.Values.Sum(v => v.Value);
+
+            double benefitWithFocus =
+                priceWithFocus - cost;
+
+            double yieldWithFocus =
+                itemCost.Price == 0
+                    ? 0
+                    : benefitWithFocus / itemCost.Price;
+
+            result.Add(
+                new ItemCrushResult(
+                    equipment,
+                    itemCoefficient,
+                    itemCost,
+                    benefitWithFocus,
+                    yieldWithFocus,
+                    characteristic,
+                    runesWithFocus,
+                    valuesWithFocus
+                )
+            );
         }
 
         return result;
+    }
+
+    IReadOnlyDictionary<Rune, MarketValueResult>? CalculateRuneValues(
+        Equipment equipment,
+        IReadOnlyDictionary<Rune, double> runes,
+        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> prices)
+    {
+        Dictionary<Rune, MarketValueResult> result = [];
+
+        bool hasMissingPrice = false;
+
+        foreach ((Rune rune, double quantity) in runes)
+        {
+            if (quantity <= 0)
+            {
+                continue;
+            }
+
+            MarketValueResult? value =
+                MarketPriceService.CalculateValue(
+                    rune.DofusDbId,
+                    quantity,
+                    prices
+                );
+
+            if (value is null)
+            {
+                AddMissingData(
+                    equipment,
+                    $"Prix de rune manquant : {rune.Name}"
+                );
+
+                hasMissingPrice = true;
+                continue;
+            }
+
+            result[rune] = value.Value;
+        }
+
+        return hasMissingPrice
+            ? null
+            : result;
     }
 
     IEnumerable<Equipment> FilterItems(IReadOnlyCollection<Equipment> items)
@@ -408,6 +796,13 @@
         return equipmentTypes;
     }
 
-    readonly record struct ItemCrushResult(Equipment Equipment, DofocusCoefficientRecord Coefficient, DofocusItemPriceRecord Cost, double Benefits, double Yield, Characteristic? FocusedCharacteristic, IReadOnlyDictionary<Rune, double> Runes);
-
+    readonly record struct ItemCrushResult(
+        Equipment Equipment,
+        CoefficientObservation Coefficient,
+        MarketPriceObservation Cost,
+        double Benefits,
+        double Yield,
+        Characteristic? FocusedCharacteristic,
+        IReadOnlyDictionary<Rune, double> Runes,
+        IReadOnlyDictionary<Rune, MarketValueResult> RuneValues);   
 }

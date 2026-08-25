@@ -1,0 +1,239 @@
+@page "/servers/{ServerName}/coefficients"
+
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+
+@inject ItemsService ItemsService
+@inject CoefficientService CoefficientService
+
+<div class="container-fluid py-4 px-5">
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h2>Coefficients de brisage</h2>
+
+            <p class="text-secondary mb-0">
+                Serveur : <strong>@ServerName</strong>
+            </p>
+        </div>
+
+        <a class="btn btn-outline-secondary"
+           href="@($"/servers/{ServerName}")">
+            Retour
+        </a>
+    </div>
+
+    <p class="text-secondary">
+        Les coefficients sont enregistrés automatiquement lorsque vous quittez une case.
+        Une valeur manuelle remplace la valeur initiale provenant de DoFocus.
+    </p>
+
+    <div class="mb-3">
+        <input type="text"
+               class="form-control"
+               placeholder="Rechercher un équipement..."
+               @bind="_searchText"
+               @bind:event="oninput" />
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_lastSavedMessage))
+    {
+        <div class="alert alert-success py-2">
+            @_lastSavedMessage
+        </div>
+    }
+
+    @if (_rows is null)
+    {
+        <p>Chargement des équipements...</p>
+    }
+    else
+    {
+        <div class="table-responsive">
+
+            <table class="table table-dark table-striped table-hover align-middle">
+
+                <thead>
+                    <tr>
+                        <th>Équipement</th>
+                        <th>Niveau</th>
+                        <th>Type</th>
+                        <th style="width: 20%;">Coefficient (%)</th>
+                        <th style="width: 18%;">Source</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    @foreach (CoefficientRow row in FilteredRows)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@row.Name</strong>
+                            </td>
+
+                            <td>
+                                @row.Level
+                            </td>
+
+                            <td>
+                                @row.Type
+                            </td>
+
+                            <td>
+                                <input type="number"
+                                       min="0.01"
+                                       step="0.01"
+                                       class="form-control"
+                                       value="@row.CoefficientPercent"
+                                       @onchange="e => SaveCoefficientAsync(row, e)" />
+                            </td>
+
+                            <td>
+                                @GetSourceLabel(row.Source)
+                            </td>
+                        </tr>
+                    }
+
+                </tbody>
+
+            </table>
+
+        </div>
+    }
+
+</div>
+
+@code
+{
+    [Parameter]
+    public required string ServerName { get; set; }
+
+    private List<CoefficientRow>? _rows;
+
+    private string _searchText = "";
+
+    private string? _lastSavedMessage;
+
+    private IEnumerable<CoefficientRow> FilteredRows
+    {
+        get
+        {
+            if (_rows is null)
+            {
+                return [];
+            }
+
+            IEnumerable<CoefficientRow> result = _rows;
+
+            if (!string.IsNullOrWhiteSpace(_searchText))
+            {
+                result = result.Where(row =>
+                    row.Name.Contains(
+                        _searchText,
+                        StringComparison.OrdinalIgnoreCase
+                    ));
+            }
+
+            return result.Take(200);
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        IReadOnlyCollection<Equipment> equipments =
+            await ItemsService.GetEquipmentsAsync();
+
+        IReadOnlyDictionary<long, CoefficientObservation> coefficients =
+            await CoefficientService.GetLatestObservationsForServerAsync(
+                ServerName
+            );
+
+        _rows = equipments
+            .OrderBy(e => e.Name)
+            .Select(equipment =>
+            {
+                CoefficientRow row = new()
+                {
+                    DofusDbId = equipment.DofusDbId,
+                    Name = equipment.Name,
+                    Level = equipment.Level,
+                    Type = equipment.Type.ToString()
+                };
+
+                if (coefficients.TryGetValue(
+                    equipment.DofusDbId,
+                    out CoefficientObservation? coefficient))
+                {
+                    row.CoefficientPercent =
+                        coefficient.CoefficientPercent;
+
+                    row.Source =
+                        coefficient.Source;
+                }
+
+                return row;
+            })
+            .ToList();
+    }
+
+    private async Task SaveCoefficientAsync(
+        CoefficientRow row,
+        ChangeEventArgs args)
+    {
+        string? value = args.Value?.ToString();
+
+        if (!double.TryParse(value, out double coefficient) ||
+            coefficient <= 0)
+        {
+            return;
+        }
+
+        await CoefficientService.AddObservationAsync(
+            row.DofusDbId,
+            ServerName,
+            coefficient,
+            CoefficientSource.Manual
+        );
+
+        row.CoefficientPercent = coefficient;
+        row.Source = CoefficientSource.Manual;
+
+        _lastSavedMessage =
+            $"{row.Name} : coefficient {coefficient:0.##}% enregistré.";
+    }
+
+    private static string GetSourceLabel(
+        CoefficientSource? source)
+    {
+        return source switch
+        {
+            CoefficientSource.Manual =>
+                "Manuel",
+
+            CoefficientSource.InGameAutomatic =>
+                "Jeu",
+
+            CoefficientSource.DofocusInitial =>
+                "DoFocus initial",
+
+            _ =>
+                "Non initialisé"
+        };
+    }
+
+    private class CoefficientRow
+    {
+        public required long DofusDbId { get; init; }
+
+        public required string Name { get; init; }
+
+        public required int Level { get; init; }
+
+        public required string Type { get; init; }
+
+        public double? CoefficientPercent { get; set; }
+
+        public CoefficientSource? Source { get; set; }
+    }
+}

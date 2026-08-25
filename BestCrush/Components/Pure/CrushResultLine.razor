@@ -1,7 +1,6 @@
 ﻿@using BestCrush.Domain.Models
 @using BestCrush.Models
 @using DofusSharp.Dofocus.ApiClients.Models.Items
-@using DofusSharp.Dofocus.ApiClients.Models.Runes
 @using Rune = BestCrush.Domain.Models.Rune
 
 @if (Equipment is not null)
@@ -49,7 +48,7 @@
                 {
                     <div class="d-flex flex-column align-items-end">
                         <Kamas Amount="Cost.Price" Size="Size.Medium"/>
-                        <span class="small text-secondary text-nowrap">@Cost.LastUpdate.ToString("G")</span>
+                        <span class="small text-secondary text-nowrap">@Cost.ObservedAtUtc.ToLocalTime().ToString("G")</span>
                     </div>
                 }
             </div>
@@ -59,7 +58,7 @@
                         <div class="fw-semibold">Runes</div>
                         @if (Coefficient is not null)
                         {
-                            <div class="text-nowrap">Coeff. <span class="fw-semibold">@Coefficient.Coefficient.ToString("N0")%</span></div>
+                            <div class="text-nowrap">Coeff. <span class="fw-semibold">@Coefficient.CoefficientPercent.ToString("N0")%</span></div>
                         }
                     </div>
                     @if (!NoImage && Runes is not null)
@@ -67,13 +66,24 @@
                         <div class="d-flex flex-wrap gap-2">
                             @foreach ((Rune rune, double yield) in Runes)
                             {
-                                double price = yield * RunePrices?.GetValueOrDefault(rune)?.Price ?? 0;
+                                MarketValueResult? marketValue =
+                                    RuneValues?.GetValueOrDefault(rune);
+
+                                double price =
+                                    marketValue?.Value ?? 0;
 
                                 <div>
                                     <ItemIconWithCount Item="rune" Count="yield" Size="Size.Small"></ItemIconWithCount>
                                     <div class="d-flex justify-content-center">
                                         <Kamas Amount="price" Size="Size.Tiny"/>
                                     </div>
+                                    @if (marketValue?.IsEstimated == true)
+                                    {
+                                        <div class="small text-secondary text-center"
+                                            title="Une partie de la valeur est estimée car certains lots n'ont pas de prix renseigné.">
+                                            ≈
+                                        </div>
+                                    }
                                 </div>
                             }
                         </div>
@@ -85,7 +95,7 @@
                         <Kamas Amount="_estimatedPrice" Size="Size.Medium"/>
                         @if (Coefficient is not null)
                         {
-                            <span class="small text-secondary text-nowrap">@Coefficient.LastUpdate.ToString("G")</span>
+                            <span class="small text-secondary text-nowrap">@Coefficient.ObservedAtUtc.ToLocalTime().ToString("G")</span>
                         }
                     </div>
                 }
@@ -151,10 +161,10 @@
     public Equipment? Equipment { get; init; }
 
     [Parameter]
-    public DofocusItemPriceRecord? Cost { get; init; }
+    public MarketPriceObservation? Cost { get; init; }
 
     [Parameter]
-    public DofocusCoefficientRecord? Coefficient { get; init; }
+    public CoefficientObservation? Coefficient { get; init; }
 
     [Parameter]
     public Characteristic? FocusedCharacteristic { get; init; }
@@ -163,7 +173,7 @@
     public IReadOnlyDictionary<Rune, double>? Runes { get; init; }
 
     [Parameter]
-    public IReadOnlyDictionary<Rune, DofocusRunePriceRecord>? RunePrices { get; init; }
+    public IReadOnlyDictionary<Rune, MarketValueResult>? RuneValues { get; init; }
 
     [Parameter]
     public SortOrder SortOrder { get; init; }
@@ -178,7 +188,7 @@
 
     protected override void OnParametersSet()
     {
-        if (Runes is null || RunePrices is null)
+        if (Runes is null || RuneValues is null)
         {
             _estimatedPrice = 0;
             _benefit = 0;
@@ -187,7 +197,7 @@
             return;
         }
 
-        _estimatedPrice = Runes.Sum(kv => RunePrices.GetValueOrDefault(kv.Key)?.Price * kv.Value);
+        _estimatedPrice = RuneValues.Values.Sum(v => v.Value);
         _benefit = _estimatedPrice - Cost?.Price;
         _yield = Cost is null
             ? null
