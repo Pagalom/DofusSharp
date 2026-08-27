@@ -9,6 +9,7 @@ using Microsoft.Extensions.Logging;
 using Serilog.Events;
 using Serilog.Extensions.Logging;
 using ILogger = Microsoft.Extensions.Logging.ILogger;
+using BestCrush.Services;
 
 namespace BestCrush;
 
@@ -51,8 +52,27 @@ public static class MauiProgram
             builder.Services.AddSingleton<RunesService>();
             builder.Services.AddSingleton<CharacteristicsService>();
             builder.Services.AddSingleton<CrushService>();
+            builder.Services.AddSingleton<BestCrush.Services.OverlayService>();
+            builder.Services.AddSingleton<BestCrush.Services.DofusWindowService>();
+            builder.Services.AddSingleton<BestCrush.Services.DofusCaptureService>();
+            builder.Services.AddSingleton<BestCrush.Services.DofusImageRegionService>();
+            builder.Services.AddSingleton<BestCrush.Services.DofusPanelDetectionService>();
+            builder.Services.AddSingleton<BestCrush.Services.DofusCrushRowDetectionService>();
+            builder.Services.AddSingleton<BestCrush.Services.DofusOcrService>();
+            builder.Services.AddSingleton<BestCrush.Services.CurrentServerState>();
+            builder.Services.AddSingleton<BestCrush.Domain.Services.IDataPriorityProvider,BestCrush.Services.DataPriorityService>();
+            builder.Services.AddSingleton<DofusMarketPanelDetectionService>();
+            builder.Services.AddSingleton<BestCrush.Services.BestCrushSettingsService>();
+            builder.Services.AddSingleton<BestCrush.Domain.Services.IBestCrushSettingsProvider>(serviceProvider => serviceProvider.GetRequiredService<BestCrush.Services.BestCrushSettingsService>());
+            builder.Services.AddSingleton<FocusedEquipmentState>();
+            builder.Services.AddSingleton<DofusMarketLotReaderService>();
+            builder.Services.AddScoped<DofusRuneRecognitionService>();
+            builder.Services.AddScoped<DofusResourceRecognitionService>();
+            builder.Services.AddScoped<BestCrush.Services.DofusItemRecognitionService>();
             builder.Services.AddScoped<MarketPriceService>();
             builder.Services.AddScoped<CoefficientService>();
+            builder.Services.AddScoped<CraftCostService>();
+            builder.Services.AddScoped<EquipmentProfitabilityService>();
             builder.Services.AddScoped<ApplicationUpgradesHandler>();
             builder.Services.AddScoped<GameDataUpgradeHandler>();
             builder.Services.AddScoped<ItemsService>();

@@ -18,6 +18,7 @@ public class MarketPriceObservation
     public int Quantity { get; init; } = 1;
 
     public required MarketPriceSource Source { get; init; }
+    public bool IsCleared { get; init; }
 
     public required DateTime ObservedAtUtc { get; init; }
 }

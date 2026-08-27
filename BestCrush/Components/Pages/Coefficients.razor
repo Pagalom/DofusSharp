@@ -59,7 +59,6 @@
                         <th>Niveau</th>
                         <th>Type</th>
                         <th style="width: 20%;">Coefficient (%)</th>
-                        <th style="width: 18%;">Source</th>
                     </tr>
                 </thead>
 
@@ -81,16 +80,14 @@
                             </td>
 
                             <td>
-                                <input type="number"
-                                       min="0.01"
-                                       step="0.01"
-                                       class="form-control"
-                                       value="@row.CoefficientPercent"
-                                       @onchange="e => SaveCoefficientAsync(row, e)" />
-                            </td>
-
-                            <td>
-                                @GetSourceLabel(row.Source)
+                                <SourceValueInput
+                                    Value="@row.CoefficientPercent"
+                                    Min="0.01"
+                                    Step="0.01"
+                                    SourceLetter="@GetSourceLetter(row.Source)"
+                                    SourceCssClass="@GetSourceCss(row.Source)"
+                                    Tooltip="@BuildTooltip(row)"
+                                    OnChange="e => SaveCoefficientAsync(row, e)" />
                             </td>
                         </tr>
                     }
@@ -148,6 +145,15 @@
             await CoefficientService.GetLatestObservationsForServerAsync(
                 ServerName
             );
+        
+        IReadOnlyDictionary<
+            (long DofusDbId, CoefficientSource Source),
+            CoefficientObservation>
+            sourceObservations =
+                await CoefficientService
+                    .GetLatestLocalSourceObservationsForServerAsync(
+                        ServerName
+                    );
 
         _rows = equipments
             .OrderBy(e => e.Name)
@@ -171,6 +177,28 @@
                     row.Source =
                         coefficient.Source;
                 }
+                
+                if (sourceObservations.TryGetValue(
+                    (
+                        equipment.DofusDbId,
+                        CoefficientSource.Manual
+                    ),
+                    out CoefficientObservation? manual))
+                {
+                    row.ManualCoefficient =
+                        manual.CoefficientPercent;
+                }
+
+                if (sourceObservations.TryGetValue(
+                    (
+                        equipment.DofusDbId,
+                        CoefficientSource.InGameAutomatic
+                    ),
+                    out CoefficientObservation? game))
+                {
+                    row.GameCoefficient =
+                        game.CoefficientPercent;
+                }
 
                 return row;
             })
@@ -182,6 +210,33 @@
         ChangeEventArgs args)
     {
         string? value = args.Value?.ToString();
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            await CoefficientService.ClearManualAsync(
+                row.DofusDbId,
+                ServerName
+            );
+
+            row.ManualCoefficient = null;
+
+            CoefficientObservation? effective =
+                await CoefficientService.GetLatestObservationAsync(
+                    row.DofusDbId,
+                    ServerName
+                );
+
+            row.CoefficientPercent =
+                effective?.CoefficientPercent;
+
+            row.Source =
+                effective?.Source;
+
+            _lastSavedMessage =
+                $"{row.Name} : valeur manuelle réinitialisée.";
+
+            return;
+        }
 
         if (!double.TryParse(value, out double coefficient) ||
             coefficient <= 0)
@@ -201,25 +256,59 @@
 
         _lastSavedMessage =
             $"{row.Name} : coefficient {coefficient:0.##}% enregistré.";
+        
+        row.ManualCoefficient = coefficient;
     }
 
-    private static string GetSourceLabel(
+    private static string GetSourceLetter(
+        CoefficientSource? source)
+    {
+        return source switch
+        {
+            CoefficientSource.Manual => "M",
+            CoefficientSource.InGameAutomatic => "J",
+            _ => "–"
+        };
+    }
+
+    private static string GetSourceCss(
         CoefficientSource? source)
     {
         return source switch
         {
             CoefficientSource.Manual =>
-                "Manuel",
+                "source-manual",
 
             CoefficientSource.InGameAutomatic =>
-                "Jeu",
-
-            CoefficientSource.DofocusInitial =>
-                "DoFocus initial",
+                "source-game",
 
             _ =>
-                "Non initialisé"
+                "source-none"
         };
+    }
+
+    private static string BuildTooltip(
+        CoefficientRow row)
+    {
+        List<string> lines = [];
+
+        if (row.ManualCoefficient is double manual)
+        {
+            lines.Add(
+                $"Manuel : {manual:0.##} %"
+            );
+        }
+
+        if (row.GameCoefficient is double game)
+        {
+            lines.Add(
+                $"Jeu : {game:0.##} %"
+            );
+        }
+
+        return lines.Count > 0
+            ? string.Join("\n", lines)
+            : "Aucune donnée disponible";
     }
 
     private class CoefficientRow
@@ -233,6 +322,10 @@
         public required string Type { get; init; }
 
         public double? CoefficientPercent { get; set; }
+
+        public double? ManualCoefficient { get; set; }
+
+        public double? GameCoefficient { get; set; }
 
         public CoefficientSource? Source { get; set; }
     }

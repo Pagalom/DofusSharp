@@ -102,3 +102,13 @@ h1:focus {
         padding-left: env(safe-area-inset-left);
     }
 }
+
+.multiline-tooltip .tooltip-inner {
+    white-space: pre-line;
+    text-align: left;
+}
+
+.multiline-tooltip .tooltip-inner img {
+    margin-left: 2px;
+    vertical-align: -1px;
+}

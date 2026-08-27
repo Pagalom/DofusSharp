@@ -20,7 +20,7 @@
 
         <!-- Display name -->
         <ApplicationTitle>Best Crush</ApplicationTitle>
-
+ 
         <!-- App Identifier -->
         <ApplicationId>com.dofussharp.bestcrush</ApplicationId>
 
@@ -46,17 +46,17 @@
         <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" BaseSize="456,456" />
 
         <!-- Splash Screen -->
-        <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#ffd862" BaseSize="791,979"/>
+        <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#ffd862" BaseSize="791,979" />
         <MauiImage Include="Resources\AppIcon\appiconfg.svg" />
 
         <!-- Images -->
-        <MauiImage Include="Resources\Images\*"/>
+        <MauiImage Include="Resources\Images\*" />
 
         <!-- Custom Fonts -->
-        <MauiFont Include="Resources\Fonts\*"/>
+        <MauiFont Include="Resources\Fonts\*" />
 
         <!-- Raw Assets (also remove the "Resources\Raw" prefix) -->
-        <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)"/>
+        <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
     </ItemGroup>
 
     <PropertyGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows' and '$(RuntimeIdentifierOverride)' != ''">
@@ -66,14 +66,17 @@
     <ItemGroup>
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
         <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="9.0.8" />
-        <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)"/>
-        <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)"/>
-        <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0-preview.1.25080.5"/>
+        <PackageReference Include="Microsoft.Maui.Controls" Version="$(MauiVersion)" />
+        <PackageReference Include="Microsoft.AspNetCore.Components.WebView.Maui" Version="$(MauiVersion)" />
+        <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0-preview.1.25080.5" />
+        <PackageReference Include="OpenCvSharp4.Windows" Version="4.13.0.20260627" />
         <PackageReference Include="Semver" Version="3.0.0" />
         <PackageReference Include="Serilog.Extensions.Logging" Version="9.0.2" />
         <PackageReference Include="Serilog.Sinks.Console" Version="6.0.0" />
         <PackageReference Include="Serilog.Sinks.Debug" Version="3.0.0" />
         <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
+        <PackageReference Include="Vortice.Direct3D11" Version="3.8.3" />
+        <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
     </ItemGroup>
 
     <ItemGroup>

@@ -1,9 +1,18 @@
 ﻿@inject ItemsService ItemsService
 @inject RunesService RunesService
+@inject BestCrush.Services.BestCrushSettingsService BestCrushSettings
 @inject CrushService CrushService
 @inject ILogger<Server> Logger
 @inject CoefficientService CoefficientService
+@inject BestCrush.Services.OverlayService OverlayService
+@inject BestCrush.Services.CurrentServerState CurrentServerState
+@inject IDataPriorityProvider DataPriorityProvider
 @inject MarketPriceService MarketPriceService
+@inject CraftCostService CraftCostService
+@inject EquipmentProfitabilityService EquipmentProfitabilityService
+
+@implements IDisposable
+
 @page "/servers/{ServerName}"
 @using BestCrush.Components.Pure
 @using BestCrush.Domain.Models
@@ -13,9 +22,10 @@
 @using DofusSharp.Dofocus.ApiClients.Models.Runes
 @using Microsoft.Extensions.Logging
 
+
 <div class="container">
     <div class="d-flex justify-content-end gap-2 mb-3">
-
+        
         <a class="btn btn-outline-secondary"
         href="@($"/servers/{ServerName}/equipment-prices")">
             Prix locaux des équipements
@@ -26,9 +36,172 @@
             Prix locaux des runes
         </a>
         <a class="btn btn-outline-secondary"
+        href="@($"/servers/{ServerName}/resource-prices")">
+            Prix locaux des ressources
+        </a>
+        <a class="btn btn-outline-secondary"
         href="@($"/servers/{ServerName}/coefficients")">
             Coefficients
         </a>
+        <button type="button"
+                class="btn btn-outline-info"
+                @onclick="OverlayService.Toggle">
+            Overlay
+        </button>
+        <button class="btn btn-outline-secondary"
+                title="Paramètres"
+                aria-label="Paramètres"
+                @onclick="OpenSettings">
+            ⚙
+        </button>
+
+        @if (_showSettings)
+        {
+            <div style="
+                position: fixed;
+                inset: 0;
+                background: rgba(0, 0, 0, 0.45);
+                z-index: 2000;
+                display: flex;
+                align-items: center;
+                justify-content: center;"
+                @onclick="CloseSettings">
+
+                <div class="card shadow"
+                    style="
+                        width: 460px;
+                        max-width: calc(100vw - 40px);
+                        padding: 20px;"
+                    @onclick:stopPropagation="true">
+
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <h4 class="m-0">
+                            Paramètres
+                        </h4>
+
+                        <button type="button"
+                                class="btn-close"
+                                @onclick="CloseSettings">
+                        </button>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">
+                            Capture automatique F8
+                        </label>
+
+                        <div class="text-muted small mb-3">
+                            Choisis quelles données BestCrush est autorisé
+                            à enregistrer automatiquement depuis Dofus.
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input"
+                                type="checkbox"
+                                id="capture-equipment"
+                                @bind="BestCrushSettings.EquipmentCaptureEnabled" />
+
+                            <label class="form-check-label"
+                                for="capture-equipment">
+                                Prix des équipements
+                            </label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input"
+                                type="checkbox"
+                                id="capture-runes"
+                                @bind="BestCrushSettings.RuneCaptureEnabled" />
+
+                            <label class="form-check-label"
+                                for="capture-runes">
+                                Prix des runes
+                            </label>
+                        </div>
+
+                        <div class="form-check form-switch mb-2">
+                            <input class="form-check-input"
+                                type="checkbox"
+                                id="capture-resources"
+                                @bind="BestCrushSettings.ResourceCaptureEnabled" />
+
+                            <label class="form-check-label"
+                                for="capture-resources">
+                                Prix des ressources
+                            </label>
+                        </div>
+
+                        <div class="form-check form-switch">
+                            <input class="form-check-input"
+                                type="checkbox"
+                                id="capture-coefficients"
+                                @bind="BestCrushSettings.CoefficientCaptureEnabled" />
+
+                            <label class="form-check-label"
+                                for="capture-coefficients">
+                                Coefficients de brisage
+                            </label>
+                        </div>
+                    </div>
+
+                    <hr />
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">
+                            Priorité des données
+                        </label>
+
+                        <div class="text-muted small mb-2">
+                            Détermine quelle source est utilisée lorsqu'une
+                            valeur manuelle et une capture jeu sont disponibles.
+                        </div>
+
+                        <select class="form-select"
+                                value="@DataPriorityProvider.Priority"
+                                @onchange="OnDataPriorityChanged">
+
+                            <option value="@DataPriority.Manual">
+                                Manuel
+                            </option>
+
+                            <option value="@DataPriority.InGameAutomatic">
+                                Capture jeu
+                            </option>
+
+                        </select>
+                    </div>
+
+                    <hr />
+
+                    <div class="mb-2">
+                        <label class="form-label fw-bold"
+                            for="target-roi">
+                            Objectif de rentabilité
+                        </label>
+
+                        <div class="text-muted small mb-2">
+                            Rendement minimum souhaité pour déterminer
+                            le prix maximal d'achat d'un équipement.
+                        </div>
+
+                        <div class="input-group">
+                            <input id="target-roi"
+                                type="number"
+                                class="form-control"
+                                min="0"
+                                max="1000"
+                                step="1"
+                                @bind="BestCrushSettings.TargetRoiPercent" />
+
+                            <span class="input-group-text">
+                                %
+                            </span>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+        }
 
     </div>
 
@@ -68,9 +241,20 @@
     {
         @if (_rankedItems.Count > 0)
         {
-            IEnumerable<IGrouping<Equipment, ItemCrushResult>> equipments = _rankedItems.GroupBy(i => i.Equipment);
-            IEnumerable<ItemCrushResult> bestLines = equipments.Select(g => g.MaxBy(r => r.Benefits));
-            IOrderedEnumerable<ItemCrushResult> bestLinesOrdered = bestLines.OrderByDescending(r => _sortOrder switch { SortOrder.BestYield => r.Yield, SortOrder.BestBenefit or _ => r.Benefits });
+            IEnumerable<IGrouping<Equipment, ItemCrushResult>> equipments =
+                _rankedItems.GroupBy(i => i.Equipment);
+
+            IEnumerable<ItemCrushResult> bestLines =
+                equipments.Select(group =>
+                    _sortOrder == SortOrder.BestYield
+                        ? group.MaxBy(result => result.Yield)
+                        : group.MaxBy(result => result.Benefits));
+
+            IOrderedEnumerable<ItemCrushResult> bestLinesOrdered =
+                bestLines.OrderByDescending(result =>
+                    _sortOrder == SortOrder.BestYield
+                        ? result.Yield
+                        : result.Benefits);
 
             <div class="my-4">
                 <div class="d-flex align-items-center justify-content-end gap-2 mb-2 px-3">
@@ -112,13 +296,16 @@
                             <li class="list-group-item">
                                 <CrushResultLine Equipment="item.Equipment"
                                                 Cost="item.Cost"
+                                                CraftCost="item.CraftCost"
                                                 Coefficient="item.Coefficient"
                                                 FocusedCharacteristic="item.FocusedCharacteristic"
                                                 Runes="item.Runes"
                                                 RuneValues="item.RuneValues"
                                                 SortOrder="_sortOrder"
                                                 NoImage="_searching"
-                                                Refresh="() => Refresh(item.Equipment)" />
+                                                Refresh="() => Refresh(item.Equipment)"
+                                                Focus="() => FocusInOverlay(item.Equipment)" />
+                                <CraftCostSummary Result="item.CraftCost" />
                             </li>
                         }
                     }
@@ -141,13 +328,17 @@
 
                                 <CrushResultLine Equipment="item.Equipment"
                                                 Cost="item.Cost"
+                                                CraftCost="item.CraftCost"
                                                 Coefficient="item.Coefficient"
                                                 FocusedCharacteristic="item.FocusedCharacteristic"
                                                 Runes="item.Runes"
                                                 RuneValues="item.RuneValues"
                                                 SortOrder="_sortOrder"
                                                 NoImage="_searching"
-                                                Refresh="() => Refresh(item.Equipment)" />
+                                                Refresh="() => Refresh(item.Equipment)"
+                                                Focus="() => FocusInOverlay(item.Equipment)" />
+                                
+                                <CraftCostSummary Result="item.CraftCost" />
 
                                 @if (_missingDataByItem.TryGetValue(
                                     item.Equipment.DofusDbId,
@@ -212,6 +403,13 @@
 
                             </div>
 
+                            @if (_craftCostsByItem.TryGetValue(
+                                item.DofusDbId,
+                                out CraftCostResult? craftCost))
+                            {
+                                <CraftCostSummary Result="craftCost" />
+                            }
+
                             @if (_missingDataByItem.TryGetValue(
                                 item.DofusDbId,
                                 out HashSet<string>? missingData))
@@ -231,6 +429,23 @@
                                     Calcul indisponible pour une raison inconnue.
                                 </div>
                             }
+                            <div class="d-flex justify-content-end mt-2">
+                                <div class="btn-group btn-group-sm">
+
+                                    <button class="btn btn-light"
+                                            @onclick="async () => await Refresh(item)">
+                                        Rafraîchir
+                                    </button>
+
+                                    <button class="btn btn-light"
+                                            title="Mettre cet équipement en focus dans l'overlay"
+                                            aria-label="Mettre cet équipement en focus dans l'overlay"
+                                            @onclick="async () => await FocusInOverlay(item)">
+                                        ◎
+                                    </button>
+
+                                </div>
+                            </div>
 
                         </div>
                     }
@@ -244,7 +459,24 @@
 
 @code {
 
+    private static readonly Dictionary<string, ServerPageState>
+        _sessionStates =
+            new(StringComparer.OrdinalIgnoreCase);
+
+    private ServerPageState? _sessionState;
+
+    private string? _loadedServerName;
+
     private bool _searching;
+    private bool _showSettings;
+    private void OpenSettings()
+    {
+        _showSettings = true;
+    }
+    private void CloseSettings()
+    {
+        _showSettings = false;
+    }
     Equipment[]? _allItems;
     List<ItemCrushResult>? _rankedItems;
     List<Equipment>? _unrankedItems;
@@ -253,6 +485,15 @@
     new Dictionary<(long DofusDbId, int Quantity), MarketPriceObservation>();
     IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> _equipmentPrices =
     new Dictionary<(long DofusDbId, int Quantity), MarketPriceObservation>();
+    IReadOnlyDictionary<
+        (long DofusDbId, int Quantity),
+        MarketPriceObservation> _resourcePrices =
+            new Dictionary<
+                (long DofusDbId, int Quantity),
+                MarketPriceObservation>();
+
+    Dictionary<long, CraftCostResult>
+        _craftCostsByItem = new();
     Dictionary<long, CoefficientObservation> _coefficients = new();
     SortOrder _sortOrder;
 
@@ -262,7 +503,163 @@
     [SupplyParameterFromForm]
     private SearchItemsModel? Model { get; set; }
 
-    protected override void OnInitialized() => Model ??= new SearchItemsModel();
+    protected override void OnParametersSet()
+    {
+        CurrentServerState.SelectServer(
+            ServerName
+        );
+
+        if (string.Equals(
+            _loadedServerName,
+            ServerName,
+            StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        bool firstLoad =
+            _loadedServerName is null;
+
+        SaveSessionState();
+
+        _loadedServerName =
+            ServerName;
+
+        LoadSessionState(
+            useSuppliedModel: firstLoad
+        );
+    }
+
+    async Task FocusInOverlay(
+        Equipment equipment)
+    {
+        CurrentServerState.SelectServer(
+            ServerName
+        );
+
+        await OverlayService
+            .FocusEquipmentAsync(
+                equipment
+            );
+    }
+
+    private void LoadSessionState(
+        bool useSuppliedModel)
+    {
+        if (!_sessionStates.TryGetValue(
+            ServerName,
+            out ServerPageState? state))
+        {
+            state =
+                new ServerPageState();
+
+            _sessionStates[ServerName] =
+                state;
+        }
+
+        _sessionState = state;
+
+        if (useSuppliedModel &&
+            Model is not null)
+        {
+            state.Model = Model;
+        }
+        else
+        {
+            Model = state.Model;
+        }
+
+        _allItems =
+            state.AllItems;
+
+        _rankedItems =
+            state.RankedItems;
+
+        _unrankedItems =
+            state.UnrankedItems;
+
+        _missingDataByItem =
+            state.MissingDataByItem;
+
+        _runePrices =
+            state.RunePrices;
+
+        _equipmentPrices =
+            state.EquipmentPrices;
+
+        _resourcePrices =
+            state.ResourcePrices;
+
+        _craftCostsByItem =
+            state.CraftCostsByItem;
+
+        _coefficients =
+            state.Coefficients;
+
+        _sortOrder =
+            state.SortOrder;
+    }
+
+    private void SaveSessionState()
+    {
+        if (_sessionState is null)
+        {
+            return;
+        }
+
+        if (Model is not null)
+        {
+            _sessionState.Model =
+                Model;
+        }
+
+        _sessionState.AllItems =
+            _allItems;
+
+        _sessionState.RankedItems =
+            _rankedItems;
+
+        _sessionState.UnrankedItems =
+            _unrankedItems;
+
+        _sessionState.MissingDataByItem =
+            _missingDataByItem;
+
+        _sessionState.RunePrices =
+            _runePrices;
+
+        _sessionState.EquipmentPrices =
+            _equipmentPrices;
+
+        _sessionState.ResourcePrices =
+            _resourcePrices;
+
+        _sessionState.CraftCostsByItem =
+            _craftCostsByItem;
+
+        _sessionState.Coefficients =
+            _coefficients;
+
+        _sessionState.SortOrder =
+            _sortOrder;
+    }
+
+    public void Dispose()
+    {
+        SaveSessionState();
+    }
+
+    private void OnDataPriorityChanged(
+        ChangeEventArgs args)
+    {
+        if (Enum.TryParse(
+            args.Value?.ToString(),
+            out DataPriority priority))
+        {
+            DataPriorityProvider.Priority =
+                priority;
+        }
+    }
 
     async Task Count()
     {
@@ -309,27 +706,6 @@
                         runesByCharacteristicAsync
                     );
 
-                    _runePrices =
-                        await MarketPriceService.GetLatestObservationsForServerAsync(
-                            MarketObjectType.Rune,
-                            ServerName
-                        );
-
-                    _equipmentPrices =
-                        await MarketPriceService.GetLatestObservationsForServerAsync(
-                            MarketObjectType.Equipment,
-                            ServerName
-                        );
-                    
-                    _coefficients =
-                        (await CoefficientService.GetLatestObservationsForServerAsync(
-                            ServerName
-                        ))
-                        .ToDictionary(
-                            pair => pair.Key,
-                            pair => pair.Value
-                        );
-
                     Equipment[] items = FilterItems(itemsTask.Result).ToArray();
                     _allItems = items;
 
@@ -338,17 +714,55 @@
                     _rankedItems = [];
                     _unrankedItems = [];
 
+                    EquipmentProfitabilityContext profitabilityContext =
+                        await EquipmentProfitabilityService
+                            .LoadContextAsync(
+                                ServerName
+                            );
+
+                    _runePrices =
+                        profitabilityContext.RunePrices;
+
+                    _equipmentPrices =
+                        profitabilityContext.EquipmentPrices;
+
+                    _resourcePrices =
+                        profitabilityContext.ResourcePrices;
+
+                    _coefficients =
+                        profitabilityContext.Coefficients;
+
+                    _craftCostsByItem.Clear();
+
                     foreach (Equipment item in items)
                     {
                         try
                         {
-                            IReadOnlyCollection<ItemCrushResult> result =
-                                await ComputeBenefit(
+                            EquipmentProfitabilityResult profitability =
+                                await EquipmentProfitabilityService
+                                    .CalculateAsync(
+                                        item,
+                                        ServerName,
+                                        profitabilityContext,
+                                        forceRefresh
+                                    );
+
+                            _craftCostsByItem[item.DofusDbId] =
+                                profitability.CraftCost;
+
+                            foreach (string missingData
+                                    in profitability.MissingData)
+                            {
+                                AddMissingData(
                                     item,
-                                    _runePrices,
-                                    _equipmentPrices,
-                                    forceRefresh
+                                    missingData
                                 );
+                            }
+
+                            List<ItemCrushResult> result =
+                                profitability.Scenarios
+                                    .Select(ToItemCrushResult)
+                                    .ToList();
                             if (result.Count == 0)
                             {
                                 _unrankedItems.Add(item);
@@ -384,60 +798,122 @@
         );
     }
 
-    void Refresh(Equipment equipment)
+    async Task Refresh(
+        Equipment equipment)
     {
-        if (_searching || _unrankedItems is null || _rankedItems is null)
+        if (_searching ||
+            _unrankedItems is null ||
+            _rankedItems is null)
         {
             return;
         }
 
-        _ = Task.Run(async () =>
-            {
-                _searching = true;
-                await InvokeAsync(StateHasChanged);
+        _searching = true;
 
-                try
-                {
-                    _runePrices =
-                        await MarketPriceService.GetLatestObservationsForServerAsync(
-                            MarketObjectType.Rune,
+        await InvokeAsync(
+            StateHasChanged
+        );
+
+        try
+        {
+            EquipmentProfitabilityContext
+                profitabilityContext =
+                    await EquipmentProfitabilityService
+                        .LoadContextAsync(
                             ServerName
                         );
-                    _equipmentPrices =
-                        await MarketPriceService.GetLatestObservationsForServerAsync(
-                            MarketObjectType.Equipment,
-                            ServerName
-                        );
-                    _missingDataByItem.Remove(equipment.DofusDbId);
-                    IReadOnlyCollection<ItemCrushResult> result =
-                        await ComputeBenefit(
+
+            _runePrices =
+                profitabilityContext.RunePrices;
+
+            _equipmentPrices =
+                profitabilityContext.EquipmentPrices;
+
+            _resourcePrices =
+                profitabilityContext.ResourcePrices;
+
+            _coefficients =
+                profitabilityContext.Coefficients;
+
+            _missingDataByItem.Remove(
+                equipment.DofusDbId
+            );
+
+            EquipmentProfitabilityResult
+                profitability =
+                    await EquipmentProfitabilityService
+                        .CalculateAsync(
                             equipment,
-                            _runePrices,
-                            _equipmentPrices,
+                            ServerName,
+                            profitabilityContext,
                             true
                         );
-                    _unrankedItems.Remove(equipment);
-                    _rankedItems.RemoveAll(r => r.Equipment == equipment);
-                    if (result.Count == 0)
-                    {
-                        _unrankedItems.Add(equipment);
-                    }
-                    else
-                    {
-                        _rankedItems.AddRange(result);
-                    }
-                }
-                catch (Exception exn)
-                {
-                    Logger.LogError(exn, "An error occured while searching for best crush.");
-                }
-                finally
-                {
-                    _searching = false;
-                    await InvokeAsync(StateHasChanged);
-                }
+
+            _craftCostsByItem[
+                equipment.DofusDbId
+            ] =
+                profitability.CraftCost;
+
+            foreach (string missingData
+                    in profitability.MissingData)
+            {
+                AddMissingData(
+                    equipment,
+                    missingData
+                );
             }
-        );
+
+            _unrankedItems.RemoveAll(
+                item =>
+                    item.DofusDbId ==
+                    equipment.DofusDbId
+            );
+
+            _rankedItems.RemoveAll(
+                result =>
+                    result.Equipment.DofusDbId ==
+                    equipment.DofusDbId
+            );
+
+            List<ItemCrushResult> result =
+                profitability.Scenarios
+                    .Select(
+                        ToItemCrushResult
+                    )
+                    .ToList();
+
+            if (result.Count == 0)
+            {
+                _unrankedItems.Add(
+                    equipment
+                );
+            }
+            else
+            {
+                _rankedItems.AddRange(
+                    result
+                );
+            }
+
+            SaveSessionState();
+        }
+        catch (Exception exn)
+        {
+            Logger.LogError(
+                exn,
+                "Error while refreshing item {ItemName} ({ItemId})",
+                equipment.Name,
+                equipment.DofusDbId
+            );
+        }
+        finally
+        {
+            _searching = false;
+
+            await InvokeAsync(
+                StateHasChanged
+            );
+        }
     }
 
     void AddMissingData(Equipment equipment, string message)
@@ -524,18 +1000,42 @@
         double coefficient =
             itemCoefficient.CoefficientPercent / 100;
 
-        if (!equipmentPrices.TryGetValue(
+        equipmentPrices.TryGetValue(
             (equipment.DofusDbId, 1),
-            out MarketPriceObservation? itemCost))
+            out MarketPriceObservation? itemCost
+        );
+
+        if (itemCost is null)
         {
             AddMissingData(
                 equipment,
                 "Prix local de l'équipement manquant"
             );
-            return [];
         }
 
-        double cost = itemCost.Price;
+        CraftCostResult craftCost =
+            _craftCostsByItem.TryGetValue(
+                equipment.DofusDbId,
+                out CraftCostResult? knownCraftCost)
+                ? knownCraftCost
+                : CraftCostService.Calculate(
+                    equipment,
+                    _resourcePrices
+                );
+
+        if (!craftCost.IsComplete)
+        {
+            AddMissingData(
+                equipment,
+                $"Craft incomplet : {craftCost.MissingResourceCount} prix de ressource manquant(s)"
+            );
+        }
+
+        if (itemCost is null &&
+            craftCost.TotalCost is null)
+        {
+            return [];
+        }
 
         List<ItemCrushResult> result = [];
         Dictionary<Characteristic, double> averageLines = equipment.Characteristics.ToDictionary(c => c.Characteristic, c => (double)(c.From + c.To) / 2);
@@ -550,23 +1050,45 @@
         if (valuesWithoutFocus is not null)
         {
             double priceWithoutFocus =
-                valuesWithoutFocus.Values.Sum(v => v.Value);
+                valuesWithoutFocus.Values.Sum(value =>
+                    value.Value);
 
-            double benefitWithoutFocus =
-                priceWithoutFocus - cost;
+            double? purchaseBenefitWithoutFocus =
+                itemCost is null
+                    ? null
+                    : priceWithoutFocus - itemCost.Price;
 
-            double yieldWithoutFocus =
-                itemCost.Price == 0
-                    ? 0
-                    : benefitWithoutFocus / itemCost.Price;
+            double? purchaseYieldWithoutFocus =
+                itemCost is null
+                    ? null
+                    : itemCost.Price == 0
+                        ? 0
+                        : purchaseBenefitWithoutFocus /
+                        itemCost.Price;
+
+            double? craftBenefitWithoutFocus =
+                craftCost.TotalCost is long craftPrice
+                    ? priceWithoutFocus - craftPrice
+                    : null;
+
+            double? craftYieldWithoutFocus =
+                craftCost.TotalCost is long craftCostValue
+                    ? craftCostValue == 0
+                        ? 0
+                        : craftBenefitWithoutFocus /
+                        craftCostValue
+                    : null;
 
             result.Add(
                 new ItemCrushResult(
                     equipment,
                     itemCoefficient,
                     itemCost,
-                    benefitWithoutFocus,
-                    yieldWithoutFocus,
+                    craftCost,
+                    purchaseBenefitWithoutFocus,
+                    purchaseYieldWithoutFocus,
+                    craftBenefitWithoutFocus,
+                    craftYieldWithoutFocus,
                     null,
                     runesWithoutFocus,
                     valuesWithoutFocus
@@ -597,23 +1119,45 @@
             }
 
             double priceWithFocus =
-                valuesWithFocus.Values.Sum(v => v.Value);
+                valuesWithFocus.Values.Sum(value =>
+                    value.Value);
 
-            double benefitWithFocus =
-                priceWithFocus - cost;
+            double? purchaseBenefitWithFocus =
+                itemCost is null
+                    ? null
+                    : priceWithFocus - itemCost.Price;
 
-            double yieldWithFocus =
-                itemCost.Price == 0
-                    ? 0
-                    : benefitWithFocus / itemCost.Price;
+            double? purchaseYieldWithFocus =
+                itemCost is null
+                    ? null
+                    : itemCost.Price == 0
+                        ? 0
+                        : purchaseBenefitWithFocus /
+                        itemCost.Price;
+
+            double? craftBenefitWithFocus =
+                craftCost.TotalCost is long craftPrice
+                    ? priceWithFocus - craftPrice
+                    : null;
+
+            double? craftYieldWithFocus =
+                craftCost.TotalCost is long craftCostValue
+                    ? craftCostValue == 0
+                        ? 0
+                        : craftBenefitWithFocus /
+                        craftCostValue
+                    : null;
 
             result.Add(
                 new ItemCrushResult(
                     equipment,
                     itemCoefficient,
                     itemCost,
-                    benefitWithFocus,
-                    yieldWithFocus,
+                    craftCost,
+                    purchaseBenefitWithFocus,
+                    purchaseYieldWithFocus,
+                    craftBenefitWithFocus,
+                    craftYieldWithFocus,
                     characteristic,
                     runesWithFocus,
                     valuesWithFocus
@@ -796,13 +1340,105 @@
         return equipmentTypes;
     }
 
+    private static ItemCrushResult ToItemCrushResult(
+        EquipmentProfitabilityScenario scenario)
+    {
+        return new ItemCrushResult(
+            scenario.Equipment,
+            scenario.Coefficient,
+            scenario.Cost,
+            scenario.CraftCost,
+            scenario.PurchaseBenefit,
+            scenario.PurchaseYield,
+            scenario.CraftBenefit,
+            scenario.CraftYield,
+            scenario.FocusedCharacteristic,
+            scenario.Runes,
+            scenario.RuneValues
+        );
+    }
+
     readonly record struct ItemCrushResult(
         Equipment Equipment,
         CoefficientObservation Coefficient,
-        MarketPriceObservation Cost,
-        double Benefits,
-        double Yield,
+        MarketPriceObservation? Cost,
+        CraftCostResult CraftCost,
+        double? PurchaseBenefit,
+        double? PurchaseYield,
+        double? CraftBenefit,
+        double? CraftYield,
         Characteristic? FocusedCharacteristic,
         IReadOnlyDictionary<Rune, double> Runes,
-        IReadOnlyDictionary<Rune, MarketValueResult> RuneValues);   
+        IReadOnlyDictionary<Rune, MarketValueResult> RuneValues)
+    {
+        public double Benefits =>
+            PurchaseBenefit is null
+                ? CraftBenefit ?? double.MinValue
+                : CraftBenefit is null
+                    ? PurchaseBenefit.Value
+                    : Math.Max(
+                        PurchaseBenefit.Value,
+                        CraftBenefit.Value
+                    );
+
+        public double Yield =>
+            PurchaseYield is null
+                ? CraftYield ?? double.MinValue
+                : CraftYield is null
+                    ? PurchaseYield.Value
+                    : Math.Max(
+                        PurchaseYield.Value,
+                        CraftYield.Value
+                    );
+    }
+
+    private sealed class ServerPageState
+    {
+        public SearchItemsModel Model { get; set; } =
+            new();
+
+        public Equipment[]? AllItems { get; set; }
+
+        public List<ItemCrushResult>? RankedItems { get; set; }
+
+        public List<Equipment>? UnrankedItems { get; set; }
+
+        public Dictionary<long, HashSet<string>>
+            MissingDataByItem { get; set; } =
+                new();
+
+        public IReadOnlyDictionary<
+            (long DofusDbId, int Quantity),
+            MarketPriceObservation>
+            RunePrices { get; set; } =
+                new Dictionary<
+                    (long DofusDbId, int Quantity),
+                    MarketPriceObservation>();
+
+        public IReadOnlyDictionary<
+            (long DofusDbId, int Quantity),
+            MarketPriceObservation>
+            EquipmentPrices { get; set; } =
+                new Dictionary<
+                    (long DofusDbId, int Quantity),
+                    MarketPriceObservation>();
+
+        public IReadOnlyDictionary<
+            (long DofusDbId, int Quantity),
+            MarketPriceObservation>
+            ResourcePrices { get; set; } =
+                new Dictionary<
+                    (long DofusDbId, int Quantity),
+                    MarketPriceObservation>();
+
+        public Dictionary<long, CraftCostResult>
+            CraftCostsByItem { get; set; } =
+                new();
+
+        public Dictionary<long, CoefficientObservation>
+            Coefficients { get; set; } =
+                new();
+
+        public SortOrder SortOrder { get; set; }
+    }
 }

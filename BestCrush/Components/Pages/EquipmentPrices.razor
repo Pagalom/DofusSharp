@@ -77,11 +77,13 @@
                             </td>
 
                             <td>
-                                <input type="number"
-                                       min="1"
-                                       class="form-control"
-                                       value="@row.Price"
-                                       @onchange="e => SavePriceAsync(row, e)" />
+                                <SourceValueInput
+                                    Value="@row.Price"
+                                    Min="1"
+                                    SourceLetter="@GetSourceLetter(row.Source)"
+                                    SourceCssClass="@GetSourceCss(row.Source)"
+                                    Tooltip="@BuildTooltip(row)"
+                                    OnChange="e => SavePriceAsync(row, e)" />
                             </td>
                         </tr>
                     }
@@ -129,6 +131,7 @@
         }
     }
 
+
     protected override async Task OnInitializedAsync()
     {
         IReadOnlyCollection<Equipment> equipments =
@@ -137,6 +140,19 @@
         IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation>
             observations =
                 await MarketPriceService.GetLatestObservationsForServerAsync(
+                    MarketObjectType.Equipment,
+                    ServerName
+                );
+        IReadOnlyDictionary<
+        (
+            long DofusDbId,
+            int Quantity,
+            MarketPriceSource Source
+        ),
+        MarketPriceObservation>
+        sourceObservations =
+            await MarketPriceService
+                .GetLatestLocalSourceObservationsForServerAsync(
                     MarketObjectType.Equipment,
                     ServerName
                 );
@@ -158,6 +174,29 @@
                     out MarketPriceObservation? observation))
                 {
                     row.Price = observation.Price;
+                    row.Source = observation.Source;
+                }
+
+                if (sourceObservations.TryGetValue(
+                    (
+                        equipment.DofusDbId,
+                        1,
+                        MarketPriceSource.Manual
+                    ),
+                    out MarketPriceObservation manual))
+                {
+                    row.ManualPrice = manual.Price;
+                }
+
+                if (sourceObservations.TryGetValue(
+                    (
+                        equipment.DofusDbId,
+                        1,
+                        MarketPriceSource.InGameAutomatic
+                    ),
+                    out MarketPriceObservation game))
+                {
+                    row.GamePrice = game.Price;
                 }
 
                 return row;
@@ -170,6 +209,32 @@
         ChangeEventArgs args)
     {
         string? value = args.Value?.ToString();
+
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            await MarketPriceService.ClearManualAsync(
+                MarketObjectType.Equipment,
+                row.DofusDbId,
+                ServerName,
+                1
+            );
+
+            MarketPriceObservation? effective =
+                await MarketPriceService.GetLatestObservationAsync(
+                    MarketObjectType.Equipment,
+                    row.DofusDbId,
+                    ServerName,
+                    1
+                );
+
+            row.Price = effective?.Price;
+            row.Source = effective?.Source;
+
+            _lastSavedMessage =
+                $"{row.Name} : valeur manuelle réinitialisée.";
+
+            return;
+        }
 
         if (!long.TryParse(value, out long price) || price <= 0)
         {
@@ -186,9 +251,56 @@
         );
 
         row.Price = price;
+        row.Source = MarketPriceSource.Manual;
 
         _lastSavedMessage =
             $"{row.Name} : {price:N0} kamas enregistré.";
+    }
+
+    private static string GetSourceLetter(
+        MarketPriceSource? source)
+    {
+        return source switch
+        {
+            MarketPriceSource.Manual => "M",
+            MarketPriceSource.InGameAutomatic => "J",
+            _ => "–"
+        };
+    }
+
+    private static string GetSourceCss(
+        MarketPriceSource? source)
+    {
+        return source switch
+        {
+            MarketPriceSource.Manual => "source-manual",
+            MarketPriceSource.InGameAutomatic => "source-game",
+            _ => "source-none"
+        };
+    }
+
+    private static string BuildTooltip(
+        EquipmentPriceRow row)
+    {
+        List<string> lines = [];
+
+        if (row.ManualPrice is long manual)
+        {
+            lines.Add(
+                $"Manuel : {manual:N0} kamas"
+            );
+        }
+
+        if (row.GamePrice is long game)
+        {
+            lines.Add(
+                $"Jeu : {game:N0} kamas"
+            );
+        }
+
+        return lines.Count > 0
+            ? string.Join("\n", lines)
+            : "Aucune donnée disponible";
     }
 
     private class EquipmentPriceRow
@@ -200,6 +312,12 @@
         public required int Level { get; init; }
 
         public required string Type { get; init; }
+
+        public MarketPriceSource? Source { get; set; }
+
+        public long? ManualPrice { get; set; }
+
+        public long? GamePrice { get; set; }
 
         public long? Price { get; set; }
     }

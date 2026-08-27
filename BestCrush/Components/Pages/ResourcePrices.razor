@@ -1,9 +1,9 @@
-@page "/servers/{ServerName}/rune-prices"
+@page "/servers/{ServerName}/resource-prices"
 
 @using BestCrush.Domain.Models
 @using BestCrush.Domain.Services
 
-@inject RunesService RunesService
+@inject ItemsService ItemsService
 @inject MarketPriceService MarketPriceService
 
 <div class="container-fluid py-4 px-5">
@@ -11,7 +11,7 @@
     <div class="d-flex justify-content-between align-items-center mb-3">
 
         <div>
-            <h2>Prix locaux des runes</h2>
+            <h2>Prix locaux des ressources</h2>
 
             <p class="text-secondary mb-0">
                 Serveur : <strong>@ServerName</strong>
@@ -26,7 +26,7 @@
     </div>
 
     <p class="text-secondary">
-        Les prix sont enregistrés automatiquement lorsque vous quittez une case.
+        Les prix sont enregistrés automatiquement lors d'une capture en jeu.
     </p>
 
     @if (!string.IsNullOrWhiteSpace(_lastSavedMessage))
@@ -38,7 +38,7 @@
 
     @if (_rows is null)
     {
-        <p>Chargement des runes...</p>
+        <p>Chargement des ressources...</p>
     }
     else
     {
@@ -46,17 +46,17 @@
 
             <div class="mb-3">
                 <input type="text"
-                    class="form-control"
-                    placeholder="Rechercher une rune..."
-                    @bind="_searchText"
-                    @bind:event="oninput" />
+                       class="form-control"
+                       placeholder="Rechercher une ressource..."
+                       @bind="_searchText"
+                       @bind:event="oninput" />
             </div>
 
             <table class="table table-dark table-striped table-hover align-middle">
 
                 <thead>
                     <tr>
-                        <th style="width: 36%;">Rune</th>
+                        <th style="width: 36%;">Ressource</th>
                         <th style="width: 16%;">Prix x1</th>
                         <th style="width: 16%;">Prix x10</th>
                         <th style="width: 16%;">Prix x100</th>
@@ -66,9 +66,10 @@
 
                 <tbody>
 
-                    @foreach (RunePriceRow row in FilteredRows)
+                    @foreach (ResourcePriceRow row in FilteredRows)
                     {
                         <tr>
+
                             <td>
                                 <strong>@row.Name</strong>
                             </td>
@@ -130,12 +131,12 @@
     [Parameter]
     public required string ServerName { get; set; }
 
-    private List<RunePriceRow>? _rows;
+    private List<ResourcePriceRow>? _rows;
 
     private string? _lastSavedMessage;
     private string _searchText = "";
 
-    private IEnumerable<RunePriceRow> FilteredRows
+    private IEnumerable<ResourcePriceRow> FilteredRows
     {
         get
         {
@@ -144,7 +145,7 @@
                 return [];
             }
 
-            IEnumerable<RunePriceRow> result = _rows;
+            IEnumerable<ResourcePriceRow> result = _rows;
 
             if (!string.IsNullOrWhiteSpace(_searchText))
             {
@@ -158,43 +159,48 @@
             return result;
         }
     }
+
     protected override async Task OnInitializedAsync()
     {
-        IReadOnlyCollection<Rune> runes =
-            await RunesService.GetLocalRunesAsync();
+        IReadOnlyCollection<Resource> resources =
+            await ItemsService.GetResourcesAsync();
 
-        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation>
-            observations =
-                await MarketPriceService.GetLatestObservationsForServerAsync(
-                    MarketObjectType.Rune,
-                    ServerName
-                );
         IReadOnlyDictionary<
-        (
-            long DofusDbId,
-            int Quantity,
-            MarketPriceSource Source
-        ),
-        MarketPriceObservation>
-        sourceObservations =
-            await MarketPriceService
-                .GetLatestLocalSourceObservationsForServerAsync(
-                    MarketObjectType.Rune,
-                    ServerName
-                );
+            (long DofusDbId, int Quantity),
+            MarketPriceObservation>
+            observations =
+                await MarketPriceService
+                    .GetLatestObservationsForServerAsync(
+                        MarketObjectType.Resource,
+                        ServerName
+                    );
 
-        _rows = runes
-            .OrderBy(r => r.Name)
-            .Select(rune =>
+        IReadOnlyDictionary<
+            (
+                long DofusDbId,
+                int Quantity,
+                MarketPriceSource Source
+            ),
+            MarketPriceObservation>
+            sourceObservations =
+                await MarketPriceService
+                    .GetLatestLocalSourceObservationsForServerAsync(
+                        MarketObjectType.Resource,
+                        ServerName
+                    );
+
+        _rows = resources
+            .OrderBy(resource => resource.Name)
+            .Select(resource =>
             {
-                RunePriceRow row = new()
+                ResourcePriceRow row = new()
                 {
-                    DofusDbId = rune.DofusDbId,
-                    Name = rune.Name
+                    DofusDbId = resource.DofusDbId,
+                    Name = resource.Name
                 };
 
                 if (observations.TryGetValue(
-                    (rune.DofusDbId, 1),
+                    (resource.DofusDbId, 1),
                     out MarketPriceObservation? price1))
                 {
                     row.Price1 = price1.Price;
@@ -202,7 +208,7 @@
                 }
 
                 if (observations.TryGetValue(
-                    (rune.DofusDbId, 10),
+                    (resource.DofusDbId, 10),
                     out MarketPriceObservation? price10))
                 {
                     row.Price10 = price10.Price;
@@ -210,7 +216,7 @@
                 }
 
                 if (observations.TryGetValue(
-                    (rune.DofusDbId, 100),
+                    (resource.DofusDbId, 100),
                     out MarketPriceObservation? price100))
                 {
                     row.Price100 = price100.Price;
@@ -218,7 +224,7 @@
                 }
 
                 if (observations.TryGetValue(
-                    (rune.DofusDbId, 1000),
+                    (resource.DofusDbId, 1000),
                     out MarketPriceObservation? price1000))
                 {
                     row.Price1000 = price1000.Price;
@@ -229,7 +235,7 @@
                 {
                     if (sourceObservations.TryGetValue(
                         (
-                            rune.DofusDbId,
+                            resource.DofusDbId,
                             quantity,
                             MarketPriceSource.Manual
                         ),
@@ -243,7 +249,7 @@
 
                     if (sourceObservations.TryGetValue(
                         (
-                            rune.DofusDbId,
+                            resource.DofusDbId,
                             quantity,
                             MarketPriceSource.InGameAutomatic
                         ),
@@ -262,7 +268,7 @@
     }
 
     private async Task SavePriceAsync(
-        RunePriceRow row,
+        ResourcePriceRow row,
         int quantity,
         ChangeEventArgs args)
     {
@@ -271,24 +277,26 @@
         if (string.IsNullOrWhiteSpace(value))
         {
             await MarketPriceService.ClearManualAsync(
-                MarketObjectType.Rune,
+                MarketObjectType.Resource,
                 row.DofusDbId,
                 ServerName,
                 quantity
             );
 
             MarketPriceObservation? effective =
-                await MarketPriceService.GetLatestObservationAsync(
-                    MarketObjectType.Rune,
-                    row.DofusDbId,
-                    ServerName,
-                    quantity
-                );
+                await MarketPriceService
+                    .GetLatestObservationAsync(
+                        MarketObjectType.Resource,
+                        row.DofusDbId,
+                        ServerName,
+                        quantity
+                    );
 
             row.SetObservation(
                 quantity,
                 effective
             );
+
             row.SetManualPrice(
                 quantity,
                 null
@@ -300,13 +308,14 @@
             return;
         }
 
-        if (!long.TryParse(value, out long price) || price <= 0)
+        if (!long.TryParse(value, out long price) ||
+            price <= 0)
         {
             return;
         }
 
         await MarketPriceService.AddObservationAsync(
-            MarketObjectType.Rune,
+            MarketObjectType.Resource,
             row.DofusDbId,
             ServerName,
             price,
@@ -357,7 +366,7 @@
     }
 
     private static string BuildTooltip(
-        RunePriceRow row,
+        ResourcePriceRow row,
         int quantity)
     {
         long? manual =
@@ -387,7 +396,7 @@
             : "Aucune donnée disponible";
     }
 
-    private class RunePriceRow
+    private class ResourcePriceRow
     {
         public required long DofusDbId { get; init; }
 

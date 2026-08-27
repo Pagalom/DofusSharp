@@ -14,7 +14,15 @@ public class ItemsService(BestCrushDbContext context, IDofusDbClientsFactory dof
 
     public async Task<IReadOnlyCollection<Equipment>> GetEquipmentsAsync() =>
         await context.Equipments.Include(i => i.Characteristics).Include(i => i.Recipe).ThenInclude(i => i.Resource).Where(i => i.Recipe.Count > 0).AsNoTracking().ToArrayAsync();
-
+    public async Task<IReadOnlyCollection<Resource>>
+        GetResourcesAsync(
+            CancellationToken cancellationToken = default)
+    {
+        return await context.Resources
+            .AsNoTracking()
+            .OrderBy(resource => resource.Name)
+            .ToArrayAsync(cancellationToken);
+    }
     public async Task<DofocusItem> GetItemAsync(long id, bool forceRefresh = false)
     {
         if (!forceRefresh && _cachedItems.TryGetValue(id, out DofocusItem? cachedItem))

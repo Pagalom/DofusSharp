@@ -1,7 +1,7 @@
 ﻿@using BestCrush.Domain.Models
 @using BestCrush.Models
 <div class="position-relative">
-    <ItemIcon Item="Item" Size="Size" Background="IconBackground.Slot"></ItemIcon>
+    <ItemIcon Item="Item" Size="Size" Background="IconBackground.Slot" Tooltip="@Tooltip" TooltipIsHtml="@TooltipIsHtml"></ItemIcon>
     <div class="position-absolute text-bg-dark bg-opacity-25 fw-semibold px-1 @SizeClass" style="left: 2px; top: 2px;">
         @Count.ToString("0.##")
     </div>
@@ -14,6 +14,12 @@
 
     [Parameter]
     public required double Count { get; init; }
+
+    [Parameter]
+    public bool TooltipIsHtml { get; init; }
+
+    [Parameter]
+    public string? Tooltip { get; init; }
 
     [Parameter]
     public Size Size { get; init; } = Size.Medium;

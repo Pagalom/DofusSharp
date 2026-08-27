@@ -3,7 +3,12 @@
 @using BestCrush.Models
 @inject ItemsService ItemsService
 
-<button id="item-icon-@GetHashCode()" class="btn p-0" data-bs-toggle="tooltip" data-bs-title="@Item?.Name">
+<button id="item-icon-@GetHashCode()"
+        class="btn p-0"
+        data-bs-toggle="tooltip"
+        data-bs-title="@TooltipText"
+        data-bs-html="@(TooltipIsHtml ? "true" : "false")"
+        data-bs-custom-class="multiline-tooltip">
     <div class="d-flex align-items-center justify-content-center position-relative"
          style="width:@(BackgroundSizeInPx)px; height:@(BackgroundSizeInPx)px">
         @if (_loadingIcon)
@@ -73,6 +78,9 @@
     public IItem? Item { get; init; }
 
     [Parameter]
+    public bool TooltipIsHtml { get; init; }
+
+    [Parameter]
     public Size Size { get; init; } = Size.Medium;
 
     [Parameter]
@@ -97,6 +105,12 @@
             _loadingIcon = false;
         }
     }
+    [Parameter]
+    public string? Tooltip { get; init; }
 
+    string? TooltipText =>
+        string.IsNullOrWhiteSpace(Tooltip)
+            ? Item?.Name
+            : Tooltip;
 
 }

@@ -1,0 +1,58 @@
+.source-value-input {
+    display: flex;
+    width: 100%;
+    overflow: hidden;
+
+    border: 1px solid #495057;
+    border-radius: 0.375rem;
+
+    background-color: #212529;
+
+    transition:
+        border-color .15s ease-in-out,
+        box-shadow .15s ease-in-out;
+}
+
+.source-value-input:focus-within {
+    border-color: #86b7fe;
+    box-shadow: 0 0 0 .2rem rgba(13, 110, 253, .25);
+}
+
+.source-value-control {
+    flex: 1;
+    min-width: 0;
+
+    padding: .375rem .75rem;
+
+    border: 0;
+    outline: 0;
+
+    background: transparent;
+    color: #f8f9fa;
+}
+
+.source-value-origin {
+    flex: 0 0 38px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    border-left: 1px solid #495057;
+
+    font-weight: 700;
+    cursor: help;
+    user-select: none;
+}
+
+.source-manual {
+    color: #ffc107;
+}
+
+.source-game {
+    color: #0dcaf0;
+}
+
+.source-none {
+    color: #6c757d;
+}

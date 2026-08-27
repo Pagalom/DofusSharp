@@ -14,6 +14,7 @@ public class CoefficientObservation
     public required double CoefficientPercent { get; init; }
 
     public required CoefficientSource Source { get; init; }
+    public bool IsCleared { get; init; }
 
     public required DateTime ObservedAtUtc { get; init; }
 }
