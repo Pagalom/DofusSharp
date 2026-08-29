@@ -23,7 +23,8 @@ public sealed class OverlayService(
     DofusOcrService dofusOcrService,
     IServiceScopeFactory serviceScopeFactory,
     CurrentServerState currentServerState,
-    FocusedEquipmentState focusedEquipmentState)
+    FocusedEquipmentState focusedEquipmentState,
+    CrushSessionService crushSessionService)
 {
     private Window? _overlayWindow;
     private OverlayPage? _overlayPage;
@@ -68,6 +69,7 @@ public sealed class OverlayService(
 
     private const int VkF7 = 0x76;
     private const int VkF8 = 0x77;
+    private const int VkF9 = 0x78;
 
     private IntPtr _keyboardHook = IntPtr.Zero;
 
@@ -75,6 +77,7 @@ public sealed class OverlayService(
 
     private bool _f7Pressed;
     private bool _f8Pressed;
+    private bool _f9Pressed;
 #endif
 
     public void Initialize()
@@ -220,6 +223,70 @@ public sealed class OverlayService(
 
                     if (panel is null)
                     {
+                        using IServiceScope tooltipScope =
+                            serviceScopeFactory.CreateScope();
+
+                        DofusItemTooltipDetectionService
+                            tooltipDetectionService =
+                                tooltipScope.ServiceProvider
+                                    .GetRequiredService<
+                                        DofusItemTooltipDetectionService>();
+
+                        DofusItemTooltipDetectionResult
+                            tooltipDetection =
+                                await tooltipDetectionService
+                                    .DetectAsync(
+                                        capture.FilePath
+                                    );
+
+                        if (tooltipDetection.Candidates.Count > 1)
+                        {
+                            _overlayPage?
+                                .ShowMultipleTooltipsDetected(
+                                    tooltipDetection
+                                        .Candidates
+                                        .Count
+                                );
+
+                            return;
+                        }
+
+                        if (tooltipDetection.Candidates.Count == 1)
+                        {
+                            DofusItemTooltipCandidate candidate =
+                                tooltipDetection.Candidates[0];
+
+                            if (candidate.Recognition is not null)
+                            {
+                                Equipment tooltipEquipment =
+                                    candidate
+                                        .Recognition
+                                        .Equipment;
+
+                                focusedEquipmentState
+                                    .SetEquipment(
+                                        tooltipEquipment
+                                    );
+
+                                await RefreshFocusedProfitabilityAsync();
+
+                                _overlayPage?
+                                    .ShowTooltipEquipmentFocused(
+                                        tooltipEquipment.Name,
+                                        candidate
+                                            .Recognition
+                                            .Confidence
+                                    );
+
+                                return;
+                            }
+
+                            // Une infobulle est présente mais ce
+                            // n'est pas un équipement reconnu.
+                            //
+                            // On ne bloque surtout pas les autres
+                            // usages de F8 : HDV rune, ressource, etc.
+                        }
                         DofusMarketPanelDetectionResult? marketPanel =
                             await dofusMarketPanelDetectionService
                                 .DetectMarketPanelAsync(
@@ -228,6 +295,144 @@ public sealed class OverlayService(
 
                         if (marketPanel is not null)
                         {
+                            bool isSellTab =
+                                marketPanel.IsSellPanel;
+
+                            if (isSellTab)
+                            {
+                                string sellItemNameRegion =
+                                    await dofusImageRegionService
+                                        .ExtractRegionAsync(
+                                            marketPanel.DebugImagePath,
+                                            new RelativeImageRegion(
+                                                X: 0.09,
+                                                Y: 0.12,
+                                                Width: 0.28,
+                                                Height: 0.032
+                                            ),
+                                            "hdv-sell-item-name"
+                                        );
+
+                                string recognizedSellItemName =
+                                    await dofusOcrService
+                                        .RecognizeUpscaledTextAsync(
+                                            sellItemNameRegion
+                                        );
+
+                                recognizedSellItemName =
+                                    recognizedSellItemName
+                                        .Split(
+                                            ['\r', '\n'],
+                                            StringSplitOptions.RemoveEmptyEntries
+                                        )
+                                        .Select(line => line.Trim())
+                                        .FirstOrDefault(
+                                            line =>
+                                                !line.StartsWith(
+                                                    "NIV",
+                                                    StringComparison.OrdinalIgnoreCase
+                                                ) &&
+                                                !line.StartsWith(
+                                                    "Niv",
+                                                    StringComparison.OrdinalIgnoreCase
+                                                )
+                                        )
+                                    ?? string.Empty;
+
+                                if (string.IsNullOrWhiteSpace(
+                                    recognizedSellItemName))
+                                {
+                                    _overlayPage?
+                                        .ShowAuxiliaryMarketReadFailed(
+                                            "Rune non reconnue"
+                                        );
+
+                                    return;
+                                }
+
+                                using IServiceScope sellScope =
+                                    serviceScopeFactory.CreateScope();
+
+                                DofusRuneRecognitionService
+                                    sellRuneRecognitionService =
+                                        sellScope.ServiceProvider
+                                            .GetRequiredService<
+                                                DofusRuneRecognitionService>();
+
+                                MarketPriceService
+                                    sellMarketPriceService =
+                                        sellScope.ServiceProvider
+                                            .GetRequiredService<
+                                                MarketPriceService>();
+
+                                RuneRecognitionResult? sellRuneRecognition =
+                                    await sellRuneRecognitionService
+                                        .RecognizeRuneAsync(
+                                            recognizedSellItemName
+                                        );
+
+                                if (sellRuneRecognition is null)
+                                {
+                                    _overlayPage?
+                                        .ShowAuxiliaryMarketReadFailed(
+                                            recognizedSellItemName
+                                        );
+
+                                    return;
+                                }
+
+                                IReadOnlyList<DofusMarketLot> sellLots =
+                                    await dofusMarketLotReaderService
+                                        .ReadSellMaterialLotsAsync(
+                                            marketPanel.DebugImagePath
+                                        );
+
+                                if (sellLots.Count == 0)
+                                {
+                                    _overlayPage?
+                                        .ShowAuxiliaryMarketReadFailed(
+                                            sellRuneRecognition
+                                                .Rune
+                                                .Name
+                                        );
+
+                                    return;
+                                }
+
+                                string sellServerName =
+                                    currentServerState.ServerName!;
+
+                                foreach (DofusMarketLot lot in sellLots)
+                                {
+                                    await sellMarketPriceService
+                                        .AddObservationAsync(
+                                            MarketObjectType.Rune,
+                                            sellRuneRecognition
+                                                .Rune
+                                                .DofusDbId,
+                                            sellServerName,
+                                            lot.Price,
+                                            lot.Quantity,
+                                            MarketPriceSource
+                                                .InGameAutomatic
+                                        );
+                                }
+
+                                _overlayPage?
+                                    .ShowAuxiliaryMarketDataRecorded(
+                                        sellRuneRecognition
+                                            .Rune
+                                            .Name,
+                                        sellLots.Count,
+                                        focusedEquipmentState
+                                            .Equipment?
+                                            .Name
+                                    );
+
+                                await RefreshFocusedProfitabilityAsync();
+
+                                return;
+                            }
                             string marketItemNameRegion =
                                 await dofusImageRegionService
                                     .ExtractRegionAsync(
@@ -698,29 +903,8 @@ public sealed class OverlayService(
                 ex.Message
             );
         }
-        finally
-        {
-            if (!string.IsNullOrWhiteSpace(
-                captureDirectory))
-            {
-                try
-                {
-                    if (Directory.Exists(
-                        captureDirectory))
-                    {
-                        Directory.Delete(
-                            captureDirectory,
-                            recursive: true
-                        );
-                    }
-                }
-                catch
-                {
-                    // Le nettoyage des fichiers temporaires
-                    // ne doit jamais interrompre BestCrush.
-                }
-            }
-        }
+        
+
     }
 
     public async Task FocusEquipmentAsync(
@@ -983,6 +1167,9 @@ public sealed class OverlayService(
 
         _overlayWindow = null;
 
+        crushSessionService
+            .CloseAndReset();
+
         Application.Current?.CloseWindow(
             window
         );
@@ -1131,6 +1318,26 @@ public sealed class OverlayService(
                 else if (wParam == (IntPtr)WmKeyUp)
                 {
                     _f8Pressed = false;
+                }
+            }
+            if (virtualKeyCode == VkF9)
+            {
+                if (wParam ==
+                        (IntPtr)WmKeyDown &&
+                    !_f9Pressed)
+                {
+                    _f9Pressed = true;
+
+                    MainThread
+                        .BeginInvokeOnMainThread(
+                            crushSessionService.Toggle
+                        );
+                }
+                else if (
+                    wParam ==
+                    (IntPtr)WmKeyUp)
+                {
+                    _f9Pressed = false;
                 }
             }
         }

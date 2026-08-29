@@ -17,6 +17,22 @@ public sealed class DofusMarketLotReaderService(
         0.435
     ];
 
+    private static readonly int[] SellQuantities =
+    [
+        1,
+        10,
+        100,
+        1000
+    ];
+
+    private static readonly double[] SellRowY =
+    [
+        0.642,
+        0.691,
+        0.739,
+        0.788
+    ];
+
     public async Task<IReadOnlyList<DofusMarketLot>>
         ReadMaterialLotsAsync(
             string marketPanelImagePath)
@@ -153,5 +169,51 @@ public sealed class DofusMarketLotReaderService(
                 )
             )
             .ToList();
+    }
+
+    public async Task<IReadOnlyList<DofusMarketLot>>
+        ReadSellMaterialLotsAsync(
+            string marketPanelImagePath)
+    {
+        List<DofusMarketLot> lots = [];
+
+        for (int index = 0;
+            index < SellRowY.Length;
+            index++)
+        {
+            string priceRegion =
+                await imageRegionService
+                    .ExtractRegionAsync(
+                        marketPanelImagePath,
+                        new RelativeImageRegion(
+                            X: 0.28,
+                            Y: SellRowY[index],
+                            Width: 0.31,
+                            Height: 0.03
+                        ),
+                        $"hdv-sell-lot-{SellQuantities[index]}-price"
+                    );
+
+            long? price =
+                await ocrService
+                    .RecognizePriceAsync(
+                        priceRegion
+                    );
+
+            if (price is null ||
+                price <= 0)
+            {
+                continue;
+            }
+
+            lots.Add(
+                new DofusMarketLot(
+                    SellQuantities[index],
+                    price.Value
+                )
+            );
+        }
+
+        return lots;
     }
 }

@@ -276,66 +276,160 @@ public class MarketPriceService(BestCrushDbContext context,
     public MarketValueResult? CalculateValue(
         long dofusDbId,
         double quantity,
-        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> observations)
+        IReadOnlyDictionary<
+            (long DofusDbId, int Quantity),
+            MarketPriceObservation> observations)
     {
         if (quantity <= 0)
         {
-            return new MarketValueResult(0, false);
+            return new MarketValueResult(
+                0,
+                false
+            );
         }
 
-        List<MarketPriceObservation> prices = observations
-            .Where(p => p.Key.DofusDbId == dofusDbId)
-            .Select(p => p.Value)
-            .ToList();
+        MarketPriceObservation[] prices =
+            observations
+                .Where(entry =>
+                    entry.Key.DofusDbId ==
+                        dofusDbId)
+                .Select(entry =>
+                    entry.Value)
+                .Where(observation =>
+                    observation.Quantity > 0 &&
+                    observation.Price > 0)
+                .OrderByDescending(observation =>
+                    observation.Quantity)
+                .ToArray();
 
-        if (prices.Count == 0)
+        if (prices.Length == 0)
         {
             return null;
         }
 
-        double remaining = quantity;
+        long wholeQuantity =
+            (long)Math.Floor(
+                quantity
+            );
+
+        double fractionalQuantity =
+            quantity -
+            wholeQuantity;
+
+        long remainingWhole =
+            wholeQuantity;
+
         double value = 0;
-        bool isEstimated = false;
-        HashSet<MarketPriceObservation> usedObservations = [];
 
-        while (remaining >= 1)
+        bool isEstimated =
+            fractionalQuantity > 0.000001;
+
+        HashSet<MarketPriceObservation>
+            usedObservations = [];
+
+        // On vend les runes entières comme
+        // un joueur le ferait réellement :
+        //
+        // x1000 → x100 → x10 → x1
+        //
+        // On privilégie donc toujours le
+        // plus gros lot disponible.
+        foreach (
+            MarketPriceObservation lot
+            in prices)
         {
-            MarketPriceObservation? bestLot = prices
-                .Where(p => p.Quantity <= remaining)
-                .OrderByDescending(p => (double)p.Price / p.Quantity)
-                .ThenByDescending(p => p.Quantity)
-                .FirstOrDefault();
-
-            if (bestLot is null)
+            if (remainingWhole <
+                lot.Quantity)
             {
-                break;
+                continue;
             }
 
             long numberOfLots =
-                (long)Math.Floor(remaining / bestLot.Quantity);
+                remainingWhole /
+                lot.Quantity;
 
-            value += numberOfLots * bestLot.Price;
+            if (numberOfLots <= 0)
+            {
+                continue;
+            }
+
+            value +=
+                numberOfLots *
+                lot.Price;
+
+            remainingWhole -=
+                numberOfLots *
+                lot.Quantity;
+
             usedObservations.Add(
-                bestLot
+                lot
             );
 
-            remaining -= numberOfLots * bestLot.Quantity;
+            if (remainingWhole == 0)
+            {
+                break;
+            }
         }
 
-        if (remaining > 0.000001)
+        // Normalement, avec un prix x1,
+        // remainingWhole vaut toujours 0.
+        //
+        // Si un type de lot manque, on conserve
+        // malgré tout une estimation en utilisant
+        // le plus petit lot disponible.
+        if (remainingWhole > 0)
         {
-            MarketPriceObservation fallback = prices
-                .OrderByDescending(p => (double)p.Price / p.Quantity)
-                .First();
+            MarketPriceObservation fallback =
+                prices
+                    .OrderBy(observation =>
+                        observation.Quantity)
+                    .First();
 
             double unitPrice =
-                (double)fallback.Price / fallback.Quantity;
+                (double)fallback.Price /
+                fallback.Quantity;
 
-            value += remaining * unitPrice;
+            value +=
+                remainingWhole *
+                unitPrice;
+
             usedObservations.Add(
                 fallback
             );
+
             isEstimated = true;
+        }
+
+        // Le résultat du concassage est une
+        // espérance mathématique et peut donc
+        // produire une fraction de rune.
+        //
+        // Cette fraction est valorisée au prix
+        // unitaire x1 lorsqu'il existe.
+        if (fractionalQuantity >
+            0.000001)
+        {
+            MarketPriceObservation fractionalPrice =
+                prices.FirstOrDefault(
+                    observation =>
+                        observation.Quantity == 1
+                )
+                ?? prices
+                    .OrderBy(observation =>
+                        observation.Quantity)
+                    .First();
+
+            double unitPrice =
+                (double)fractionalPrice.Price /
+                fractionalPrice.Quantity;
+
+            value +=
+                fractionalQuantity *
+                unitPrice;
+
+            usedObservations.Add(
+                fractionalPrice
+            );
         }
 
         return new MarketValueResult(

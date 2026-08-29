@@ -53,6 +53,7 @@ public static class MauiProgram
             builder.Services.AddSingleton<CharacteristicsService>();
             builder.Services.AddSingleton<CrushService>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayService>();
+            builder.Services.AddSingleton<BestCrush.Services.CrushSessionService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusWindowService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusCaptureService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusImageRegionService>();
@@ -69,6 +70,7 @@ public static class MauiProgram
             builder.Services.AddScoped<DofusRuneRecognitionService>();
             builder.Services.AddScoped<DofusResourceRecognitionService>();
             builder.Services.AddScoped<BestCrush.Services.DofusItemRecognitionService>();
+            builder.Services.AddScoped<BestCrush.Services.DofusItemTooltipDetectionService>();
             builder.Services.AddScoped<MarketPriceService>();
             builder.Services.AddScoped<CoefficientService>();
             builder.Services.AddScoped<CraftCostService>();

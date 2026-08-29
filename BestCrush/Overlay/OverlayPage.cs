@@ -941,7 +941,7 @@ public sealed class OverlayPage : ContentPage
             $"Valeur runes ({focusLabel}) : " +
             $"{scenario.EstimatedRuneValue:N0} K",
             GetRuneFreshness(
-                scenario
+                result
             )
         );
 
@@ -1542,21 +1542,28 @@ public sealed class OverlayPage : ContentPage
                     ColumnSpacing = 10
                 };
 
-            Label name =
-                new()
-                {
-                    Text =
-                        resource.ResourceName,
-                    FontSize = 12,
+                int? requiredQuantity =
+                    resource.Purchase?
+                        .RequiredQuantity;
 
-                    TextColor =
-                        resource.Purchase?.Freshness
-                            is DataFreshness freshness
-                            ? GetFreshnessColor(
-                                freshness
-                            )
-                            : Colors.White
-                };
+                Label name =
+                    new()
+                    {
+                        Text =
+                            requiredQuantity is int quantity
+                                ? $"{resource.ResourceName} x{quantity}"
+                                : resource.ResourceName,
+
+                        FontSize = 12,
+
+                        TextColor =
+                            resource.Purchase?.Freshness
+                                is DataFreshness freshness
+                                ? GetFreshnessColor(
+                                    freshness
+                                )
+                                : Colors.White
+                    };
             
             string resourceName =
                 resource.ResourceName;
@@ -1662,15 +1669,65 @@ public sealed class OverlayPage : ContentPage
         };
     }
 
+    public void ShowTooltipEquipmentFocused(
+        string itemName,
+        double confidence)
+    {
+        _readStatus.Text =
+            $"✓ Focus : {itemName}";
+
+        _readStatus.TextColor =
+            Colors.LightGreen;
+
+        _footer.Text =
+            $"✓ Infobulle reconnue ({confidence:P0}) — " +
+            "aucune donnée modifiée";
+
+        _footer.TextColor =
+            Colors.LightGreen;
+    }
+
+    public void ShowMultipleTooltipsDetected(
+        int count)
+    {
+        _readStatus.Text =
+            $"⚠ {count} infobulles détectées";
+
+        _readStatus.TextColor =
+            Colors.Orange;
+
+        _footer.Text =
+            "Plusieurs infobulles épinglées — focus impossible";
+
+        _footer.TextColor =
+            Colors.Orange;
+    }
+
+    public void ShowTooltipEquipmentNotRecognized(
+        string recognizedTitle)
+    {
+        _readStatus.Text =
+            $"⚠ Infobulle non reconnue : {recognizedTitle}";
+
+        _readStatus.TextColor =
+            Colors.Orange;
+
+        _footer.Text =
+            "Focus inchangé";
+
+        _footer.TextColor =
+            Colors.Orange;
+    }
+
     private static DataFreshness? GetRuneFreshness(
-        EquipmentProfitabilityScenario scenario)
+        EquipmentProfitabilityResult result)
     {
         bool hasMissingRune =
-            scenario.Runes.Any(
-                entry =>
-                    entry.Value > 0 &&
-                    !scenario.RuneValues.ContainsKey(
-                        entry.Key
+            result.MissingData.Any(
+                value =>
+                    value.StartsWith(
+                        "Prix de rune manquant :",
+                        StringComparison.Ordinal
                     )
             );
 
@@ -1680,13 +1737,23 @@ public sealed class OverlayPage : ContentPage
         }
 
         DataFreshness[] freshness =
-            scenario.RuneValues.Values
-                .Select(value =>
-                    value.Freshness)
-                .Where(value =>
-                    value is not null)
-                .Select(value =>
-                    value!.Value)
+            result.Scenarios
+                .SelectMany(
+                    scenario =>
+                        scenario.RuneValues.Values
+                )
+                .Select(
+                    value =>
+                        value.Freshness
+                )
+                .Where(
+                    value =>
+                        value is not null
+                )
+                .Select(
+                    value =>
+                        value!.Value
+                )
                 .ToArray();
 
         return freshness.Length == 0

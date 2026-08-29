@@ -105,11 +105,28 @@ public sealed class DofusItemRecognitionService(
         string text =
             recognizedText.Trim();
 
-        int levelIndex =
+        int shortLevelIndex =
             text.IndexOf(
                 "Niv.",
                 StringComparison.OrdinalIgnoreCase
             );
+
+        int fullLevelIndex =
+            text.IndexOf(
+                "Niveau",
+                StringComparison.OrdinalIgnoreCase
+            );
+
+        int levelIndex =
+            new[]
+            {
+                shortLevelIndex,
+                fullLevelIndex
+            }
+            .Where(index =>
+                index > 0)
+            .DefaultIfEmpty(-1)
+            .Min();
 
         if (levelIndex > 0)
         {
