@@ -1,4 +1,4 @@
- using OpenCvSharp;
+using OpenCvSharp;
 
 using CvRect = OpenCvSharp.Rect;
 
@@ -6,11 +6,60 @@ namespace BestCrush.Services;
 
 public sealed class DofusCrushRowDetectionService
 {
-    public Task<CrushRowDetectionResult?> DetectLastRowAsync(
-        string panelFilePath,
-        CancellationToken cancellationToken = default)
+    // Couleur du fond des lignes du panneau
+    // "Résultat du concassage".
+    //
+    // Valeur observée autour de :
+    // RGB 41, 44, 76
+    // OpenCV travaille en BGR.
+    //
+    // La plage est volontairement assez large
+    // pour tolérer l'anti-aliasing et de légères
+    // variations de rendu.
+    private static readonly Scalar
+        ResultRowLower =
+            new(
+                60,
+                32,
+                30
+            );
+
+    private static readonly Scalar
+        ResultRowUpper =
+            new(
+                95,
+                65,
+                63
+            );
+
+    private const double
+        MinimumRowColorRatio = 0.25;
+
+    public async Task<CrushRowDetectionResult?>
+        DetectLastRowAsync(
+            string panelFilePath,
+            CancellationToken cancellationToken = default)
     {
-        cancellationToken.ThrowIfCancellationRequested();
+        IReadOnlyList<CrushRowDetectionResult> rows =
+            await DetectRowsAsync(
+                panelFilePath,
+                cancellationToken
+            );
+
+        return rows
+            .OrderByDescending(
+                row => row.Y
+            )
+            .FirstOrDefault();
+    }
+
+    public Task<IReadOnlyList<CrushRowDetectionResult>>
+        DetectRowsAsync(
+            string panelFilePath,
+            CancellationToken cancellationToken = default)
+    {
+        cancellationToken
+            .ThrowIfCancellationRequested();
 
         using Mat source =
             Cv2.ImRead(
@@ -25,58 +74,83 @@ public sealed class DofusCrushRowDetectionService
             );
         }
 
-        using Mat gray = new();
-
-        Cv2.CvtColor(
-            source,
-            gray,
-            ColorConversionCodes.BGR2GRAY
-        );
-
-        // On ignore les bords du panneau.
         int horizontalMargin =
             Math.Max(
                 10,
-                (int)Math.Round(source.Width * 0.03)
+                (int)Math.Round(
+                    source.Width * 0.03
+                )
             );
 
-        int scanLeft = horizontalMargin;
+        int scanLeft =
+            horizontalMargin;
 
         int scanWidth =
-            source.Width - (horizontalMargin * 2);
+            source.Width -
+            (horizontalMargin * 2);
 
-        // On ignore le titre / en-têtes en haut
-        // ainsi que les valeurs et boutons du bas.
         int scanTop =
             Math.Max(
                 60,
-                (int)Math.Round(source.Height * 0.08)
+                (int)Math.Round(
+                    source.Height * 0.08
+                )
             );
 
         int bottomMargin =
             Math.Max(
                 100,
-                (int)Math.Round(source.Height * 0.12)
+                (int)Math.Round(
+                    source.Height * 0.12
+                )
             );
 
         int scanBottom =
-            source.Height - bottomMargin;
+            source.Height -
+            bottomMargin;
 
         if (scanWidth <= 0 ||
             scanBottom <= scanTop)
         {
-            return Task.FromResult<CrushRowDetectionResult?>(
-                null
-            );
+            return Task.FromResult<
+                IReadOnlyList<
+                    CrushRowDetectionResult
+                >
+            >([]);
         }
 
-        List<RowBrightness> brightness = [];
+        // On isole directement la couleur du
+        // rectangle de fond des lignes.
+        //
+        // Cette approche est nettement plus fiable
+        // que l'ancienne moyenne de luminosité :
+        // les lignes Dofus sont bleu sombre et ne
+        // sont pas forcément beaucoup plus claires
+        // que le fond général du panneau.
+        using Mat rowColorMask = new();
 
-        for (int y = scanTop; y < scanBottom; y++)
+        Cv2.InRange(
+            source,
+            ResultRowLower,
+            ResultRowUpper,
+            rowColorMask
+        );
+
+        List<RowSegment> candidates = [];
+
+        int? segmentStart = null;
+
+        for (
+            int y = scanTop;
+            y < scanBottom;
+            y++)
         {
-            using Mat row =
+            cancellationToken
+                .ThrowIfCancellationRequested();
+
+            using Mat maskRow =
                 new(
-                    gray,
+                    rowColorMask,
                     new CvRect(
                         scanLeft,
                         y,
@@ -85,64 +159,38 @@ public sealed class DofusCrushRowDetectionService
                     )
                 );
 
-            double mean =
-                Cv2.Mean(row).Val0;
+            int matchingPixels =
+                Cv2.CountNonZero(
+                    maskRow
+                );
 
-            brightness.Add(
-                new RowBrightness(
-                    y,
-                    mean
-                )
-            );
-        }
+            double matchingRatio =
+                matchingPixels /
+                (double)scanWidth;
 
-        if (brightness.Count == 0)
-        {
-            return Task.FromResult<CrushRowDetectionResult?>(
-                null
-            );
-        }
-
-        // Le fond vide constitue la majorité du panneau :
-        // sa médiane nous sert donc de référence adaptative.
-        double[] sortedMeans =
-            brightness
-                .Select(row => row.Mean)
-                .OrderBy(value => value)
-                .ToArray();
-
-        double backgroundMean =
-            sortedMeans[sortedMeans.Length / 2];
-
-        // Les rectangles contenant les résultats sont
-        // sensiblement plus clairs que le fond du panneau.
-        double threshold =
-            backgroundMean + 8.0;
-
-        List<RowSegment> candidates = [];
-
-        int? segmentStart = null;
-
-        foreach (RowBrightness row in brightness)
-        {
             bool insideResultRow =
-                row.Mean >= threshold;
+                matchingRatio >=
+                MinimumRowColorRatio;
 
             if (insideResultRow &&
                 segmentStart is null)
             {
-                segmentStart = row.Y;
+                segmentStart =
+                    y;
             }
-            else if (!insideResultRow &&
-                     segmentStart is not null)
+            else if (
+                !insideResultRow &&
+                segmentStart is not null)
             {
                 AddCandidate(
                     candidates,
                     segmentStart.Value,
-                    row.Y - 1
+                    y - 1,
+                    source.Height
                 );
 
-                segmentStart = null;
+                segmentStart =
+                    null;
             }
         }
 
@@ -151,94 +199,129 @@ public sealed class DofusCrushRowDetectionService
             AddCandidate(
                 candidates,
                 segmentStart.Value,
-                scanBottom - 1
+                scanBottom - 1,
+                source.Height
             );
         }
-
-        RowSegment? lastRow =
-            candidates
-                .OrderByDescending(row => row.Top)
-                .FirstOrDefault();
-
-        if (lastRow is null)
-        {
-            return Task.FromResult<CrushRowDetectionResult?>(
-                null
-            );
-        }
-
-        // Quelques pixels supplémentaires pour ne pas couper
-        // les bords du rectangle.
-        int cropTop =
-            Math.Max(
-                0,
-                lastRow.Top - 2
-            );
-
-        int cropBottom =
-            Math.Min(
-                source.Height,
-                lastRow.Bottom + 3
-            );
-
-        CvRect cropRect =
-            new(
-                horizontalMargin,
-                cropTop,
-                source.Width - (horizontalMargin * 2),
-                cropBottom - cropTop
-            );
-
-        using Mat lastRowImage =
-            new(
-                source,
-                cropRect
-            );
 
         string directory =
             Path.GetDirectoryName(
                 panelFilePath
-            )!;
+            )
+            ?? Path.GetTempPath();
 
-        string outputPath =
-            Path.Combine(
-                directory,
-                $"{Path.GetFileNameWithoutExtension(panelFilePath)}-last-crush-row.png"
+        string baseName =
+            Path.GetFileNameWithoutExtension(
+                panelFilePath
             );
 
-        Cv2.ImWrite(
-            outputPath,
-            lastRowImage
-        );
+        List<CrushRowDetectionResult>
+            results = [];
 
-        CrushRowDetectionResult result =
-            new(
-                cropRect.X,
-                cropRect.Y,
-                cropRect.Width,
-                cropRect.Height,
+        int rowIndex = 0;
+
+        foreach (
+            RowSegment candidate
+            in candidates
+                .OrderBy(
+                    row => row.Top
+                ))
+        {
+            int cropTop =
+                Math.Max(
+                    0,
+                    candidate.Top - 2
+                );
+
+            int cropBottom =
+                Math.Min(
+                    source.Height,
+                    candidate.Bottom + 3
+                );
+
+            CvRect cropRect =
+                new(
+                    horizontalMargin,
+                    cropTop,
+                    source.Width -
+                        (horizontalMargin * 2),
+                    cropBottom -
+                        cropTop
+                );
+
+            if (cropRect.Width <= 0 ||
+                cropRect.Height <= 0)
+            {
+                continue;
+            }
+
+            using Mat rowImage =
+                new(
+                    source,
+                    cropRect
+                );
+
+            string outputPath =
+                Path.Combine(
+                    directory,
+                    $"{baseName}-crush-row-{rowIndex++}.png"
+                );
+
+            Cv2.ImWrite(
                 outputPath,
-                backgroundMean,
-                threshold
+                rowImage
             );
 
-        return Task.FromResult<CrushRowDetectionResult?>(
-            result
-        );
+            results.Add(
+                new CrushRowDetectionResult(
+                    cropRect.X,
+                    cropRect.Y,
+                    cropRect.Width,
+                    cropRect.Height,
+                    outputPath,
+                    0,
+                    MinimumRowColorRatio
+                )
+            );
+        }
+
+        return Task.FromResult<
+            IReadOnlyList<
+                CrushRowDetectionResult
+            >
+        >(results);
     }
 
     private static void AddCandidate(
         ICollection<RowSegment> candidates,
         int top,
-        int bottom)
+        int bottom,
+        int panelHeight)
     {
         int height =
-            bottom - top + 1;
+            bottom -
+            top +
+            1;
 
-        // Les lignes de résultats observées font environ
-        // 50-55 px. On conserve volontairement une marge.
+        // Une ligne standard observée fait
+        // environ 54 px.
+        //
+        // Une ligne avec plusieurs rangées de
+        // runes peut être beaucoup plus haute.
+        //
+        // Les fragments inférieurs partiellement
+        // masqués par le pied de panneau sont
+        // volontairement ignorés.
+        int maximumHeight =
+            Math.Max(
+                180,
+                (int)Math.Round(
+                    panelHeight * 0.45
+                )
+            );
+
         if (height < 30 ||
-            height > 80)
+            height > maximumHeight)
         {
             return;
         }
@@ -250,11 +333,6 @@ public sealed class DofusCrushRowDetectionService
             )
         );
     }
-
-    private sealed record RowBrightness(
-        int Y,
-        double Mean
-    );
 
     private sealed record RowSegment(
         int Top,

@@ -4,7 +4,14 @@ using Windows.Graphics;
 using System.Runtime.InteropServices;
 #endif
 
+using System.Numerics;
+using System.Threading.Channels;
+
+using BestCrush.Domain.Models;
+using BestCrush.Domain.Services;
 using BestCrush.Overlay;
+
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Maui.ApplicationModel;
 
 namespace BestCrush.Services;
@@ -27,26 +34,73 @@ public sealed record CrushSessionSnapshot(
 
 public sealed class CrushSessionService(
     DofusWindowService dofusWindowService,
-    DofusCaptureService dofusCaptureService)
+    DofusCaptureService dofusCaptureService,
+    DofusPanelDetectionService
+        dofusPanelDetectionService,
+    DofusCrushRuneCellDetectionService
+        runeCellDetectionService,
+    IServiceScopeFactory serviceScopeFactory,
+    CurrentServerState currentServerState)
 {
     private Window? _window;
     private CrushSessionOverlayPage? _page;
 
     private bool _isRunning;
+
     private CancellationTokenSource?
-    _mouseMonitorCancellation;
+        _mouseMonitorCancellation;
 
     private Task? _mouseMonitorTask;
+
+    private readonly object
+        _stateLock = new();
 
     private int _idleCaptureCount;
 
     private int? _lastCursorX;
     private int? _lastCursorY;
 
+    private readonly List<
+        ScannedRuneCellIdentity>
+        _scannedRuneCells = [];
+
+    private readonly Dictionary<
+        long,
+        AccumulatedRune>
+        _runes = [];
+
+    // Les captures sont produites rapidement par
+    // la surveillance souris puis traitées derrière.
+    //
+    // SingleReader est volontaire : l'OCR et
+    // l'anti-doublon restent déterministes, sans
+    // empêcher la capture suivante d'être prise.
+    private readonly Channel<
+        CapturedCursorWorkItem>
+        _processingQueue =
+            Channel.CreateUnbounded<
+                CapturedCursorWorkItem>(
+                new UnboundedChannelOptions
+                {
+                    SingleReader = true,
+                    SingleWriter = true,
+                    AllowSynchronousContinuations =
+                        false
+                }
+            );
+
+    private readonly CancellationTokenSource
+        _processingCancellation =
+            new();
+
+    private Task? _processingTask;
+
+    private long _sessionId;
+
     public bool IsRunning =>
         _isRunning;
 
-    #if WINDOWS
+#if WINDOWS
     private AppWindow? _appWindow;
 
     private int _currentX = 400;
@@ -56,18 +110,31 @@ public sealed class CrushSessionService(
     private int _dragStartY;
 
     private const int GwlExStyle = -20;
-    private const long WsExLayered = 0x00080000L;
-    private const uint LwaAlpha = 0x00000002;
+    private const long WsExLayered =
+        0x00080000L;
 
-    private const int MousePollMilliseconds = 40;
-    private const int MouseStableMilliseconds = 220;
-    private const int MouseMovementThreshold = 4;
-    #endif
+    private const uint LwaAlpha =
+        0x00000002;
+
+    private const int
+        MousePollMilliseconds = 40;
+
+    private const int
+        MouseStableMilliseconds = 220;
+
+    private const int
+        MouseMovementThreshold = 4;
+
+    private const int
+        RowFingerprintMaximumDistance = 8;
+#endif
+
     public void Toggle()
     {
         if (_isRunning)
         {
             Stop();
+
             return;
         }
 
@@ -76,15 +143,16 @@ public sealed class CrushSessionService(
 
     public void StartNew()
     {
-        ResetInternal();
+        ResetSessionState();
+
+        _sessionId++;
 
         _isRunning = true;
 
+        EnsureProcessingWorker();
         EnsureWindow();
 
-        _page?.Update(
-            CreateSnapshot()
-        );
+        PublishSnapshot();
 
         StartMouseMonitoring();
     }
@@ -95,16 +163,21 @@ public sealed class CrushSessionService(
 
         StopMouseMonitoring();
 
-        _page?.Update(
-            CreateSnapshot()
-        );
-    } 
+        PublishSnapshot();
+
+        // Les captures déjà en file continuent
+        // volontairement leur traitement.
+    }
 
     public void CloseAndReset()
     {
         _isRunning = false;
 
-        ResetInternal();
+        StopMouseMonitoring();
+
+        _sessionId++;
+
+        ResetSessionState();
 
         if (_window is null)
         {
@@ -147,78 +220,100 @@ public sealed class CrushSessionService(
                 X = 400,
                 Y = 80
             };
-            window.Created +=
-                (_, _) =>
+
+        window.Created +=
+            (_, _) =>
+            {
+#if WINDOWS
+                if (window.Handler?.PlatformView
+                    is not
+                    Microsoft.UI.Xaml.Window
+                    nativeWindow)
                 {
-            #if WINDOWS
-                    if (window.Handler?.PlatformView
-                        is not Microsoft.UI.Xaml.Window nativeWindow)
-                    {
-                        return;
-                    }
+                    return;
+                }
 
-                    IntPtr hwnd =
-                        WinRT.Interop.WindowNative
-                            .GetWindowHandle(
-                                nativeWindow
-                            );
+                IntPtr hwnd =
+                    WinRT.Interop.WindowNative
+                        .GetWindowHandle(
+                            nativeWindow
+                        );
 
-                    Microsoft.UI.WindowId windowId =
-                        Microsoft.UI.Win32Interop
+                Microsoft.UI.WindowId
+                    windowId =
+                        Microsoft.UI
+                            .Win32Interop
                             .GetWindowIdFromWindow(
                                 hwnd
                             );
 
-                    _appWindow =
-                        AppWindow.GetFromWindowId(
+                _appWindow =
+                    AppWindow
+                        .GetFromWindowId(
                             windowId
                         );
 
-                    if (_appWindow.Presenter
-                        is OverlappedPresenter presenter)
-                    {
-                        presenter.IsAlwaysOnTop = true;
+                if (_appWindow.Presenter
+                    is OverlappedPresenter
+                    presenter)
+                {
+                    presenter.IsAlwaysOnTop =
+                        true;
 
-                        presenter.IsResizable = false;
-                        presenter.IsMaximizable = false;
-                        presenter.IsMinimizable = false;
+                    presenter.IsResizable =
+                        false;
 
-                        presenter.SetBorderAndTitleBar(
+                    presenter.IsMaximizable =
+                        false;
+
+                    presenter.IsMinimizable =
+                        false;
+
+                    presenter
+                        .SetBorderAndTitleBar(
                             false,
                             false
                         );
-                    }
+                }
 
-                    _appWindow.Resize(
-                        new SizeInt32(
-                            390,
-                            520
-                        )
-                    );
+                _appWindow.Resize(
+                    new SizeInt32(
+                        390,
+                        520
+                    )
+                );
 
-                    _appWindow.Move(
-                        new PointInt32(
-                            _currentX,
-                            _currentY
-                        )
-                    );
+                _appWindow.Move(
+                    new PointInt32(
+                        _currentX,
+                        _currentY
+                    )
+                );
 
-                    MakeTransparent(
-                        hwnd,
-                        225
-                    );
-            #endif
-                };
+                MakeTransparent(
+                    hwnd,
+                    225
+                );
+#endif
+            };
 
         window.Destroying +=
             (_, _) =>
             {
-                _isRunning = false;
+                _isRunning =
+                    false;
 
-                ResetInternal();
+                StopMouseMonitoring();
 
-                _window = null;
-                _page = null;
+                _sessionId++;
+
+                ResetSessionState();
+
+                _window =
+                    null;
+
+                _page =
+                    null;
             };
 
         _page = page;
@@ -230,32 +325,38 @@ public sealed class CrushSessionService(
             );
     }
 
-    private void ResetInternal()
+    private void ResetSessionState()
     {
-        StopMouseMonitoring();
+        lock (_stateLock)
+        {
+            _idleCaptureCount = 0;
 
-        _idleCaptureCount = 0;
+            _lastCursorX = null;
+            _lastCursorY = null;
 
-        _lastCursorX = null;
-        _lastCursorY = null;
+            _scannedRuneCells
+                .Clear();
+
+            _runes.Clear();
+        }
     }
 
     public void BeginDrag()
     {
-    #if WINDOWS
+#if WINDOWS
         _dragStartX =
             _currentX;
 
         _dragStartY =
             _currentY;
-    #endif
+#endif
     }
 
     public void Drag(
         double totalX,
         double totalY)
     {
-    #if WINDOWS
+#if WINDOWS
         if (_appWindow is null)
         {
             return;
@@ -263,11 +364,15 @@ public sealed class CrushSessionService(
 
         int newX =
             _dragStartX +
-            (int)Math.Round(totalX);
+            (int)Math.Round(
+                totalX
+            );
 
         int newY =
             _dragStartY +
-            (int)Math.Round(totalY);
+            (int)Math.Round(
+                totalY
+            );
 
         _appWindow.Move(
             new PointInt32(
@@ -276,28 +381,101 @@ public sealed class CrushSessionService(
             )
         );
 
-        _currentX = newX;
-        _currentY = newY;
-    #endif
+        _currentX =
+            newX;
+
+        _currentY =
+            newY;
+#endif
     }
 
     private CrushSessionSnapshot
         CreateSnapshot()
     {
-        return new CrushSessionSnapshot(
-            _isRunning,
-            0,
-            _idleCaptureCount,
-            _lastCursorX,
-            _lastCursorY,
-            [],
-            null
-        );
+        lock (_stateLock)
+        {
+            IReadOnlyList<
+                CrushSessionRuneLine>
+                runeLines =
+                    _runes
+                        .Values
+                        .OrderBy(
+                            rune =>
+                                rune.Name
+                        )
+                        .Select(
+                            rune =>
+                                new
+                                CrushSessionRuneLine(
+                                    rune.Name,
+                                    rune.Quantity,
+                                    rune.Value
+                                )
+                        )
+                        .ToList();
+
+            double? totalValue =
+                runeLines.Count > 0 &&
+                runeLines.All(
+                    rune =>
+                        rune.Value
+                            is not null
+                )
+                    ? runeLines.Sum(
+                        rune =>
+                            rune.Value
+                                .GetValueOrDefault()
+                    )
+                    : null;
+
+            return new CrushSessionSnapshot(
+                _isRunning,
+                _scannedRuneCells.Count,
+                _idleCaptureCount,
+                _lastCursorX,
+                _lastCursorY,
+                runeLines,
+                totalValue
+            );
+        }
+    }
+
+    private void PublishSnapshot()
+    {
+        CrushSessionSnapshot snapshot =
+            CreateSnapshot();
+
+        MainThread
+            .BeginInvokeOnMainThread(
+                () =>
+                {
+                    _page?.Update(
+                        snapshot
+                    );
+                }
+            );
+    }
+
+    private void EnsureProcessingWorker()
+    {
+        if (_processingTask is not null)
+        {
+            return;
+        }
+
+        _processingTask =
+            Task.Run(
+                () =>
+                    ProcessQueueAsync(
+                        _processingCancellation
+                            .Token
+                    )
+            );
     }
 
     private void StartMouseMonitoring()
     {
-    #if WINDOWS
+#if WINDOWS
         StopMouseMonitoring();
 
         _mouseMonitorCancellation =
@@ -305,20 +483,23 @@ public sealed class CrushSessionService(
 
         _mouseMonitorTask =
             MonitorMouseAsync(
-                _mouseMonitorCancellation.Token
+                _mouseMonitorCancellation
+                    .Token
             );
-    #endif
+#endif
     }
 
-    private async Task TryCaptureAtCursorAsync(
-    #if WINDOWS
-        WinPoint cursor,
-    #else
-        object cursor,
-    #endif
-        CancellationToken cancellationToken)
+    private async Task
+        CaptureAndQueueAtCursorAsync(
+#if WINDOWS
+            WinPoint cursor,
+#else
+            object cursor,
+#endif
+            CancellationToken
+                cancellationToken)
     {
-    #if WINDOWS
+#if WINDOWS
         DofusWindowInfo? dofusWindow =
             dofusWindowService
                 .GetActiveDofusWindow();
@@ -328,10 +509,10 @@ public sealed class CrushSessionService(
             return;
         }
 
-        // Curseur hors fenêtre Dofus :
-        // aucune capture.
-        if (cursor.X < dofusWindow.X ||
-            cursor.Y < dofusWindow.Y ||
+        if (cursor.X <
+                dofusWindow.X ||
+            cursor.Y <
+                dofusWindow.Y ||
             cursor.X >=
                 dofusWindow.X +
                 dofusWindow.Width ||
@@ -342,17 +523,25 @@ public sealed class CrushSessionService(
             return;
         }
 
-        // On ignore également notre propre
-        // overlay Résultat concassage.
         if (_window is not null &&
-            cursor.X >= _currentX &&
-            cursor.X < _currentX + 390 &&
-            cursor.Y >= _currentY &&
-            cursor.Y < _currentY + 520)
+            cursor.X >=
+                _currentX &&
+            cursor.X <
+                _currentX +
+                390 &&
+            cursor.Y >=
+                _currentY &&
+            cursor.Y <
+                _currentY +
+                520)
         {
             return;
         }
 
+        // Cette partie reste volontairement dans
+        // le producteur : la capture doit représenter
+        // exactement la position où la souris s'est
+        // immobilisée.
         DofusCaptureResult capture =
             await dofusCaptureService
                 .CaptureAsync(
@@ -360,15 +549,21 @@ public sealed class CrushSessionService(
                     cancellationToken
                 );
 
-        // Conversion position écran
-        // → position dans l'image capturée.
         double relativeX =
-            (cursor.X - dofusWindow.X) /
-            (double)dofusWindow.Width;
+            (
+                cursor.X -
+                dofusWindow.X
+            ) /
+            (double)
+                dofusWindow.Width;
 
         double relativeY =
-            (cursor.Y - dofusWindow.Y) /
-            (double)dofusWindow.Height;
+            (
+                cursor.Y -
+                dofusWindow.Y
+            ) /
+            (double)
+                dofusWindow.Height;
 
         int captureX =
             (int)Math.Round(
@@ -396,54 +591,390 @@ public sealed class CrushSessionService(
                 capture.Height - 1
             );
 
-        _idleCaptureCount++;
+        long sessionId =
+            _sessionId;
 
-        _lastCursorX =
-            captureX;
+        lock (_stateLock)
+        {
+            _idleCaptureCount++;
 
-        _lastCursorY =
-            captureY;
+            _lastCursorX =
+                captureX;
 
-        await MainThread
-            .InvokeOnMainThreadAsync(
-                () =>
+            _lastCursorY =
+                captureY;
+        }
+
+        PublishSnapshot();
+
+        _processingQueue
+            .Writer
+            .TryWrite(
+                new CapturedCursorWorkItem(
+                    sessionId,
+                    capture.FilePath,
+                    captureX,
+                    captureY
+                )
+            );
+#endif
+    }
+
+    private async Task ProcessQueueAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (
+                CapturedCursorWorkItem workItem
+                in _processingQueue
+                    .Reader
+                    .ReadAllAsync(
+                        cancellationToken
+                    ))
+            {
+                if (workItem.SessionId !=
+                    _sessionId)
                 {
-                    _page?.Update(
-                        CreateSnapshot()
+                    continue;
+                }
+
+                try
+                {
+                    await ProcessCaptureAsync(
+                        workItem,
+                        cancellationToken
                     );
                 }
+                catch (
+                    OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Une capture défectueuse ne doit
+                    // pas arrêter le worker.
+                }
+            }
+        }
+        catch (
+            OperationCanceledException)
+        {
+            // Arrêt de l'application.
+        }
+    }
+
+    private async Task ProcessCaptureAsync(
+        CapturedCursorWorkItem workItem,
+        CancellationToken cancellationToken)
+    {
+        string? serverName =
+            currentServerState
+                .ServerName;
+
+        if (string.IsNullOrWhiteSpace(
+            serverName))
+        {
+            return;
+        }
+
+        DofusPanelDetectionResult?
+            panel =
+                await
+                dofusPanelDetectionService
+                    .DetectCrushResultPanelAsync(
+                        workItem.CaptureFilePath,
+                        cancellationToken
+                    );
+
+        if (panel is null)
+        {
+            return;
+        }
+
+        int panelCursorX =
+            workItem.CaptureX -
+            panel.X;
+
+        int panelCursorY =
+            workItem.CaptureY -
+            panel.Y;
+
+        if (panelCursorX < 0 ||
+            panelCursorY < 0 ||
+            panelCursorX >=
+                panel.Width ||
+            panelCursorY >=
+                panel.Height)
+        {
+            return;
+        }
+
+        using IServiceScope scope =
+            serviceScopeFactory
+                .CreateScope();
+
+        DofusItemTooltipDetectionService
+            tooltipDetectionService =
+                scope
+                    .ServiceProvider
+                    .GetRequiredService<
+                        DofusItemTooltipDetectionService>();
+
+        DofusRuneRecognitionService
+            runeRecognitionService =
+                scope
+                    .ServiceProvider
+                    .GetRequiredService<
+                        DofusRuneRecognitionService>();
+
+        MarketPriceService
+            marketPriceService =
+                scope
+                    .ServiceProvider
+                    .GetRequiredService<
+                        MarketPriceService>();
+
+        DofusItemTooltipDetectionResult
+            tooltipDetection =
+                await
+                tooltipDetectionService
+                    .DetectAsync(
+                        workItem.CaptureFilePath,
+                        cancellationToken
+                    );
+
+        if (tooltipDetection
+            .Candidates
+            .Count != 1)
+        {
+            return;
+        }
+
+        DofusItemTooltipCandidate
+            tooltip =
+                tooltipDetection
+                    .Candidates[0];
+
+        if (string.IsNullOrWhiteSpace(
+            tooltip.RecognizedTitle))
+        {
+            return;
+        }
+
+        RuneRecognitionResult?
+            runeRecognition =
+                await
+                runeRecognitionService
+                    .RecognizeRuneAsync(
+                        tooltip
+                            .RecognizedTitle
+                    );
+
+        if (runeRecognition is null)
+        {
+            return;
+        }
+
+        DofusCrushRuneCellDetectionResult?
+            cell =
+                await
+                runeCellDetectionService
+                    .DetectAsync(
+                        panel.DebugImagePath,
+                        panelCursorX,
+                        panelCursorY,
+                        cancellationToken
+                    );
+
+        if (cell is null)
+        {
+            return;
+        }
+
+        if (workItem.SessionId !=
+            _sessionId)
+        {
+            return;
+        }
+
+        int quantity =
+            tooltip.LotQuantity
+            ?? 1;
+
+        lock (_stateLock)
+        {
+            if (IsAlreadyScannedLocked(
+                cell))
+            {
+                return;
+            }
+
+            _scannedRuneCells.Add(
+                new ScannedRuneCellIdentity(
+                    cell.RowFingerprint,
+                    cell.RowHeight,
+                    cell.RowOccurrence,
+                    cell.ColumnIndex,
+                    cell.RuneLineIndex
+                )
             );
-    #endif
+
+            long runeId =
+                runeRecognition
+                    .Rune
+                    .DofusDbId;
+
+            if (!_runes.TryGetValue(
+                runeId,
+                out AccumulatedRune?
+                    accumulatedRune))
+            {
+                accumulatedRune =
+                    new AccumulatedRune
+                    {
+                        Name =
+                            runeRecognition
+                                .Rune
+                                .Name
+                    };
+
+                _runes[
+                    runeId
+                ] =
+                    accumulatedRune;
+            }
+
+            accumulatedRune.Quantity =
+                checked(
+                    accumulatedRune
+                        .Quantity +
+                    quantity
+                );
+        }
+
+        IReadOnlyDictionary<
+            (
+                long DofusDbId,
+                int Quantity
+            ),
+            MarketPriceObservation>
+            observations =
+                await marketPriceService
+                    .GetLatestObservationsForServerAsync(
+                        MarketObjectType.Rune,
+                        serverName,
+                        cancellationToken
+                    );
+
+        lock (_stateLock)
+        {
+            foreach (
+                KeyValuePair<
+                    long,
+                    AccumulatedRune>
+                rune
+                in _runes)
+            {
+                MarketValueResult?
+                    value =
+                        marketPriceService
+                            .CalculateValue(
+                                rune.Key,
+                                rune.Value
+                                    .Quantity,
+                                observations
+                            );
+
+                rune.Value.Value =
+                    value?.Value;
+            }
+        }
+
+        PublishSnapshot();
+    }
+
+    private bool IsAlreadyScannedLocked(
+        DofusCrushRuneCellDetectionResult
+            cell)
+    {
+        foreach (
+            ScannedRuneCellIdentity
+            existing
+            in _scannedRuneCells)
+        {
+            if (existing.ColumnIndex !=
+                    cell.ColumnIndex ||
+                existing.RuneLineIndex !=
+                    cell.RuneLineIndex ||
+                existing.RowOccurrence !=
+                    cell.RowOccurrence)
+            {
+                continue;
+            }
+
+            if (Math.Abs(
+                    existing.RowHeight -
+                    cell.RowHeight
+                ) > 12)
+            {
+                continue;
+            }
+
+            int fingerprintDistance =
+                BitOperations.PopCount(
+                    existing
+                        .RowFingerprint ^
+                    cell.RowFingerprint
+                );
+
+            if (fingerprintDistance <=
+                RowFingerprintMaximumDistance)
+            {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private void StopMouseMonitoring()
     {
-    #if WINDOWS
-        if (_mouseMonitorCancellation is null)
+#if WINDOWS
+        if (_mouseMonitorCancellation
+            is null)
         {
             return;
         }
 
         try
         {
-            _mouseMonitorCancellation.Cancel();
+            _mouseMonitorCancellation
+                .Cancel();
         }
         catch
         {
             // Rien.
         }
 
-        _mouseMonitorCancellation.Dispose();
-        _mouseMonitorCancellation = null;
+        _mouseMonitorCancellation
+            .Dispose();
 
-        _mouseMonitorTask = null;
-    #endif
+        _mouseMonitorCancellation =
+            null;
+
+        _mouseMonitorTask =
+            null;
+#endif
     }
 
-    private async Task MonitorMouseAsync(
-        CancellationToken cancellationToken)
+    private async Task
+        MonitorMouseAsync(
+            CancellationToken
+                cancellationToken)
     {
-    #if WINDOWS
+#if WINDOWS
         WinPoint? referencePosition =
             null;
 
@@ -469,7 +1000,8 @@ public sealed class CrushSessionService(
                     continue;
                 }
 
-                if (referencePosition is null)
+                if (referencePosition
+                    is null)
                 {
                     referencePosition =
                         cursor;
@@ -484,11 +1016,15 @@ public sealed class CrushSessionService(
                 {
                     int dx =
                         cursor.X -
-                        referencePosition.Value.X;
+                        referencePosition
+                            .Value
+                            .X;
 
                     int dy =
                         cursor.Y -
-                        referencePosition.Value.Y;
+                        referencePosition
+                            .Value
+                            .Y;
 
                     int distanceSquared =
                         dx * dx +
@@ -498,7 +1034,6 @@ public sealed class CrushSessionService(
                         MouseMovementThreshold *
                         MouseMovementThreshold)
                     {
-                        // La souris a réellement bougé.
                         referencePosition =
                             cursor;
 
@@ -512,20 +1047,19 @@ public sealed class CrushSessionService(
                         !capturedForCurrentStop &&
                         DateTime.UtcNow -
                             stationarySince >=
-                        TimeSpan.FromMilliseconds(
-                            MouseStableMilliseconds
-                        ))
+                        TimeSpan
+                            .FromMilliseconds(
+                                MouseStableMilliseconds
+                            ))
                     {
-                        // On marque immédiatement cet arrêt
-                        // comme traité pour ne jamais capturer
-                        // en boucle si l'utilisateur reste immobile.
                         capturedForCurrentStop =
                             true;
 
-                        await TryCaptureAtCursorAsync(
-                            cursor,
-                            cancellationToken
-                        );
+                        await
+                            CaptureAndQueueAtCursorAsync(
+                                cursor,
+                                cancellationToken
+                            );
                     }
                 }
 
@@ -534,24 +1068,23 @@ public sealed class CrushSessionService(
                     cancellationToken
                 );
             }
-            catch (OperationCanceledException)
+            catch (
+                OperationCanceledException)
             {
                 break;
             }
             catch
             {
-                // Une erreur ponctuelle ne doit pas
-                // tuer toute la session F9.
                 await Task.Delay(
                     100,
                     cancellationToken
                 );
             }
         }
-    #endif
+#endif
     }
 
-    #if WINDOWS
+#if WINDOWS
     private static void MakeTransparent(
         IntPtr hwnd,
         byte opacity)
@@ -565,7 +1098,8 @@ public sealed class CrushSessionService(
         SetWindowLongPtr(
             hwnd,
             GwlExStyle,
-            style | (nint)WsExLayered
+            style |
+            (nint)WsExLayered
         );
 
         SetLayeredWindowAttributes(
@@ -576,7 +1110,8 @@ public sealed class CrushSessionService(
         );
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(
+        LayoutKind.Sequential)]
     private struct WinPoint
     {
         public int X;
@@ -586,13 +1121,15 @@ public sealed class CrushSessionService(
     [DllImport("user32.dll")]
     [return: MarshalAs(
         UnmanagedType.Bool)]
-    private static extern bool GetCursorPos(
-        out WinPoint point
-    );
+    private static extern bool
+        GetCursorPos(
+            out WinPoint point
+        );
 
     [DllImport(
         "user32.dll",
-        EntryPoint = "GetWindowLongPtrW"
+        EntryPoint =
+            "GetWindowLongPtrW"
     )]
     private static extern nint
         GetWindowLongPtr(
@@ -602,7 +1139,8 @@ public sealed class CrushSessionService(
 
     [DllImport(
         "user32.dll",
-        EntryPoint = "SetWindowLongPtrW"
+        EntryPoint =
+            "SetWindowLongPtrW"
     )]
     private static extern nint
         SetWindowLongPtr(
@@ -621,5 +1159,44 @@ public sealed class CrushSessionService(
             byte alpha,
             uint flags
         );
-    #endif
+#endif
+
+    private sealed record
+        ScannedRuneCellIdentity(
+            ulong RowFingerprint,
+            int RowHeight,
+            int RowOccurrence,
+            int ColumnIndex,
+            int RuneLineIndex
+        );
+
+    private sealed class
+        AccumulatedRune
+    {
+        public required string Name
+        {
+            get;
+            init;
+        }
+
+        public int Quantity
+        {
+            get;
+            set;
+        }
+
+        public double? Value
+        {
+            get;
+            set;
+        }
+    }
+
+    private sealed record
+        CapturedCursorWorkItem(
+            long SessionId,
+            string CaptureFilePath,
+            int CaptureX,
+            int CaptureY
+        );
 }

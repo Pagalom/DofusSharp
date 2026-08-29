@@ -196,6 +196,67 @@ public sealed class DofusOcrService
         );
     }
 
+    public async Task<int?> RecognizeTooltipLotQuantityAsync(
+        string imageFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        string text =
+            await RecognizeUpscaledTextAsync(
+                imageFilePath
+            );
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        string normalized =
+            Regex.Replace(
+                text
+                    .ToUpperInvariant()
+                    .Replace('–', '-')
+                    .Replace('—', '-'),
+                @"\s+",
+                " "
+            );
+
+        // Une pile de plusieurs runes affiche par
+        // exemple :
+        //
+        // POIDS 1 - LOT 2
+        //
+        // Plus bas, l'infobulle peut aussi afficher
+        // "- LOT 104 K", qui correspond au prix du lot.
+        //
+        // On exige donc que LOT soit rattaché à POIDS.
+        Match match =
+            Regex.Match(
+                normalized,
+                @"POIDS.{0,60}?\bLOT\s*[:\-]?\s*(\d+)\b",
+                RegexOptions.IgnoreCase
+            );
+
+        if (!match.Success)
+        {
+            // Absence de "LOT n" près de POIDS :
+            // Dofus affiche alors une seule rune.
+            return null;
+        }
+
+        if (!int.TryParse(
+            match.Groups[1].Value,
+            out int quantity))
+        {
+            return null;
+        }
+
+        return quantity > 0
+            ? quantity
+            : null;
+    }
+
     public async Task<double?> RecognizeCoefficientAsync(
         string imageFilePath,
         CancellationToken cancellationToken = default)

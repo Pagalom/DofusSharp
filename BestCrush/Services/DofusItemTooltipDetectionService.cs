@@ -10,7 +10,8 @@ public sealed record DofusItemTooltipCandidate(
     string RecognizedTitle,
     ItemRecognitionResult? Recognition,
     double X,
-    double Y
+    double Y,
+    int? LotQuantity
 );
 
 public sealed record DofusItemTooltipDetectionResult(
@@ -86,7 +87,8 @@ public sealed class DofusItemTooltipDetectionService(
                                     string.Empty,
                                     null,
                                     rectangle.X,
-                                    rectangle.Y
+                                    rectangle.Y,
+                                    null
                                 )
                         )
                         .ToList();
@@ -124,6 +126,20 @@ public sealed class DofusItemTooltipDetectionService(
                 .FirstOrDefault()
             ?? string.Empty;
 
+        string lotRegionPath =
+            ExtractLotQuantityRegion(
+                capture,
+                captureFilePath,
+                header
+            );
+
+        int? lotQuantity =
+            await ocrService
+                .RecognizeTooltipLotQuantityAsync(
+                    lotRegionPath,
+                    cancellationToken
+                );
+
         ItemRecognitionResult? recognition =
             string.IsNullOrWhiteSpace(
                 recognizedTitle
@@ -140,7 +156,8 @@ public sealed class DofusItemTooltipDetectionService(
                     recognizedTitle,
                     recognition,
                     header.X,
-                    header.Y
+                    header.Y,
+                    lotQuantity
                 )
             ]
         );
@@ -190,9 +207,6 @@ public sealed class DofusItemTooltipDetectionService(
             CvRect header =
                 dark.Rectangle;
 
-            // Une vraie partie supérieure
-            // d'infobulle est beaucoup plus
-            // large que haute.
             if ((double)header.Width /
                     header.Height <
                 1.8)
@@ -243,8 +257,6 @@ public sealed class DofusItemTooltipDetectionService(
             );
         }
 
-        // Sécurité contre une éventuelle
-        // double détection du même panneau.
         List<Rect> distinct = [];
 
         foreach (
@@ -303,9 +315,6 @@ public sealed class DofusItemTooltipDetectionService(
                     contour
                 );
 
-            // Plage volontairement large
-            // pour supporter différents
-            // facteurs d'échelle de l'UI.
             if (rectangle.Width < 240 ||
                 rectangle.Width > 600 ||
                 rectangle.Height < 50 ||
@@ -354,12 +363,6 @@ public sealed class DofusItemTooltipDetectionService(
         string sourceFilePath,
         CvRect tooltipHeader)
     {
-        // Le nom se trouve dans le coin
-        // supérieur gauche.
-        //
-        // On laisse volontairement la partie
-        // droite de côté pour ne pas capturer
-        // l'image de l'objet.
         int x =
             tooltipHeader.X + 15;
 
@@ -375,38 +378,14 @@ public sealed class DofusItemTooltipDetectionService(
                 tooltipHeader.Height - 10
             );
 
-        x =
-            Math.Clamp(
-                x,
-                0,
-                capture.Width - 1
-            );
-
-        y =
-            Math.Clamp(
-                y,
-                0,
-                capture.Height - 1
-            );
-
-        width =
-            Math.Min(
-                width,
-                capture.Width - x
-            );
-
-        height =
-            Math.Min(
-                height,
-                capture.Height - y
-            );
-
         CvRect titleRectangle =
-            new(
+            ClampRectangle(
                 x,
                 y,
                 width,
-                height
+                height,
+                capture.Width,
+                capture.Height
             );
 
         using Mat title =
@@ -433,6 +412,115 @@ public sealed class DofusItemTooltipDetectionService(
         );
 
         return outputPath;
+    }
+
+    private static string ExtractLotQuantityRegion(
+        Mat capture,
+        string sourceFilePath,
+        CvRect tooltipHeader)
+    {
+        // On commence juste sous le bandeau sombre
+        // contenant le nom de la rune.
+        //
+        // La zone couvre notamment :
+        // EFFET
+        // POIDS 1 - LOT n
+        // DENSITÉ ...
+        //
+        // Elle s'arrête volontairement avant le bas
+        // de l'infobulle afin de ne pas confondre
+        // "LOT n" avec le prix "- LOT xxx K".
+        int x =
+            tooltipHeader.X + 8;
+
+        int y =
+            tooltipHeader.Y +
+            tooltipHeader.Height;
+
+        int width =
+            tooltipHeader.Width - 16;
+
+        int height =
+            210;
+
+        CvRect lotRectangle =
+            ClampRectangle(
+                x,
+                y,
+                width,
+                height,
+                capture.Width,
+                capture.Height
+            );
+
+        using Mat lotRegion =
+            new(
+                capture,
+                lotRectangle
+            );
+
+        string directory =
+            Path.GetDirectoryName(
+                sourceFilePath
+            )
+            ?? Path.GetTempPath();
+
+        string outputPath =
+            Path.Combine(
+                directory,
+                "tooltip-lot-quantity.png"
+            );
+
+        Cv2.ImWrite(
+            outputPath,
+            lotRegion
+        );
+
+        return outputPath;
+    }
+
+    private static CvRect ClampRectangle(
+        int x,
+        int y,
+        int width,
+        int height,
+        int imageWidth,
+        int imageHeight)
+    {
+        int left =
+            Math.Clamp(
+                x,
+                0,
+                imageWidth - 1
+            );
+
+        int top =
+            Math.Clamp(
+                y,
+                0,
+                imageHeight - 1
+            );
+
+        int right =
+            Math.Clamp(
+                x + Math.Max(1, width),
+                left + 1,
+                imageWidth
+            );
+
+        int bottom =
+            Math.Clamp(
+                y + Math.Max(1, height),
+                top + 1,
+                imageHeight
+            );
+
+        return new CvRect(
+            left,
+            top,
+            right - left,
+            bottom - top
+        );
     }
 
     private sealed record ContourRectangle(

@@ -59,6 +59,7 @@ public static class MauiProgram
             builder.Services.AddSingleton<BestCrush.Services.DofusImageRegionService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusPanelDetectionService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusCrushRowDetectionService>();
+            builder.Services.AddSingleton<BestCrush.Services.DofusCrushRuneCellDetectionService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusOcrService>();
             builder.Services.AddSingleton<BestCrush.Services.CurrentServerState>();
             builder.Services.AddSingleton<BestCrush.Domain.Services.IDataPriorityProvider,BestCrush.Services.DataPriorityService>();
