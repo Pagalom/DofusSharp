@@ -2,9 +2,9 @@
 
 > Outil compagnon pour **Dofus** permettant de suivre les prix du marché, calculer la rentabilité du concassage et analyser les runes réellement obtenues.
 
-**BestCrush** est développé dans un fork de [DofusSharp](https://github.com/DofusSharp/DofusSharp), un ensemble de bibliothèques et d'applications C# autour de Dofus.
+**BestCrush** est développé sur un fork de [DofusSharp](https://github.com/DofusSharp/DofusSharp), un ensemble de bibliothèques et d'applications C# autour de Dofus.
 
-Cette version de BestCrush ajoute une gestion locale du marché, des captures en jeu par OCR, des overlays Windows et un suivi réel des résultats de concassage.
+Cette version de BestCrush ajoute une gestion locale du marché, des captures en jeu, des overlays Windows et un suivi réel des résultats de concassage.
 
 ---
 
@@ -26,10 +26,8 @@ Pour une release Windows :
 
 - Windows 10 ou Windows 11 64 bits.
 - Microsoft Edge WebView2 Runtime.
-- Dofus lancé en mode fenêtré ou dans une configuration permettant à BestCrush de détecter sa fenêtre.
 
-Les releases self-contained incluent le runtime .NET et les composants Windows App SDK nécessaires.  
-WebView2 est généralement déjà installé sur les versions récentes de Windows.
+Les releases incluent le runtime .NET et les composants Windows App SDK nécessaires.  
 
 ---
 
@@ -51,26 +49,22 @@ Les prix peuvent provenir :
 - d'une saisie manuelle ;
 - d'une capture automatique en jeu.
 
-Une valeur peut également être volontairement vidée : une cellule vide signifie **donnée non renseignée**, et non `0 kama`.
-
 ### Lots HDV
 
-Pour les ressources et les runes, BestCrush peut enregistrer plusieurs tailles de lots :
+Pour les ressources et les runes, BestCrush peut enregistrer plusieurs tailles de lots (si disponibles) :
 
 - x1 ;
 - x10 ;
 - x100 ;
-- x1000 lorsque disponible.
+- x1000.
 
-Ces données servent ensuite aux calculs de craft et de valorisation.
+Ces données servent ensuite aux calculs de craft.
 
 ---
 
 ## Coût réel d'un craft
 
-BestCrush ne calcule pas seulement un prix unitaire théorique.
-
-Pour chaque ingrédient, il cherche le **montant minimum réellement nécessaire pour acheter suffisamment de ressources**, en combinant les tailles de lots disponibles.
+Pour chaque ingrédient, BestCrush cherche le **montant minimum réellement nécessaire pour acheter suffisamment de ressources**, en combinant les tailles de lots disponibles.
 
 Exemple :
 
@@ -108,8 +102,6 @@ Pour un équipement sélectionné, BestCrush peut afficher :
 
 Les scénarios peuvent tenir compte des caractéristiques de l'équipement et des runes correspondantes.
 
-Une donnée nécessaire manquante rend la catégorie concernée **rouge**, afin de ne pas présenter un résultat partiel comme totalement fiable.
-
 ### Couleur des données
 
 Les couleurs de l'overlay permettent d'identifier rapidement l'état des informations :
@@ -123,23 +115,17 @@ Les couleurs de l'overlay permettent d'identifier rapidement l'état des informa
 
 # Captures en jeu
 
-BestCrush fonctionne comme une application externe.
-
-Il ne s'injecte pas dans le processus Dofus : la lecture repose sur des captures de la fenêtre du jeu, de la détection d'interface, de l'OCR et des données locales.
-
 ## Clic molette — lecture contextuelle
 
 Par défaut, le **clic sur la molette** déclenche une lecture de la zone Dofus située sous le contexte courant.
 
 Selon l'écran détecté, BestCrush peut notamment :
 
-- sélectionner un équipement comme cible ;
+- sélectionner un équipement de l'inventaire comme cible ;
 - lire un prix d'équipement en HDV ;
 - enregistrer les prix d'une rune ;
 - enregistrer les prix d'une ressource ;
 - lire un résultat de concassage et son coefficient.
-
-Une rune ou une ressource capturée **ne remplace jamais l'équipement actuellement en focus**.
 
 ### Serveur obligatoire
 
@@ -203,7 +189,7 @@ Une petite barre always-on-top permet d'afficher ou masquer individuellement :
 `F7` masque les overlays actuellement visibles.  
 Un second appui restaure uniquement ceux qui étaient visibles avant le masquage.
 
-> La configuration personnalisable des raccourcis est prévue dans une évolution ultérieure.
+> La configuration personnalisable des raccourcis est prévue.
 
 ---
 
@@ -237,7 +223,7 @@ BestCrush affiche alors :
 Ne pas scroller
 ```
 
-Cette limitation évite de compter deux fois des cellules après déplacement du contenu du panneau.
+Je n'ai pas encore réussi à passer cette limitation.
 
 Pour le moment, il est donc recommandé de concasser suffisamment peu d'objets pour que toutes les lignes de résultat restent visibles simultanément.
 
@@ -273,20 +259,6 @@ Une capture en jeu ne doit pas remplacer silencieusement une valeur manuelle pri
 Une nouvelle lecture en jeu peut devenir la valeur active.
 
 Cette logique s'applique notamment aux prix et coefficients gérés localement.
-
----
-
-# Rafraîchissement automatique
-
-Lorsqu'un prix est modifié ou capturé, BestCrush diffuse l'information aux vues concernées.
-
-Cela permet notamment de mettre automatiquement à jour :
-
-- les pages de prix locaux ;
-- l'overlay de rentabilité ;
-- la valorisation d'une session F9 déjà terminée.
-
-Les pages de prix disposent également d'un bouton **Rafraîchir** pour forcer manuellement une relecture de la base locale.
 
 ---
 
@@ -377,46 +349,6 @@ Puis relancer la compilation.
 
 ---
 
-# Générer une version Windows distribuable
-
-Pour créer une publication Windows x64 autonome :
-
-```powershell
-dotnet publish .\BestCrush\BestCrush.csproj `
-  -f net10.0-windows10.0.19041.0 `
-  -c Release `
-  -p:RuntimeIdentifierOverride=win-x64 `
-  -p:WindowsPackageType=None `
-  -p:WindowsAppSDKSelfContained=true `
-  --self-contained true `
-  -o .\publish\BestCrush
-```
-
-L'exécutable se trouve ensuite dans :
-
-```text
-publish\BestCrush\BestCrush.exe
-```
-
-Il faut distribuer **l'ensemble du contenu du dossier `publish\BestCrush`**, et pas uniquement l'EXE.
-
-## Créer l'archive pour GitHub Releases
-
-Exemple :
-
-```powershell
-Compress-Archive `
-  -Path .\publish\BestCrush\* `
-  -DestinationPath .\BestCrush-v0.1.0-win-x64.zip `
-  -Force
-```
-
-L'archive obtenue peut être ajoutée directement aux assets d'une GitHub Release.
-
-Elle n'a pas besoin d'être commitée dans le dépôt.
-
----
-
 # Structure du dépôt
 
 ```text
@@ -442,27 +374,6 @@ DofusSharp/
 └── dofusdb/
     └── Outils DofusDB issus du projet DofusSharp
 ```
-
----
-
-# Principes du projet
-
-BestCrush privilégie plusieurs principes :
-
-**Données locales avant tout**  
-Les prix utilisés pour les calculs sont ceux du marché réellement observé par l'utilisateur.
-
-**Pas d'écrasement silencieux**  
-Les saisies manuelles peuvent rester prioritaires sur les captures automatiques.
-
-**Mode dégradé utilisable**  
-Une donnée automatiquement récupérable doit pouvoir être saisie manuellement si la lecture automatique échoue.
-
-**Focus unique**  
-Une capture de rune ou de ressource complète les données sans modifier l'équipement analysé.
-
-**Résultats prudents**  
-Une donnée nécessaire manquante est signalée clairement au lieu d'être remplacée par une valeur inventée.
 
 ---
 
