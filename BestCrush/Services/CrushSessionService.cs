@@ -137,7 +137,7 @@ public sealed class CrushSessionService(
 
     private bool _isVisible;
 
-    private int _currentX = 400;
+    private int _currentX = 750;
     private int _currentY = 80;
 
     private int _dragStartX;
@@ -367,7 +367,7 @@ public sealed class CrushSessionService(
                 Width = 390,
                 Height = 520,
 
-                X = 400,
+                X = 750,
                 Y = 80
             };
 

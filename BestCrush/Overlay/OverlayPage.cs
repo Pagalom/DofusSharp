@@ -37,7 +37,7 @@ public sealed class OverlayPage : ContentPage
 
         Label title = new()
         {
-            Text = "BestCrush",
+            Text = "Rentabilité",
             FontSize = 19,
             FontAttributes = FontAttributes.Bold,
             TextColor = Colors.White,
@@ -95,9 +95,10 @@ public sealed class OverlayPage : ContentPage
 
         _readStatus = new Label
         {
-            Text = "Clic molette — prêt à lire",
+            Text = "",
             TextColor = Colors.Gray,
-            FontSize = 12
+            FontSize = 12,
+            IsVisible = false
         };
 
         _item = new Label

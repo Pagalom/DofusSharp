@@ -26,7 +26,9 @@ public sealed class OverlayService(
     CurrentServerState currentServerState,
     FocusedEquipmentState focusedEquipmentState,
     CrushSessionService crushSessionService,
-    MarketDataChangeNotifier marketDataChangeNotifier)
+    MarketDataChangeNotifier marketDataChangeNotifier,
+    MarketCaptureOverlayService marketCaptureOverlayService,
+    OverlayControlBarService overlayControlBarService)
 {
     private Window? _overlayWindow;
     private OverlayPage? _overlayPage;
@@ -54,6 +56,11 @@ public sealed class OverlayService(
 
     private Task? _middleClickReadWorkerTask;
 
+    private bool _hasF7VisibilitySnapshot;
+    private bool _restoreProfitabilityAfterF7;
+    private bool _restoreMarketAfterF7;
+    private bool _restoreCrushAfterF7;
+
 #if WINDOWS
     private AppWindow? _appWindow;
 
@@ -62,7 +69,7 @@ public sealed class OverlayService(
     private bool _isOverlayVisible;
 
     private int _currentX = 40;
-    private int _currentY = 40;
+    private int _currentY = 70;
 
     private int _currentWidth = 340;
     private int _currentHeight = 432;
@@ -144,7 +151,7 @@ public sealed class OverlayService(
             Width = 340,
             Height = 432,
             X = 40,
-            Y = 40
+            Y = 70
         };
 
         window.Created += (_, _) =>
@@ -177,6 +184,32 @@ public sealed class OverlayService(
         _overlayWindow = window;
 
         Application.Current?.OpenWindow(window);
+
+        overlayControlBarService.Initialize(
+            new OverlayControlBarBindings(
+                () => IsVisible,
+                ToggleProfitabilityOverlayVisibility,
+                () => marketCaptureOverlayService.IsVisible,
+                ToggleMarketOverlayVisibility,
+                () => crushSessionService.IsVisible,
+                ToggleCrushOverlayVisibility,
+                ActivateMainWindow
+            )
+        );
+    }
+
+    public bool IsVisible
+    {
+        get
+        {
+#if WINDOWS
+            return
+                _overlayWindow is not null &&
+                _isOverlayVisible;
+#else
+            return _overlayWindow is not null;
+#endif
+        }
     }
 
     public void Toggle()
@@ -202,26 +235,73 @@ public sealed class OverlayService(
     public void ToggleAllOverlays()
     {
 #if WINDOWS
-        if (_overlayWindow is null ||
-            _overlayHwnd == IntPtr.Zero)
-        {
-            return;
-        }
+        bool profitabilityVisible =
+            IsVisible;
+
+        bool marketVisible =
+            marketCaptureOverlayService.IsVisible;
+
+        bool crushVisible =
+            crushSessionService.IsVisible;
 
         bool anyOverlayVisible =
-            _isOverlayVisible ||
-            crushSessionService.IsVisible;
+            profitabilityVisible ||
+            marketVisible ||
+            crushVisible;
 
         if (anyOverlayVisible)
         {
-            Hide();
-            crushSessionService.Hide();
+            _restoreProfitabilityAfterF7 =
+                profitabilityVisible;
+
+            _restoreMarketAfterF7 =
+                marketVisible;
+
+            _restoreCrushAfterF7 =
+                crushVisible;
+
+            _hasF7VisibilitySnapshot =
+                true;
+
+            if (profitabilityVisible)
+            {
+                Hide();
+            }
+
+            if (marketVisible)
+            {
+                marketCaptureOverlayService.Hide();
+            }
+
+            if (crushVisible)
+            {
+                crushSessionService.Hide();
+            }
 
             return;
         }
 
-        Show();
-        crushSessionService.Show();
+        if (!_hasF7VisibilitySnapshot)
+        {
+            return;
+        }
+
+        if (_restoreProfitabilityAfterF7)
+        {
+            Show();
+        }
+
+        if (_restoreMarketAfterF7)
+        {
+            marketCaptureOverlayService.Show();
+        }
+
+        if (_restoreCrushAfterF7)
+        {
+            crushSessionService.Show();
+        }
+
+        ClearF7VisibilitySnapshot();
 #endif
     }
 
@@ -230,13 +310,8 @@ public sealed class OverlayService(
         if (!currentServerState.HasSelectedServer)
         {
             PostUi(
-                () =>
-                {
-                    _overlayPage?
-                        .ShowServerSelectionRequired();
-
-                    Show();
-                }
+                marketCaptureOverlayService
+                    .ShowServerSelectionRequired
             );
 
             return;
@@ -249,13 +324,8 @@ public sealed class OverlayService(
         if (dofusWindow is null)
         {
             PostUi(
-                () =>
-                {
-                    _overlayPage?
-                        .ShowReadCancelled();
-
-                    Show();
-                }
+                marketCaptureOverlayService
+                    .ShowReadCancelled
             );
 
             return;
@@ -263,14 +333,10 @@ public sealed class OverlayService(
 
         PostUi(
             () =>
-            {
-                _overlayPage?
+                marketCaptureOverlayService
                     .ShowCaptureStarted(
                         dofusWindow
-                    );
-
-                Show();
-            }
+                    )
         );
 
         EnsureMiddleClickReadWorker();
@@ -364,7 +430,7 @@ public sealed class OverlayService(
                 {
                     PostUi(
                         () =>
-                            _overlayPage?
+                            marketCaptureOverlayService
                                 .ShowCaptureFailed(
                                     ex.Message
                                 )
@@ -386,7 +452,7 @@ public sealed class OverlayService(
         {
             PostUi(
                 () =>
-                    _overlayPage?
+                    marketCaptureOverlayService
                         .ShowCaptureSuccess(
                             capture
                         )
@@ -445,12 +511,10 @@ public sealed class OverlayService(
                             PostUi(
                                 () =>
                                 {
-                                    _overlayPage?
-                                                                    .ShowMultipleTooltipsDetected(
-                                                                        tooltipDetection
-                                                                            .Candidates
-                                                                            .Count
-                                                                    );
+                                    marketCaptureOverlayService
+                                        .ShowMultipleTooltipsDetected(
+                                            tooltipDetection.Candidates.Count
+                                        );
                                 }
                             );
 
@@ -479,13 +543,11 @@ public sealed class OverlayService(
                                 PostUi(
                                     () =>
                                     {
-                                        _overlayPage?
-                                                                            .ShowTooltipEquipmentFocused(
-                                                                                tooltipEquipment.Name,
-                                                                                candidate
-                                                                                    .Recognition
-                                                                                    .Confidence
-                                                                            );
+                                        marketCaptureOverlayService
+                                            .ShowTooltipEquipmentFocused(
+                                                tooltipEquipment.Name,
+                                                candidate.Recognition.Confidence
+                                            );
                                     }
                                 );
 
@@ -559,8 +621,7 @@ public sealed class OverlayService(
                                     PostUi(
                                         () =>
                                         {
-                                            _overlayPage?
-                                                                                    .ShowAuxiliaryMarketReadFailed(
+                                            marketCaptureOverlayService.ShowAuxiliaryMarketReadFailed(
                                                                                         "Rune non reconnue"
                                                                                     );
                                         }
@@ -595,8 +656,7 @@ public sealed class OverlayService(
                                     PostUi(
                                         () =>
                                         {
-                                            _overlayPage?
-                                                                                    .ShowAuxiliaryMarketReadFailed(
+                                            marketCaptureOverlayService.ShowAuxiliaryMarketReadFailed(
                                                                                         recognizedSellItemName
                                                                                     );
                                         }
@@ -616,8 +676,7 @@ public sealed class OverlayService(
                                     PostUi(
                                         () =>
                                         {
-                                            _overlayPage?
-                                                                                    .ShowAuxiliaryMarketReadFailed(
+                                            marketCaptureOverlayService.ShowAuxiliaryMarketReadFailed(
                                                                                         sellRuneRecognition
                                                                                             .Rune
                                                                                             .Name
@@ -656,8 +715,7 @@ public sealed class OverlayService(
                                 PostUi(
                                     () =>
                                     {
-                                        _overlayPage?
-                                                                            .ShowAuxiliaryMarketDataRecorded(
+                                        marketCaptureOverlayService.ShowAuxiliaryMarketDataRecorded(
                                                                                 sellRuneRecognition
                                                                                     .Rune
                                                                                     .Name,
@@ -726,7 +784,7 @@ public sealed class OverlayService(
                                         PostUi(
                                             () =>
                                             {
-                                                _overlayPage?.ShowMarketEquipmentRead(
+                                                marketCaptureOverlayService.ShowMarketEquipmentRead(
                                                                                             recognizedMarketItemName,
                                                                                             null
                                                                                         );
@@ -788,8 +846,7 @@ public sealed class OverlayService(
                                     PostUi(
                                         () =>
                                         {
-                                            _overlayPage?
-                                                .ShowAuxiliaryMarketReadFailed(
+                                            marketCaptureOverlayService.ShowAuxiliaryMarketReadFailed(
                                                     runeRecognition.Rune.Name
                                                 );
                                         }
@@ -814,11 +871,17 @@ public sealed class OverlayService(
                                         );
                                 }
 
+                                marketDataChangeNotifier.Notify(
+                                    MarketObjectType.Rune,
+                                    runeRecognition.Rune.DofusDbId,
+                                    runeServerName,
+                                    0
+                                );
+
                                 PostUi(
                                     () =>
                                     {
-                                        _overlayPage?
-                                            .ShowAuxiliaryMarketDataRecorded(
+                                        marketCaptureOverlayService.ShowAuxiliaryMarketDataRecorded(
                                                 runeRecognition.Rune.Name,
                                                 lots.Count,
                                                 focusedEquipmentState
@@ -849,17 +912,10 @@ public sealed class OverlayService(
 
                                 if (lots.Count == 0)
                                 {
-                                    marketDataChangeNotifier.Notify(
-                                        MarketObjectType.Rune,
-                                        runeRecognition.Rune.DofusDbId,
-                                        currentServerState.ServerName!,
-                                        0
-                                    );
                                     PostUi(
                                         () =>
                                         {
-                                            _overlayPage?
-                                                .ShowAuxiliaryMarketReadFailed(
+                                            marketCaptureOverlayService.ShowAuxiliaryMarketReadFailed(
                                                     resourceRecognition
                                                         .Resource
                                                         .Name
@@ -888,11 +944,17 @@ public sealed class OverlayService(
                                         );
                                 }
 
+                                marketDataChangeNotifier.Notify(
+                                    MarketObjectType.Resource,
+                                    resourceRecognition.Resource.DofusDbId,
+                                    resourceServerName,
+                                    0
+                                );
+
                                 PostUi(
                                     () =>
                                     {
-                                        _overlayPage?
-                                            .ShowAuxiliaryMarketDataRecorded(
+                                        marketCaptureOverlayService.ShowAuxiliaryMarketDataRecorded(
                                                 resourceRecognition
                                                     .Resource
                                                     .Name,
@@ -919,17 +981,10 @@ public sealed class OverlayService(
                             {
                                 if (recognizedMarketPrice is long detectedPrice)
                                 {
-                                    marketDataChangeNotifier.Notify(
-                                        MarketObjectType.Resource,
-                                        resourceRecognition.Resource.DofusDbId,
-                                        currentServerState.ServerName!,
-                                        0
-                                    );
                                     PostUi(
                                         () =>
                                         {
-                                            _overlayPage?
-                                                .ShowMarketEquipmentRecognitionFailed(
+                                            marketCaptureOverlayService.ShowMarketEquipmentRecognitionFailed(
                                                     recognizedMarketItemName,
                                                     detectedPrice
                                                 );
@@ -941,7 +996,7 @@ public sealed class OverlayService(
                                     PostUi(
                                         () =>
                                         {
-                                            _overlayPage?
+                                            marketCaptureOverlayService
                                                 .ShowMarketEquipmentRead(
                                                     recognizedMarketItemName,
                                                     null
@@ -961,11 +1016,11 @@ public sealed class OverlayService(
                                 PostUi(
                                     () =>
                                     {
-                                        _overlayPage?
-                                                                            .ShowMarketEquipmentRead(
-                                                                                marketEquipment.Name,
-                                                                                null
-                                                                            );
+                                        marketCaptureOverlayService
+                                            .ShowMarketEquipmentRead(
+                                                marketEquipment.Name,
+                                                null
+                                            );
                                     }
                                 );
 
@@ -1016,7 +1071,7 @@ public sealed class OverlayService(
                             PostUi(
                                 () =>
                                 {
-                                    _overlayPage?.ShowMarketEquipmentRecorded(
+                                    marketCaptureOverlayService.ShowMarketEquipmentRecorded(
                                                                     marketEquipment.Name,
                                                                     marketRecognition.Confidence,
                                                                     capturedPrice.Price,
@@ -1033,7 +1088,7 @@ public sealed class OverlayService(
                         PostUi(
                             () =>
                             {
-                                _overlayPage?.ShowPanelNotDetected();
+                                marketCaptureOverlayService.ShowPanelNotDetected();
                             }
                         );
 
@@ -1043,7 +1098,7 @@ public sealed class OverlayService(
             PostUi(
                 () =>
                 {
-                    _overlayPage?.ShowPanelDetected(
+                    marketCaptureOverlayService.ShowPanelDetected(
                                     panel
                                 );
                 }
@@ -1060,7 +1115,7 @@ public sealed class OverlayService(
                 PostUi(
                     () =>
                     {
-                        _overlayPage?.ShowCrushRowNotDetected();
+                        marketCaptureOverlayService.ShowCrushRowNotDetected();
                     }
                 );
 
@@ -1070,7 +1125,7 @@ public sealed class OverlayService(
             PostUi(
                 () =>
                 {
-                    _overlayPage?.ShowLastCrushRowDetected(
+                    marketCaptureOverlayService.ShowLastCrushRowDetected(
                                     lastRow
                                 );
                 }
@@ -1122,7 +1177,7 @@ public sealed class OverlayService(
                 PostUi(
                     () =>
                     {
-                        _overlayPage?.ShowCrushOcrResult(
+                        marketCaptureOverlayService.ShowCrushOcrResult(
                                             recognizedItemName,
                                             recognizedCoefficient
                                         );
@@ -1162,7 +1217,7 @@ public sealed class OverlayService(
                     PostUi(
                         () =>
                         {
-                            _overlayPage?.ShowEquipmentRecognitionFailed(
+                            marketCaptureOverlayService.ShowEquipmentRecognitionFailed(
                                                     recognizedItemName
                                                 );
                         }
@@ -1184,7 +1239,7 @@ public sealed class OverlayService(
                     PostUi(
                         () =>
                         {
-                            _overlayPage?.ShowServerNotSelected();
+                            marketCaptureOverlayService.ShowServerNotSelected();
                         }
                     );
 
@@ -1231,7 +1286,7 @@ public sealed class OverlayService(
                 PostUi(
                     () =>
                     {
-                        _overlayPage?.ShowRecognizedEquipment(
+                        marketCaptureOverlayService.ShowRecognizedEquipment(
                                             equipment.Name,
                                             recognition.Confidence,
                                             recognizedCoefficient.Value,
@@ -1251,7 +1306,7 @@ public sealed class OverlayService(
         {
             PostUi(
                 () =>
-                    _overlayPage?
+                    marketCaptureOverlayService
                         .ShowCaptureFailed(
                             ex.Message
                         )
@@ -1539,6 +1594,82 @@ public sealed class OverlayService(
 #endif
     }
 
+    private void ToggleProfitabilityOverlayVisibility()
+    {
+        ClearF7VisibilitySnapshot();
+        Toggle();
+    }
+
+    private void ToggleMarketOverlayVisibility()
+    {
+        ClearF7VisibilitySnapshot();
+        marketCaptureOverlayService.Toggle();
+    }
+
+    private void ToggleCrushOverlayVisibility()
+    {
+        ClearF7VisibilitySnapshot();
+
+        if (crushSessionService.IsVisible)
+        {
+            crushSessionService.Hide();
+        }
+        else
+        {
+            crushSessionService.Show();
+        }
+    }
+
+    private void ClearF7VisibilitySnapshot()
+    {
+        _hasF7VisibilitySnapshot = false;
+        _restoreProfitabilityAfterF7 = false;
+        _restoreMarketAfterF7 = false;
+        _restoreCrushAfterF7 = false;
+    }
+
+    private void ActivateMainWindow()
+    {
+        Window? mainWindow =
+            Application.Current?
+                .Windows
+                .FirstOrDefault(
+                    window =>
+                        !ReferenceEquals(
+                            window,
+                            _overlayWindow
+                        ) &&
+                        !string.Equals(
+                            window.Title,
+                            "BestCrush",
+                            StringComparison.Ordinal
+                        ) &&
+                        !string.Equals(
+                            window.Title,
+                            "BestCrush — Mise à jour marché",
+                            StringComparison.Ordinal
+                        ) &&
+                        !string.Equals(
+                            window.Title,
+                            "BestCrush — Résultat concassage",
+                            StringComparison.Ordinal
+                        ) &&
+                        !string.Equals(
+                            window.Title,
+                            "BestCrush Overlay",
+                            StringComparison.Ordinal
+                        )
+                );
+
+#if WINDOWS
+        if (mainWindow?.Handler?.PlatformView
+            is Microsoft.UI.Xaml.Window nativeWindow)
+        {
+            nativeWindow.Activate();
+        }
+#endif
+    }
+
     public void Shutdown()
     {
         crushSessionService.CoefficientsUpdated -=
@@ -1582,8 +1713,17 @@ public sealed class OverlayService(
         }
 #endif
 
+        marketCaptureOverlayService
+            .Shutdown();
+
+        overlayControlBarService
+            .Shutdown();
+
         if (_overlayWindow is null)
         {
+            crushSessionService
+                .CloseAndReset();
+
             return;
         }
 
@@ -1832,7 +1972,17 @@ public sealed class OverlayService(
                 mouseData.Point.X,
                 mouseData.Point.Y
             ) ||
+            marketCaptureOverlayService
+                .ContainsScreenPoint(
+                    mouseData.Point.X,
+                    mouseData.Point.Y
+                ) ||
             crushSessionService
+                .ContainsScreenPoint(
+                    mouseData.Point.X,
+                    mouseData.Point.Y
+                ) ||
+            overlayControlBarService
                 .ContainsScreenPoint(
                     mouseData.Point.X,
                     mouseData.Point.Y
