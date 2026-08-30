@@ -29,7 +29,8 @@ public sealed record CrushSessionSnapshot(
     int? LastCursorX,
     int? LastCursorY,
     IReadOnlyList<CrushSessionRuneLine> Runes,
-    double? TotalValue
+    double? TotalValue,
+    string? ErrorMessage
 );
 
 public sealed class CrushSessionService(
@@ -39,6 +40,8 @@ public sealed class CrushSessionService(
         dofusPanelDetectionService,
     DofusCrushRuneCellDetectionService
         runeCellDetectionService,
+    DofusCrushCoefficientScanService
+        coefficientScanService,
     IServiceScopeFactory serviceScopeFactory,
     CurrentServerState currentServerState)
 {
@@ -59,6 +62,10 @@ public sealed class CrushSessionService(
 
     private int? _lastCursorX;
     private int? _lastCursorY;
+
+    private string? _errorMessage;
+
+    private bool _coefficientsScanned;
 
     private readonly List<
         ScannedRuneCellIdentity>
@@ -100,8 +107,31 @@ public sealed class CrushSessionService(
     public bool IsRunning =>
         _isRunning;
 
+    public event EventHandler?
+        CoefficientsUpdated;
+
+    public bool IsVisible
+    {
+        get
+        {
+#if WINDOWS
+            return
+                _window is not null &&
+                _isVisible;
+#else
+            return
+                _window is not null;
+#endif
+        }
+    }
+
 #if WINDOWS
     private AppWindow? _appWindow;
+
+    private IntPtr _windowHwnd =
+        IntPtr.Zero;
+
+    private bool _isVisible;
 
     private int _currentX = 400;
     private int _currentY = 80;
@@ -115,6 +145,9 @@ public sealed class CrushSessionService(
 
     private const uint LwaAlpha =
         0x00000002;
+
+    private const int SwHide = 0;
+    private const int SwShowNoActivate = 4;
 
     private const int
         MousePollMilliseconds = 40;
@@ -151,6 +184,7 @@ public sealed class CrushSessionService(
 
         EnsureProcessingWorker();
         EnsureWindow();
+        Show();
 
         PublishSnapshot();
 
@@ -167,6 +201,102 @@ public sealed class CrushSessionService(
 
         // Les captures déjà en file continuent
         // volontairement leur traitement.
+    }
+
+    public void Show()
+    {
+        EnsureWindow();
+
+#if WINDOWS
+        _isVisible = true;
+
+        if (_windowHwnd !=
+            IntPtr.Zero)
+        {
+            ShowWindow(
+                _windowHwnd,
+                SwShowNoActivate
+            );
+
+            if (_appWindow?.Presenter
+                is OverlappedPresenter
+                presenter)
+            {
+                presenter.IsAlwaysOnTop =
+                    true;
+            }
+        }
+#endif
+
+        PublishSnapshot();
+    }
+
+    public void Hide()
+    {
+#if WINDOWS
+        _isVisible = false;
+
+        if (_windowHwnd ==
+            IntPtr.Zero)
+        {
+            return;
+        }
+
+        ShowWindow(
+            _windowHwnd,
+            SwHide
+        );
+#endif
+    }
+
+    public bool ContainsScreenPoint(
+        int x,
+        int y)
+    {
+#if WINDOWS
+        if (!_isVisible ||
+            _window is null)
+        {
+            return false;
+        }
+
+        return
+            x >= _currentX &&
+            y >= _currentY &&
+            x < _currentX + 390 &&
+            y < _currentY + 520;
+#else
+        return false;
+#endif
+    }
+
+    public void InvalidateForScroll()
+    {
+        if (!_isRunning)
+        {
+            return;
+        }
+
+        _isRunning = false;
+
+        StopMouseMonitoring();
+
+        // Une session qui a scrollé n'est plus fiable :
+        // les captures déjà en file deviennent invalides.
+        _sessionId++;
+
+        lock (_stateLock)
+        {
+            _errorMessage =
+                "Ne pas scroller";
+
+            _scannedRuneCells
+                .Clear();
+
+            _runes.Clear();
+        }
+
+        PublishSnapshot();
     }
 
     public void CloseAndReset()
@@ -190,6 +320,14 @@ public sealed class CrushSessionService(
         _window = null;
         _page = null;
 
+#if WINDOWS
+        _windowHwnd =
+            IntPtr.Zero;
+
+        _isVisible =
+            false;
+#endif
+
         Application.Current?
             .CloseWindow(
                 window
@@ -202,6 +340,8 @@ public sealed class CrushSessionService(
         {
             return;
         }
+
+        _isVisible = true;
 
         CrushSessionOverlayPage page =
             new(
@@ -238,6 +378,9 @@ public sealed class CrushSessionService(
                         .GetWindowHandle(
                             nativeWindow
                         );
+
+                _windowHwnd =
+                    hwnd;
 
                 Microsoft.UI.WindowId
                     windowId =
@@ -294,6 +437,14 @@ public sealed class CrushSessionService(
                     hwnd,
                     225
                 );
+
+                if (!_isVisible)
+                {
+                    ShowWindow(
+                        hwnd,
+                        SwHide
+                    );
+                }
 #endif
             };
 
@@ -314,6 +465,14 @@ public sealed class CrushSessionService(
 
                 _page =
                     null;
+
+#if WINDOWS
+                _windowHwnd =
+                    IntPtr.Zero;
+
+                _isVisible =
+                    false;
+#endif
             };
 
         _page = page;
@@ -333,6 +492,10 @@ public sealed class CrushSessionService(
 
             _lastCursorX = null;
             _lastCursorY = null;
+
+            _errorMessage = null;
+
+            _coefficientsScanned = false;
 
             _scannedRuneCells
                 .Clear();
@@ -435,7 +598,8 @@ public sealed class CrushSessionService(
                 _lastCursorX,
                 _lastCursorY,
                 runeLines,
-                totalValue
+                totalValue,
+                _errorMessage
             );
         }
     }
@@ -693,6 +857,51 @@ public sealed class CrushSessionService(
             return;
         }
 
+        bool shouldScanCoefficients;
+
+        lock (_stateLock)
+        {
+            shouldScanCoefficients =
+                !_coefficientsScanned &&
+                workItem.SessionId == _sessionId &&
+                _errorMessage is null;
+        }
+
+        if (shouldScanCoefficients)
+        {
+            IReadOnlyList<CrushCoefficientScanResult>
+                coefficientResults =
+                    await coefficientScanService
+                        .ScanAndStoreAsync(
+                            panel.DebugImagePath,
+                            serverName,
+                            cancellationToken
+                        );
+
+            bool coefficientsUpdated = false;
+
+            if (coefficientResults.Count > 0)
+            {
+                lock (_stateLock)
+                {
+                    if (workItem.SessionId == _sessionId &&
+                        _errorMessage is null)
+                    {
+                        _coefficientsScanned = true;
+                        coefficientsUpdated = true;
+                    }
+                }
+            }
+
+            if (coefficientsUpdated)
+            {
+                CoefficientsUpdated?.Invoke(
+                    this,
+                    EventArgs.Empty
+                );
+            }
+        }
+
         int panelCursorX =
             workItem.CaptureX -
             panel.X;
@@ -805,6 +1014,13 @@ public sealed class CrushSessionService(
 
         lock (_stateLock)
         {
+            if (workItem.SessionId !=
+                    _sessionId ||
+                _errorMessage is not null)
+            {
+                return;
+            }
+
             if (IsAlreadyScannedLocked(
                 cell))
             {
@@ -870,6 +1086,13 @@ public sealed class CrushSessionService(
 
         lock (_stateLock)
         {
+            if (workItem.SessionId !=
+                    _sessionId ||
+                _errorMessage is not null)
+            {
+                return;
+            }
+
             foreach (
                 KeyValuePair<
                     long,
@@ -1147,6 +1370,15 @@ public sealed class CrushSessionService(
             IntPtr hwnd,
             int index,
             nint newStyle
+        );
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(
+        UnmanagedType.Bool)]
+    private static extern bool
+        ShowWindow(
+            IntPtr hWnd,
+            int nCmdShow
         );
 
     [DllImport("user32.dll")]

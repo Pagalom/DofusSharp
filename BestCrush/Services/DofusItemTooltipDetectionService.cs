@@ -188,14 +188,16 @@ public sealed class DofusItemTooltipDetectionService(
             darkRectangles =
                 FindRectangles(
                     darkMask,
-                    minimumFillRatio: 0.25
+                    minimumFillRatio: 0.25,
+                    maximumHeight: 300
                 );
 
         List<ContourRectangle>
             bodyRectangles =
                 FindRectangles(
                     bodyMask,
-                    minimumFillRatio: 0.75
+                    minimumFillRatio: 0.75,
+                    maximumHeight: 900
                 );
 
         List<Rect> candidates = [];
@@ -292,7 +294,8 @@ public sealed class DofusItemTooltipDetectionService(
     private static List<ContourRectangle>
         FindRectangles(
             Mat mask,
-            double minimumFillRatio)
+            double minimumFillRatio,
+            int maximumHeight)
     {
         Cv2.FindContours(
             mask,
@@ -318,7 +321,7 @@ public sealed class DofusItemTooltipDetectionService(
             if (rectangle.Width < 240 ||
                 rectangle.Width > 600 ||
                 rectangle.Height < 50 ||
-                rectangle.Height > 260)
+                rectangle.Height > maximumHeight)
             {
                 continue;
             }

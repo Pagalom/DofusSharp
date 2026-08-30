@@ -1,4 +1,5 @@
 using BestCrush.Overlay;
+using System.Threading.Channels;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Extensions.DependencyInjection;
 using BestCrush.Domain.Models;
@@ -28,6 +29,29 @@ public sealed class OverlayService(
 {
     private Window? _overlayWindow;
     private OverlayPage? _overlayPage;
+
+    // Le clic molette doit rester instantané.
+    // Chaque clic démarre immédiatement sa propre
+    // capture, puis le traitement lourd (OpenCV, OCR,
+    // SQLite, calculs) est sérialisé sur un worker.
+    private readonly Channel<MiddleClickReadWorkItem>
+        _middleClickReadQueue =
+            Channel.CreateUnbounded<MiddleClickReadWorkItem>(
+                new UnboundedChannelOptions
+                {
+                    SingleReader = true,
+                    SingleWriter = false,
+                    AllowSynchronousContinuations = false
+                }
+            );
+
+    private readonly CancellationTokenSource
+        _middleClickReadCancellation = new();
+
+    private readonly object
+        _middleClickReadWorkerLock = new();
+
+    private Task? _middleClickReadWorkerTask;
 
 #if WINDOWS
     private AppWindow? _appWindow;
@@ -63,21 +87,28 @@ public sealed class OverlayService(
     private const int SwShowNoActivate = 4;
 
     private const int WhKeyboardLl = 13;
+    private const int WhMouseLl = 14;
 
     private const int WmKeyDown = 0x0100;
     private const int WmKeyUp = 0x0101;
 
+    private const int WmMButtonDown = 0x0207;
+    private const int WmMButtonUp = 0x0208;
+    private const int WmMouseWheel = 0x020A;
+    private const int WmMouseHWheel = 0x020E;
+
     private const int VkF7 = 0x76;
-    private const int VkF8 = 0x77;
     private const int VkF9 = 0x78;
 
     private IntPtr _keyboardHook = IntPtr.Zero;
+    private IntPtr _mouseHook = IntPtr.Zero;
 
     private LowLevelKeyboardProc? _keyboardProc;
+    private LowLevelMouseProc? _mouseProc;
 
     private bool _f7Pressed;
-    private bool _f8Pressed;
     private bool _f9Pressed;
+    private bool _middleButtonPressed;
 #endif
 
     public void Initialize()
@@ -86,6 +117,12 @@ public sealed class OverlayService(
         {
             return;
         }
+
+        crushSessionService.CoefficientsUpdated -=
+            OnCrushSessionCoefficientsUpdated;
+
+        crushSessionService.CoefficientsUpdated +=
+            OnCrushSessionCoefficientsUpdated;
 
         OverlayPage page =
             new(
@@ -155,74 +192,231 @@ public sealed class OverlayService(
         #endif
     }
 
-    public void RequestRead()
+    public void ToggleAllOverlays()
     {
-        _ = RequestReadAsync();
+#if WINDOWS
+        if (_overlayWindow is null ||
+            _overlayHwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        bool anyOverlayVisible =
+            _isOverlayVisible ||
+            crushSessionService.IsVisible;
+
+        if (anyOverlayVisible)
+        {
+            Hide();
+            crushSessionService.Hide();
+
+            return;
+        }
+
+        Show();
+        crushSessionService.Show();
+#endif
     }
 
-    private async Task RequestReadAsync()
+    public void RequestRead()
     {
         if (!currentServerState.HasSelectedServer)
         {
-            _overlayPage?.ShowServerSelectionRequired();
+            PostUi(
+                () =>
+                {
+                    _overlayPage?
+                        .ShowServerSelectionRequired();
 
-            Show();
+                    Show();
+                }
+            );
 
             return;
         }
 
         DofusWindowInfo? dofusWindow =
-            dofusWindowService.GetActiveDofusWindow();
+            dofusWindowService
+                .GetActiveDofusWindow();
 
-        // Règle absolue :
-        // aucune fenêtre Dofus = aucune capture.
         if (dofusWindow is null)
         {
-            _overlayPage?.ShowReadCancelled();
+            PostUi(
+                () =>
+                {
+                    _overlayPage?
+                        .ShowReadCancelled();
 
-            Show();
+                    Show();
+                }
+            );
 
             return;
         }
 
+        PostUi(
+            () =>
+            {
+                _overlayPage?
+                    .ShowCaptureStarted(
+                        dofusWindow
+                    );
 
-        _overlayPage?.ShowCaptureStarted(
-            dofusWindow
+                Show();
+            }
         );
 
-        Show();
+        EnsureMiddleClickReadWorker();
 
-        string? captureFilePath = null;
-
-        string? captureDirectory = null;
-
-        try
-        {
-            DofusCaptureResult capture =
-                await dofusCaptureService.CaptureAsync(
-                    dofusWindow
-                );
-
-                captureDirectory =
-                    Path.GetDirectoryName(
-                        capture.FilePath
-                    );
-
-            captureFilePath =
-                capture.FilePath;
-
-            _overlayPage?.ShowCaptureSuccess(
-                capture
+        // La capture démarre immédiatement au moment
+        // du clic. Elle n'attend jamais que l'OCR ou
+        // le calcul du clic précédent soit terminé.
+        Task<DofusCaptureResult> captureTask =
+            Task.Run(
+                async () =>
+                    await dofusCaptureService
+                        .CaptureAsync(
+                            dofusWindow,
+                            _middleClickReadCancellation
+                                .Token
+                        )
+                        .ConfigureAwait(false),
+                _middleClickReadCancellation.Token
             );
 
-            DofusPanelDetectionResult? panel =
-                await dofusPanelDetectionService
-                    .DetectCrushResultPanelAsync(
-                        capture.FilePath
+        _middleClickReadQueue
+            .Writer
+            .TryWrite(
+                new MiddleClickReadWorkItem(
+                    captureTask
+                )
+            );
+    }
+
+    private void EnsureMiddleClickReadWorker()
+    {
+        if (_middleClickReadWorkerTask is not null)
+        {
+            return;
+        }
+
+        lock (_middleClickReadWorkerLock)
+        {
+            if (_middleClickReadWorkerTask is not null)
+            {
+                return;
+            }
+
+            _middleClickReadWorkerTask =
+                Task.Run(
+                    () =>
+                        ProcessMiddleClickReadQueueAsync(
+                            _middleClickReadCancellation
+                                .Token
+                        )
+                );
+        }
+    }
+
+    private async Task ProcessMiddleClickReadQueueAsync(
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await foreach (
+                MiddleClickReadWorkItem workItem
+                in _middleClickReadQueue
+                    .Reader
+                    .ReadAllAsync(
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false))
+            {
+                try
+                {
+                    // Les captures ont déjà commencé en
+                    // parallèle. Elles sont cependant analysées
+                    // dans l'ordre des clics afin de conserver
+                    // un focus et des écritures BDD déterministes.
+                    DofusCaptureResult capture =
+                        await workItem
+                            .CaptureTask
+                            .ConfigureAwait(false);
+
+                    await ProcessCapturedReadAsync(
+                        capture,
+                        cancellationToken
+                    )
+                    .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    PostUi(
+                        () =>
+                            _overlayPage?
+                                .ShowCaptureFailed(
+                                    ex.Message
+                                )
                     );
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Fermeture de BestCrush.
+        }
+    }
+
+    private async Task ProcessCapturedReadAsync(
+        DofusCaptureResult capture,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            PostUi(
+                () =>
+                    _overlayPage?
+                        .ShowCaptureSuccess(
+                            capture
+                        )
+            );
+
+
+            // Priorité absolue à l'HDV.
+            //
+            // Les panneaux Dofus partagent une palette
+            // et une géométrie proches. La détection de
+            // concassage possède un fallback géométrique ;
+            // elle ne doit donc jamais prendre la main sur
+            // un HDV déjà reconnu avec son template dédié.
+            DofusMarketPanelDetectionResult?
+                preDetectedMarketPanel =
+                    await dofusMarketPanelDetectionService
+                        .DetectMarketPanelAsync(
+                            capture.FilePath
+                        );
+
+            DofusPanelDetectionResult? panel =
+                preDetectedMarketPanel is null
+                    ? await dofusPanelDetectionService
+                        .DetectCrushResultPanelAsync(
+                            capture.FilePath
+                        )
+                    : null;
 
                     if (panel is null)
                     {
+                        // Hors HDV seulement, une infobulle
+                        // d'équipement peut servir directement
+                        // à définir le focus. En HDV, le panneau
+                        // a priorité afin d'enregistrer aussi les
+                        // prix affichés.
+                        if (preDetectedMarketPanel is null)
+                        {
                         using IServiceScope tooltipScope =
                             serviceScopeFactory.CreateScope();
 
@@ -241,12 +435,17 @@ public sealed class OverlayService(
 
                         if (tooltipDetection.Candidates.Count > 1)
                         {
-                            _overlayPage?
-                                .ShowMultipleTooltipsDetected(
-                                    tooltipDetection
-                                        .Candidates
-                                        .Count
-                                );
+                            PostUi(
+                                () =>
+                                {
+                                    _overlayPage?
+                                                                    .ShowMultipleTooltipsDetected(
+                                                                        tooltipDetection
+                                                                            .Candidates
+                                                                            .Count
+                                                                    );
+                                }
+                            );
 
                             return;
                         }
@@ -270,13 +469,18 @@ public sealed class OverlayService(
 
                                 await RefreshFocusedProfitabilityAsync();
 
-                                _overlayPage?
-                                    .ShowTooltipEquipmentFocused(
-                                        tooltipEquipment.Name,
-                                        candidate
-                                            .Recognition
-                                            .Confidence
-                                    );
+                                PostUi(
+                                    () =>
+                                    {
+                                        _overlayPage?
+                                                                            .ShowTooltipEquipmentFocused(
+                                                                                tooltipEquipment.Name,
+                                                                                candidate
+                                                                                    .Recognition
+                                                                                    .Confidence
+                                                                            );
+                                    }
+                                );
 
                                 return;
                             }
@@ -285,10 +489,13 @@ public sealed class OverlayService(
                             // n'est pas un équipement reconnu.
                             //
                             // On ne bloque surtout pas les autres
-                            // usages de F8 : HDV rune, ressource, etc.
+                            // usages du clic molette : HDV rune, ressource, etc.
                         }
+                        }
+
                         DofusMarketPanelDetectionResult? marketPanel =
-                            await dofusMarketPanelDetectionService
+                            preDetectedMarketPanel
+                            ?? await dofusMarketPanelDetectionService
                                 .DetectMarketPanelAsync(
                                     capture.FilePath
                                 );
@@ -342,10 +549,15 @@ public sealed class OverlayService(
                                 if (string.IsNullOrWhiteSpace(
                                     recognizedSellItemName))
                                 {
-                                    _overlayPage?
-                                        .ShowAuxiliaryMarketReadFailed(
-                                            "Rune non reconnue"
-                                        );
+                                    PostUi(
+                                        () =>
+                                        {
+                                            _overlayPage?
+                                                                                    .ShowAuxiliaryMarketReadFailed(
+                                                                                        "Rune non reconnue"
+                                                                                    );
+                                        }
+                                    );
 
                                     return;
                                 }
@@ -373,10 +585,15 @@ public sealed class OverlayService(
 
                                 if (sellRuneRecognition is null)
                                 {
-                                    _overlayPage?
-                                        .ShowAuxiliaryMarketReadFailed(
-                                            recognizedSellItemName
-                                        );
+                                    PostUi(
+                                        () =>
+                                        {
+                                            _overlayPage?
+                                                                                    .ShowAuxiliaryMarketReadFailed(
+                                                                                        recognizedSellItemName
+                                                                                    );
+                                        }
+                                    );
 
                                     return;
                                 }
@@ -389,12 +606,17 @@ public sealed class OverlayService(
 
                                 if (sellLots.Count == 0)
                                 {
-                                    _overlayPage?
-                                        .ShowAuxiliaryMarketReadFailed(
-                                            sellRuneRecognition
-                                                .Rune
-                                                .Name
-                                        );
+                                    PostUi(
+                                        () =>
+                                        {
+                                            _overlayPage?
+                                                                                    .ShowAuxiliaryMarketReadFailed(
+                                                                                        sellRuneRecognition
+                                                                                            .Rune
+                                                                                            .Name
+                                                                                    );
+                                        }
+                                    );
 
                                     return;
                                 }
@@ -418,16 +640,21 @@ public sealed class OverlayService(
                                         );
                                 }
 
-                                _overlayPage?
-                                    .ShowAuxiliaryMarketDataRecorded(
-                                        sellRuneRecognition
-                                            .Rune
-                                            .Name,
-                                        sellLots.Count,
-                                        focusedEquipmentState
-                                            .Equipment?
-                                            .Name
-                                    );
+                                PostUi(
+                                    () =>
+                                    {
+                                        _overlayPage?
+                                                                            .ShowAuxiliaryMarketDataRecorded(
+                                                                                sellRuneRecognition
+                                                                                    .Rune
+                                                                                    .Name,
+                                                                                sellLots.Count,
+                                                                                focusedEquipmentState
+                                                                                    .Equipment?
+                                                                                    .Name
+                                                                            );
+                                    }
+                                );
 
                                 await RefreshFocusedProfitabilityAsync();
 
@@ -483,9 +710,14 @@ public sealed class OverlayService(
                                     if (string.IsNullOrWhiteSpace(
                                             recognizedMarketItemName))
                                     {
-                                        _overlayPage?.ShowMarketEquipmentRead(
-                                            recognizedMarketItemName,
-                                            null
+                                        PostUi(
+                                            () =>
+                                            {
+                                                _overlayPage?.ShowMarketEquipmentRead(
+                                                                                            recognizedMarketItemName,
+                                                                                            null
+                                                                                        );
+                                            }
                                         );
 
                                         return;
@@ -542,10 +774,15 @@ public sealed class OverlayService(
 
                                     if (lots.Count == 0)
                                     {
-                                        _overlayPage?
-                                            .ShowAuxiliaryMarketReadFailed(
-                                                runeRecognition.Rune.Name
-                                            );
+                                        PostUi(
+                                            () =>
+                                            {
+                                                _overlayPage?
+                                                                                            .ShowAuxiliaryMarketReadFailed(
+                                                                                                runeRecognition.Rune.Name
+                                                                                            );
+                                            }
+                                        );
 
                                         return;
                                     }
@@ -566,14 +803,19 @@ public sealed class OverlayService(
                                             );
                                     }
 
-                                    _overlayPage?
-                                        .ShowAuxiliaryMarketDataRecorded(
-                                            runeRecognition.Rune.Name,
-                                            lots.Count,
-                                            focusedEquipmentState
-                                                .Equipment?
-                                                .Name
-                                        );
+                                    PostUi(
+                                        () =>
+                                        {
+                                            _overlayPage?
+                                                                                    .ShowAuxiliaryMarketDataRecorded(
+                                                                                        runeRecognition.Rune.Name,
+                                                                                        lots.Count,
+                                                                                        focusedEquipmentState
+                                                                                            .Equipment?
+                                                                                            .Name
+                                                                                    );
+                                        }
+                                    );
 
                                     await RefreshFocusedProfitabilityAsync();
 
@@ -598,12 +840,17 @@ public sealed class OverlayService(
 
                                     if (lots.Count == 0)
                                     {
-                                        _overlayPage?
-                                            .ShowAuxiliaryMarketReadFailed(
-                                                resourceRecognition
-                                                    .Resource
-                                                    .Name
-                                            );
+                                        PostUi(
+                                            () =>
+                                            {
+                                                _overlayPage?
+                                                                                            .ShowAuxiliaryMarketReadFailed(
+                                                                                                resourceRecognition
+                                                                                                    .Resource
+                                                                                                    .Name
+                                                                                            );
+                                            }
+                                        );
 
                                         return;
                                     }
@@ -626,16 +873,21 @@ public sealed class OverlayService(
                                             );
                                     }
 
-                                    _overlayPage?
-                                        .ShowAuxiliaryMarketDataRecorded(
-                                            resourceRecognition
-                                                .Resource
-                                                .Name,
-                                            lots.Count,
-                                            focusedEquipmentState
-                                                .Equipment?
-                                                .Name
-                                        );
+                                    PostUi(
+                                        () =>
+                                        {
+                                            _overlayPage?
+                                                                                    .ShowAuxiliaryMarketDataRecorded(
+                                                                                        resourceRecognition
+                                                                                            .Resource
+                                                                                            .Name,
+                                                                                        lots.Count,
+                                                                                        focusedEquipmentState
+                                                                                            .Equipment?
+                                                                                            .Name
+                                                                                    );
+                                        }
+                                    );
 
                                     await RefreshFocusedProfitabilityAsync();
 
@@ -645,19 +897,29 @@ public sealed class OverlayService(
                                 // 3. Ni équipement, ni rune, ni ressource.
                                 if (recognizedMarketPrice is long detectedPrice)
                                 {
-                                    _overlayPage?
-                                        .ShowMarketEquipmentRecognitionFailed(
-                                            recognizedMarketItemName,
-                                            detectedPrice
-                                        );
+                                    PostUi(
+                                        () =>
+                                        {
+                                            _overlayPage?
+                                                                                    .ShowMarketEquipmentRecognitionFailed(
+                                                                                        recognizedMarketItemName,
+                                                                                        detectedPrice
+                                                                                    );
+                                        }
+                                    );
                                 }
                                 else
                                 {
-                                    _overlayPage?
-                                        .ShowMarketEquipmentRead(
-                                            recognizedMarketItemName,
-                                            null
-                                        );
+                                    PostUi(
+                                        () =>
+                                        {
+                                            _overlayPage?
+                                                                                    .ShowMarketEquipmentRead(
+                                                                                        recognizedMarketItemName,
+                                                                                        null
+                                                                                    );
+                                        }
+                                    );
                                 }
 
                                 return;
@@ -668,11 +930,16 @@ public sealed class OverlayService(
                             if (recognizedMarketPrice is null ||
                                 recognizedMarketPrice <= 0)
                             {
-                                _overlayPage?
-                                    .ShowMarketEquipmentRead(
-                                        marketEquipment.Name,
-                                        null
-                                    );
+                                PostUi(
+                                    () =>
+                                    {
+                                        _overlayPage?
+                                                                            .ShowMarketEquipmentRead(
+                                                                                marketEquipment.Name,
+                                                                                null
+                                                                            );
+                                    }
+                                );
 
                                 return;
                             }
@@ -712,25 +979,40 @@ public sealed class OverlayService(
                                 appliedPrice.Price !=
                                     capturedPrice.Price;
 
-                            _overlayPage?.ShowMarketEquipmentRecorded(
-                                marketEquipment.Name,
-                                marketRecognition.Confidence,
-                                capturedPrice.Price,
-                                appliedPrice.Price,
-                                manualPricePreserved
+                            PostUi(
+                                () =>
+                                {
+                                    _overlayPage?.ShowMarketEquipmentRecorded(
+                                                                    marketEquipment.Name,
+                                                                    marketRecognition.Confidence,
+                                                                    capturedPrice.Price,
+                                                                    appliedPrice.Price,
+                                                                    manualPricePreserved
+                                                                );
+                                }
                             );
                             await RefreshFocusedProfitabilityAsync();
 
                             return;
                         }
 
-                        _overlayPage?.ShowPanelNotDetected();
+                        PostUi(
+                            () =>
+                            {
+                                _overlayPage?.ShowPanelNotDetected();
+                            }
+                        );
 
                         return;
                     }
 
-            _overlayPage?.ShowPanelDetected(
-                panel
+            PostUi(
+                () =>
+                {
+                    _overlayPage?.ShowPanelDetected(
+                                    panel
+                                );
+                }
             );
 
             CrushRowDetectionResult? lastRow =
@@ -741,13 +1023,23 @@ public sealed class OverlayService(
 
             if (lastRow is null)
             {
-                _overlayPage?.ShowCrushRowNotDetected();
+                PostUi(
+                    () =>
+                    {
+                        _overlayPage?.ShowCrushRowNotDetected();
+                    }
+                );
 
                 return;
             }
 
-            _overlayPage?.ShowLastCrushRowDetected(
-                lastRow
+            PostUi(
+                () =>
+                {
+                    _overlayPage?.ShowLastCrushRowDetected(
+                                    lastRow
+                                );
+                }
             );
             string itemNameRegion =
                 await dofusImageRegionService.ExtractRegionAsync(
@@ -793,9 +1085,14 @@ public sealed class OverlayService(
                         coefficientRegion
                     );
 
-                _overlayPage?.ShowCrushOcrResult(
-                    recognizedItemName,
-                    recognizedCoefficient
+                PostUi(
+                    () =>
+                    {
+                        _overlayPage?.ShowCrushOcrResult(
+                                            recognizedItemName,
+                                            recognizedCoefficient
+                                        );
+                    }
                 );
                 if (recognizedCoefficient is null)
                 {
@@ -828,8 +1125,13 @@ public sealed class OverlayService(
 
                 if (recognition is null)
                 {
-                    _overlayPage?.ShowEquipmentRecognitionFailed(
-                        recognizedItemName
+                    PostUi(
+                        () =>
+                        {
+                            _overlayPage?.ShowEquipmentRecognitionFailed(
+                                                    recognizedItemName
+                                                );
+                        }
                     );
 
                     return;
@@ -845,7 +1147,12 @@ public sealed class OverlayService(
 
                 if (string.IsNullOrWhiteSpace(serverName))
                 {
-                    _overlayPage?.ShowServerNotSelected();
+                    PostUi(
+                        () =>
+                        {
+                            _overlayPage?.ShowServerNotSelected();
+                        }
+                    );
 
                     return;
                 }
@@ -887,24 +1194,58 @@ public sealed class OverlayService(
                             1
                         );
 
-                _overlayPage?.ShowRecognizedEquipment(
-                    equipment.Name,
-                    recognition.Confidence,
-                    recognizedCoefficient.Value,
-                    appliedCoefficient.CoefficientPercent,
-                    manualCoefficientPreserved,
-                    equipmentPrice?.Price
+                PostUi(
+                    () =>
+                    {
+                        _overlayPage?.ShowRecognizedEquipment(
+                                            equipment.Name,
+                                            recognition.Confidence,
+                                            recognizedCoefficient.Value,
+                                            appliedCoefficient.CoefficientPercent,
+                                            manualCoefficientPreserved,
+                                            equipmentPrice?.Price
+                                        );
+                    }
                 );
                 await RefreshFocusedProfitabilityAsync();
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
-            _overlayPage?.ShowCaptureFailed(
-                ex.Message
+            PostUi(
+                () =>
+                    _overlayPage?
+                        .ShowCaptureFailed(
+                            ex.Message
+                        )
             );
         }
-        
+    }
 
+    private static void PostUi(
+        Action action)
+    {
+        if (MainThread.IsMainThread)
+        {
+            action();
+
+            return;
+        }
+
+        MainThread
+            .BeginInvokeOnMainThread(
+                action
+            );
+    }
+
+    private void OnCrushSessionCoefficientsUpdated(
+        object? sender,
+        EventArgs e)
+    {
+        _ = RefreshFocusedProfitabilityAsync();
     }
 
     public async Task FocusEquipmentAsync(
@@ -1147,6 +1488,24 @@ public sealed class OverlayService(
 
     public void Shutdown()
     {
+        crushSessionService.CoefficientsUpdated -=
+            OnCrushSessionCoefficientsUpdated;
+
+        try
+        {
+            _middleClickReadCancellation
+                .Cancel();
+
+            _middleClickReadQueue
+                .Writer
+                .TryComplete();
+        }
+        catch
+        {
+            // La fermeture ne doit jamais être
+            // bloquée par le worker de lecture.
+        }
+
 #if WINDOWS
         if (_keyboardHook != IntPtr.Zero)
         {
@@ -1155,6 +1514,15 @@ public sealed class OverlayService(
             );
 
             _keyboardHook = IntPtr.Zero;
+        }
+
+        if (_mouseHook != IntPtr.Zero)
+        {
+            UnhookWindowsHookEx(
+                _mouseHook
+            );
+
+            _mouseHook = IntPtr.Zero;
         }
 #endif
 
@@ -1247,6 +1615,7 @@ public sealed class OverlayService(
         );
 
         InstallKeyboardHook();
+        InstallMouseHook();
 #endif
     }
 
@@ -1265,9 +1634,31 @@ public sealed class OverlayService(
             GetModuleHandle(null);
 
         _keyboardHook =
-            SetWindowsHookEx(
+            SetWindowsHookExKeyboard(
                 WhKeyboardLl,
                 _keyboardProc,
+                moduleHandle,
+                0
+            );
+    }
+
+    private void InstallMouseHook()
+    {
+        if (_mouseHook != IntPtr.Zero)
+        {
+            return;
+        }
+
+        _mouseProc =
+            MouseHookCallback;
+
+        IntPtr moduleHandle =
+            GetModuleHandle(null);
+
+        _mouseHook =
+            SetWindowsHookExMouse(
+                WhMouseLl,
+                _mouseProc,
                 moduleHandle,
                 0
             );
@@ -1281,7 +1672,9 @@ public sealed class OverlayService(
         if (nCode >= 0)
         {
             int virtualKeyCode =
-                Marshal.ReadInt32(lParam);
+                Marshal.ReadInt32(
+                    lParam
+                );
 
             if (virtualKeyCode == VkF7)
             {
@@ -1293,7 +1686,7 @@ public sealed class OverlayService(
 
                     MainThread
                         .BeginInvokeOnMainThread(
-                            Toggle
+                            ToggleAllOverlays
                         );
                 }
                 else if (
@@ -1303,23 +1696,7 @@ public sealed class OverlayService(
                     _f7Pressed = false;
                 }
             }
-            if (virtualKeyCode == VkF8)
-            {
-                if (wParam == (IntPtr)WmKeyDown &&
-                    !_f8Pressed)
-                {
-                    _f8Pressed = true;
 
-                    Application.Current?.Dispatcher.DispatchDelayed(
-                        TimeSpan.FromMilliseconds(150),
-                        RequestRead
-                    );
-                }
-                else if (wParam == (IntPtr)WmKeyUp)
-                {
-                    _f8Pressed = false;
-                }
-            }
             if (virtualKeyCode == VkF9)
             {
                 if (wParam ==
@@ -1348,6 +1725,173 @@ public sealed class OverlayService(
             wParam,
             lParam
         );
+    }
+
+    private IntPtr MouseHookCallback(
+        int nCode,
+        IntPtr wParam,
+        IntPtr lParam)
+    {
+        if (nCode < 0)
+        {
+            return CallNextHookEx(
+                _mouseHook,
+                nCode,
+                wParam,
+                lParam
+            );
+        }
+
+        int message =
+            wParam.ToInt32();
+
+        bool isRelevantMessage =
+            message == WmMButtonDown ||
+            message == WmMButtonUp ||
+            message == WmMouseWheel ||
+            message == WmMouseHWheel;
+
+        if (!isRelevantMessage)
+        {
+            return CallNextHookEx(
+                _mouseHook,
+                nCode,
+                wParam,
+                lParam
+            );
+        }
+
+        LowLevelMouseHookData mouseData =
+            Marshal.PtrToStructure<
+                LowLevelMouseHookData
+            >(lParam);
+
+        if (message == WmMButtonUp)
+        {
+            _middleButtonPressed = false;
+        }
+
+        bool overBestCrushOverlay =
+            IsPointInsideMainOverlay(
+                mouseData.Point.X,
+                mouseData.Point.Y
+            ) ||
+            crushSessionService
+                .ContainsScreenPoint(
+                    mouseData.Point.X,
+                    mouseData.Point.Y
+                );
+
+        if (overBestCrushOverlay)
+        {
+            return CallNextHookEx(
+                _mouseHook,
+                nCode,
+                wParam,
+                lParam
+            );
+        }
+
+        bool overDofus =
+            IsPointInsideActiveDofusWindow(
+                mouseData.Point.X,
+                mouseData.Point.Y
+            );
+
+        if (!overDofus)
+        {
+            return CallNextHookEx(
+                _mouseHook,
+                nCode,
+                wParam,
+                lParam
+            );
+        }
+
+        if (message == WmMButtonDown &&
+            !_middleButtonPressed)
+        {
+            _middleButtonPressed = true;
+
+            // Le hook souris doit rendre la main à Windows
+            // immédiatement. Le déclenchement de la capture
+            // est donc lui aussi envoyé sur le pool de threads.
+            _ = Task.Run(
+                async () =>
+                {
+                    await Task.Delay(
+                        35
+                    )
+                    .ConfigureAwait(false);
+
+                    RequestRead();
+                }
+            );
+        }
+        else if (
+            (
+                message == WmMouseWheel ||
+                message == WmMouseHWheel
+            ) &&
+            crushSessionService.IsRunning)
+        {
+            MainThread
+                .BeginInvokeOnMainThread(
+                    crushSessionService
+                        .InvalidateForScroll
+                );
+        }
+
+        return CallNextHookEx(
+            _mouseHook,
+            nCode,
+            wParam,
+            lParam
+        );
+    }
+
+    private bool IsPointInsideActiveDofusWindow(
+        int x,
+        int y)
+    {
+        DofusWindowInfo? dofusWindow =
+            dofusWindowService
+                .GetActiveDofusWindow();
+
+        if (dofusWindow is null)
+        {
+            return false;
+        }
+
+        return
+            x >= dofusWindow.X &&
+            y >= dofusWindow.Y &&
+            x <
+                dofusWindow.X +
+                dofusWindow.Width &&
+            y <
+                dofusWindow.Y +
+                dofusWindow.Height;
+    }
+
+    private bool IsPointInsideMainOverlay(
+        int x,
+        int y)
+    {
+        if (!_isOverlayVisible)
+        {
+            return false;
+        }
+
+        return
+            x >= _currentX &&
+            y >= _currentY &&
+            x <
+                _currentX +
+                _currentWidth &&
+            y <
+                _currentY +
+                _currentHeight;
     }
 
     private static void MakeTransparent(
@@ -1381,14 +1925,54 @@ public sealed class OverlayService(
             IntPtr lParam
         );
 
+    private delegate IntPtr
+        LowLevelMouseProc(
+            int nCode,
+            IntPtr wParam,
+            IntPtr lParam
+        );
+
+    [StructLayout(
+        LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(
+        LayoutKind.Sequential)]
+    private struct LowLevelMouseHookData
+    {
+        public NativePoint Point;
+        public uint MouseData;
+        public uint Flags;
+        public uint Time;
+        public UIntPtr ExtraInfo;
+    }
+
     [DllImport(
         "user32.dll",
+        EntryPoint = "SetWindowsHookExW",
         SetLastError = true
     )]
     private static extern IntPtr
-        SetWindowsHookEx(
+        SetWindowsHookExKeyboard(
             int idHook,
             LowLevelKeyboardProc lpfn,
+            IntPtr hMod,
+            uint dwThreadId
+        );
+
+    [DllImport(
+        "user32.dll",
+        EntryPoint = "SetWindowsHookExW",
+        SetLastError = true
+    )]
+    private static extern IntPtr
+        SetWindowsHookExMouse(
+            int idHook,
+            LowLevelMouseProc lpfn,
             IntPtr hMod,
             uint dwThreadId
         );
@@ -1461,6 +2045,10 @@ public sealed class OverlayService(
             string? lpModuleName
         );
 #endif
+
+    private sealed record MiddleClickReadWorkItem(
+        Task<DofusCaptureResult> CaptureTask
+    );
 }
 
 [Flags]

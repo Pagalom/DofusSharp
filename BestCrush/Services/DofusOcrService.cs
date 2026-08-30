@@ -263,19 +263,51 @@ public sealed class DofusOcrService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        string text =
+        // Le symbole % est parfois lu comme un zéro :
+        // "371 %" devient alors "3710".
+        //
+        // On repère l'espace horizontal entre le nombre
+        // et le symbole %, puis on OCR uniquement la partie
+        // numérique. Un vrai 3710 % conserve donc bien ses
+        // quatre chiffres.
+        string numberOnlyImage =
+            PrepareCoefficientNumberRegion(
+                imageFilePath
+            );
+
+        string numberOnlyText =
+            await RecognizeUpscaledTextAsync(
+                numberOnlyImage
+            );
+
+        double? numberOnlyValue =
+            TryParseCoefficientText(
+                numberOnlyText
+            );
+
+        if (numberOnlyValue is not null)
+        {
+            return numberOnlyValue;
+        }
+
+        string fallbackText =
             await RecognizeUpscaledTextAsync(
                 imageFilePath
             );
 
+        return TryParseCoefficientText(
+            fallbackText
+        );
+    }
+
+    private static double? TryParseCoefficientText(
+        string text)
+    {
         if (string.IsNullOrWhiteSpace(text))
         {
             return null;
         }
 
-        // La zone ne contient que le coefficient.
-        // On ne dépend donc pas de la bonne
-        // reconnaissance du symbole %.
         Match match =
             Regex.Match(
                 text,
@@ -288,8 +320,7 @@ public sealed class DofusOcrService
         }
 
         string number =
-            match.Value
-                .Replace(',', '.');
+            match.Value.Replace(',', '.');
 
         if (!double.TryParse(
             number,
@@ -303,6 +334,163 @@ public sealed class DofusOcrService
         return coefficient > 0
             ? coefficient
             : null;
+    }
+
+    private static string PrepareCoefficientNumberRegion(
+        string imagePath)
+    {
+        using Mat source =
+            Cv2.ImRead(
+                imagePath,
+                ImreadModes.Color
+            );
+
+        if (source.Empty())
+        {
+            return imagePath;
+        }
+
+        using Mat gray = new();
+        using Mat bright = new();
+
+        Cv2.CvtColor(
+            source,
+            gray,
+            ColorConversionCodes.BGR2GRAY
+        );
+
+        Cv2.Threshold(
+            gray,
+            bright,
+            120,
+            255,
+            ThresholdTypes.Binary
+        );
+
+        bool[] activeColumns =
+            new bool[source.Width];
+
+        int firstActive = -1;
+        int lastActive = -1;
+
+        for (int x = 0; x < source.Width; x++)
+        {
+            using Mat column =
+                new(
+                    bright,
+                    new OpenCvSharp.Rect(
+                        x,
+                        0,
+                        1,
+                        bright.Height
+                    )
+                );
+
+            bool active =
+                Cv2.CountNonZero(column) > 0;
+
+            activeColumns[x] = active;
+
+            if (!active)
+            {
+                continue;
+            }
+
+            if (firstActive < 0)
+            {
+                firstActive = x;
+            }
+
+            lastActive = x;
+        }
+
+        if (firstActive < 0 ||
+            lastActive <= firstActive)
+        {
+            return imagePath;
+        }
+
+        int bestGapStart = -1;
+        int bestGapLength = 0;
+        int cursor = firstActive;
+
+        while (cursor <= lastActive)
+        {
+            if (activeColumns[cursor])
+            {
+                cursor++;
+                continue;
+            }
+
+            int gapStart = cursor;
+
+            while (
+                cursor <= lastActive &&
+                !activeColumns[cursor])
+            {
+                cursor++;
+            }
+
+            int gapLength =
+                cursor - gapStart;
+
+            if (gapLength >= 4 &&
+                gapLength > bestGapLength)
+            {
+                bestGapStart = gapStart;
+                bestGapLength = gapLength;
+            }
+        }
+
+        int cropLeft =
+            Math.Max(
+                0,
+                firstActive - 6
+            );
+
+        int cropRight =
+            bestGapStart > firstActive
+                ? bestGapStart
+                : Math.Min(
+                    source.Width,
+                    lastActive + 7
+                );
+
+        if (cropRight <= cropLeft)
+        {
+            return imagePath;
+        }
+
+        OpenCvSharp.Rect cropRect =
+            new(
+                cropLeft,
+                0,
+                cropRight - cropLeft,
+                source.Height
+            );
+
+        using Mat numberOnly =
+            new(
+                source,
+                cropRect
+            );
+
+        string directory =
+            Path.GetDirectoryName(imagePath)
+            ?? Path.GetTempPath();
+
+        string outputPath =
+            Path.Combine(
+                directory,
+                $"{Path.GetFileNameWithoutExtension(imagePath)}-coefficient-digits.png"
+            );
+
+        Cv2.ImWrite(
+            outputPath,
+            numberOnly
+        );
+
+        return outputPath;
     }
 
     public Task<long?> RecognizePriceAsync(

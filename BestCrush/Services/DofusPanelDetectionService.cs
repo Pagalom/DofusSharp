@@ -1,3 +1,6 @@
+using System.Globalization;
+using System.Text;
+
 using OpenCvSharp;
 
 using CvRect = OpenCvSharp.Rect;
@@ -5,7 +8,8 @@ using CvPoint = OpenCvSharp.Point;
 
 namespace BestCrush.Services;
 
-public sealed class DofusPanelDetectionService
+public sealed class DofusPanelDetectionService(
+    DofusOcrService ocrService)
 {
     private const double
         CrushHeaderMinimumConfidence = 0.85;
@@ -88,13 +92,39 @@ public sealed class DofusPanelDetectionService
         bool usedGeometricFallback =
             panelRect is null;
 
-        panelRect ??=
-            DetectFromGeometry(
-                source
-            );
+        if (panelRect is null)
+        {
+            panelRect =
+                DetectFromGeometry(
+                    source
+                );
 
-        if (panelRect is null ||
-            panelRect.Value.Width <= 0 ||
+            if (panelRect is null)
+            {
+                return null;
+            }
+
+            // Une géométrie compatible ne suffit pas :
+            // l'HDV utilise les mêmes couleurs et peut
+            // avoir des rectangles de dimensions proches.
+            //
+            // Le fallback doit donc être confirmé par
+            // du texte propre au résultat de concassage.
+            bool semanticallyConfirmed =
+                await ValidateGeometricCrushPanelAsync(
+                    source,
+                    panelRect.Value,
+                    sourceFilePath,
+                    cancellationToken
+                );
+
+            if (!semanticallyConfirmed)
+            {
+                return null;
+            }
+        }
+
+        if (panelRect.Value.Width <= 0 ||
             panelRect.Value.Height <= 0)
         {
             return null;
@@ -136,6 +166,167 @@ public sealed class DofusPanelDetectionService
             finalRect.Height,
             outputPath
         );
+    }
+
+    private async Task<bool>
+        ValidateGeometricCrushPanelAsync(
+            Mat source,
+            CvRect panelRect,
+            string sourceFilePath,
+            CancellationToken cancellationToken)
+    {
+        cancellationToken
+            .ThrowIfCancellationRequested();
+
+        // Le titre et les en-têtes se trouvent dans
+        // les ~20 % supérieurs du panneau.
+        int validationHeight =
+            Math.Min(
+                panelRect.Height,
+                Math.Max(
+                    100,
+                    (int)Math.Round(
+                        panelRect.Height * 0.20
+                    )
+                )
+            );
+
+        CvRect validationRect =
+            ClampRectangle(
+                panelRect.X,
+                panelRect.Y,
+                panelRect.Width,
+                validationHeight,
+                source.Width,
+                source.Height
+            );
+
+        if (validationRect.Width <= 0 ||
+            validationRect.Height <= 0)
+        {
+            return false;
+        }
+
+        using Mat validationImage =
+            new(
+                source,
+                validationRect
+            );
+
+        string directory =
+            Path.GetDirectoryName(
+                sourceFilePath
+            )
+            ?? Path.GetTempPath();
+
+        string validationPath =
+            Path.Combine(
+                directory,
+                $"{Path.GetFileNameWithoutExtension(sourceFilePath)}-crush-validation-header.png"
+            );
+
+        Cv2.ImWrite(
+            validationPath,
+            validationImage
+        );
+
+        string recognizedText =
+            await ocrService
+                .RecognizeUpscaledTextAsync(
+                    validationPath
+                );
+
+        string normalized =
+            NormalizeForSemanticCheck(
+                recognizedText
+            );
+
+        bool hasCrushTitle =
+            normalized.Contains(
+                "concas",
+                StringComparison.Ordinal
+            );
+
+        bool hasCoefficient =
+            normalized.Contains(
+                "coefficient",
+                StringComparison.Ordinal
+            ) ||
+            normalized.Contains(
+                "coeff",
+                StringComparison.Ordinal
+            );
+
+        bool hasRunes =
+            normalized.Contains(
+                "rune",
+                StringComparison.Ordinal
+            );
+
+        // Soit le titre du panneau est reconnu,
+        // soit les deux en-têtes les plus spécifiques
+        // confirment indépendamment le contexte.
+        return hasCrushTitle ||
+            (hasCoefficient && hasRunes);
+    }
+
+    private static string
+        NormalizeForSemanticCheck(
+            string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        string decomposed =
+            value
+                .Trim()
+                .ToLowerInvariant()
+                .Normalize(
+                    NormalizationForm.FormD
+                );
+
+        StringBuilder builder =
+            new();
+
+        bool previousWasSpace =
+            false;
+
+        foreach (char character in decomposed)
+        {
+            UnicodeCategory category =
+                CharUnicodeInfo
+                    .GetUnicodeCategory(
+                        character
+                    );
+
+            if (category ==
+                UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            if (char.IsWhiteSpace(character))
+            {
+                if (!previousWasSpace)
+                {
+                    builder.Append(' ');
+                    previousWasSpace = true;
+                }
+
+                continue;
+            }
+
+            previousWasSpace = false;
+            builder.Append(character);
+        }
+
+        return builder
+            .ToString()
+            .Normalize(
+                NormalizationForm.FormC
+            );
     }
 
     private static async Task<CvRect?>
@@ -260,13 +451,6 @@ public sealed class DofusPanelDetectionService
 
         if (rowGeometry is not null)
         {
-            // Les lignes sont analysées par
-            // DofusCrushRowDetectionService avec
-            // 3 % de marge de chaque côté.
-            //
-            // On retrouve ici la largeur réelle
-            // du panneau à partir de la largeur
-            // observée du rectangle de résultat.
             panelWidth =
                 SolvePanelWidthFromContentWidth(
                     rowGeometry.Width
@@ -287,8 +471,6 @@ public sealed class DofusPanelDetectionService
         }
         else
         {
-            // Secours du secours : on utilise
-            // le grand corps sombre.
             panelWidth =
                 (int)Math.Round(
                     ReferencePanelWidth
@@ -454,12 +636,6 @@ public sealed class DofusPanelDetectionService
             return null;
         }
 
-        // Plusieurs lignes du même panneau ont
-        // pratiquement le même X et la même largeur.
-        //
-        // On choisit le groupe le plus représenté,
-        // ce qui évite de prendre un autre élément
-        // bleu de l'interface Dofus.
         var bestGroup =
             rowRectangles
                 .GroupBy(
@@ -518,9 +694,6 @@ public sealed class DofusPanelDetectionService
         SolvePanelWidthFromContentWidth(
             int contentWidth)
     {
-        // Recherche exacte autour de la largeur
-        // attendue afin de respecter le même
-        // Math.Round() que le détecteur de lignes.
         for (
             int panelWidth =
                 contentWidth;

@@ -1,4 +1,6 @@
 using BestCrush.Services;
+using System.Globalization;
+using Microsoft.Maui.ApplicationModel.DataTransfer;
 
 namespace BestCrush.Overlay;
 
@@ -9,6 +11,9 @@ public sealed class CrushSessionOverlayPage
     private readonly Label _scannedCells;
     private readonly VerticalStackLayout _runes;
     private readonly Label _total;
+
+    private double? _lastTotalValue;
+    private int _copyFeedbackVersion;
 
     private readonly CrushSessionService
         _sessionService;
@@ -165,8 +170,24 @@ public sealed class CrushSessionOverlayPage
                 FontSize = 15,
 
                 FontAttributes =
-                    FontAttributes.Bold
+                    FontAttributes.Bold,
+
+                TextDecorations =
+                    TextDecorations.Underline
             };
+
+        TapGestureRecognizer totalTap =
+            new();
+
+        totalTap.Tapped +=
+            async (_, _) =>
+            {
+                await CopyTotalAsync();
+            };
+
+        _total.GestureRecognizers.Add(
+            totalTap
+        );
 
         VerticalStackLayout content =
             new()
@@ -214,15 +235,27 @@ public sealed class CrushSessionOverlayPage
     public void Update(
         CrushSessionSnapshot snapshot)
     {
-        _status.Text =
-            snapshot.IsRunning
-                ? "● Acquisition active — survolez les runes"
-                : "○ Acquisition arrêtée";
+        if (!string.IsNullOrWhiteSpace(
+            snapshot.ErrorMessage))
+        {
+            _status.Text =
+                snapshot.ErrorMessage;
 
-        _status.TextColor =
-            snapshot.IsRunning
-                ? Colors.LightGreen
-                : Colors.Orange;
+            _status.TextColor =
+                Colors.Red;
+        }
+        else
+        {
+            _status.Text =
+                snapshot.IsRunning
+                    ? "● Acquisition active — survolez les runes"
+                    : "○ Acquisition arrêtée";
+
+            _status.TextColor =
+                snapshot.IsRunning
+                    ? Colors.LightGreen
+                    : Colors.Orange;
+        }
 
         string cursorText =
             snapshot.LastCursorX is int x &&
@@ -264,10 +297,69 @@ public sealed class CrushSessionOverlayPage
             );
         }
 
+        _lastTotalValue =
+            snapshot.TotalValue;
+
+        _copyFeedbackVersion++;
+
+        RefreshTotalLabel();
+    }
+
+    private async Task CopyTotalAsync()
+    {
+        if (_lastTotalValue
+            is not double total)
+        {
+            return;
+        }
+
+        string clipboardValue =
+            Math.Round(
+                total
+            )
+            .ToString(
+                "0",
+                CultureInfo.InvariantCulture
+            );
+
+        await Clipboard.Default
+            .SetTextAsync(
+                clipboardValue
+            );
+
+        int feedbackVersion =
+            ++_copyFeedbackVersion;
+
         _total.Text =
-            snapshot.TotalValue
+            $"Valeur réelle : {total:N0} K — Copié !";
+
+        _total.TextColor =
+            Colors.LightGreen;
+
+        await Task.Delay(
+            900
+        );
+
+        if (feedbackVersion !=
+            _copyFeedbackVersion)
+        {
+            return;
+        }
+
+        RefreshTotalLabel();
+    }
+
+    private void RefreshTotalLabel()
+    {
+        _total.Text =
+            _lastTotalValue
                 is double total
                 ? $"Valeur réelle : {total:N0} K"
                 : "Valeur réelle : —";
+
+        _total.TextColor =
+            _lastTotalValue is null
+                ? Colors.White
+                : Colors.LightBlue;
     }
 }

@@ -95,7 +95,7 @@ public sealed class OverlayPage : ContentPage
 
         _readStatus = new Label
         {
-            Text = "F8 — prêt à lire",
+            Text = "Clic molette — prêt à lire",
             TextColor = Colors.Gray,
             FontSize = 12
         };
@@ -111,7 +111,7 @@ public sealed class OverlayPage : ContentPage
         _details = new Label
         {
             Text =
-                "F8 sur un équipement en HDV ou sur un concassage " +
+                "Clic molette sur un équipement en HDV ou sur un concassage " +
                 "pour sélectionner l'équipement à analyser.",
             TextColor = Colors.White,
             FontSize = 14,
@@ -1891,7 +1891,7 @@ public sealed class OverlayPage : ContentPage
             "Serveur non sélectionné";
 
         _details.Text =
-            "Les captures F8 sont désactivées tant qu'un serveur " +
+            "Les captures Clic molette sont désactivées tant qu'un serveur " +
             "n'a pas été sélectionné dans BestCrush.";
 
         _footer.Text =
@@ -1935,7 +1935,7 @@ public sealed class OverlayPage : ContentPage
         DofusWindowInfo window)
     {
         _readStatus.Text =
-            $"F8 — capture de Dofus ({window.Width}×{window.Height})...";
+            $"Clic molette — capture de Dofus ({window.Width}×{window.Height})...";
 
         _readStatus.TextColor =
             Colors.LightBlue;
@@ -1964,7 +1964,7 @@ public sealed class OverlayPage : ContentPage
     public void ShowPanelNotDetected()
     {
         _readStatus.Text =
-            "F8 — aucun panneau reconnu";
+            "Clic molette — aucun panneau reconnu";
 
         _readStatus.TextColor =
             Colors.Orange;
@@ -2048,7 +2048,7 @@ public sealed class OverlayPage : ContentPage
     public void ShowReadCancelled()
     {
         _readStatus.Text =
-            "F8 — Dofus non détecté, lecture annulée";
+            "Clic molette — Dofus non détecté, lecture annulée";
 
         _readStatus.TextColor =
             Colors.Orange;
