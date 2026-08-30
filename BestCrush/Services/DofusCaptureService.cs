@@ -89,6 +89,12 @@ public sealed class DofusCaptureService
         framePool.FrameArrived +=
             FrameArrived;
 
+        string? captureDirectory =
+            null;
+
+        bool captureCompleted =
+            false;
+
         try
         {
             session.StartCapture();
@@ -114,15 +120,7 @@ public sealed class DofusCaptureService
                 );
 
                 string capturesDirectory =
-                    Path.Combine(
-                        Environment.GetFolderPath(
-                            Environment
-                                .SpecialFolder
-                                .LocalApplicationData
-                        ),
-                        "BestCrush",
-                        "DebugCaptures"
-                    );
+                    GetCapturesDirectory();
 
                 Directory.CreateDirectory(
                     capturesDirectory
@@ -137,6 +135,9 @@ public sealed class DofusCaptureService
                         capturesDirectory,
                         captureId
                     );
+
+                captureDirectory =
+                    directory;
 
                 Directory.CreateDirectory(
                     directory
@@ -175,6 +176,9 @@ public sealed class DofusCaptureService
 
             await encoder.FlushAsync();
 
+            captureCompleted =
+                true;
+
             return new DofusCaptureResult(
                 file.Path,
                 frame.ContentSize.Width,
@@ -186,6 +190,111 @@ public sealed class DofusCaptureService
         {
             framePool.FrameArrived -=
                 FrameArrived;
+
+            if (!captureCompleted)
+            {
+                TryDeleteCaptureDirectory(
+                    captureDirectory
+                );
+            }
+        }
+    }
+
+    public void DeleteCaptureArtifacts(
+        string captureFilePath)
+    {
+        if (string.IsNullOrWhiteSpace(
+            captureFilePath))
+        {
+            return;
+        }
+
+        string? captureDirectory =
+            Path.GetDirectoryName(
+                captureFilePath
+            );
+
+        TryDeleteCaptureDirectory(
+            captureDirectory
+        );
+    }
+
+    private static string
+        GetCapturesDirectory()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(
+                Environment
+                    .SpecialFolder
+                    .LocalApplicationData
+            ),
+            "BestCrush",
+            "DebugCaptures"
+        );
+    }
+
+    private static void
+        TryDeleteCaptureDirectory(
+            string? captureDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(
+            captureDirectory))
+        {
+            return;
+        }
+
+        try
+        {
+            string fullCaptureDirectory =
+                Path.GetFullPath(
+                    captureDirectory
+                );
+
+            string fullCapturesDirectory =
+                Path.GetFullPath(
+                    GetCapturesDirectory()
+                );
+
+            DirectoryInfo? parentDirectory =
+                Directory.GetParent(
+                    fullCaptureDirectory
+                );
+
+            if (parentDirectory is null)
+            {
+                return;
+            }
+
+            string fullParentDirectory =
+                Path.GetFullPath(
+                    parentDirectory.FullName
+                );
+
+            // Sécurité : BestCrush ne supprime que
+            // les dossiers de capture directement
+            // créés sous DebugCaptures.
+            if (!string.Equals(
+                fullParentDirectory,
+                fullCapturesDirectory,
+                StringComparison.OrdinalIgnoreCase
+            ))
+            {
+                return;
+            }
+
+            if (Directory.Exists(
+                fullCaptureDirectory))
+            {
+                Directory.Delete(
+                    fullCaptureDirectory,
+                    recursive: true
+                );
+            }
+        }
+        catch
+        {
+            // Le nettoyage d'un fichier temporaire
+            // ne doit jamais interrompre BestCrush.
         }
     }
 

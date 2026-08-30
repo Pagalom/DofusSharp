@@ -1,0 +1,342 @@
+diff --git a/BestCrush/Services/DofusCaptureService.cs b/BestCrush/Services/DofusCaptureService.cs
+--- a/BestCrush/Services/DofusCaptureService.cs
++++ b/BestCrush/Services/DofusCaptureService.cs
+@@ -82,6 +82,10 @@ public sealed class DofusCaptureService
+         framePool.FrameArrived +=
+             FrameArrived;
+
++        string? captureDirectory =
++            null;
++        bool captureCompleted =
++            false;
+         try
+         {
+             session.StartCapture();
+@@ -104,16 +108,8 @@ public sealed class DofusCaptureService
+                     BitmapPixelFormat.Bgra8,
+                     BitmapAlphaMode.Premultiplied
+                 );
+-                string capturesDirectory =
+-                    Path.Combine(
+-                        Environment.GetFolderPath(
+-                            Environment
+-                                .SpecialFolder
+-                                .LocalApplicationData
+-                        ),
+-                        "BestCrush",
+-                        "DebugCaptures"
+-                    );
++                string capturesDirectory =
++                    GetCapturesDirectory();
+
+                 Directory.CreateDirectory(
+                     capturesDirectory
+@@ -128,6 +124,9 @@ public sealed class DofusCaptureService
+                         captureId
+                     );
+
++                captureDirectory =
++                    directory;
++
+                 Directory.CreateDirectory(
+                     directory
+                 );
+@@ -162,6 +161,9 @@ public sealed class DofusCaptureService
+             );
+
+             await encoder.FlushAsync();
++
++            captureCompleted =
++                true;
+             return new DofusCaptureResult(
+                 file.Path,
+                 frame.ContentSize.Width,
+@@ -173,8 +175,76 @@ public sealed class DofusCaptureService
+         {
+             framePool.FrameArrived -=
+                 FrameArrived;
++
++            if (!captureCompleted)
++            {
++                TryDeleteCaptureDirectory(
++                    captureDirectory
++                );
++            }
+         }
+     }
+
++    public void DeleteCaptureArtifacts(
++        string captureFilePath)
++    {
++        if (string.IsNullOrWhiteSpace(
++            captureFilePath))
++        {
++            return;
++        }
++
++        string? directory =
++            Path.GetDirectoryName(
++                captureFilePath
++            );
++
++        TryDeleteCaptureDirectory(
++            directory
++        );
++    }
++
++    private static string
++        GetCapturesDirectory()
++    {
++        return Path.Combine(
++            Environment.GetFolderPath(
++                Environment
++                    .SpecialFolder
++                    .LocalApplicationData
++            ),
++            "BestCrush",
++            "DebugCaptures"
++        );
++    }
++
++    private static void
++        TryDeleteCaptureDirectory(
++            string? directory)
++    {
++        if (string.IsNullOrWhiteSpace(
++            directory))
++        {
++            return;
++        }
++
++        try
++        {
++            string fullDirectory =
++                Path.GetFullPath(
++                    directory
++                );
++
++            string capturesDirectory =
++                Path.GetFullPath(
++                    GetCapturesDirectory()
++                );
++
++            DirectoryInfo? parent =
++                Directory.GetParent(
++                    fullDirectory
++                );
++
++            // Sécurité : BestCrush ne supprime que les
++            // sous-dossiers directs de DebugCaptures.
++            if (parent is null ||
++                !string.Equals(
++                    Path.GetFullPath(
++                        parent.FullName
++                    ),
++                    capturesDirectory,
++                    StringComparison.OrdinalIgnoreCase
++                ))
++            {
++                return;
++            }
++
++            if (Directory.Exists(
++                fullDirectory))
++            {
++                Directory.Delete(
++                    fullDirectory,
++                    recursive: true
++                );
++            }
++        }
++        catch
++        {
++            // Le nettoyage d'une capture temporaire
++            // ne doit jamais interrompre BestCrush.
++        }
++    }
++
+     [DllImport("user32.dll")]
+     [return: MarshalAs(
+         UnmanagedType.Bool)]
+diff --git a/BestCrush/Services/OverlayService.cs b/BestCrush/Services/OverlayService.cs
+--- a/BestCrush/Services/OverlayService.cs
++++ b/BestCrush/Services/OverlayService.cs
+@@ -335,13 +335,23 @@ public sealed class OverlayService(
+                         .ConfigureAwait(false),
+                 _middleClickReadCancellation.Token
+             );
+-        _middleClickReadQueue
+-            .Writer
+-            .TryWrite(
+-                new MiddleClickReadWorkItem(
+-                    captureTask
+-                )
++
++        MiddleClickReadWorkItem workItem =
++            new(
++                captureTask
+             );
++
++        if (!_middleClickReadQueue
++            .Writer
++            .TryWrite(
++                workItem
++            ))
++        {
++            // La file a été fermée pendant la capture :
++            // le fichier ne sera jamais consommé.
++            _ = CleanupAbandonedCaptureAsync(
++                captureTask
++            );
++        }
+     }
+
+     private void EnsureMiddleClickReadWorker()
+@@ -381,9 +391,12 @@ public sealed class OverlayService(
+                     )
+                     .ConfigureAwait(false))
+             {
++                DofusCaptureResult? capture =
++                    null;
++
+                 try
+                 {
+                     // Les captures ont déjà commencé en
+@@ -387,7 +400,7 @@ public sealed class OverlayService(
+                     // dans l'ordre des clics afin de conserver
+                     // un focus et des écritures BDD déterministes.
+-                    DofusCaptureResult capture =
++                    capture =
+                         await workItem
+                             .CaptureTask
+                             .ConfigureAwait(false);
+@@ -411,10 +424,37 @@ public sealed class OverlayService(
+                                     ex.Message
+                                 )
+                     );
+                 }
++                finally
++                {
++                    // À ce stade tous les panneaux, crops OCR
++                    // et calculs liés à cette capture ont fini
++                    // de l'utiliser.
++                    if (capture is not null)
++                    {
++                        dofusCaptureService
++                            .DeleteCaptureArtifacts(
++                                capture.FilePath
++                            );
++                    }
++                }
+             }
+         }
+         catch (OperationCanceledException)
+         {
+             // Fermeture de BestCrush.
+         }
+     }
++
++    private async Task
++        CleanupAbandonedCaptureAsync(
++            Task<DofusCaptureResult>
++                captureTask)
++    {
++        try
++        {
++            DofusCaptureResult capture =
++                await captureTask
++                    .ConfigureAwait(false);
++
++            dofusCaptureService
++                .DeleteCaptureArtifacts(
++                    capture.FilePath
++                );
++        }
++        catch
++        {
++            // Capture annulée/échouée :
++            // DofusCaptureService nettoie déjà son
++            // éventuel dossier partiellement créé.
++        }
++    }
++
+     private async Task ProcessCapturedReadAsync(
+         DofusCaptureResult capture,
+         CancellationToken cancellationToken)
+diff --git a/BestCrush/Services/CrushSessionService.cs b/BestCrush/Services/CrushSessionService.cs
+--- a/BestCrush/Services/CrushSessionService.cs
++++ b/BestCrush/Services/CrushSessionService.cs
+@@ -741,16 +741,25 @@ public sealed class CrushSessionService(
+
+         PublishSnapshot();
+
+-        _processingQueue
+-            .Writer
+-            .TryWrite(
+-                new CapturedCursorWorkItem(
+-                    sessionId,
+-                    capture.FilePath,
+-                    captureX,
+-                    captureY
+-                )
++        CapturedCursorWorkItem workItem =
++            new(
++                sessionId,
++                capture.FilePath,
++                captureX,
++                captureY
+             );
++
++        if (!_processingQueue
++            .Writer
++            .TryWrite(
++                workItem
++            ))
++        {
++            // La capture n'entrera jamais dans le worker :
++            // elle n'est donc déjà plus utile.
++            dofusCaptureService
++                .DeleteCaptureArtifacts(
++                    capture.FilePath
++                );
++        }
+ #endif
+     }
+     private async Task ProcessQueueAsync(
+@@ -766,11 +775,13 @@ public sealed class CrushSessionService(
+                         cancellationToken
+                     ))
+             {
+-                if (workItem.SessionId !=
+-                    _sessionId)
+-                {
+-                    continue;
+-                }
+                 try
+                 {
++                    if (workItem.SessionId !=
++                        _sessionId)
++                    {
++                        continue;
++                    }
++
+                     await ProcessCaptureAsync(
+                         workItem,
+                         cancellationToken
+@@ -788,6 +799,16 @@ public sealed class CrushSessionService(
+                     // Une capture défectueuse ne doit
+                     // pas arrêter le worker.
+                 }
++                finally
++                {
++                    // Inclut aussi les captures d'une ancienne
++                    // session devenues inutiles avant traitement.
++                    dofusCaptureService
++                        .DeleteCaptureArtifacts(
++                            workItem
++                                .CaptureFilePath
++                        );
++                }
+             }
+         }
+         catch (

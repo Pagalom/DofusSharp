@@ -357,13 +357,24 @@ public sealed class OverlayService(
                 _middleClickReadCancellation.Token
             );
 
-        _middleClickReadQueue
+        MiddleClickReadWorkItem workItem =
+            new(
+                captureTask
+            );
+
+        if (!_middleClickReadQueue
             .Writer
             .TryWrite(
-                new MiddleClickReadWorkItem(
-                    captureTask
-                )
+                workItem
+            ))
+        {
+            // La file a été fermée alors que la
+            // capture était déjà partie : elle ne
+            // sera jamais consommée par le worker.
+            _ = CleanupAbandonedCaptureAsync(
+                captureTask
             );
+        }
     }
 
     private void EnsureMiddleClickReadWorker()
@@ -405,13 +416,16 @@ public sealed class OverlayService(
                     )
                     .ConfigureAwait(false))
             {
+                DofusCaptureResult? capture =
+                    null;
+
                 try
                 {
                     // Les captures ont déjà commencé en
                     // parallèle. Elles sont cependant analysées
                     // dans l'ordre des clics afin de conserver
                     // un focus et des écritures BDD déterministes.
-                    DofusCaptureResult capture =
+                    capture =
                         await workItem
                             .CaptureTask
                             .ConfigureAwait(false);
@@ -436,11 +450,46 @@ public sealed class OverlayService(
                                 )
                     );
                 }
+                finally
+                {
+                    // ProcessCapturedReadAsync est le dernier
+                    // consommateur de la capture et de tous
+                    // les crops générés dans son dossier.
+                    if (capture is not null)
+                    {
+                        dofusCaptureService
+                            .DeleteCaptureArtifacts(
+                                capture.FilePath
+                            );
+                    }
+                }
             }
         }
         catch (OperationCanceledException)
         {
             // Fermeture de BestCrush.
+        }
+    }
+
+    private async Task CleanupAbandonedCaptureAsync(
+        Task<DofusCaptureResult> captureTask)
+    {
+        try
+        {
+            DofusCaptureResult capture =
+                await captureTask
+                    .ConfigureAwait(false);
+
+            dofusCaptureService
+                .DeleteCaptureArtifacts(
+                    capture.FilePath
+                );
+        }
+        catch
+        {
+            // Si CaptureAsync a échoué après avoir
+            // créé son dossier, DofusCaptureService
+            // effectue déjà son propre nettoyage.
         }
     }
 

@@ -781,16 +781,27 @@ public sealed class CrushSessionService(
 
         PublishSnapshot();
 
-        _processingQueue
+        CapturedCursorWorkItem workItem =
+            new(
+                sessionId,
+                capture.FilePath,
+                captureX,
+                captureY
+            );
+
+        if (!_processingQueue
             .Writer
             .TryWrite(
-                new CapturedCursorWorkItem(
-                    sessionId,
-                    capture.FilePath,
-                    captureX,
-                    captureY
-                )
-            );
+                workItem
+            ))
+        {
+            // La capture n'entrera jamais dans le
+            // worker, elle n'est donc plus utile.
+            dofusCaptureService
+                .DeleteCaptureArtifacts(
+                    capture.FilePath
+                );
+        }
 #endif
     }
 
@@ -807,14 +818,14 @@ public sealed class CrushSessionService(
                         cancellationToken
                     ))
             {
-                if (workItem.SessionId !=
-                    _sessionId)
-                {
-                    continue;
-                }
-
                 try
                 {
+                    if (workItem.SessionId !=
+                        _sessionId)
+                    {
+                        continue;
+                    }
+
                     await ProcessCaptureAsync(
                         workItem,
                         cancellationToken
@@ -829,6 +840,16 @@ public sealed class CrushSessionService(
                 {
                     // Une capture défectueuse ne doit
                     // pas arrêter le worker.
+                }
+                finally
+                {
+                    // Inclut aussi les captures devenues
+                    // obsolètes après changement de session.
+                    dofusCaptureService
+                        .DeleteCaptureArtifacts(
+                            workItem
+                                .CaptureFilePath
+                        );
                 }
             }
         }
