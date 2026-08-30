@@ -42,6 +42,13 @@
     </PropertyGroup>
     
     <ItemGroup>
+        <Content Include="README.release.txt">
+            <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+            <TargetPath>README.txt</TargetPath>
+        </Content>
+    </ItemGroup>
+
+    <ItemGroup>
         <!-- App Icon -->
         <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" BaseSize="456,456" />
 
