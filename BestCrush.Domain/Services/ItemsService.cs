@@ -1,4 +1,4 @@
-﻿using System.Collections.Concurrent;
+using System.Collections.Concurrent;
 using BestCrush.Domain.Extensions;
 using BestCrush.Domain.Models;
 using DofusSharp.Dofocus.ApiClients;
@@ -14,6 +14,18 @@ public class ItemsService(BestCrushDbContext context, IDofusDbClientsFactory dof
 
     public async Task<IReadOnlyCollection<Equipment>> GetEquipmentsAsync() =>
         await context.Equipments.Include(i => i.Characteristics).Include(i => i.Recipe).ThenInclude(i => i.Resource).Where(i => i.Recipe.Count > 0).AsNoTracking().ToArrayAsync();
+    public async Task<IReadOnlyCollection<Equipment>>
+        GetAllEquipmentsAsync(
+            CancellationToken cancellationToken = default)
+    {
+        return await context.Equipments
+            .Include(equipment => equipment.Characteristics)
+            .Include(equipment => equipment.Recipe)
+                .ThenInclude(entry => entry.Resource)
+            .AsNoTracking()
+            .OrderBy(equipment => equipment.Name)
+            .ToArrayAsync(cancellationToken);
+    }
     public async Task<IReadOnlyCollection<Resource>>
         GetResourcesAsync(
             CancellationToken cancellationToken = default)

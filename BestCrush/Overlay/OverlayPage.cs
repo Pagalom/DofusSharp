@@ -156,7 +156,7 @@ public sealed class OverlayPage : ContentPage
 
         _partialLine = new Label
         {
-            TextColor = Colors.Orange,
+            TextColor = Colors.Red,
             FontSize = 13
         };
 
@@ -892,11 +892,22 @@ public sealed class OverlayPage : ContentPage
         
         if (result.Coefficient is null)
         {
-            _coefficientLine.Text =
-                "Coefficient : À scanner";
-
-            _coefficientLine.TextColor =
-                Colors.White;
+            SetFreshnessLine(
+                _coefficientLine,
+                "Coefficient : À scanner",
+                null
+            );
+        }
+        else if (
+            result.Coefficient.Source ==
+                CoefficientSource.DofocusInitial)
+        {
+            SetColoredLine(
+                _coefficientLine,
+                $"Coefficient : " +
+                $"{result.Coefficient.CoefficientPercent:0.##} %",
+                Color.FromArgb("#5AB0FF")
+            );
         }
         else
         {
@@ -912,16 +923,31 @@ public sealed class OverlayPage : ContentPage
 
         if (scenario is null)
         {
-            _runeValueLine.Text =
-                "Valeur runes : indisponible";
+            SetFreshnessLine(
+                _runeValueLine,
+                "Valeur runes : indisponible",
+                null
+            );
 
-            _purchaseLine.Text =
-                $"Achat équipement : {equipmentPrice}";
+            SetFreshnessLine(
+                _purchaseLine,
+                $"Achat équipement : {equipmentPrice}",
+                result.EquipmentCost is null
+                    ? null
+                    : DataFreshnessEvaluator.Evaluate(
+                        result.EquipmentCost.ObservedAtUtc
+                    )
+            );
 
             _purchaseResultLine.Text = "";
 
-            _craftLine.Text =
-                $"Craft : {craftPrice}";
+            SetFreshnessLine(
+                _craftLine,
+                $"Craft : {craftPrice}",
+                GetCraftFreshness(
+                    result.CraftCost
+                )
+            );
 
             _craftResultLine.Text = "";
 
@@ -929,6 +955,11 @@ public sealed class OverlayPage : ContentPage
                 missingDataCount > 0
                     ? $"⚠ {missingDataCount} donnée(s) manquante(s)"
                     : "";
+
+            _partialLine.TextColor =
+                missingDataCount > 0
+                    ? Colors.Red
+                    : Colors.Transparent;
 
             return;
         }
@@ -995,6 +1026,9 @@ public sealed class OverlayPage : ContentPage
 
         if (result.IsPartial)
         {
+            _partialLine.TextColor =
+                Colors.Red;
+
             _partialLine.Text =
                 $"⚠ Résultat partiel — " +
                 $"{missingDataCount} donnée(s) manquante(s)";
@@ -1129,7 +1163,7 @@ public sealed class OverlayPage : ContentPage
                             ? GetFreshnessColor(
                                 freshness
                             )
-                            : Colors.White
+                            : Colors.Red
                 };
 
             Label unitPriceLabel =
@@ -1139,7 +1173,10 @@ public sealed class OverlayPage : ContentPage
                         unitPriceText,
 
                     FontSize = 12,
-                    TextColor = Colors.White
+                    TextColor =
+                        hasRuneValue
+                            ? Colors.White
+                            : Colors.Red
                 };
 
             string runeName =
@@ -1177,7 +1214,7 @@ public sealed class OverlayPage : ContentPage
                     "À scanner";
 
                 right.TextColor =
-                    Colors.White;
+                    Colors.Red;
             }
 
             row.Add(
@@ -1247,7 +1284,7 @@ public sealed class OverlayPage : ContentPage
                 new()
                 {
                     Text = runeName,
-                    TextColor = Colors.White,
+                    TextColor = Colors.Red,
                     FontSize = 12
                 };
 
@@ -1255,7 +1292,7 @@ public sealed class OverlayPage : ContentPage
                 new()
                 {
                     Text = " (À scanner)",
-                    TextColor = Colors.White,
+                    TextColor = Colors.Red,
                     FontSize = 12
                 };
 
@@ -1279,7 +1316,7 @@ public sealed class OverlayPage : ContentPage
                 new()
                 {
                     Text = "À scanner",
-                    TextColor = Colors.White,
+                    TextColor = Colors.Red,
                     FontSize = 12,
                     HorizontalTextAlignment =
                         TextAlignment.End
@@ -1368,7 +1405,7 @@ public sealed class OverlayPage : ContentPage
                 "À scanner";
 
             totalValue.TextColor =
-                Colors.White;
+                Colors.Red;
         }
         else
         {
@@ -1562,7 +1599,7 @@ public sealed class OverlayPage : ContentPage
                                 ? GetFreshnessColor(
                                     freshness
                                 )
-                                : Colors.White
+                                : Colors.Red
                     };
             
             string resourceName =
@@ -1577,7 +1614,10 @@ public sealed class OverlayPage : ContentPage
                 new()
                 {
                     FontSize = 12,
-                    TextColor = Colors.White,
+                    TextColor =
+                        resource.Purchase is null
+                            ? Colors.Red
+                            : Colors.White,
                     HorizontalTextAlignment =
                         TextAlignment.End,
 
@@ -1624,25 +1664,58 @@ public sealed class OverlayPage : ContentPage
         FormattedString formatted =
             new();
 
-        if (freshness is DataFreshness value)
-        {
-            formatted.Spans.Add(
-                new Span
-                {
-                    Text = "● ",
-                    TextColor =
-                        GetFreshnessColor(
-                            value
-                        )
-                }
-            );
-        }
+        Color indicatorColor =
+            freshness is DataFreshness value
+                ? GetFreshnessColor(
+                    value
+                )
+                : Colors.Red;
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = "● ",
+                TextColor =
+                    indicatorColor
+            }
+        );
 
         formatted.Spans.Add(
             new Span
             {
                 Text = text,
-                TextColor = Colors.White
+                TextColor =
+                    freshness is null
+                        ? Colors.Red
+                        : Colors.White
+            }
+        );
+
+        label.FormattedText =
+            formatted;
+    }
+
+    private static void SetColoredLine(
+        Label label,
+        string text,
+        Color color)
+    {
+        FormattedString formatted =
+            new();
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = "● ",
+                TextColor = color
+            }
+        );
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = text,
+                TextColor = color
             }
         );
 
@@ -1764,6 +1837,13 @@ public sealed class OverlayPage : ContentPage
     private static DataFreshness? GetCraftFreshness(
         CraftCostResult craftCost)
     {
+        if (craftCost.Resources.Any(
+            resource =>
+                resource.Purchase is null))
+        {
+            return null;
+        }
+
         DataFreshness[] freshness =
             craftCost.Resources
                 .Select(resource =>
@@ -1816,7 +1896,7 @@ public sealed class OverlayPage : ContentPage
                 new()
                 {
                     Text = item,
-                    TextColor = Colors.White,
+                    TextColor = Colors.Red,
                     FontSize = 12
                 };
 

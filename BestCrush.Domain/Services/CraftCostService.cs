@@ -1,7 +1,6 @@
 using BestCrush.Domain.Models;
 
 namespace BestCrush.Domain.Services;
-
 public sealed class CraftCostService(
     MarketPriceService marketPriceService)
 {
@@ -36,10 +35,11 @@ public sealed class CraftCostService(
     {
         List<CraftResourceCostLine> lines = [];
 
-        foreach (IGrouping<long, RecipeEntry> group
-                 in equipment.Recipe
-                     .GroupBy(entry =>
-                         entry.Resource.DofusDbId))
+        foreach (
+            IGrouping<long, RecipeEntry> group
+            in equipment.Recipe
+                .GroupBy(entry =>
+                    entry.Resource.DofusDbId))
         {
             RecipeEntry first =
                 group.First();

@@ -29,9 +29,26 @@ public sealed class DofusItemRecognitionService(
         }
 
         IReadOnlyCollection<Equipment> equipments =
-            await itemsService.GetEquipmentsAsync();
+            await itemsService.GetAllEquipmentsAsync();
 
 
+        Equipment? exactMatch =
+            equipments.FirstOrDefault(
+                equipment =>
+                    string.Equals(
+                        Normalize(equipment.Name),
+                        normalizedInput,
+                        StringComparison.Ordinal
+                    )
+            );
+
+        if (exactMatch is not null)
+        {
+            return new ItemRecognitionResult(
+                exactMatch,
+                1.0
+            );
+        }
         // Sinon on conserve la reconnaissance floue
         // actuelle pour tolérer les petites erreurs OCR.
         List<ItemRecognitionResult> matches =

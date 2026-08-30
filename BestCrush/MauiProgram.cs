@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using BestCrush.Domain;
 using BestCrush.Domain.Services;
 using BestCrush.Domain.Services.Upgrades;
@@ -54,6 +54,7 @@ public static class MauiProgram
             builder.Services.AddSingleton<CrushService>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayService>();
             builder.Services.AddSingleton<BestCrush.Services.CrushSessionService>();
+            builder.Services.AddSingleton<BestCrush.Services.MarketDataChangeNotifier>();
             builder.Services.AddSingleton<BestCrush.Services.DofusWindowService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusCaptureService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusImageRegionService>();

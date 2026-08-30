@@ -43,7 +43,8 @@ public sealed class CrushSessionService(
     DofusCrushCoefficientScanService
         coefficientScanService,
     IServiceScopeFactory serviceScopeFactory,
-    CurrentServerState currentServerState)
+    CurrentServerState currentServerState,
+    MarketDataChangeNotifier marketDataChangeNotifier)
 {
     private Window? _window;
     private CrushSessionOverlayPage? _page;
@@ -57,6 +58,9 @@ public sealed class CrushSessionService(
 
     private readonly object
         _stateLock = new();
+
+    private readonly System.Threading.SemaphoreSlim
+        _marketRefreshLock = new(1, 1);
 
     private int _idleCaptureCount;
 
@@ -176,6 +180,12 @@ public sealed class CrushSessionService(
 
     public void StartNew()
     {
+        marketDataChangeNotifier.Changed -=
+            OnMarketDataChanged;
+
+        marketDataChangeNotifier.Changed +=
+            OnMarketDataChanged;
+
         ResetSessionState();
 
         _sessionId++;
@@ -1116,6 +1126,93 @@ public sealed class CrushSessionService(
         }
 
         PublishSnapshot();
+    }
+
+    private void OnMarketDataChanged(
+        object? sender,
+        MarketDataChangedEventArgs e)
+    {
+        if (e.ObjectType !=
+                MarketObjectType.Rune ||
+            !string.Equals(
+                e.ServerName,
+                currentServerState.ServerName,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        lock (_stateLock)
+        {
+            if (_runes.Count == 0 ||
+                _errorMessage is not null)
+            {
+                return;
+            }
+        }
+
+        _ = RefreshRuneValuesFromMarketAsync();
+    }
+
+    private async Task RefreshRuneValuesFromMarketAsync()
+    {
+        if (!await _marketRefreshLock.WaitAsync(0))
+        {
+            return;
+        }
+
+        try
+        {
+            string? serverName =
+                currentServerState.ServerName;
+
+            if (string.IsNullOrWhiteSpace(serverName))
+            {
+                return;
+            }
+
+            using IServiceScope scope =
+                serviceScopeFactory.CreateScope();
+
+            MarketPriceService marketPriceService =
+                scope.ServiceProvider.GetRequiredService<MarketPriceService>();
+
+            IReadOnlyDictionary<
+                (long DofusDbId, int Quantity),
+                MarketPriceObservation> observations =
+                    await marketPriceService
+                        .GetLatestObservationsForServerAsync(
+                            MarketObjectType.Rune,
+                            serverName
+                        );
+
+            lock (_stateLock)
+            {
+                if (_errorMessage is not null)
+                {
+                    return;
+                }
+
+                foreach (KeyValuePair<long, AccumulatedRune> rune in _runes)
+                {
+                    MarketValueResult? value =
+                        marketPriceService.CalculateValue(
+                            rune.Key,
+                            rune.Value.Quantity,
+                            observations
+                        );
+
+                    rune.Value.Value =
+                        value?.Value;
+                }
+            }
+
+            PublishSnapshot();
+        }
+        finally
+        {
+            _marketRefreshLock.Release();
+        }
     }
 
     private bool IsAlreadyScannedLocked(

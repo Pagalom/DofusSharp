@@ -25,7 +25,8 @@ public sealed class OverlayService(
     IServiceScopeFactory serviceScopeFactory,
     CurrentServerState currentServerState,
     FocusedEquipmentState focusedEquipmentState,
-    CrushSessionService crushSessionService)
+    CrushSessionService crushSessionService,
+    MarketDataChangeNotifier marketDataChangeNotifier)
 {
     private Window? _overlayWindow;
     private OverlayPage? _overlayPage;
@@ -123,6 +124,12 @@ public sealed class OverlayService(
 
         crushSessionService.CoefficientsUpdated +=
             OnCrushSessionCoefficientsUpdated;
+
+        marketDataChangeNotifier.Changed -=
+            OnMarketDataChanged;
+
+        marketDataChangeNotifier.Changed +=
+            OnMarketDataChanged;
 
         OverlayPage page =
             new(
@@ -513,9 +520,9 @@ public sealed class OverlayService(
                                             marketPanel.DebugImagePath,
                                             new RelativeImageRegion(
                                                 X: 0.09,
-                                                Y: 0.12,
-                                                Width: 0.28,
-                                                Height: 0.032
+                                                Y: 0.105,
+                                                Width: 0.72,
+                                                Height: 0.060
                                             ),
                                             "hdv-sell-item-name"
                                         );
@@ -640,6 +647,12 @@ public sealed class OverlayService(
                                         );
                                 }
 
+                                marketDataChangeNotifier.Notify(
+                                    MarketObjectType.Rune,
+                                    sellRuneRecognition.Rune.DofusDbId,
+                                    sellServerName,
+                                    0
+                                );
                                 PostUi(
                                     () =>
                                     {
@@ -749,6 +762,153 @@ public sealed class OverlayService(
                                     .GetRequiredService<
                                         MarketPriceService>();
 
+                            // IMPORTANT :
+                            // une rune ou une ressource ne doit jamais être
+                            // absorbée par la reconnaissance floue d'un
+                            // équipement. On classe donc du plus spécifique
+                            // au plus général :
+                            //
+                            // rune -> ressource -> équipement.
+                            RuneRecognitionResult? runeRecognition =
+                                await runeRecognitionService
+                                    .RecognizeRuneAsync(
+                                        recognizedMarketItemName
+                                    );
+
+                            if (runeRecognition is not null)
+                            {
+                                IReadOnlyList<DofusMarketLot> lots =
+                                    await dofusMarketLotReaderService
+                                        .ReadMaterialLotsAsync(
+                                            marketPanel.DebugImagePath
+                                        );
+
+                                if (lots.Count == 0)
+                                {
+                                    PostUi(
+                                        () =>
+                                        {
+                                            _overlayPage?
+                                                .ShowAuxiliaryMarketReadFailed(
+                                                    runeRecognition.Rune.Name
+                                                );
+                                        }
+                                    );
+
+                                    return;
+                                }
+
+                                string runeServerName =
+                                    currentServerState.ServerName!;
+
+                                foreach (DofusMarketLot lot in lots)
+                                {
+                                    await hdvMarketPriceService
+                                        .AddObservationAsync(
+                                            MarketObjectType.Rune,
+                                            runeRecognition.Rune.DofusDbId,
+                                            runeServerName,
+                                            lot.Price,
+                                            lot.Quantity,
+                                            MarketPriceSource.InGameAutomatic
+                                        );
+                                }
+
+                                PostUi(
+                                    () =>
+                                    {
+                                        _overlayPage?
+                                            .ShowAuxiliaryMarketDataRecorded(
+                                                runeRecognition.Rune.Name,
+                                                lots.Count,
+                                                focusedEquipmentState
+                                                    .Equipment?
+                                                    .Name
+                                            );
+                                    }
+                                );
+
+                                await RefreshFocusedProfitabilityAsync();
+
+                                return;
+                            }
+
+                            ResourceRecognitionResult? resourceRecognition =
+                                await resourceRecognitionService
+                                    .RecognizeResourceAsync(
+                                        recognizedMarketItemName
+                                    );
+
+                            if (resourceRecognition is not null)
+                            {
+                                IReadOnlyList<DofusMarketLot> lots =
+                                    await dofusMarketLotReaderService
+                                        .ReadMaterialLotsAsync(
+                                            marketPanel.DebugImagePath
+                                        );
+
+                                if (lots.Count == 0)
+                                {
+                                    marketDataChangeNotifier.Notify(
+                                        MarketObjectType.Rune,
+                                        runeRecognition.Rune.DofusDbId,
+                                        currentServerState.ServerName!,
+                                        0
+                                    );
+                                    PostUi(
+                                        () =>
+                                        {
+                                            _overlayPage?
+                                                .ShowAuxiliaryMarketReadFailed(
+                                                    resourceRecognition
+                                                        .Resource
+                                                        .Name
+                                                );
+                                        }
+                                    );
+
+                                    return;
+                                }
+
+                                string resourceServerName =
+                                    currentServerState.ServerName!;
+
+                                foreach (DofusMarketLot lot in lots)
+                                {
+                                    await hdvMarketPriceService
+                                        .AddObservationAsync(
+                                            MarketObjectType.Resource,
+                                            resourceRecognition
+                                                .Resource
+                                                .DofusDbId,
+                                            resourceServerName,
+                                            lot.Price,
+                                            lot.Quantity,
+                                            MarketPriceSource.InGameAutomatic
+                                        );
+                                }
+
+                                PostUi(
+                                    () =>
+                                    {
+                                        _overlayPage?
+                                            .ShowAuxiliaryMarketDataRecorded(
+                                                resourceRecognition
+                                                    .Resource
+                                                    .Name,
+                                                lots.Count,
+                                                focusedEquipmentState
+                                                    .Equipment?
+                                                    .Name
+                                            );
+                                    }
+                                );
+
+                                await RefreshFocusedProfitabilityAsync();
+
+                                return;
+                            }
+
                             ItemRecognitionResult? marketRecognition =
                                 await marketItemRecognitionService
                                     .RecognizeEquipmentAsync(
@@ -757,154 +917,22 @@ public sealed class OverlayService(
 
                             if (marketRecognition is null)
                             {
-                                // 1. On essaie d'abord les runes.
-                                RuneRecognitionResult? runeRecognition =
-                                    await runeRecognitionService
-                                        .RecognizeRuneAsync(
-                                            recognizedMarketItemName
-                                        );
-
-                                if (runeRecognition is not null)
-                                {
-                                    IReadOnlyList<DofusMarketLot> lots =
-                                        await dofusMarketLotReaderService
-                                            .ReadMaterialLotsAsync(
-                                                marketPanel.DebugImagePath
-                                            );
-
-                                    if (lots.Count == 0)
-                                    {
-                                        PostUi(
-                                            () =>
-                                            {
-                                                _overlayPage?
-                                                                                            .ShowAuxiliaryMarketReadFailed(
-                                                                                                runeRecognition.Rune.Name
-                                                                                            );
-                                            }
-                                        );
-
-                                        return;
-                                    }
-
-                                    string runeServerName =
-                                        currentServerState.ServerName!;
-
-                                    foreach (DofusMarketLot lot in lots)
-                                    {
-                                        await hdvMarketPriceService
-                                            .AddObservationAsync(
-                                                MarketObjectType.Rune,
-                                                runeRecognition.Rune.DofusDbId,
-                                                runeServerName,
-                                                lot.Price,
-                                                lot.Quantity,
-                                                MarketPriceSource.InGameAutomatic
-                                            );
-                                    }
-
-                                    PostUi(
-                                        () =>
-                                        {
-                                            _overlayPage?
-                                                                                    .ShowAuxiliaryMarketDataRecorded(
-                                                                                        runeRecognition.Rune.Name,
-                                                                                        lots.Count,
-                                                                                        focusedEquipmentState
-                                                                                            .Equipment?
-                                                                                            .Name
-                                                                                    );
-                                        }
-                                    );
-
-                                    await RefreshFocusedProfitabilityAsync();
-
-                                    return;
-                                }
-
-                                // 2. Si ce n'est pas une rune,
-                                // on essaie alors les ressources.
-                                ResourceRecognitionResult? resourceRecognition =
-                                    await resourceRecognitionService
-                                        .RecognizeResourceAsync(
-                                            recognizedMarketItemName
-                                        );
-
-                                if (resourceRecognition is not null)
-                                {
-                                    IReadOnlyList<DofusMarketLot> lots =
-                                        await dofusMarketLotReaderService
-                                            .ReadMaterialLotsAsync(
-                                                marketPanel.DebugImagePath
-                                            );
-
-                                    if (lots.Count == 0)
-                                    {
-                                        PostUi(
-                                            () =>
-                                            {
-                                                _overlayPage?
-                                                                                            .ShowAuxiliaryMarketReadFailed(
-                                                                                                resourceRecognition
-                                                                                                    .Resource
-                                                                                                    .Name
-                                                                                            );
-                                            }
-                                        );
-
-                                        return;
-                                    }
-
-                                    string resourceServerName =
-                                        currentServerState.ServerName!;
-
-                                    foreach (DofusMarketLot lot in lots)
-                                    {
-                                        await hdvMarketPriceService
-                                            .AddObservationAsync(
-                                                MarketObjectType.Resource,
-                                                resourceRecognition
-                                                    .Resource
-                                                    .DofusDbId,
-                                                resourceServerName,
-                                                lot.Price,
-                                                lot.Quantity,
-                                                MarketPriceSource.InGameAutomatic
-                                            );
-                                    }
-
-                                    PostUi(
-                                        () =>
-                                        {
-                                            _overlayPage?
-                                                                                    .ShowAuxiliaryMarketDataRecorded(
-                                                                                        resourceRecognition
-                                                                                            .Resource
-                                                                                            .Name,
-                                                                                        lots.Count,
-                                                                                        focusedEquipmentState
-                                                                                            .Equipment?
-                                                                                            .Name
-                                                                                    );
-                                        }
-                                    );
-
-                                    await RefreshFocusedProfitabilityAsync();
-
-                                    return;
-                                }
-
-                                // 3. Ni équipement, ni rune, ni ressource.
                                 if (recognizedMarketPrice is long detectedPrice)
                                 {
+                                    marketDataChangeNotifier.Notify(
+                                        MarketObjectType.Resource,
+                                        resourceRecognition.Resource.DofusDbId,
+                                        currentServerState.ServerName!,
+                                        0
+                                    );
                                     PostUi(
                                         () =>
                                         {
                                             _overlayPage?
-                                                                                    .ShowMarketEquipmentRecognitionFailed(
-                                                                                        recognizedMarketItemName,
-                                                                                        detectedPrice
-                                                                                    );
+                                                .ShowMarketEquipmentRecognitionFailed(
+                                                    recognizedMarketItemName,
+                                                    detectedPrice
+                                                );
                                         }
                                     );
                                 }
@@ -914,10 +942,10 @@ public sealed class OverlayService(
                                         () =>
                                         {
                                             _overlayPage?
-                                                                                    .ShowMarketEquipmentRead(
-                                                                                        recognizedMarketItemName,
-                                                                                        null
-                                                                                    );
+                                                .ShowMarketEquipmentRead(
+                                                    recognizedMarketItemName,
+                                                    null
+                                                );
                                         }
                                     );
                                 }
@@ -960,6 +988,12 @@ public sealed class OverlayService(
                                         MarketPriceSource.InGameAutomatic
                                     );
 
+                            marketDataChangeNotifier.Notify(
+                                MarketObjectType.Equipment,
+                                marketEquipment.DofusDbId,
+                                hdvServerName,
+                                1
+                            );
                             MarketPriceObservation? effectivePrice =
                                 await hdvMarketPriceService
                                     .GetLatestObservationAsync(
@@ -1241,6 +1275,25 @@ public sealed class OverlayService(
             );
     }
 
+    private void OnMarketDataChanged(
+        object? sender,
+        MarketDataChangedEventArgs e)
+    {
+        string? serverName =
+            currentServerState.ServerName;
+
+        if (string.IsNullOrWhiteSpace(serverName) ||
+            !string.Equals(
+                serverName,
+                e.ServerName,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _ = RefreshFocusedProfitabilityAsync();
+    }
+
     private void OnCrushSessionCoefficientsUpdated(
         object? sender,
         EventArgs e)
@@ -1490,6 +1543,9 @@ public sealed class OverlayService(
     {
         crushSessionService.CoefficientsUpdated -=
             OnCrushSessionCoefficientsUpdated;
+
+        marketDataChangeNotifier.Changed -=
+            OnMarketDataChanged;
 
         try
         {

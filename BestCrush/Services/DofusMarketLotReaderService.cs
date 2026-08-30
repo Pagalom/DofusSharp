@@ -47,7 +47,8 @@ public sealed class DofusMarketLotReaderService(
 
         List<(int? Quantity, long? Price)> rows = [];
 
-        for (int index = 0;
+        for (
+            int index = 0;
             index < RowY.Length;
             index++)
         {
@@ -99,12 +100,11 @@ public sealed class DofusMarketLotReaderService(
             );
         }
 
-        // Si une ligne possède un prix mais que sa quantité
-        // n'a pas été reconnue, on tente de l'inférer.
-        //
-        // On ne l'accepte que s'il n'existe qu'UNE SEULE
-        // quantité possible compte tenu des lignes voisines.
-        for (int index = 0;
+        // Une quantité peut être inférée uniquement lorsqu'il
+        // n'existe qu'une seule possibilité entre les lignes
+        // voisines déjà reconnues.
+        for (
+            int index = 0;
             index < rows.Count;
             index++)
         {
@@ -177,19 +177,25 @@ public sealed class DofusMarketLotReaderService(
     {
         List<DofusMarketLot> lots = [];
 
-        for (int index = 0;
+        for (
+            int index = 0;
             index < SellRowY.Length;
             index++)
         {
+            // IMPORTANT :
+            // la colonne "Prix" est à droite du panneau.
+            // L'ancienne découpe commençait à X=0.28 et
+            // pouvait OCRiser la quantité ("1", "10", ...)
+            // comme si elle était le prix.
             string priceRegion =
                 await imageRegionService
                     .ExtractRegionAsync(
                         marketPanelImagePath,
                         new RelativeImageRegion(
-                            X: 0.28,
+                            X: 0.50,
                             Y: SellRowY[index],
-                            Width: 0.31,
-                            Height: 0.03
+                            Width: 0.32,
+                            Height: 0.042
                         ),
                         $"hdv-sell-lot-{SellQuantities[index]}-price"
                     );
@@ -200,6 +206,8 @@ public sealed class DofusMarketLotReaderService(
                         priceRegion
                     );
 
+            // Une ligne absente ou illisible reste absente.
+            // On n'invente jamais de prix de remplacement.
             if (price is null ||
                 price <= 0)
             {

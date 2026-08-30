@@ -1,10 +1,13 @@
 @page "/servers/{ServerName}/equipment-prices"
+@implements IDisposable
 
 @using BestCrush.Domain.Models
 @using BestCrush.Domain.Services
+@using BestCrush.Services
 
 @inject ItemsService ItemsService
 @inject MarketPriceService MarketPriceService
+@inject MarketDataChangeNotifier MarketDataChangeNotifier
 
 <div class="container-fluid py-4 px-5">
 
@@ -16,10 +19,17 @@
             </p>
         </div>
 
-        <a class="btn btn-outline-secondary"
+        <div class="d-flex gap-2">
+            <button class="btn btn-outline-primary"
+                    type="button"
+                    @onclick="RefreshAsync">
+                Rafraîchir
+            </button>
+            <a class="btn btn-outline-secondary"
            href="@($"/servers/{ServerName}")">
             Retour
         </a>
+        </div>
     </div>
 
     <p class="text-secondary">
@@ -132,7 +142,18 @@
     }
 
 
+    private readonly System.Threading.SemaphoreSlim
+        _refreshLock = new(1, 1);
+
     protected override async Task OnInitializedAsync()
+    {
+        MarketDataChangeNotifier.Changed +=
+            OnMarketDataChanged;
+
+        await LoadRowsAsync();
+    }
+
+    private async Task LoadRowsAsync()
     {
         IReadOnlyCollection<Equipment> equipments =
             await ItemsService.GetEquipmentsAsync();
@@ -202,6 +223,55 @@
                 return row;
             })
             .ToList();
+        }
+
+    private Task RefreshAsync()
+    {
+        return ReloadFromMarketAsync();
+    }
+
+    private void OnMarketDataChanged(
+        object? sender,
+        MarketDataChangedEventArgs e)
+    {
+        if (e.ObjectType !=
+                MarketObjectType.Equipment ||
+            !string.Equals(
+                e.ServerName,
+                ServerName,
+                StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        _ = InvokeAsync(
+            ReloadFromMarketAsync
+        );
+    }
+
+    private async Task ReloadFromMarketAsync()
+    {
+        if (!await _refreshLock.WaitAsync(0))
+        {
+            return;
+        }
+
+        try
+        {
+            await LoadRowsAsync();
+            StateHasChanged();
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
+    }
+
+    public void Dispose()
+    {
+        MarketDataChangeNotifier.Changed -=
+            OnMarketDataChanged;
+        _refreshLock.Dispose();
     }
 
     private async Task SavePriceAsync(
@@ -232,6 +302,12 @@
 
             _lastSavedMessage =
                 $"{row.Name} : valeur manuelle réinitialisée.";
+            MarketDataChangeNotifier.Notify(
+                MarketObjectType.Equipment,
+                row.DofusDbId,
+                ServerName,
+                1
+            );
 
             return;
         }
@@ -255,6 +331,12 @@
 
         _lastSavedMessage =
             $"{row.Name} : {price:N0} kamas enregistré.";
+        MarketDataChangeNotifier.Notify(
+            MarketObjectType.Equipment,
+            row.DofusDbId,
+            ServerName,
+            1
+        );
     }
 
     private static string GetSourceLetter(
