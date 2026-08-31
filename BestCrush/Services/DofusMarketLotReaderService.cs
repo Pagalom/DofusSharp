@@ -182,19 +182,21 @@ public sealed class DofusMarketLotReaderService(
             index < SellRowY.Length;
             index++)
         {
-            // IMPORTANT :
-            // la colonne "Prix" est à droite du panneau.
-            // L'ancienne découpe commençait à X=0.28 et
-            // pouvait OCRiser la quantité ("1", "10", ...)
-            // comme si elle était le prix.
+            // Dans l'onglet VENTE, le prix utile se trouve
+            // dans le tableau "ACTUELLEMENT EN VENTE" à gauche.
+            //
+            // Zone calibrée sur le panneau HDV réel :
+            // elle conserve intégralement les prix x1/x10/x100/x1000,
+            // y compris les valeurs longues comme "1 099 854",
+            // sans inclure la colonne "Lot".
             string priceRegion =
                 await imageRegionService
                     .ExtractRegionAsync(
                         marketPanelImagePath,
                         new RelativeImageRegion(
-                            X: 0.50,
+                            X: 0.32,
                             Y: SellRowY[index],
-                            Width: 0.32,
+                            Width: 0.25,
                             Height: 0.042
                         ),
                         $"hdv-sell-lot-{SellQuantities[index]}-price"

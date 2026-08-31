@@ -9,7 +9,8 @@ using Windows.Storage.Streams;
 
 namespace BestCrush.Services;
 
-public sealed class DofusCaptureService
+public sealed class DofusCaptureService(
+    BestCrushSettingsService bestCrushSettingsService)
 {
     public async Task<DofusCaptureResult> CaptureAsync(
         DofusWindowInfo window,
@@ -233,10 +234,16 @@ public sealed class DofusCaptureService
         );
     }
 
-    private static void
+    private void
         TryDeleteCaptureDirectory(
             string? captureDirectory)
     {
+        if (!bestCrushSettingsService
+            .DevTool_RemoveScreenshotsByDefault)
+        {
+            return;
+        }
+
         if (string.IsNullOrWhiteSpace(
             captureDirectory))
         {

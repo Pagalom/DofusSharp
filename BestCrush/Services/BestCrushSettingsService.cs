@@ -21,6 +21,10 @@ public sealed class BestCrushSettingsService
     private const string TargetRoiKey =
         "Settings.TargetRoiPercent";
 
+    private const string
+        DevToolRemoveScreenshotsByDefaultKey =
+            "Settings.DevTool_RemoveScreenshotsByDefault";
+
     public bool EquipmentCaptureEnabled
     {
         get =>
@@ -77,6 +81,21 @@ public sealed class BestCrushSettingsService
         set =>
             Preferences.Set(
                 CoefficientCaptureKey,
+                value
+            );
+    }
+
+    public bool DevTool_RemoveScreenshotsByDefault
+    {
+        get =>
+            Preferences.Get(
+                DevToolRemoveScreenshotsByDefaultKey,
+                true
+            );
+
+        set =>
+            Preferences.Set(
+                DevToolRemoveScreenshotsByDefaultKey,
                 value
             );
     }
