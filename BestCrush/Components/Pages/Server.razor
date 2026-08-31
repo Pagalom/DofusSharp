@@ -199,6 +199,36 @@
                         </div>
                     </div>
 
+                    <hr />
+
+                    <div class="mb-2">
+                        <label class="form-label fw-bold">
+                            Outils développeur
+                        </label>
+
+                        <div class="text-muted small mb-3">
+                            Permet de conserver temporairement les captures
+                            et les crops OCR pour analyser les détections.
+                        </div>
+
+                        <div class="form-check form-switch">
+                            <input class="form-check-input"
+                                type="checkbox"
+                                id="devtool-remove-screenshots"
+                                @bind="BestCrushSettings.DevTool_RemoveScreenshotsByDefault" />
+
+                            <label class="form-check-label"
+                                for="devtool-remove-screenshots">
+                                DevTool_RemoveScreenshotsByDefault
+                            </label>
+                        </div>
+
+                        <div class="text-muted small mt-2">
+                            Activé : les captures sont supprimées après traitement.
+                            Désactivé : les captures et crops de debug sont conservés.
+                        </div>
+                    </div>
+
                 </div>
             </div>
         }
