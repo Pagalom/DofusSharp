@@ -1,4 +1,4 @@
-BestCrush v0.1.1
+BestCrush v0.1.2
 ==================
 
 BestCrush est un outil compagnon pour Dofus permettant de :
