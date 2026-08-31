@@ -127,6 +127,11 @@ public sealed class OverlayControlBarService
         _bindings?.OpenSettings();
     }
 
+    public void RefreshState()
+    {
+        _page?.RefreshState();
+    }
+
     public void Shutdown()
     {
         if (_window is null)

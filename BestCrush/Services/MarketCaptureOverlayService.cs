@@ -13,6 +13,11 @@ public sealed class MarketCaptureOverlayService
     private Window? _window;
     private MarketCaptureOverlayPage? _page;
 
+    // Les captures peuvent mettre à jour leur diagnostic
+    // sans provoquer l'ouverture de cette fenêtre.
+    private Action<MarketCaptureOverlayPage>?
+        _pendingUpdate;
+
 #if WINDOWS
     private AppWindow? _appWindow;
     private IntPtr _hwnd = IntPtr.Zero;
@@ -376,8 +381,11 @@ public sealed class MarketCaptureOverlayService
     {
         void Apply()
         {
-            EnsureWindow();
+            // Toujours mémoriser le dernier diagnostic.
+            _pendingUpdate = update;
 
+            // Une capture ne doit jamais créer ou ouvrir
+            // l'overlay "Mise à jour marché".
             if (_page is null)
             {
                 return;
@@ -417,6 +425,11 @@ public sealed class MarketCaptureOverlayService
 
         _page = page;
         _window = window;
+
+        // Si des captures ont eu lieu pendant que cette
+        // fenêtre était fermée, afficher le dernier état
+        // lorsque l'utilisateur l'ouvre volontairement.
+        _pendingUpdate?.Invoke(page);
 
         window.Created += (_, _) =>
         {

@@ -589,6 +589,11 @@ public sealed class OverlayService(
 
                                 await RefreshFocusedProfitabilityAsync();
 
+                                await MainThread
+                                    .InvokeOnMainThreadAsync(
+                                        Show
+                                    );
+
                                 PostUi(
                                     () =>
                                     {
@@ -1131,6 +1136,11 @@ public sealed class OverlayService(
                             );
                             await RefreshFocusedProfitabilityAsync();
 
+                            await MainThread
+                                .InvokeOnMainThreadAsync(
+                                    Show
+                                );
+
                             return;
                         }
 
@@ -1346,6 +1356,11 @@ public sealed class OverlayService(
                     }
                 );
                 await RefreshFocusedProfitabilityAsync();
+
+                await MainThread
+                    .InvokeOnMainThreadAsync(
+                        Show
+                    );
         }
         catch (OperationCanceledException)
         {
@@ -1585,6 +1600,9 @@ public sealed class OverlayService(
         }
 
         _isOverlayVisible = true;
+
+        overlayControlBarService
+            .RefreshState();
 #endif
     }
 
@@ -1602,6 +1620,9 @@ public sealed class OverlayService(
         );
 
         _isOverlayVisible = false;
+
+        overlayControlBarService
+            .RefreshState();
 #endif
     }
 
