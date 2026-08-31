@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text;
+using System.Text.RegularExpressions;
 
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
@@ -23,20 +24,28 @@ public sealed class DofusItemRecognitionService(
                 itemNameText
             );
 
-        if (string.IsNullOrWhiteSpace(normalizedInput))
+        if (string.IsNullOrWhiteSpace(
+            normalizedInput))
         {
             return null;
         }
 
-        IReadOnlyCollection<Equipment> equipments =
-            await itemsService.GetAllEquipmentsAsync();
+        IReadOnlyCollection<Equipment>
+            equipments =
+                await itemsService
+                    .GetAllEquipmentsAsync();
 
-
+        // Un nom exact reste la preuve la plus forte.
+        // On le teste avant les métadonnées OCR afin
+        // qu'un niveau/type mal lu ne casse jamais une
+        // reconnaissance de nom certaine.
         Equipment? exactMatch =
             equipments.FirstOrDefault(
                 equipment =>
                     string.Equals(
-                        Normalize(equipment.Name),
+                        Normalize(
+                            equipment.Name
+                        ),
                         normalizedInput,
                         StringComparison.Ordinal
                     )
@@ -49,19 +58,57 @@ public sealed class DofusItemRecognitionService(
                 1.0
             );
         }
-        // Sinon on conserve la reconnaissance floue
-        // actuelle pour tolérer les petites erreurs OCR.
+
+        int? recognizedLevel =
+            ExtractLevel(
+                recognizedText
+            );
+
+        EquipmentType? recognizedType =
+            ExtractEquipmentType(
+                recognizedText
+            );
+
+        IReadOnlyCollection<Equipment>
+            candidates =
+                NarrowCandidates(
+                    equipments,
+                    recognizedLevel,
+                    recognizedType
+                );
+
         List<ItemRecognitionResult> matches =
-            equipments
+            candidates
                 .Select(equipment =>
                 {
                     string normalizedName =
-                        Normalize(equipment.Name);
+                        Normalize(
+                            equipment.Name
+                        );
 
-                    double confidence =
+                    double levenshtein =
                         Similarity(
                             normalizedInput,
                             normalizedName
+                        );
+
+                    // Si l'OCR a perdu le début ou la fin
+                    // d'un nom, la proportion de mots communs
+                    // permet de récupérer le candidat.
+                    //
+                    // Le score reste plafonné à 0.92 :
+                    // il ne peut donc jamais se faire passer
+                    // pour une correspondance exacte.
+                    double tokenContainment =
+                        TokenContainmentSimilarity(
+                            normalizedInput,
+                            normalizedName
+                        );
+
+                    double confidence =
+                        Math.Max(
+                            levenshtein,
+                            tokenContainment * 0.92
                         );
 
                     return new ItemRecognitionResult(
@@ -70,7 +117,8 @@ public sealed class DofusItemRecognitionService(
                     );
                 })
                 .OrderByDescending(
-                    result => result.Confidence
+                    result =>
+                        result.Confidence
                 )
                 .ToList();
 
@@ -82,13 +130,11 @@ public sealed class DofusItemRecognitionService(
         ItemRecognitionResult best =
             matches[0];
 
-        // Correspondance exacte après normalisation.
         if (best.Confidence >= 0.999)
         {
             return best;
         }
 
-        // On refuse les correspondances trop douteuses.
         if (best.Confidence < 0.82)
         {
             return null;
@@ -99,15 +145,73 @@ public sealed class DofusItemRecognitionService(
             ItemRecognitionResult second =
                 matches[1];
 
-            // Deux noms presque aussi probables :
-            // on préfère ne rien enregistrer.
-            if (best.Confidence - second.Confidence < 0.05)
+            // Même avec les métadonnées, deux noms
+            // quasiment équivalents restent ambigus :
+            // ne jamais choisir arbitrairement.
+            if (best.Confidence -
+                    second.Confidence <
+                0.05)
             {
                 return null;
             }
         }
 
         return best;
+    }
+
+    private static IReadOnlyCollection<Equipment>
+        NarrowCandidates(
+            IReadOnlyCollection<Equipment>
+                equipments,
+            int? recognizedLevel,
+            EquipmentType? recognizedType)
+    {
+        IReadOnlyCollection<Equipment>
+            candidates =
+                equipments;
+
+        if (recognizedType is not null)
+        {
+            Equipment[] sameType =
+                candidates
+                    .Where(
+                        equipment =>
+                            equipment.Type ==
+                            recognizedType.Value
+                    )
+                    .ToArray();
+
+            // Une métadonnée OCR n'est utilisée que
+            // lorsqu'elle produit effectivement des
+            // candidats. Sinon on la considère douteuse.
+            if (sameType.Length > 0)
+            {
+                candidates =
+                    sameType;
+            }
+        }
+
+        if (recognizedLevel is not null)
+        {
+            Equipment[] sameLevel =
+                candidates
+                    .Where(
+                        equipment =>
+                            Math.Abs(
+                                equipment.Level -
+                                recognizedLevel.Value
+                            ) <= 1
+                    )
+                    .ToArray();
+
+            if (sameLevel.Length > 0)
+            {
+                candidates =
+                    sameLevel;
+            }
+        }
+
+        return candidates;
     }
 
     private static string ExtractItemName(
@@ -119,8 +223,35 @@ public sealed class DofusItemRecognitionService(
             return string.Empty;
         }
 
+        string[] lines =
+            recognizedText
+                .Split(
+                    ['\r', '\n'],
+                    StringSplitOptions
+                        .RemoveEmptyEntries
+                )
+                .Select(
+                    line =>
+                        line.Trim()
+                )
+                .Where(
+                    line =>
+                        !string.IsNullOrWhiteSpace(
+                            line
+                        )
+                )
+                .ToArray();
+
+        if (lines.Length == 0)
+        {
+            return string.Empty;
+        }
+
+        // Le bandeau Dofus place toujours le nom
+        // d'objet sur la première ligne. C'est plus
+        // robuste que de concaténer "Niveau ... Cape".
         string text =
-            recognizedText.Trim();
+            lines[0];
 
         int shortLevelIndex =
             text.IndexOf(
@@ -161,7 +292,64 @@ public sealed class DofusItemRecognitionService(
             );
     }
 
-    private static string Normalize(string value)
+    private static int? ExtractLevel(
+        string recognizedText)
+    {
+        string normalized =
+            Normalize(
+                recognizedText
+            );
+
+        Match match =
+            Regex.Match(
+                normalized,
+                @"\b(?:niv|niveau)\s+(\d{1,3})\b",
+                RegexOptions.IgnoreCase |
+                RegexOptions.CultureInvariant
+            );
+
+        if (!match.Success ||
+            !int.TryParse(
+                match.Groups[1].Value,
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out int level))
+        {
+            return null;
+        }
+
+        return level;
+    }
+
+    private static EquipmentType?
+        ExtractEquipmentType(
+            string recognizedText)
+    {
+        string normalizedText =
+            $" {Normalize(recognizedText)} ";
+
+        foreach (
+            EquipmentType type
+            in Enum.GetValues<EquipmentType>())
+        {
+            string normalizedType =
+                Normalize(
+                    type.ToDisplayName()
+                );
+
+            if (normalizedText.Contains(
+                $" {normalizedType} ",
+                StringComparison.Ordinal))
+            {
+                return type;
+            }
+        }
+
+        return null;
+    }
+
+    private static string Normalize(
+        string value)
     {
         string decomposed =
             value
@@ -172,27 +360,116 @@ public sealed class DofusItemRecognitionService(
                     NormalizationForm.FormD
                 );
 
-        StringBuilder result = new();
+        StringBuilder result =
+            new();
 
-        foreach (char character in decomposed)
+        bool previousWasSeparator =
+            true;
+
+        foreach (
+            char character
+            in decomposed)
         {
             UnicodeCategory category =
-                CharUnicodeInfo.GetUnicodeCategory(
+                CharUnicodeInfo
+                    .GetUnicodeCategory(
+                        character
+                    );
+
+            if (category ==
+                UnicodeCategory
+                    .NonSpacingMark)
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(
+                character))
+            {
+                result.Append(
                     character
                 );
 
-            if (category !=
-                UnicodeCategory.NonSpacingMark)
+                previousWasSeparator =
+                    false;
+
+                continue;
+            }
+
+            // Ponctuation, apostrophe et tirets deviennent
+            // un unique séparateur. Cela rend par exemple
+            // "Père-Phorreur", "Père Phorreur" et les
+            // variantes OCR comparables.
+            if (!previousWasSeparator)
             {
-                result.Append(character);
+                result.Append(' ');
+                previousWasSeparator =
+                    true;
             }
         }
 
         return result
             .ToString()
+            .Trim()
             .Normalize(
                 NormalizationForm.FormC
             );
+    }
+
+    private static double
+        TokenContainmentSimilarity(
+            string first,
+            string second)
+    {
+        string[] firstTokens =
+            first.Split(
+                ' ',
+                StringSplitOptions
+                    .RemoveEmptyEntries |
+                StringSplitOptions
+                    .TrimEntries
+            );
+
+        string[] secondTokens =
+            second.Split(
+                ' ',
+                StringSplitOptions
+                    .RemoveEmptyEntries |
+                StringSplitOptions
+                    .TrimEntries
+            );
+
+        if (firstTokens.Length == 0 ||
+            secondTokens.Length == 0)
+        {
+            return 0.0;
+        }
+
+        HashSet<string> firstSet =
+            firstTokens.ToHashSet(
+                StringComparer.Ordinal
+            );
+
+        HashSet<string> secondSet =
+            secondTokens.ToHashSet(
+                StringComparer.Ordinal
+            );
+
+        int common =
+            firstSet.Count(
+                secondSet.Contains
+            );
+
+        int denominator =
+            Math.Min(
+                firstSet.Count,
+                secondSet.Count
+            );
+
+        return denominator == 0
+            ? 0.0
+            : (double)common /
+                denominator;
     }
 
     private static double Similarity(
@@ -222,7 +499,8 @@ public sealed class DofusItemRecognitionService(
             );
 
         return 1.0 -
-            ((double)distance / maximumLength);
+            ((double)distance /
+                maximumLength);
     }
 
     private static int LevenshteinDistance(
@@ -235,19 +513,33 @@ public sealed class DofusItemRecognitionService(
                 second.Length + 1
             ];
 
-        for (int i = 0; i <= first.Length; i++)
+        for (
+            int i = 0;
+            i <= first.Length;
+            i++)
         {
-            matrix[i, 0] = i;
+            matrix[i, 0] =
+                i;
         }
 
-        for (int j = 0; j <= second.Length; j++)
+        for (
+            int j = 0;
+            j <= second.Length;
+            j++)
         {
-            matrix[0, j] = j;
+            matrix[0, j] =
+                j;
         }
 
-        for (int i = 1; i <= first.Length; i++)
+        for (
+            int i = 1;
+            i <= first.Length;
+            i++)
         {
-            for (int j = 1; j <= second.Length; j++)
+            for (
+                int j = 1;
+                j <= second.Length;
+                j++)
             {
                 int cost =
                     first[i - 1] ==
@@ -261,7 +553,11 @@ public sealed class DofusItemRecognitionService(
                             matrix[i - 1, j] + 1,
                             matrix[i, j - 1] + 1
                         ),
-                        matrix[i - 1, j - 1] + cost
+                        matrix[
+                            i - 1,
+                            j - 1
+                        ] +
+                        cost
                     );
             }
         }

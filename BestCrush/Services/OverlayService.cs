@@ -56,7 +56,20 @@ public sealed class OverlayService(
 
     private Task? _middleClickReadWorkerTask;
 
-    private bool _hasF7VisibilitySnapshot;
+    
+    // Les changements de marché peuvent déclencher plusieurs
+    // recalculs presque simultanés (notifier + capture directe).
+    // Un seul calcul de rentabilité est autorisé à la fois.
+    private readonly System.Threading.SemaphoreSlim
+        _profitabilityRefreshLock =
+            new(1, 1);
+
+    // Chaque demande reçoit une génération. Un calcul dont la
+    // génération n'est plus la dernière ne doit jamais écraser
+    // un résultat plus récent dans l'overlay.
+    private long
+        _profitabilityRefreshVersion;
+private bool _hasF7VisibilitySnapshot;
     private bool _restoreProfitabilityAfterF7;
     private bool _restoreMarketAfterF7;
     private bool _restoreCrushAfterF7;
@@ -1437,44 +1450,116 @@ public sealed class OverlayService(
 
     private async Task RefreshFocusedProfitabilityAsync()
     {
-        Equipment? equipment =
-            focusedEquipmentState.Equipment;
-
-        string? serverName =
-            currentServerState.ServerName;
-
-        if (equipment is null ||
-            string.IsNullOrWhiteSpace(serverName))
-        {
-            return;
-        }
-
-        using IServiceScope scope =
-            serviceScopeFactory.CreateScope();
-
-        EquipmentProfitabilityService
-            profitabilityService =
-                scope.ServiceProvider
-                    .GetRequiredService<
-                        EquipmentProfitabilityService>();
-
-        EquipmentProfitabilityResult result =
-            await profitabilityService
-                .CalculateAsync(
-                    equipment,
-                    serverName
-                );
-
-        await MainThread
-            .InvokeOnMainThreadAsync(
-                () =>
-                {
-                    _overlayPage?
-                        .ShowProfitability(
-                            result
-                        );
-                }
+        long refreshVersion =
+            Interlocked.Increment(
+                ref _profitabilityRefreshVersion
             );
+
+        await _profitabilityRefreshLock
+            .WaitAsync();
+
+        try
+        {
+            // Si une demande plus récente attend déjà,
+            // celle-ci est obsolète avant même de calculer.
+            if (refreshVersion !=
+                Volatile.Read(
+                    ref _profitabilityRefreshVersion
+                ))
+            {
+                return;
+            }
+
+            Equipment? equipment =
+                focusedEquipmentState.Equipment;
+
+            string? serverName =
+                currentServerState.ServerName;
+
+            if (equipment is null ||
+                string.IsNullOrWhiteSpace(
+                    serverName))
+            {
+                return;
+            }
+
+            long equipmentId =
+                equipment.DofusDbId;
+
+            using IServiceScope scope =
+                serviceScopeFactory
+                    .CreateScope();
+
+            EquipmentProfitabilityService
+                profitabilityService =
+                    scope.ServiceProvider
+                        .GetRequiredService<
+                            EquipmentProfitabilityService>();
+
+            EquipmentProfitabilityResult
+                result =
+                    await profitabilityService
+                        .CalculateAsync(
+                            equipment,
+                            serverName
+                        );
+
+            // Un prix, coefficient ou focus a pu changer
+            // pendant le calcul. Dans ce cas, ne jamais
+            // afficher ce résultat devenu obsolète.
+            if (refreshVersion !=
+                Volatile.Read(
+                    ref _profitabilityRefreshVersion
+                ))
+            {
+                return;
+            }
+
+            Equipment? currentEquipment =
+                focusedEquipmentState
+                    .Equipment;
+
+            string? currentServerName =
+                currentServerState
+                    .ServerName;
+
+            if (currentEquipment?.DofusDbId !=
+                    equipmentId ||
+                !string.Equals(
+                    currentServerName,
+                    serverName,
+                    StringComparison.Ordinal
+                ))
+            {
+                return;
+            }
+
+            await MainThread
+                .InvokeOnMainThreadAsync(
+                    () =>
+                    {
+                        // Dernière vérification au moment
+                        // exact où l'UI est mise à jour.
+                        if (refreshVersion !=
+                            Volatile.Read(
+                                ref _profitabilityRefreshVersion
+                            ))
+                        {
+                            return;
+                        }
+
+                        _overlayPage?
+                            .ShowProfitability(
+                                result
+                            );
+                    }
+                );
+        }
+        finally
+        {
+            _profitabilityRefreshLock
+                .Release();
+        }
     }
 
     public void BeginResize(

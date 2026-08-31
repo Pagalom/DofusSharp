@@ -11,10 +11,10 @@ public sealed class DofusMarketLotReaderService(
 {
     private static readonly double[] RowY =
     [
-        0.282,
-        0.333,
-        0.384,
-        0.435
+        0.326,
+        0.386,
+        0.446,
+        0.506
     ];
 
     private static readonly int[] SellQuantities =

@@ -108,14 +108,19 @@ public sealed class DofusItemTooltipDetectionService(
                 header
             );
 
-        string recognizedTitle =
+        string recognizedTitleText =
             await ocrService
                 .RecognizeUpscaledTextAsync(
                     titleImagePath
                 );
 
-        recognizedTitle =
-            recognizedTitle
+        WriteRecognizedTitleDebug(
+            captureFilePath,
+            recognizedTitleText
+        );
+
+        string recognizedTitle =
+            recognizedTitleText
                 .Split(
                     ['\r', '\n'],
                     StringSplitOptions
@@ -142,12 +147,12 @@ public sealed class DofusItemTooltipDetectionService(
 
         ItemRecognitionResult? recognition =
             string.IsNullOrWhiteSpace(
-                recognizedTitle
+                recognizedTitleText
             )
                 ? null
                 : await itemRecognitionService
                     .RecognizeEquipmentAsync(
-                        recognizedTitle
+                        recognizedTitleText
                     );
 
         return new DofusItemTooltipDetectionResult(
@@ -480,6 +485,33 @@ public sealed class DofusItemTooltipDetectionService(
         );
 
         return outputPath;
+    }
+
+    private static void WriteRecognizedTitleDebug(
+        string sourceFilePath,
+        string recognizedText)
+    {
+        try
+        {
+            string directory =
+                Path.GetDirectoryName(
+                    sourceFilePath
+                )
+                ?? Path.GetTempPath();
+
+            File.WriteAllText(
+                Path.Combine(
+                    directory,
+                    "tooltip-title-ocr.txt"
+                ),
+                recognizedText
+            );
+        }
+        catch
+        {
+            // Un fichier de debug ne doit jamais
+            // faire échouer une reconnaissance.
+        }
     }
 
     private static CvRect ClampRectangle(
