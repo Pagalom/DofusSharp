@@ -28,7 +28,8 @@ public sealed class OverlayService(
     CrushSessionService crushSessionService,
     MarketDataChangeNotifier marketDataChangeNotifier,
     MarketCaptureOverlayService marketCaptureOverlayService,
-    OverlayControlBarService overlayControlBarService)
+    OverlayControlBarService overlayControlBarService,
+    OverlayLayoutSettingsService overlayLayoutSettingsService)
 {
     private Window? _overlayWindow;
     private OverlayPage? _overlayPage;
@@ -56,7 +57,20 @@ public sealed class OverlayService(
 
     private Task? _middleClickReadWorkerTask;
 
-    private bool _hasF7VisibilitySnapshot;
+    
+    // Les changements de marché peuvent déclencher plusieurs
+    // recalculs presque simultanés (notifier + capture directe).
+    // Un seul calcul de rentabilité est autorisé à la fois.
+    private readonly System.Threading.SemaphoreSlim
+        _profitabilityRefreshLock =
+            new(1, 1);
+
+    // Chaque demande reçoit une génération. Un calcul dont la
+    // génération n'est plus la dernière ne doit jamais écraser
+    // un résultat plus récent dans l'overlay.
+    private long
+        _profitabilityRefreshVersion;
+private bool _hasF7VisibilitySnapshot;
     private bool _restoreProfitabilityAfterF7;
     private bool _restoreMarketAfterF7;
     private bool _restoreCrushAfterF7;
@@ -125,6 +139,8 @@ public sealed class OverlayService(
         {
             return;
         }
+
+        LoadStoredLayout();
 
         crushSessionService.CoefficientsUpdated -=
             OnCrushSessionCoefficientsUpdated;
@@ -811,20 +827,21 @@ public sealed class OverlayService(
                                         "hdv-first-price"
                                     );
 
-                            string recognizedMarketItemName =
+                            string recognizedMarketItemText =
                                 await dofusOcrService
                                     .RecognizeUpscaledTextAsync(
                                         marketItemNameRegion
                                     );
-                            recognizedMarketItemName =
-                                recognizedMarketItemName
-                                    .Split(
-                                        ['\r', '\n'],
-                                        StringSplitOptions.RemoveEmptyEntries
-                                    )
-                                    .FirstOrDefault()?
-                                    .Trim()
-                                ?? string.Empty;
+
+                            string recognizedMarketItemName =
+                                ExtractMarketPrimaryName(
+                                    recognizedMarketItemText
+                                );
+
+                            MarketObjectHint explicitMarketHint =
+                                DetectExplicitMarketObjectHint(
+                                    recognizedMarketItemText
+                                );
 
                             long? recognizedMarketPrice =
                                 await dofusOcrService
@@ -874,45 +891,324 @@ public sealed class OverlayService(
                                     .GetRequiredService<
                                         MarketPriceService>();
 
-                            // IMPORTANT :
-                            // une rune ou une ressource ne doit jamais être
-                            // absorbée par la reconnaissance floue d'un
-                            // équipement. On classe donc du plus spécifique
-                            // au plus général :
+                            // Les trois familles sont reconnues AVANT de
+                            // décider quoi que ce soit.
                             //
-                            // rune -> ressource -> équipement.
+                            // On ne classe plus par simple priorité
+                            // rune -> ressource -> équipement : un fuzzy
+                            // match d'une famille ne doit jamais absorber
+                            // silencieusement un objet d'une autre famille.
                             RuneRecognitionResult? runeRecognition =
                                 await runeRecognitionService
                                     .RecognizeRuneAsync(
                                         recognizedMarketItemName
                                     );
 
-                            if (runeRecognition is not null)
+                            ResourceRecognitionResult? resourceRecognition =
+                                await resourceRecognitionService
+                                    .RecognizeResourceAsync(
+                                        recognizedMarketItemName
+                                    );
+
+                            ItemRecognitionResult? marketRecognition =
+                                await marketItemRecognitionService
+                                    .RecognizeEquipmentAsync(
+                                        recognizedMarketItemName
+                                    );
+
+                            // Le type affiche par Dofus est une preuve forte.
+                            // Exemple : Rune Invo ... Rune de forgemagie.
+                            if (explicitMarketHint ==
+                                    MarketObjectHint.Rune &&
+                                runeRecognition is not null)
                             {
-                                IReadOnlyList<DofusMarketLot> lots =
+                                resourceRecognition = null;
+                            }
+                            else if (
+                                explicitMarketHint ==
+                                    MarketObjectHint.Resource &&
+                                resourceRecognition is not null)
+                            {
+                                runeRecognition = null;
+                            }
+
+                            bool runeExact =
+                                runeRecognition is not null &&
+                                MarketNamesEquivalent(
+                                    recognizedMarketItemName,
+                                    runeRecognition.Rune.Name
+                                );
+
+                            bool resourceExact =
+                                resourceRecognition is not null &&
+                                MarketNamesEquivalent(
+                                    recognizedMarketItemName,
+                                    resourceRecognition.Resource.Name
+                                );
+
+                            bool equipmentExact =
+                                explicitMarketHint ==
+                                    MarketObjectHint.None &&
+                                marketRecognition is not null &&
+                                MarketNamesEquivalent(
+                                    recognizedMarketItemName,
+                                    marketRecognition.Equipment.Name
+                                );
+
+                            double runeScore =
+                                runeRecognition is null
+                                    ? 0
+                                    : GetAdjustedMaterialConfidence(
+                                        recognizedMarketItemName,
+                                        runeRecognition.Rune.Name,
+                                        runeRecognition.Confidence
+                                    );
+
+                            double resourceScore =
+                                resourceRecognition is null
+                                    ? 0
+                                    : GetAdjustedMaterialConfidence(
+                                        recognizedMarketItemName,
+                                        resourceRecognition.Resource.Name,
+                                        resourceRecognition.Confidence
+                                    );
+
+                            // La lecture des lots est aussi une preuve
+                            // structurelle :
+                            //
+                            // matériau -> x1 / x10 / x100 / x1000,
+                            // équipement -> plusieurs offres individuelles x1.
+                            //
+                            // Le lecteur sécurisé rejette déjà les quantités
+                            // dupliquées, donc quatre lignes x1 donnent
+                            // volontairement zéro lot matière.
+                            IReadOnlyList<DofusMarketLot> materialLots =
+                                [];
+
+                            if (!equipmentExact &&
+                                (
+                                    runeRecognition is not null ||
+                                    resourceRecognition is not null
+                                ))
+                            {
+                                materialLots =
                                     await dofusMarketLotReaderService
                                         .ReadMaterialLotsAsync(
                                             marketPanel.DebugImagePath
                                         );
+                            }
 
-                                if (lots.Count == 0)
+                            bool hasStrongMaterialGeometry =
+                                materialLots.Any(
+                                    lot =>
+                                        lot.Quantity != 1
+                                );
+
+                            bool hasOnlySingleX1MaterialGeometry =
+                                materialLots.Count == 1 &&
+                                materialLots[0].Quantity == 1;
+
+                            string? selectedMaterialKind =
+                                null;
+
+                            double selectedMaterialScore =
+                                0;
+
+                            bool selectedMaterialExact =
+                                false;
+
+                            if (runeRecognition is not null &&
+                                resourceRecognition is null)
+                            {
+                                selectedMaterialKind =
+                                    "Rune";
+
+                                selectedMaterialScore =
+                                    runeScore;
+
+                                selectedMaterialExact =
+                                    runeExact;
+                            }
+                            else if (
+                                resourceRecognition is not null &&
+                                runeRecognition is null)
+                            {
+                                selectedMaterialKind =
+                                    "Resource";
+
+                                selectedMaterialScore =
+                                    resourceScore;
+
+                                selectedMaterialExact =
+                                    resourceExact;
+                            }
+                            else if (
+                                runeRecognition is not null &&
+                                resourceRecognition is not null)
+                            {
+                                if (runeExact &&
+                                    !resourceExact)
                                 {
-                                    PostUi(
-                                        () =>
-                                        {
-                                            marketCaptureOverlayService.ShowAuxiliaryMarketReadFailed(
-                                                    runeRecognition.Rune.Name
-                                                );
-                                        }
-                                    );
+                                    selectedMaterialKind =
+                                        "Rune";
 
-                                    return;
+                                    selectedMaterialScore =
+                                        runeScore;
+
+                                    selectedMaterialExact =
+                                        true;
                                 }
+                                else if (
+                                    resourceExact &&
+                                    !runeExact)
+                                {
+                                    selectedMaterialKind =
+                                        "Resource";
+
+                                    selectedMaterialScore =
+                                        resourceScore;
+
+                                    selectedMaterialExact =
+                                        true;
+                                }
+                                else if (
+                                    Math.Abs(
+                                        runeScore -
+                                        resourceScore
+                                    ) >= 0.05)
+                                {
+                                    if (runeScore >
+                                        resourceScore)
+                                    {
+                                        selectedMaterialKind =
+                                            "Rune";
+
+                                        selectedMaterialScore =
+                                            runeScore;
+
+                                        selectedMaterialExact =
+                                            runeExact;
+                                    }
+                                    else
+                                    {
+                                        selectedMaterialKind =
+                                            "Resource";
+
+                                        selectedMaterialScore =
+                                            resourceScore;
+
+                                        selectedMaterialExact =
+                                            resourceExact;
+                                    }
+                                }
+                            }
+
+                            bool selectEquipment =
+                                equipmentExact;
+
+                            string decisionReason =
+                                equipmentExact
+                                    ? "exact equipment name"
+                                    : string.Empty;
+
+                            if (!selectEquipment &&
+                                explicitMarketHint ==
+                                    MarketObjectHint.None &&
+                                marketRecognition is not null)
+                            {
+                                if (materialLots.Count == 0)
+                                {
+                                    // Cas typique d'un équipement :
+                                    // plusieurs offres x1 ont été vues et
+                                    // rejetées comme quantité dupliquée.
+                                    selectEquipment =
+                                        true;
+
+                                    decisionReason =
+                                        "no valid material lots; equipment candidate available";
+                                }
+                                else if (
+                                    hasOnlySingleX1MaterialGeometry &&
+                                    !selectedMaterialExact)
+                                {
+                                    // Une seule ligne x1 ne permet pas de
+                                    // distinguer à elle seule un matériau
+                                    // d'un équipement ayant une seule offre.
+                                    //
+                                    // On exige donc une avance significative
+                                    // du candidat matériau. Un prefix-match
+                                    // est plafonné à 0.92 par
+                                    // GetAdjustedMaterialConfidence.
+                                    if (marketRecognition.Confidence >=
+                                        selectedMaterialScore - 0.05)
+                                    {
+                                        selectEquipment =
+                                            true;
+
+                                        decisionReason =
+                                            "single x1 is ambiguous; equipment candidate is at least as credible";
+                                    }
+                                }
+                            }
+
+                            if (selectEquipment)
+                            {
+                                await WriteMarketClassificationDebugAsync(
+                                    marketPanel.DebugImagePath,
+                                    recognizedMarketItemName,
+                                    recognizedMarketPrice,
+                                    runeRecognition,
+                                    runeScore,
+                                    runeExact,
+                                    resourceRecognition,
+                                    resourceScore,
+                                    resourceExact,
+                                    marketRecognition,
+                                    equipmentExact,
+                                    materialLots,
+                                    "Equipment",
+                                    decisionReason
+                                );
+
+                                // On continue plus bas dans le chemin
+                                // équipement déjà existant.
+                            }
+                            else if (
+                                materialLots.Count > 0 &&
+                                selectedMaterialKind == "Rune" &&
+                                runeRecognition is not null &&
+                                (
+                                    explicitMarketHint ==
+                                        MarketObjectHint.Rune ||
+                                    selectedMaterialExact ||
+                                    selectedMaterialScore >= 0.85
+                                ))
+                            {
+                                await WriteMarketClassificationDebugAsync(
+                                    marketPanel.DebugImagePath,
+                                    recognizedMarketItemName,
+                                    recognizedMarketPrice,
+                                    runeRecognition,
+                                    runeScore,
+                                    runeExact,
+                                    resourceRecognition,
+                                    resourceScore,
+                                    resourceExact,
+                                    marketRecognition,
+                                    equipmentExact,
+                                    materialLots,
+                                    "Rune",
+                                    selectedMaterialExact
+                                        ? "exact rune name + valid material lots"
+                                        : hasStrongMaterialGeometry
+                                            ? "best rune candidate + strong material lot geometry"
+                                            : "best rune candidate + valid material lot"
+                                );
 
                                 string runeServerName =
                                     currentServerState.ServerName!;
 
-                                foreach (DofusMarketLot lot in lots)
+                                foreach (DofusMarketLot lot in materialLots)
                                 {
                                     await hdvMarketPriceService
                                         .AddObservationAsync(
@@ -935,9 +1231,10 @@ public sealed class OverlayService(
                                 PostUi(
                                     () =>
                                     {
-                                        marketCaptureOverlayService.ShowAuxiliaryMarketDataRecorded(
+                                        marketCaptureOverlayService
+                                            .ShowAuxiliaryMarketDataRecorded(
                                                 runeRecognition.Rune.Name,
-                                                lots.Count,
+                                                materialLots.Count,
                                                 focusedEquipmentState
                                                     .Equipment?
                                                     .Name
@@ -949,48 +1246,47 @@ public sealed class OverlayService(
 
                                 return;
                             }
-
-                            ResourceRecognitionResult? resourceRecognition =
-                                await resourceRecognitionService
-                                    .RecognizeResourceAsync(
-                                        recognizedMarketItemName
-                                    );
-
-                            if (resourceRecognition is not null)
+                            else if (
+                                materialLots.Count > 0 &&
+                                selectedMaterialKind == "Resource" &&
+                                resourceRecognition is not null &&
+                                (
+                                    explicitMarketHint ==
+                                        MarketObjectHint.Resource ||
+                                    selectedMaterialExact ||
+                                    selectedMaterialScore >= 0.85
+                                ))
                             {
-                                IReadOnlyList<DofusMarketLot> lots =
-                                    await dofusMarketLotReaderService
-                                        .ReadMaterialLotsAsync(
-                                            marketPanel.DebugImagePath
-                                        );
-
-                                if (lots.Count == 0)
-                                {
-                                    PostUi(
-                                        () =>
-                                        {
-                                            marketCaptureOverlayService.ShowAuxiliaryMarketReadFailed(
-                                                    resourceRecognition
-                                                        .Resource
-                                                        .Name
-                                                );
-                                        }
-                                    );
-
-                                    return;
-                                }
+                                await WriteMarketClassificationDebugAsync(
+                                    marketPanel.DebugImagePath,
+                                    recognizedMarketItemName,
+                                    recognizedMarketPrice,
+                                    runeRecognition,
+                                    runeScore,
+                                    runeExact,
+                                    resourceRecognition,
+                                    resourceScore,
+                                    resourceExact,
+                                    marketRecognition,
+                                    equipmentExact,
+                                    materialLots,
+                                    "Resource",
+                                    selectedMaterialExact
+                                        ? "exact resource name + valid material lots"
+                                        : hasStrongMaterialGeometry
+                                            ? "best resource candidate + strong material lot geometry"
+                                            : "best resource candidate + valid material lot"
+                                );
 
                                 string resourceServerName =
                                     currentServerState.ServerName!;
 
-                                foreach (DofusMarketLot lot in lots)
+                                foreach (DofusMarketLot lot in materialLots)
                                 {
                                     await hdvMarketPriceService
                                         .AddObservationAsync(
                                             MarketObjectType.Resource,
-                                            resourceRecognition
-                                                .Resource
-                                                .DofusDbId,
+                                            resourceRecognition.Resource.DofusDbId,
                                             resourceServerName,
                                             lot.Price,
                                             lot.Quantity,
@@ -1008,11 +1304,10 @@ public sealed class OverlayService(
                                 PostUi(
                                     () =>
                                     {
-                                        marketCaptureOverlayService.ShowAuxiliaryMarketDataRecorded(
-                                                resourceRecognition
-                                                    .Resource
-                                                    .Name,
-                                                lots.Count,
+                                        marketCaptureOverlayService
+                                            .ShowAuxiliaryMarketDataRecorded(
+                                                resourceRecognition.Resource.Name,
+                                                materialLots.Count,
                                                 focusedEquipmentState
                                                     .Equipment?
                                                     .Name
@@ -1024,44 +1319,72 @@ public sealed class OverlayService(
 
                                 return;
                             }
-
-                            ItemRecognitionResult? marketRecognition =
-                                await marketItemRecognitionService
-                                    .RecognizeEquipmentAsync(
-                                        recognizedMarketItemName
-                                    );
-
-                            if (marketRecognition is null)
+                            else
                             {
-                                if (recognizedMarketPrice is long detectedPrice)
+                                await WriteMarketClassificationDebugAsync(
+                                    marketPanel.DebugImagePath,
+                                    recognizedMarketItemName,
+                                    recognizedMarketPrice,
+                                    runeRecognition,
+                                    runeScore,
+                                    runeExact,
+                                    resourceRecognition,
+                                    resourceScore,
+                                    resourceExact,
+                                    marketRecognition,
+                                    equipmentExact,
+                                    materialLots,
+                                    "Rejected",
+                                    "classification ambiguous or unsupported by market geometry"
+                                );
+
+                                if (marketRecognition is null)
                                 {
-                                    PostUi(
-                                        () =>
-                                        {
-                                            marketCaptureOverlayService.ShowMarketEquipmentRecognitionFailed(
-                                                    recognizedMarketItemName,
-                                                    detectedPrice
-                                                );
-                                        }
-                                    );
+                                    if (recognizedMarketPrice is long detectedPrice)
+                                    {
+                                        PostUi(
+                                            () =>
+                                            {
+                                                marketCaptureOverlayService
+                                                    .ShowMarketEquipmentRecognitionFailed(
+                                                        recognizedMarketItemName,
+                                                        detectedPrice
+                                                    );
+                                            }
+                                        );
+                                    }
+                                    else
+                                    {
+                                        PostUi(
+                                            () =>
+                                            {
+                                                marketCaptureOverlayService
+                                                    .ShowAuxiliaryMarketReadFailed(
+                                                        recognizedMarketItemName
+                                                    );
+                                            }
+                                        );
+                                    }
+
+                                    return;
                                 }
-                                else
-                                {
-                                    PostUi(
-                                        () =>
-                                        {
-                                            marketCaptureOverlayService
-                                                .ShowMarketEquipmentRead(
-                                                    recognizedMarketItemName,
-                                                    null
-                                                );
-                                        }
-                                    );
-                                }
+
+                                // Un équipement candidat existe mais les
+                                // preuves sont contradictoires : on refuse
+                                // toute écriture plutôt que de choisir
+                                // arbitrairement.
+                                PostUi(
+                                    () =>
+                                    {
+                                        marketCaptureOverlayService
+                                            .ShowAuxiliaryMarketReadFailed(
+                                                recognizedMarketItemName
+                                            );
+                                    }
+                                );
 
                                 return;
                             }
-
                             Equipment marketEquipment =
                                 marketRecognition.Equipment;
                             if (recognizedMarketPrice is null ||
@@ -1378,6 +1701,301 @@ public sealed class OverlayService(
         }
     }
 
+    private enum MarketObjectHint
+    {
+        None,
+        Rune,
+        Resource
+    }
+
+    private static string ExtractMarketPrimaryName(
+        string recognizedText)
+    {
+        if (string.IsNullOrWhiteSpace(recognizedText))
+        {
+            return string.Empty;
+        }
+
+        string compact =
+            System.Text.RegularExpressions.Regex.Replace(
+                recognizedText,
+                @"\s+",
+                " "
+            ).Trim();
+
+        string primaryName =
+            System.Text.RegularExpressions.Regex.Replace(
+                compact,
+                @"\s+(?:NIV\.?|NIVEAU)\s*\d+\b.*$",
+                string.Empty,
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            ).Trim();
+
+        return string.IsNullOrWhiteSpace(primaryName)
+            ? compact
+            : primaryName;
+    }
+
+    private static MarketObjectHint DetectExplicitMarketObjectHint(
+        string recognizedText)
+    {
+        string normalized =
+            NormalizeMarketName(recognizedText);
+
+        if (normalized.Contains(
+            "rune de forgemagie",
+            StringComparison.Ordinal))
+        {
+            return MarketObjectHint.Rune;
+        }
+
+        if (normalized.Contains(
+            "ressource",
+            StringComparison.Ordinal))
+        {
+            return MarketObjectHint.Resource;
+        }
+
+        return MarketObjectHint.None;
+    }
+
+    private static double
+        GetAdjustedMaterialConfidence(
+            string recognizedName,
+            string candidateName,
+            double confidence)
+    {
+        if (MarketNamesEquivalent(
+            recognizedName,
+            candidateName))
+        {
+            return 1.0;
+        }
+
+        string normalizedRecognized =
+            NormalizeMarketName(
+                recognizedName
+            );
+
+        string normalizedCandidate =
+            NormalizeMarketName(
+                candidateName
+            );
+
+        // Les services Rune/Ressource utilisent historiquement
+        // un prefix-match à 1.0 pour tolérer du texte OCR
+        // supplémentaire. Pour la classification inter-familles,
+        // ce n'est PAS une correspondance exacte.
+        if (normalizedRecognized.Length >
+                normalizedCandidate.Length &&
+            normalizedRecognized.StartsWith(
+                normalizedCandidate + " ",
+                StringComparison.Ordinal
+            ))
+        {
+            return Math.Min(
+                confidence,
+                0.80
+            );
+        }
+
+        return confidence;
+    }
+
+    private static bool MarketNamesEquivalent(
+        string first,
+        string second)
+    {
+        return string.Equals(
+            NormalizeMarketName(
+                first
+            ),
+            NormalizeMarketName(
+                second
+            ),
+            StringComparison.Ordinal
+        );
+    }
+
+    private static string NormalizeMarketName(
+        string value)
+    {
+        if (string.IsNullOrWhiteSpace(
+            value))
+        {
+            return string.Empty;
+        }
+
+        string decomposed =
+            value
+                .Trim()
+                .ToLowerInvariant()
+                .Replace(
+                    '’',
+                    '\''
+                )
+                .Normalize(
+                    System.Text
+                        .NormalizationForm
+                        .FormD
+                );
+
+        System.Text.StringBuilder builder =
+            new();
+
+        bool previousWasSpace =
+            false;
+
+        foreach (char character in decomposed)
+        {
+            System.Globalization.UnicodeCategory
+                category =
+                    System.Globalization
+                        .CharUnicodeInfo
+                        .GetUnicodeCategory(
+                            character
+                        );
+
+            if (category ==
+                System.Globalization
+                    .UnicodeCategory
+                    .NonSpacingMark)
+            {
+                continue;
+            }
+
+            if (char.IsLetterOrDigit(
+                character))
+            {
+                builder.Append(
+                    character
+                );
+
+                previousWasSpace =
+                    false;
+
+                continue;
+            }
+
+            if (!previousWasSpace &&
+                builder.Length > 0)
+            {
+                builder.Append(
+                    ' '
+                );
+
+                previousWasSpace =
+                    true;
+            }
+        }
+
+        return builder
+            .ToString()
+            .Trim();
+    }
+
+    private static async Task
+        WriteMarketClassificationDebugAsync(
+            string marketPanelImagePath,
+            string recognizedName,
+            long? firstPrice,
+            RuneRecognitionResult? runeRecognition,
+            double runeScore,
+            bool runeExact,
+            ResourceRecognitionResult? resourceRecognition,
+            double resourceScore,
+            bool resourceExact,
+            ItemRecognitionResult? equipmentRecognition,
+            bool equipmentExact,
+            IReadOnlyList<DofusMarketLot> materialLots,
+            string decision,
+            string reason)
+    {
+        try
+        {
+            string directory =
+                Path.GetDirectoryName(
+                    marketPanelImagePath
+                ) ??
+                Path.GetTempPath();
+
+            string debugPath =
+                Path.Combine(
+                    directory,
+                    "hdv-classification.txt"
+                );
+
+            System.Text.StringBuilder debug =
+                new();
+
+            debug.AppendLine(
+                "BESTCRUSH - HDV BUY CLASSIFICATION"
+            );
+
+            debug.AppendLine(
+                $"OCR name: {recognizedName}"
+            );
+
+            debug.AppendLine(
+                $"First price: {(firstPrice?.ToString() ?? "null")}"
+            );
+
+            debug.AppendLine();
+
+            debug.AppendLine(
+                runeRecognition is null
+                    ? "Rune candidate: null"
+                    : $"Rune candidate: {runeRecognition.Rune.Name} | raw={runeRecognition.Confidence:0.000} | adjusted={runeScore:0.000} | exact={runeExact}"
+            );
+
+            debug.AppendLine(
+                resourceRecognition is null
+                    ? "Resource candidate: null"
+                    : $"Resource candidate: {resourceRecognition.Resource.Name} | raw={resourceRecognition.Confidence:0.000} | adjusted={resourceScore:0.000} | exact={resourceExact}"
+            );
+
+            debug.AppendLine(
+                equipmentRecognition is null
+                    ? "Equipment candidate: null"
+                    : $"Equipment candidate: {equipmentRecognition.Equipment.Name} | score={equipmentRecognition.Confidence:0.000} | exact={equipmentExact}"
+            );
+
+            debug.AppendLine();
+
+            debug.AppendLine(
+                $"Accepted material lots: {materialLots.Count}"
+            );
+
+            foreach (
+                DofusMarketLot lot
+                in materialLots)
+            {
+                debug.AppendLine(
+                    $"  x{lot.Quantity} = {lot.Price}"
+                );
+            }
+
+            debug.AppendLine();
+
+            debug.AppendLine(
+                $"DECISION: {decision}"
+            );
+
+            debug.AppendLine(
+                $"REASON: {reason}"
+            );
+
+            await File.WriteAllTextAsync(
+                debugPath,
+                debug.ToString()
+            );
+        }
+        catch
+        {
+            // Le debug ne doit jamais empêcher
+            // une lecture HDV.
+        }
+    }
     private static void PostUi(
         Action action)
     {
@@ -1437,44 +2055,116 @@ public sealed class OverlayService(
 
     private async Task RefreshFocusedProfitabilityAsync()
     {
-        Equipment? equipment =
-            focusedEquipmentState.Equipment;
-
-        string? serverName =
-            currentServerState.ServerName;
-
-        if (equipment is null ||
-            string.IsNullOrWhiteSpace(serverName))
-        {
-            return;
-        }
-
-        using IServiceScope scope =
-            serviceScopeFactory.CreateScope();
-
-        EquipmentProfitabilityService
-            profitabilityService =
-                scope.ServiceProvider
-                    .GetRequiredService<
-                        EquipmentProfitabilityService>();
-
-        EquipmentProfitabilityResult result =
-            await profitabilityService
-                .CalculateAsync(
-                    equipment,
-                    serverName
-                );
-
-        await MainThread
-            .InvokeOnMainThreadAsync(
-                () =>
-                {
-                    _overlayPage?
-                        .ShowProfitability(
-                            result
-                        );
-                }
+        long refreshVersion =
+            Interlocked.Increment(
+                ref _profitabilityRefreshVersion
             );
+
+        await _profitabilityRefreshLock
+            .WaitAsync();
+
+        try
+        {
+            // Si une demande plus récente attend déjà,
+            // celle-ci est obsolète avant même de calculer.
+            if (refreshVersion !=
+                Volatile.Read(
+                    ref _profitabilityRefreshVersion
+                ))
+            {
+                return;
+            }
+
+            Equipment? equipment =
+                focusedEquipmentState.Equipment;
+
+            string? serverName =
+                currentServerState.ServerName;
+
+            if (equipment is null ||
+                string.IsNullOrWhiteSpace(
+                    serverName))
+            {
+                return;
+            }
+
+            long equipmentId =
+                equipment.DofusDbId;
+
+            using IServiceScope scope =
+                serviceScopeFactory
+                    .CreateScope();
+
+            EquipmentProfitabilityService
+                profitabilityService =
+                    scope.ServiceProvider
+                        .GetRequiredService<
+                            EquipmentProfitabilityService>();
+
+            EquipmentProfitabilityResult
+                result =
+                    await profitabilityService
+                        .CalculateAsync(
+                            equipment,
+                            serverName
+                        );
+
+            // Un prix, coefficient ou focus a pu changer
+            // pendant le calcul. Dans ce cas, ne jamais
+            // afficher ce résultat devenu obsolète.
+            if (refreshVersion !=
+                Volatile.Read(
+                    ref _profitabilityRefreshVersion
+                ))
+            {
+                return;
+            }
+
+            Equipment? currentEquipment =
+                focusedEquipmentState
+                    .Equipment;
+
+            string? currentServerName =
+                currentServerState
+                    .ServerName;
+
+            if (currentEquipment?.DofusDbId !=
+                    equipmentId ||
+                !string.Equals(
+                    currentServerName,
+                    serverName,
+                    StringComparison.Ordinal
+                ))
+            {
+                return;
+            }
+
+            await MainThread
+                .InvokeOnMainThreadAsync(
+                    () =>
+                    {
+                        // Dernière vérification au moment
+                        // exact où l'UI est mise à jour.
+                        if (refreshVersion !=
+                            Volatile.Read(
+                                ref _profitabilityRefreshVersion
+                            ))
+                        {
+                            return;
+                        }
+
+                        _overlayPage?
+                            .ShowProfitability(
+                                result
+                            );
+                    }
+                );
+        }
+        finally
+        {
+            _profitabilityRefreshLock
+                .Release();
+        }
     }
 
     public void BeginResize(
@@ -1495,89 +2185,98 @@ public sealed class OverlayService(
         double totalX,
         double totalY)
     {
-    #if WINDOWS
+#if WINDOWS
         if (_appWindow is null)
         {
             return;
         }
 
-        int dx = (int)Math.Round(totalX);
-        int dy = (int)Math.Round(totalY);
+        int dx =
+            (int)Math.Round(
+                totalX
+            );
 
-        int newX = _resizeStartX;
-        int newY = _resizeStartY;
+        int dy =
+            (int)Math.Round(
+                totalY
+            );
 
-        int newWidth = _resizeStartWidth;
-        int newHeight = _resizeStartHeight;
+        int newX =
+            _resizeStartX;
+
+        int newY =
+            _resizeStartY;
+
+        int newWidth =
+            _resizeStartWidth;
+
+        int newHeight =
+            _resizeStartHeight;
 
         if (_resizeEdge.HasFlag(
             OverlayResizeEdge.Right))
         {
             newWidth =
-                Math.Max(
-                    MinimumOverlayWidth,
-                    _resizeStartWidth + dx
-                );
+                _resizeStartWidth +
+                dx;
         }
 
         if (_resizeEdge.HasFlag(
             OverlayResizeEdge.Bottom))
         {
             newHeight =
-                Math.Max(
-                    MinimumOverlayHeight,
-                    _resizeStartHeight + dy
-                );
+                _resizeStartHeight +
+                dy;
         }
 
         if (_resizeEdge.HasFlag(
             OverlayResizeEdge.Left))
         {
             newWidth =
-                Math.Max(
-                    MinimumOverlayWidth,
-                    _resizeStartWidth - dx
-                );
+                _resizeStartWidth -
+                dx;
 
             newX =
                 _resizeStartX +
-                (_resizeStartWidth - newWidth);
+                dx;
         }
 
         if (_resizeEdge.HasFlag(
             OverlayResizeEdge.Top))
         {
             newHeight =
-                Math.Max(
-                    MinimumOverlayHeight,
-                    _resizeStartHeight - dy
-                );
+                _resizeStartHeight -
+                dy;
 
             newY =
                 _resizeStartY +
-                (_resizeStartHeight - newHeight);
+                dy;
         }
 
-        _appWindow.Resize(
-            new SizeInt32(
-                newWidth,
-                newHeight
-            )
+        OverlayWindowLayout constrained =
+            overlayLayoutSettingsService
+                .ConstrainToVisibleScreen(
+                    new OverlayWindowLayout(
+                        newX,
+                        newY,
+                        newWidth,
+                        newHeight
+                    ),
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight
+                );
+
+        ApplyLayout(
+            constrained
         );
+#endif
+    }
 
-        _appWindow.Move(
-            new PointInt32(
-                newX,
-                newY
-            )
-        );
-
-        _currentX = newX;
-        _currentY = newY;
-
-        _currentWidth = newWidth;
-        _currentHeight = newHeight;
-    #endif
+    public void EndResize()
+    {
+#if WINDOWS
+        SaveCurrentLayout();
+#endif
     }
 
     public void Show()
@@ -1644,23 +2343,35 @@ public sealed class OverlayService(
             return;
         }
 
-        int newX =
-            _dragStartX +
-            (int)Math.Round(totalX);
+        OverlayWindowLayout constrained =
+            overlayLayoutSettingsService
+                .ConstrainToVisibleScreen(
+                    new OverlayWindowLayout(
+                        _dragStartX +
+                            (int)Math.Round(
+                                totalX
+                            ),
+                        _dragStartY +
+                            (int)Math.Round(
+                                totalY
+                            ),
+                        _currentWidth,
+                        _currentHeight
+                    ),
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight
+                );
 
-        int newY =
-            _dragStartY +
-            (int)Math.Round(totalY);
-
-        _appWindow.Move(
-            new PointInt32(
-                newX,
-                newY
-            )
+        ApplyLayout(
+            constrained
         );
+#endif
+    }
 
-        _currentX = newX;
-        _currentY = newY;
+    public void EndDrag()
+    {
+#if WINDOWS
+        SaveCurrentLayout();
 #endif
     }
 
@@ -1740,6 +2451,44 @@ public sealed class OverlayService(
 #endif
     }
 
+    public void RestoreOverlayLayoutsToDefaults()
+    {
+        overlayLayoutSettingsService
+            .ResetAll();
+
+        RestoreDefaultLayout();
+
+        marketCaptureOverlayService
+            .RestoreDefaultLayout();
+
+        crushSessionService
+            .RestoreDefaultLayout();
+
+        overlayControlBarService
+            .RestoreDefaultLayout();
+    }
+
+    public void RestoreDefaultLayout()
+    {
+#if WINDOWS
+        OverlayWindowLayout layout =
+            overlayLayoutSettingsService
+                .GetValidatedLayout(
+                    OverlayLayoutKind
+                        .Profitability,
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight,
+                    allowResize: true
+                );
+
+        ApplyLayout(
+            layout
+        );
+
+        SaveCurrentLayout();
+#endif
+    }
+
     public void Shutdown()
     {
         crushSessionService.CoefficientsUpdated -=
@@ -1807,6 +2556,87 @@ public sealed class OverlayService(
         Application.Current?.CloseWindow(
             window
         );
+    }
+
+    private void LoadStoredLayout()
+    {
+#if WINDOWS
+        OverlayWindowLayout layout =
+            overlayLayoutSettingsService
+                .GetValidatedLayout(
+                    OverlayLayoutKind
+                        .Profitability,
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight,
+                    allowResize: true
+                );
+
+        _currentX =
+            layout.X;
+
+        _currentY =
+            layout.Y;
+
+        _currentWidth =
+            layout.Width;
+
+        _currentHeight =
+            layout.Height;
+#endif
+    }
+
+    private void ApplyLayout(
+        OverlayWindowLayout layout)
+    {
+#if WINDOWS
+        _currentX =
+            layout.X;
+
+        _currentY =
+            layout.Y;
+
+        _currentWidth =
+            layout.Width;
+
+        _currentHeight =
+            layout.Height;
+
+        if (_appWindow is null)
+        {
+            return;
+        }
+
+        _appWindow.Resize(
+            new SizeInt32(
+                _currentWidth,
+                _currentHeight
+            )
+        );
+
+        _appWindow.Move(
+            new PointInt32(
+                _currentX,
+                _currentY
+            )
+        );
+#endif
+    }
+
+    private void SaveCurrentLayout()
+    {
+#if WINDOWS
+        overlayLayoutSettingsService
+            .SaveLayout(
+                OverlayLayoutKind
+                    .Profitability,
+                new OverlayWindowLayout(
+                    _currentX,
+                    _currentY,
+                    _currentWidth,
+                    _currentHeight
+                )
+            );
+#endif
     }
 
     private void ConfigureOverlayWindow(

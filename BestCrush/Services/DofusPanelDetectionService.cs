@@ -130,14 +130,29 @@ public sealed class DofusPanelDetectionService(
             return null;
         }
 
-        CvRect finalRect =
+        // Conserver le rectangle LOGIQUE du panneau.
+        //
+        // Contrairement à un crop classique, ce rectangle peut
+        // partiellement sortir de la capture. Ses dimensions et
+        // son origine ne doivent jamais être modifiées par le
+        // clipping, sinon tous les calculs relatifs F9 changent
+        // quand le panneau est déplacé près d'un bord.
+        CvRect logicalPanelRect =
             panelRect.Value;
 
         using Mat panel =
-            new(
+            CreateCanonicalPanel(
                 source,
-                finalRect
+                logicalPanelRect.X,
+                logicalPanelRect.Y,
+                logicalPanelRect.Width,
+                logicalPanelRect.Height
             );
+
+        if (panel.Empty())
+        {
+            return null;
+        }
 
         string directory =
             Path.GetDirectoryName(
@@ -160,10 +175,10 @@ public sealed class DofusPanelDetectionService(
             usedGeometricFallback
                 ? 0.75
                 : 1.0,
-            finalRect.X,
-            finalRect.Y,
-            finalRect.Width,
-            finalRect.Height,
+            logicalPanelRect.X,
+            logicalPanelRect.Y,
+            logicalPanelRect.Width,
+            logicalPanelRect.Height,
             outputPath
         );
     }
@@ -407,13 +422,18 @@ public sealed class DofusPanelDetectionService(
                 maxLocation.Y +
                 2;
 
-            return ClampRectangle(
+            // Ne PAS clamper ici.
+            //
+            // panelX/panelY représentent l'origine logique du
+            // panneau dans la capture, même si elle est négative.
+            // Le canvas canonique créé plus tard conservera ce
+            // repère 720x790 et remplira uniquement les zones
+            // réellement visibles.
+            return new CvRect(
                 panelX,
                 panelY,
                 720,
-                790,
-                source.Width,
-                source.Height
+                790
             );
         }
         catch (
@@ -497,14 +517,16 @@ public sealed class DofusPanelDetectionService(
                 scale
             );
 
+        // Même règle que pour la détection par template :
+        // ce rectangle décrit le panneau LOGIQUE complet.
+        // Le fait qu'une partie soit hors capture ne doit jamais
+        // modifier sa largeur, sa hauteur ni son origine.
         CvRect panel =
-            ClampRectangle(
+            new(
                 panelX,
                 panelY,
                 panelWidth,
-                panelHeight,
-                source.Width,
-                source.Height
+                panelHeight
             );
 
         return panel.Width > 0 &&
@@ -726,6 +748,113 @@ public sealed class DofusPanelDetectionService(
                 ReferenceHorizontalMarginRatio
             )
         );
+    }
+
+    private static Mat CreateCanonicalPanel(
+        Mat source,
+        int desiredX,
+        int desiredY,
+        int desiredWidth,
+        int desiredHeight)
+    {
+        if (desiredWidth <= 0 ||
+            desiredHeight <= 0)
+        {
+            return new Mat();
+        }
+
+        int sourceLeft =
+            Math.Max(
+                0,
+                desiredX
+            );
+
+        int sourceTop =
+            Math.Max(
+                0,
+                desiredY
+            );
+
+        int sourceRight =
+            Math.Min(
+                source.Width,
+                desiredX +
+                desiredWidth
+            );
+
+        int sourceBottom =
+            Math.Min(
+                source.Height,
+                desiredY +
+                desiredHeight
+            );
+
+        int copyWidth =
+            sourceRight -
+            sourceLeft;
+
+        int copyHeight =
+            sourceBottom -
+            sourceTop;
+
+        if (copyWidth <= 0 ||
+            copyHeight <= 0)
+        {
+            return new Mat();
+        }
+
+        // Le canvas conserve TOUJOURS les dimensions logiques
+        // du panneau détecté. Les zones hors capture restent
+        // noires au lieu de réduire/décaler le crop.
+        Mat canonical =
+            new(
+                desiredHeight,
+                desiredWidth,
+                source.Type(),
+                Scalar.All(0)
+            );
+
+        int destinationX =
+            sourceLeft -
+            desiredX;
+
+        int destinationY =
+            sourceTop -
+            desiredY;
+
+        CvRect sourceRect =
+            new(
+                sourceLeft,
+                sourceTop,
+                copyWidth,
+                copyHeight
+            );
+
+        CvRect destinationRect =
+            new(
+                destinationX,
+                destinationY,
+                copyWidth,
+                copyHeight
+            );
+
+        using Mat sourceRegion =
+            new(
+                source,
+                sourceRect
+            );
+
+        using Mat destinationRegion =
+            new(
+                canonical,
+                destinationRect
+            );
+
+        sourceRegion.CopyTo(
+            destinationRegion
+        );
+
+        return canonical;
     }
 
     private static CvRect

@@ -270,14 +270,31 @@ public sealed class DofusOcrService
         // et le symbole %, puis on OCR uniquement la partie
         // numérique. Un vrai 3710 % conserve donc bien ses
         // quatre chiffres.
+        //
+        // IMPORTANT :
+        // le comportement de reconnaissance reste identique.
+        // On conserve simplement, pour le DevTool, le texte
+        // OCR brut de chaque étape afin de localiser exactement
+        // une éventuelle transformation comme 98 -> 980.
         string numberOnlyImage =
             PrepareCoefficientNumberRegion(
                 imageFilePath
             );
 
-        string numberOnlyText =
-            await RecognizeUpscaledTextAsync(
+        string numberOnlyPreparedImage =
+            PrepareImageForOcr(
                 numberOnlyImage
+            );
+
+        string numberOnlyRawText =
+            await RecognizeRawTextAsync(
+                numberOnlyPreparedImage,
+                cancellationToken
+            );
+
+        string numberOnlyText =
+            NormalizeText(
+                numberOnlyRawText
             );
 
         double? numberOnlyValue =
@@ -285,19 +302,204 @@ public sealed class DofusOcrService
                 numberOnlyText
             );
 
-        if (numberOnlyValue is not null)
+        string? fallbackPreparedImage =
+            null;
+
+        string? fallbackRawText =
+            null;
+
+        string? fallbackText =
+            null;
+
+        double? fallbackValue =
+            null;
+
+        if (numberOnlyValue is null)
         {
-            return numberOnlyValue;
+            fallbackPreparedImage =
+                PrepareImageForOcr(
+                    imageFilePath
+                );
+
+            fallbackRawText =
+                await RecognizeRawTextAsync(
+                    fallbackPreparedImage,
+                    cancellationToken
+                );
+
+            fallbackText =
+                NormalizeText(
+                    fallbackRawText
+                );
+
+            fallbackValue =
+                TryParseCoefficientText(
+                    fallbackText
+                );
         }
 
-        string fallbackText =
-            await RecognizeUpscaledTextAsync(
-                imageFilePath
+        double? finalValue =
+            numberOnlyValue
+            ?? fallbackValue;
+
+        await WriteCoefficientOcrDebugAsync(
+            imageFilePath,
+            numberOnlyImage,
+            numberOnlyPreparedImage,
+            numberOnlyRawText,
+            numberOnlyText,
+            numberOnlyValue,
+            fallbackPreparedImage,
+            fallbackRawText,
+            fallbackText,
+            fallbackValue,
+            finalValue
+        );
+
+        return finalValue;
+    }
+
+    private static async Task
+        WriteCoefficientOcrDebugAsync(
+            string sourceImagePath,
+            string numberOnlyImage,
+            string numberOnlyPreparedImage,
+            string numberOnlyRawText,
+            string numberOnlyText,
+            double? numberOnlyValue,
+            string? fallbackPreparedImage,
+            string? fallbackRawText,
+            string? fallbackText,
+            double? fallbackValue,
+            double? finalValue)
+    {
+        try
+        {
+            string directory =
+                Path.GetDirectoryName(
+                    sourceImagePath
+                ) ??
+                Path.GetTempPath();
+
+            string debugPath =
+                Path.Combine(
+                    directory,
+                    $"{Path.GetFileNameWithoutExtension(sourceImagePath)}-coefficient-debug.txt"
+                );
+
+            StringBuilder debug =
+                new();
+
+            debug.AppendLine(
+                "BESTCRUSH - COEFFICIENT OCR DEBUG"
             );
 
-        return TryParseCoefficientText(
-            fallbackText
-        );
+            debug.AppendLine(
+                $"Source: {Path.GetFileName(sourceImagePath)}"
+            );
+
+            debug.AppendLine(
+                $"UTC: {DateTime.UtcNow:O}"
+            );
+
+            debug.AppendLine();
+
+            debug.AppendLine(
+                "NUMBER-ONLY PASS"
+            );
+
+            debug.AppendLine(
+                $"Digits region : {Path.GetFileName(numberOnlyImage)}"
+            );
+
+            debug.AppendLine(
+                $"Digits source equals original : {Path.GetFullPath(numberOnlyImage).Equals(Path.GetFullPath(sourceImagePath), StringComparison.OrdinalIgnoreCase)}"
+            );
+
+            debug.AppendLine(
+                $"OCR image     : {Path.GetFileName(numberOnlyPreparedImage)}"
+            );
+
+            debug.AppendLine(
+                $"Raw escaped   : {EscapeOcrDebugText(numberOnlyRawText)}"
+            );
+
+            debug.AppendLine(
+                $"Raw unicode   : {DescribeOcrCharacters(numberOnlyRawText)}"
+            );
+
+            debug.AppendLine(
+                $"Normalized    : {EscapeOcrDebugText(numberOnlyText)}"
+            );
+
+            debug.AppendLine(
+                $"Parsed        : {FormatNullableCoefficient(numberOnlyValue)}"
+            );
+
+            debug.AppendLine();
+
+            if (fallbackPreparedImage is not null)
+            {
+                debug.AppendLine(
+                    "FULL-CROP FALLBACK"
+                );
+
+                debug.AppendLine(
+                    $"OCR image     : {Path.GetFileName(fallbackPreparedImage)}"
+                );
+
+                debug.AppendLine(
+                    $"Raw escaped   : {EscapeOcrDebugText(fallbackRawText ?? string.Empty)}"
+                );
+
+                debug.AppendLine(
+                    $"Raw unicode   : {DescribeOcrCharacters(fallbackRawText ?? string.Empty)}"
+                );
+
+                debug.AppendLine(
+                    $"Normalized    : {EscapeOcrDebugText(fallbackText ?? string.Empty)}"
+                );
+
+                debug.AppendLine(
+                    $"Parsed        : {FormatNullableCoefficient(fallbackValue)}"
+                );
+
+                debug.AppendLine();
+            }
+            else
+            {
+                debug.AppendLine(
+                    "FULL-CROP FALLBACK: not executed (number-only pass accepted)"
+                );
+
+                debug.AppendLine();
+            }
+
+            debug.AppendLine(
+                $"FINAL COEFFICIENT: {FormatNullableCoefficient(finalValue)}"
+            );
+
+            await File.WriteAllTextAsync(
+                debugPath,
+                debug.ToString()
+            );
+        }
+        catch
+        {
+            // Le debug ne doit jamais casser
+            // la lecture d'un coefficient.
+        }
+    }
+
+    private static string FormatNullableCoefficient(
+        double? coefficient)
+    {
+        return coefficient is double value
+            ? value.ToString(
+                "0.###",
+                CultureInfo.InvariantCulture
+            )
+            : "null";
     }
 
     private static double? TryParseCoefficientText(
@@ -505,38 +707,837 @@ public sealed class DofusOcrService
     public async Task<int?> RecognizeMarketQuantityAsync(
         string imagePath)
     {
-        string text =
-            await RecognizeUpscaledTextAsync(
+        // Pour les quantites HDV, on conserve volontairement
+        // le texte BRUT retourne par Windows OCR avant
+        // NormalizeText(). Cela permet de comprendre les cas
+        // ou un chiffre visuellement net (notamment "1")
+        // revient pourtant null apres reconnaissance.
+        string firstPreparedImage =
+            PrepareImageForOcr(
                 imagePath
             );
 
-        if (string.IsNullOrWhiteSpace(text))
+        string firstRawText =
+            await RecognizeRawTextAsync(
+                firstPreparedImage
+            );
+
+        string firstNormalizedText =
+            NormalizeText(
+                firstRawText
+            );
+
+        int? firstQuantity =
+            TryParseMarketQuantity(
+                firstNormalizedText
+            );
+
+        string? fallbackPreparedImage =
+            null;
+
+        string? fallbackRawText =
+            null;
+
+        string? fallbackNormalizedText =
+            null;
+
+        int? fallbackQuantity =
+            null;
+
+        if (firstQuantity is null)
+        {
+            fallbackPreparedImage =
+                PrepareNumberImageForOcr(
+                    imagePath
+                );
+
+            fallbackRawText =
+                await RecognizeRawTextAsync(
+                    fallbackPreparedImage
+                );
+
+            fallbackNormalizedText =
+                NormalizeText(
+                    fallbackRawText
+                );
+
+            fallbackQuantity =
+                TryParseMarketQuantity(
+                    fallbackNormalizedText
+                );
+        }
+
+        MarketQuantityVisualRecognitionResult?
+            visualRecognition =
+                null;
+
+        if (firstQuantity is null &&
+            fallbackQuantity is null)
+        {
+            visualRecognition =
+                RecognizeMarketQuantityVisually(
+                    imagePath
+                );
+        }
+
+        int? finalQuantity =
+            firstQuantity
+            ?? fallbackQuantity
+            ?? visualRecognition?.Quantity;
+
+        await WriteMarketQuantityOcrDebugAsync(
+            imagePath,
+            firstPreparedImage,
+            firstRawText,
+            firstNormalizedText,
+            firstQuantity,
+            fallbackPreparedImage,
+            fallbackRawText,
+            fallbackNormalizedText,
+            fallbackQuantity,
+            visualRecognition,
+            finalQuantity
+        );
+
+        return finalQuantity;
+    }
+
+    private static MarketQuantityVisualRecognitionResult
+        RecognizeMarketQuantityVisually(
+            string imagePath)
+    {
+        using Mat source =
+            Cv2.ImRead(
+                imagePath,
+                ImreadModes.Color
+            );
+
+        if (source.Empty())
+        {
+            return new MarketQuantityVisualRecognitionResult(
+                null,
+                "source image empty",
+                [],
+                null
+            );
+        }
+
+        using Mat gray =
+            new();
+
+        Cv2.CvtColor(
+            source,
+            gray,
+            ColorConversionCodes.BGR2GRAY
+        );
+
+        using Mat binary =
+            new();
+
+        Cv2.Threshold(
+            gray,
+            binary,
+            0,
+            255,
+            ThresholdTypes.Binary |
+            ThresholdTypes.Otsu
+        );
+
+        Cv2.FindContours(
+            binary,
+            out OpenCvSharp.Point[][] contours,
+            out HierarchyIndex[] _,
+            RetrievalModes.External,
+            ContourApproximationModes.ApproxSimple
+        );
+
+        int minimumHeight =
+            Math.Max(
+                6,
+                (int)Math.Round(
+                    source.Height *
+                    0.20
+                )
+            );
+
+        int maximumHeight =
+            Math.Max(
+                minimumHeight,
+                (int)Math.Round(
+                    source.Height *
+                    0.55
+                )
+            );
+
+        int outerHorizontalMargin =
+            Math.Max(
+                2,
+                (int)Math.Round(
+                    source.Width *
+                    0.05
+                )
+            );
+
+        List<OpenCvSharp.Rect>
+            components =
+                [];
+
+        foreach (
+            OpenCvSharp.Point[] contour
+            in contours)
+        {
+            OpenCvSharp.Rect rectangle =
+                Cv2.BoundingRect(
+                    contour
+                );
+
+            if (rectangle.Height <
+                    minimumHeight ||
+                rectangle.Height >
+                    maximumHeight ||
+                rectangle.Width < 2)
+            {
+                continue;
+            }
+
+            // Une bordure ou un fragment de panneau situé
+            // contre le bord du crop ne doit jamais pouvoir
+            // être interprété comme le chiffre "1".
+            if (rectangle.X <=
+                    outerHorizontalMargin ||
+                rectangle.Right >=
+                    source.Width -
+                    outerHorizontalMargin)
+            {
+                continue;
+            }
+
+            using Mat componentRegion =
+                new(
+                    binary,
+                    rectangle
+                );
+
+            int activePixels =
+                Cv2.CountNonZero(
+                    componentRegion
+                );
+
+            if (activePixels <
+                Math.Max(
+                    8,
+                    (int)Math.Round(
+                        rectangle.Height *
+                        1.4
+                    )
+                ))
+            {
+                continue;
+            }
+
+            components.Add(
+                rectangle
+            );
+        }
+
+        components =
+            components
+                .OrderBy(
+                    rectangle =>
+                        rectangle.X
+                )
+                .ToList();
+
+        string debugImagePath =
+            WriteMarketQuantityVisualDebugImage(
+                imagePath,
+                source,
+                components
+            );
+
+        if (components.Count is < 1 or > 4)
+        {
+            return new MarketQuantityVisualRecognitionResult(
+                null,
+                $"invalid component count: {components.Count}",
+                components,
+                debugImagePath
+            );
+        }
+
+        int left =
+            components.Min(
+                rectangle =>
+                    rectangle.Left
+            );
+
+        int right =
+            components.Max(
+                rectangle =>
+                    rectangle.Right
+            );
+
+        int top =
+            components.Min(
+                rectangle =>
+                    rectangle.Top
+            );
+
+        int bottom =
+            components.Max(
+                rectangle =>
+                    rectangle.Bottom
+            );
+
+        double groupCenterX =
+            (
+                left +
+                right
+            ) /
+            2.0;
+
+        double groupCenterY =
+            (
+                top +
+                bottom
+            ) /
+            2.0;
+
+        // Les tailles de lot sont centrées dans leur case.
+        // Cette vérification protège notamment contre les
+        // bordures de panneau visibles dans un crop vide.
+        if (groupCenterX <
+                source.Width *
+                0.25 ||
+            groupCenterX >
+                source.Width *
+                0.75 ||
+            groupCenterY <
+                source.Height *
+                0.20 ||
+            groupCenterY >
+                source.Height *
+                0.80)
+        {
+            return new MarketQuantityVisualRecognitionResult(
+                null,
+                $"glyph group not centered: X={groupCenterX:0.0}, Y={groupCenterY:0.0}",
+                components,
+                debugImagePath
+            );
+        }
+
+        int minimumComponentHeight =
+            components.Min(
+                rectangle =>
+                    rectangle.Height
+            );
+
+        int maximumComponentHeight =
+            components.Max(
+                rectangle =>
+                    rectangle.Height
+            );
+
+        if (minimumComponentHeight <= 0 ||
+            maximumComponentHeight /
+                (double)minimumComponentHeight >
+                1.35)
+        {
+            return new MarketQuantityVisualRecognitionResult(
+                null,
+                "glyph heights are inconsistent",
+                components,
+                debugImagePath
+            );
+        }
+
+        OpenCvSharp.Rect first =
+            components[0];
+
+        double firstRatio =
+            first.Width /
+            (double)first.Height;
+
+        // Le premier glyphe doit avoir la silhouette étroite
+        // du chiffre 1. Les glyphes suivants, s'ils existent,
+        // doivent avoir la silhouette plus large du chiffre 0.
+        if (firstRatio <
+                0.25 ||
+            firstRatio >
+                0.62)
+        {
+            return new MarketQuantityVisualRecognitionResult(
+                null,
+                $"first glyph is not shaped like 1: ratio={firstRatio:0.00}",
+                components,
+                debugImagePath
+            );
+        }
+
+        for (
+            int index = 1;
+            index < components.Count;
+            index++)
+        {
+            OpenCvSharp.Rect current =
+                components[index];
+
+            double ratio =
+                current.Width /
+                (double)current.Height;
+
+            if (ratio <
+                    0.58 ||
+                ratio >
+                    1.05)
+            {
+                return new MarketQuantityVisualRecognitionResult(
+                    null,
+                    $"glyph {index + 1} is not shaped like 0: ratio={ratio:0.00}",
+                    components,
+                    debugImagePath
+                );
+            }
+
+            OpenCvSharp.Rect previous =
+                components[
+                    index - 1
+                ];
+
+            int gap =
+                current.Left -
+                previous.Right;
+
+            if (gap < 0 ||
+                gap >
+                    source.Width *
+                    0.25)
+            {
+                return new MarketQuantityVisualRecognitionResult(
+                    null,
+                    $"invalid glyph gap before glyph {index + 1}: {gap}",
+                    components,
+                    debugImagePath
+                );
+            }
+        }
+
+        int quantity =
+            components.Count switch
+            {
+                1 => 1,
+                2 => 10,
+                3 => 100,
+                4 => 1000,
+                _ => 0
+            };
+
+        return new MarketQuantityVisualRecognitionResult(
+            quantity,
+            "accepted by deterministic glyph analysis",
+            components,
+            debugImagePath
+        );
+    }
+
+    private static string
+        WriteMarketQuantityVisualDebugImage(
+            string sourceImagePath,
+            Mat source,
+            IReadOnlyList<OpenCvSharp.Rect>
+                components)
+    {
+        try
+        {
+            using Mat debug =
+                source.Clone();
+
+            foreach (
+                OpenCvSharp.Rect rectangle
+                in components)
+            {
+                Cv2.Rectangle(
+                    debug,
+                    rectangle,
+                    new Scalar(
+                        0,
+                        255,
+                        0
+                    ),
+                    1
+                );
+            }
+
+            string directory =
+                Path.GetDirectoryName(
+                    sourceImagePath
+                ) ??
+                Path.GetTempPath();
+
+            string outputPath =
+                Path.Combine(
+                    directory,
+                    $"{Path.GetFileNameWithoutExtension(sourceImagePath)}-visual-ocr.png"
+                );
+
+            Cv2.ImWrite(
+                outputPath,
+                debug
+            );
+
+            return outputPath;
+        }
+        catch
+        {
+            return string.Empty;
+        }
+    }
+
+    private async Task<string> RecognizeRawTextAsync(
+        string imageFilePath,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken
+            .ThrowIfCancellationRequested();
+
+        StorageFile file =
+            await StorageFile
+                .GetFileFromPathAsync(
+                    imageFilePath
+                );
+
+        using IRandomAccessStream stream =
+            await file.OpenAsync(
+                FileAccessMode.Read
+            );
+
+        BitmapDecoder decoder =
+            await BitmapDecoder
+                .CreateAsync(
+                    stream
+                );
+
+        using SoftwareBitmap bitmap =
+            await decoder
+                .GetSoftwareBitmapAsync(
+                    BitmapPixelFormat.Bgra8,
+                    BitmapAlphaMode.Premultiplied
+                );
+
+        OcrResult result =
+            await _ocrEngine
+                .RecognizeAsync(
+                    bitmap
+                );
+
+        return result.Text
+            ?? string.Empty;
+    }
+
+    private static async Task
+        WriteMarketQuantityOcrDebugAsync(
+            string sourceImagePath,
+            string firstPreparedImage,
+            string firstRawText,
+            string firstNormalizedText,
+            int? firstQuantity,
+            string? fallbackPreparedImage,
+            string? fallbackRawText,
+            string? fallbackNormalizedText,
+            int? fallbackQuantity,
+            MarketQuantityVisualRecognitionResult?
+                visualRecognition,
+            int? finalQuantity)
+    {
+        try
+        {
+            string directory =
+                Path.GetDirectoryName(
+                    sourceImagePath
+                ) ??
+                Path.GetTempPath();
+
+            string debugPath =
+                Path.Combine(
+                    directory,
+                    $"{Path.GetFileNameWithoutExtension(sourceImagePath)}-ocr-debug.txt"
+                );
+
+            StringBuilder debug =
+                new();
+
+            debug.AppendLine(
+                "BESTCRUSH - MARKET QUANTITY OCR DEBUG"
+            );
+
+            debug.AppendLine(
+                $"Source: {Path.GetFileName(sourceImagePath)}"
+            );
+
+            debug.AppendLine();
+
+            debug.AppendLine(
+                "FIRST PASS (upscaled)"
+            );
+
+            debug.AppendLine(
+                $"Image       : {Path.GetFileName(firstPreparedImage)}"
+            );
+
+            debug.AppendLine(
+                $"Raw escaped : {EscapeOcrDebugText(firstRawText)}"
+            );
+
+            debug.AppendLine(
+                $"Raw unicode : {DescribeOcrCharacters(firstRawText)}"
+            );
+
+            debug.AppendLine(
+                $"Normalized  : {EscapeOcrDebugText(firstNormalizedText)}"
+            );
+
+            debug.AppendLine(
+                $"Parsed      : {FormatNullableQuantity(firstQuantity)}"
+            );
+
+            debug.AppendLine();
+
+            if (fallbackPreparedImage is not null)
+            {
+                debug.AppendLine(
+                    "FALLBACK (number image)"
+                );
+
+                debug.AppendLine(
+                    $"Image       : {Path.GetFileName(fallbackPreparedImage)}"
+                );
+
+                debug.AppendLine(
+                    $"Raw escaped : {EscapeOcrDebugText(fallbackRawText ?? string.Empty)}"
+                );
+
+                debug.AppendLine(
+                    $"Raw unicode : {DescribeOcrCharacters(fallbackRawText ?? string.Empty)}"
+                );
+
+                debug.AppendLine(
+                    $"Normalized  : {EscapeOcrDebugText(fallbackNormalizedText ?? string.Empty)}"
+                );
+
+                debug.AppendLine(
+                    $"Parsed      : {FormatNullableQuantity(fallbackQuantity)}"
+                );
+
+                debug.AppendLine();
+            }
+            else
+            {
+                debug.AppendLine(
+                    "FALLBACK: not executed (first pass accepted)"
+                );
+
+                debug.AppendLine();
+            }
+
+            if (visualRecognition is not null)
+            {
+                debug.AppendLine(
+                    "VISUAL FALLBACK"
+                );
+
+                debug.AppendLine(
+                    $"Result      : {FormatNullableQuantity(visualRecognition.Quantity)}"
+                );
+
+                debug.AppendLine(
+                    $"Reason      : {visualRecognition.Reason}"
+                );
+
+                debug.AppendLine(
+                    $"Debug image : {Path.GetFileName(visualRecognition.DebugImagePath ?? string.Empty)}"
+                );
+
+                if (visualRecognition.Components.Count == 0)
+                {
+                    debug.AppendLine(
+                        "Components  : <NONE>"
+                    );
+                }
+                else
+                {
+                    debug.AppendLine(
+                        "Components  :"
+                    );
+
+                    for (
+                        int index = 0;
+                        index <
+                            visualRecognition
+                                .Components
+                                .Count;
+                        index++)
+                    {
+                        OpenCvSharp.Rect component =
+                            visualRecognition
+                                .Components[
+                                    index
+                                ];
+
+                        double ratio =
+                            component.Width /
+                            (double)component.Height;
+
+                        debug.AppendLine(
+                            $"  #{index + 1}: X={component.X}, Y={component.Y}, W={component.Width}, H={component.Height}, ratio={ratio:0.00}"
+                        );
+                    }
+                }
+
+                debug.AppendLine();
+            }
+            else
+            {
+                debug.AppendLine(
+                    "VISUAL FALLBACK: not executed (Windows OCR accepted)"
+                );
+
+                debug.AppendLine();
+            }
+
+            debug.AppendLine(
+                $"FINAL QUANTITY: {FormatNullableQuantity(finalQuantity)}"
+            );
+
+            await File.WriteAllTextAsync(
+                debugPath,
+                debug.ToString()
+            );
+        }
+        catch
+        {
+            // Le debug ne doit jamais casser la lecture HDV.
+        }
+    }
+
+    private static string EscapeOcrDebugText(
+        string text)
+    {
+        if (text.Length == 0)
+        {
+            return "<EMPTY>";
+        }
+
+        return "\"" +
+            text
+                .Replace(
+                    "\\",
+                    "\\\\"
+                )
+                .Replace(
+                    "\r",
+                    "\\r"
+                )
+                .Replace(
+                    "\n",
+                    "\\n"
+                )
+                .Replace(
+                    "\t",
+                    "\\t"
+                ) +
+            "\"";
+    }
+
+    private static string DescribeOcrCharacters(
+        string text)
+    {
+        if (text.Length == 0)
+        {
+            return "<NONE>";
+        }
+
+        return string.Join(
+            " ",
+            text.Select(
+                character =>
+                    $"'{EscapeOcrDebugCharacter(character)}'=U+{(int)character:X4}"
+            )
+        );
+    }
+
+    private static string EscapeOcrDebugCharacter(
+        char character)
+    {
+        return character switch
+        {
+            '\r' => "\\r",
+            '\n' => "\\n",
+            '\t' => "\\t",
+            '\'' => "\\'",
+            _ => character.ToString()
+        };
+    }
+
+    private static string FormatNullableQuantity(
+        int? quantity)
+    {
+        return quantity?.ToString()
+            ?? "null";
+    }
+    private sealed record
+        MarketQuantityVisualRecognitionResult(
+            int? Quantity,
+            string Reason,
+            IReadOnlyList<OpenCvSharp.Rect>
+                Components,
+            string? DebugImagePath
+        );
+
+    private static int? TryParseMarketQuantity(
+        string text)
+    {
+        if (string.IsNullOrWhiteSpace(
+            text))
         {
             return null;
         }
 
-        StringBuilder normalized = new();
+        StringBuilder normalized =
+            new();
 
-        foreach (char character in text)
+        foreach (
+            char character
+            in text)
         {
-            if (char.IsDigit(character))
+            if (char.IsDigit(
+                character))
             {
-                normalized.Append(character);
+                normalized.Append(
+                    character
+                );
+
                 continue;
             }
 
-            switch (char.ToUpperInvariant(character))
+            switch (
+                char.ToUpperInvariant(
+                    character))
             {
-                // Confusions OCR fréquentes avec le chiffre 1.
+                // Confusions OCR fréquentes avec 1.
                 case 'I':
                 case 'L':
                 case '|':
-                    normalized.Append('1');
+                    normalized.Append(
+                        '1'
+                    );
                     break;
 
-                // Confusion OCR fréquente avec le chiffre 0.
+                // Confusion OCR fréquente avec 0.
                 case 'O':
-                    normalized.Append('0');
+                    normalized.Append(
+                        '0'
+                    );
                     break;
             }
         }
@@ -548,6 +1549,9 @@ public sealed class DofusOcrService
             return null;
         }
 
+        // IMPORTANT :
+        // aucune approximation de quantité.
+        // Une valeur comme 102 reste invalide.
         return quantity is
             1 or 10 or 100 or 1000
                 ? quantity

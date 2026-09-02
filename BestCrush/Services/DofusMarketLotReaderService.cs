@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace BestCrush.Services;
 
 public sealed record DofusMarketLot(
@@ -15,6 +17,14 @@ public sealed class DofusMarketLotReaderService(
         0.333,
         0.384,
         0.435
+    ];
+
+    private static readonly int[] AllowedQuantities =
+    [
+        1,
+        10,
+        100,
+        1000
     ];
 
     private static readonly int[] SellQuantities =
@@ -37,15 +47,7 @@ public sealed class DofusMarketLotReaderService(
         ReadMaterialLotsAsync(
             string marketPanelImagePath)
     {
-        int[] allowedQuantities =
-        [
-            1,
-            10,
-            100,
-            1000
-        ];
-
-        List<(int? Quantity, long? Price)> rows = [];
+        List<MaterialLotReadRow> rows = [];
 
         for (
             int index = 0;
@@ -90,8 +92,13 @@ public sealed class DofusMarketLotReaderService(
                         priceRegion
                     );
 
+            // On conserve le résultat réellement retourné
+            // par l'OCR, même s'il est invalide. Cela permet
+            // au fichier de debug d'expliquer exactement
+            // pourquoi une ligne a été rejetée.
             rows.Add(
-                (
+                new MaterialLotReadRow(
+                    index + 1,
                     quantity,
                     price is > 0
                         ? price
@@ -100,75 +107,195 @@ public sealed class DofusMarketLotReaderService(
             );
         }
 
-        // Une quantité peut être inférée uniquement lorsqu'il
-        // n'existe qu'une seule possibilité entre les lignes
-        // voisines déjà reconnues.
-        for (
-            int index = 0;
-            index < rows.Count;
-            index++)
-        {
-            if (rows[index].Price is null ||
-                rows[index].Quantity is not null)
-            {
-                continue;
-            }
+        // Si deux lignes prétendent représenter la même
+        // quantité, la lecture est ambiguë. On refuse alors
+        // complètement cette quantité au lieu de choisir
+        // arbitrairement l'un des deux prix.
+        Dictionary<int, int> quantityOccurrences =
+            rows
+                .Where(row =>
+                    row.Quantity is int quantity &&
+                    AllowedQuantities.Contains(
+                        quantity
+                    ) &&
+                    row.Price is not null)
+                .GroupBy(row =>
+                    row.Quantity!.Value)
+                .ToDictionary(
+                    group =>
+                        group.Key,
+                    group =>
+                        group.Count()
+                );
 
-            int? previousQuantity =
-                rows
-                    .Take(index)
-                    .Where(row =>
-                        row.Quantity is not null)
-                    .Select(row =>
-                        row.Quantity)
-                    .LastOrDefault();
-
-            int? nextQuantity =
-                rows
-                    .Skip(index + 1)
-                    .Where(row =>
-                        row.Quantity is not null)
-                    .Select(row =>
-                        row.Quantity)
-                    .FirstOrDefault();
-
-            int[] candidates =
-                allowedQuantities
-                    .Where(quantity =>
-                        (
-                            previousQuantity is null ||
-                            quantity >
-                                previousQuantity.Value
-                        ) &&
-                        (
-                            nextQuantity is null ||
-                            quantity <
-                                nextQuantity.Value
-                        )
+        List<DofusMarketLot> acceptedLots =
+            rows
+                .Where(row =>
+                    row.Quantity is int quantity &&
+                    AllowedQuantities.Contains(
+                        quantity
+                    ) &&
+                    row.Price is not null &&
+                    quantityOccurrences.TryGetValue(
+                        quantity,
+                        out int occurrenceCount) &&
+                    occurrenceCount == 1)
+                .Select(row =>
+                    new DofusMarketLot(
+                        row.Quantity!.Value,
+                        row.Price!.Value
                     )
-                    .ToArray();
-
-            if (candidates.Length == 1)
-            {
-                rows[index] =
-                    (
-                        candidates[0],
-                        rows[index].Price
-                    );
-            }
-        }
-
-        return rows
-            .Where(row =>
-                row.Quantity is not null &&
-                row.Price is not null)
-            .Select(row =>
-                new DofusMarketLot(
-                    row.Quantity!.Value,
-                    row.Price!.Value
                 )
-            )
-            .ToList();
+                .ToList();
+
+        await WriteMaterialLotsDebugAsync(
+            marketPanelImagePath,
+            rows,
+            quantityOccurrences,
+            acceptedLots
+        );
+
+        return acceptedLots;
+    }
+
+    private static async Task
+        WriteMaterialLotsDebugAsync(
+            string marketPanelImagePath,
+            IReadOnlyList<MaterialLotReadRow> rows,
+            IReadOnlyDictionary<int, int>
+                quantityOccurrences,
+            IReadOnlyList<DofusMarketLot>
+                acceptedLots)
+    {
+        try
+        {
+            string directory =
+                Path.GetDirectoryName(
+                    marketPanelImagePath
+                ) ??
+                Path.GetTempPath();
+
+            string debugPath =
+                Path.Combine(
+                    directory,
+                    "hdv-lots-read.txt"
+                );
+
+            StringBuilder debug =
+                new();
+
+            debug.AppendLine(
+                "BESTCRUSH - HDV MATERIAL LOT READ"
+            );
+
+            debug.AppendLine(
+                $"Source: {Path.GetFileName(marketPanelImagePath)}"
+            );
+
+            debug.AppendLine(
+                $"UTC: {DateTime.UtcNow:O}"
+            );
+
+            debug.AppendLine();
+
+            foreach (
+                MaterialLotReadRow row
+                in rows)
+            {
+                string quantityText =
+                    row.Quantity?.ToString()
+                    ?? "null";
+
+                string priceText =
+                    row.Price?.ToString()
+                    ?? "null";
+
+                string result;
+
+                if (row.Quantity is null)
+                {
+                    result =
+                        "REJECTED - quantity OCR returned null";
+                }
+                else if (
+                    !AllowedQuantities.Contains(
+                        row.Quantity.Value))
+                {
+                    result =
+                        "REJECTED - quantity not allowed";
+                }
+                else if (row.Price is null)
+                {
+                    result =
+                        "REJECTED - price OCR returned null/invalid";
+                }
+                else if (
+                    quantityOccurrences.TryGetValue(
+                        row.Quantity.Value,
+                        out int occurrenceCount) &&
+                    occurrenceCount > 1)
+                {
+                    result =
+                        $"REJECTED - duplicate quantity ({occurrenceCount} rows)";
+                }
+                else
+                {
+                    result =
+                        "ACCEPTED";
+                }
+
+                debug.AppendLine(
+                    $"Row {row.RowNumber}"
+                );
+
+                debug.AppendLine(
+                    $"  Quantity OCR : {quantityText}"
+                );
+
+                debug.AppendLine(
+                    $"  Price OCR    : {priceText}"
+                );
+
+                debug.AppendLine(
+                    $"  Result       : {result}"
+                );
+
+                debug.AppendLine(
+                    $"  Quantity crop: hdv-lot-{row.RowNumber}-quantity.png"
+                );
+
+                debug.AppendLine(
+                    $"  Price crop   : hdv-lot-{row.RowNumber}-price.png"
+                );
+
+                debug.AppendLine();
+            }
+
+            debug.AppendLine(
+                $"Accepted lots: {acceptedLots.Count}"
+            );
+
+            foreach (
+                DofusMarketLot lot
+                in acceptedLots
+                    .OrderBy(lot =>
+                        lot.Quantity))
+            {
+                debug.AppendLine(
+                    $"  x{lot.Quantity} = {lot.Price}"
+                );
+            }
+
+            await File.WriteAllTextAsync(
+                debugPath,
+                debug.ToString()
+            );
+        }
+        catch
+        {
+            // Le debug ne doit jamais empêcher
+            // une lecture HDV de fonctionner.
+        }
     }
 
     public async Task<IReadOnlyList<DofusMarketLot>>
@@ -226,4 +353,10 @@ public sealed class DofusMarketLotReaderService(
 
         return lots;
     }
+
+    private sealed record MaterialLotReadRow(
+        int RowNumber,
+        int? Quantity,
+        long? Price
+    );
 }

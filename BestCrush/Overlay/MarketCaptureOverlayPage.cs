@@ -64,6 +64,11 @@ public sealed class MarketCaptureOverlayPage : ContentPage
                         e.TotalY
                     );
                     break;
+
+                case GestureStatus.Completed:
+                case GestureStatus.Canceled:
+                    overlayService.EndDrag();
+                    break;
             }
         };
         header.GestureRecognizers.Add(dragGesture);
@@ -112,7 +117,204 @@ public sealed class MarketCaptureOverlayPage : ContentPage
             }
         };
 
-        Content = content;
+        Grid resizeContainer =
+            CreateResizeContainer(
+                content,
+                overlayService
+            );
+
+        Content =
+            resizeContainer;
+    }
+
+    private static Grid CreateResizeContainer(
+        View content,
+        MarketCaptureOverlayService
+            overlayService)
+    {
+        Grid container =
+            new()
+            {
+                RowDefinitions =
+                {
+                    new RowDefinition(10),
+                    new RowDefinition(
+                        GridLength.Star
+                    ),
+                    new RowDefinition(10)
+                },
+
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(10),
+                    new ColumnDefinition(
+                        GridLength.Star
+                    ),
+                    new ColumnDefinition(10)
+                }
+            };
+
+        Grid.SetRow(
+            content,
+            0
+        );
+
+        Grid.SetColumn(
+            content,
+            0
+        );
+
+        Grid.SetRowSpan(
+            content,
+            3
+        );
+
+        Grid.SetColumnSpan(
+            content,
+            3
+        );
+
+        container.Children.Add(
+            content
+        );
+
+        AddResizeZone(
+            container,
+            overlayService,
+            0,
+            1,
+            OverlayResizeEdge.Top
+        );
+
+        AddResizeZone(
+            container,
+            overlayService,
+            2,
+            1,
+            OverlayResizeEdge.Bottom
+        );
+
+        AddResizeZone(
+            container,
+            overlayService,
+            1,
+            0,
+            OverlayResizeEdge.Left
+        );
+
+        AddResizeZone(
+            container,
+            overlayService,
+            1,
+            2,
+            OverlayResizeEdge.Right
+        );
+
+        AddResizeZone(
+            container,
+            overlayService,
+            0,
+            0,
+            OverlayResizeEdge.Top |
+            OverlayResizeEdge.Left
+        );
+
+        AddResizeZone(
+            container,
+            overlayService,
+            0,
+            2,
+            OverlayResizeEdge.Top |
+            OverlayResizeEdge.Right
+        );
+
+        AddResizeZone(
+            container,
+            overlayService,
+            2,
+            0,
+            OverlayResizeEdge.Bottom |
+            OverlayResizeEdge.Left
+        );
+
+        AddResizeZone(
+            container,
+            overlayService,
+            2,
+            2,
+            OverlayResizeEdge.Bottom |
+            OverlayResizeEdge.Right
+        );
+
+        return container;
+    }
+
+    private static void AddResizeZone(
+        Grid container,
+        MarketCaptureOverlayService
+            overlayService,
+        int row,
+        int column,
+        OverlayResizeEdge edge)
+    {
+        BoxView resizeZone =
+            new()
+            {
+                BackgroundColor =
+                    Colors.Transparent
+            };
+
+        PanGestureRecognizer gesture =
+            new();
+
+        gesture.PanUpdated +=
+            (_, e) =>
+            {
+                switch (
+                    e.StatusType)
+                {
+                    case GestureStatus.Started:
+                        overlayService
+                            .BeginResize(
+                                edge
+                            );
+                        break;
+
+                    case GestureStatus.Running:
+                        overlayService
+                            .Resize(
+                                e.TotalX,
+                                e.TotalY
+                            );
+                        break;
+
+                    case GestureStatus.Completed:
+                    case GestureStatus.Canceled:
+                        overlayService
+                            .EndResize();
+                        break;
+                }
+            };
+
+        resizeZone
+            .GestureRecognizers
+            .Add(
+                gesture
+            );
+
+        Grid.SetRow(
+            resizeZone,
+            row
+        );
+
+        Grid.SetColumn(
+            resizeZone,
+            column
+        );
+
+        container.Children.Add(
+            resizeZone
+        );
     }
 
     public void ShowServerSelectionRequired()

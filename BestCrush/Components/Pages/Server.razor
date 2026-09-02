@@ -1,4 +1,4 @@
-﻿@inject ItemsService ItemsService
+@inject ItemsService ItemsService
 @inject RunesService RunesService
 @inject BestCrush.Services.BestCrushSettingsService BestCrushSettings
 @inject CrushService CrushService
@@ -71,7 +71,9 @@
                     style="
                         width: 460px;
                         max-width: calc(100vw - 40px);
-                        padding: 20px;"
+                        padding: 20px;
+                        max-height: calc(100vh - 40px);
+                        overflow-y: auto;"
                     @onclick:stopPropagation="true">
 
                     <div class="d-flex justify-content-between align-items-center mb-4">
@@ -227,6 +229,32 @@
                             Activé : les captures sont supprimées après traitement.
                             Désactivé : les captures et crops de debug sont conservés.
                         </div>
+                    <hr />
+
+                    <div class="mb-2">
+                        <label class="form-label fw-bold">
+                            Disposition des overlays
+                        </label>
+
+                        <div class="text-muted small mb-3">
+                            Les positions et tailles sont conservées automatiquement
+                            entre les lancements et les mises à jour.
+                        </div>
+
+                        <button type="button"
+                                class="btn btn-outline-secondary"
+                                @onclick="RestoreOverlayLayouts">
+                            Restaurer la position par défaut des overlays
+                        </button>
+
+                        @if (!string.IsNullOrWhiteSpace(
+                            _overlayLayoutResetMessage))
+                        {
+                            <div class="text-success small mt-2">
+                                @_overlayLayoutResetMessage
+                            </div>
+                        }
+                    </div>
                     </div>
 
                 </div>
@@ -401,20 +429,20 @@
             </div>
         }
 
-        @if (_unrankedItems.Count > 0)
+        @if (_unrankedItems is { Count: > 0 } unrankedItems)
         {
             <div class="my-4">
 
                 <h5>
                     Objets avec données manquantes
                     <span class="badge text-bg-secondary">
-                        @_unrankedItems.Count
+                        @unrankedItems.Count
                     </span>
                 </h5>
 
                 <div class="list-group">
 
-                    @foreach (Equipment item in _unrankedItems)
+                    @foreach (Equipment item in unrankedItems)
                     {
                         <div class="list-group-item">
 
@@ -488,6 +516,18 @@
 </div>
 
 @code {
+    private string?
+        _overlayLayoutResetMessage;
+
+    private void RestoreOverlayLayouts()
+    {
+        OverlayService
+            .RestoreOverlayLayoutsToDefaults();
+
+        _overlayLayoutResetMessage =
+            "Positions et tailles des overlays restaurées.";
+    }
+
 
     private static readonly Dictionary<string, ServerPageState>
         _sessionStates =
@@ -570,6 +610,16 @@
         await OverlayService
             .FocusEquipmentAsync(
                 equipment
+            );
+
+        // Action explicite de l'utilisateur :
+        // le bouton Focus copie aussi le nom exact afin
+        // de pouvoir le rechercher immédiatement dans Dofus.
+        await Microsoft.Maui.ApplicationModel.DataTransfer
+            .Clipboard
+            .Default
+            .SetTextAsync(
+                equipment.Name
             );
     }
 
@@ -708,124 +758,152 @@
         _allItems = items;
     }
 
-    void Search(bool forceRefresh)
+    async Task Search(
+        bool forceRefresh)
     {
         if (_searching)
         {
             return;
         }
 
-        _ = Task.Run(async () =>
-            {
-                _rankedItems = null;
-                _unrankedItems = null;
-                _searching = true;
-                _missingDataByItem.Clear();
-                await InvokeAsync(StateHasChanged);
+        _rankedItems = null;
+        _unrankedItems = null;
+        _searching = true;
+        _missingDataByItem.Clear();
 
-                try
-                {
-                    Task<IReadOnlyCollection<Equipment>> itemsTask =
-                        ItemsService.GetEquipmentsAsync();
+        await InvokeAsync(
+            StateHasChanged
+        );
 
-                    Task<IReadOnlyDictionary<Characteristic, DofocusRune>> runesByCharacteristicAsync =
-                        RunesService.GetRunesByCharacteristicAsync();
+        try
+        {
+            Task<IReadOnlyCollection<Equipment>> itemsTask =
+                ItemsService.GetEquipmentsAsync();
 
-                    await Task.WhenAll(
-                        itemsTask,
-                        runesByCharacteristicAsync
+            Task<IReadOnlyDictionary<Characteristic, DofocusRune>>
+                runesByCharacteristicAsync =
+                    RunesService.GetRunesByCharacteristicAsync();
+
+            await Task.WhenAll(
+                itemsTask,
+                runesByCharacteristicAsync
+            );
+
+            Equipment[] items =
+                FilterItems(
+                    await itemsTask
+                )
+                .ToArray();
+
+            _allItems = items;
+
+            await InvokeAsync(
+                StateHasChanged
+            );
+
+            _rankedItems = [];
+            _unrankedItems = [];
+
+            EquipmentProfitabilityContext profitabilityContext =
+                await EquipmentProfitabilityService
+                    .LoadContextAsync(
+                        ServerName
                     );
 
-                    Equipment[] items = FilterItems(itemsTask.Result).ToArray();
-                    _allItems = items;
+            _runePrices =
+                profitabilityContext.RunePrices;
 
-                    await InvokeAsync(StateHasChanged);
+            _equipmentPrices =
+                profitabilityContext.EquipmentPrices;
 
-                    _rankedItems = [];
-                    _unrankedItems = [];
+            _resourcePrices =
+                profitabilityContext.ResourcePrices;
 
-                    EquipmentProfitabilityContext profitabilityContext =
+            _coefficients =
+                profitabilityContext.Coefficients;
+
+            _craftCostsByItem.Clear();
+
+            foreach (Equipment item in items)
+            {
+                try
+                {
+                    EquipmentProfitabilityResult profitability =
                         await EquipmentProfitabilityService
-                            .LoadContextAsync(
-                                ServerName
-                            );
-
-                    _runePrices =
-                        profitabilityContext.RunePrices;
-
-                    _equipmentPrices =
-                        profitabilityContext.EquipmentPrices;
-
-                    _resourcePrices =
-                        profitabilityContext.ResourcePrices;
-
-                    _coefficients =
-                        profitabilityContext.Coefficients;
-
-                    _craftCostsByItem.Clear();
-
-                    foreach (Equipment item in items)
-                    {
-                        try
-                        {
-                            EquipmentProfitabilityResult profitability =
-                                await EquipmentProfitabilityService
-                                    .CalculateAsync(
-                                        item,
-                                        ServerName,
-                                        profitabilityContext,
-                                        forceRefresh
-                                    );
-
-                            _craftCostsByItem[item.DofusDbId] =
-                                profitability.CraftCost;
-
-                            foreach (string missingData
-                                    in profitability.MissingData)
-                            {
-                                AddMissingData(
-                                    item,
-                                    missingData
-                                );
-                            }
-
-                            List<ItemCrushResult> result =
-                                profitability.Scenarios
-                                    .Select(ToItemCrushResult)
-                                    .ToList();
-                            if (result.Count == 0)
-                            {
-                                _unrankedItems.Add(item);
-                            }
-                            else
-                            {
-                                _rankedItems.AddRange(result);
-                            }
-
-                            await InvokeAsync(StateHasChanged);
-                        }
-                        catch (Exception exn)
-                        {
-                            _unrankedItems.Add(item);
-                            AddMissingData(
+                            .CalculateAsync(
                                 item,
-                                "Erreur lors de la récupération des données de brisage"
+                                ServerName,
+                                profitabilityContext,
+                                forceRefresh
                             );
-                            Logger.LogError(exn, "Error while processing item {ItemName} ({ItemId})", item.Name, item.DofusDbId);
-                        }
+
+                    _craftCostsByItem[item.DofusDbId] =
+                        profitability.CraftCost;
+
+                    foreach (string missingData
+                        in profitability.MissingData)
+                    {
+                        AddMissingData(
+                            item,
+                            missingData
+                        );
                     }
+
+                    List<ItemCrushResult> result =
+                        profitability.Scenarios
+                            .Select(ToItemCrushResult)
+                            .ToList();
+
+                    if (result.Count == 0)
+                    {
+                        _unrankedItems.Add(item);
+                    }
+                    else
+                    {
+                        _rankedItems.AddRange(result);
+                    }
+
+                    await InvokeAsync(
+                        StateHasChanged
+                    );
                 }
                 catch (Exception exn)
                 {
-                    Logger.LogError(exn, "An error occured while searching for best crush.");
-                }
-                finally
-                {
-                    _searching = false;
-                    await InvokeAsync(StateHasChanged);
+                    _unrankedItems.Add(item);
+
+                    AddMissingData(
+                        item,
+                        "Erreur lors de la récupération des données de brisage"
+                    );
+
+                    Logger.LogError(
+                        exn,
+                        "Error while processing item {ItemName} ({ItemId})",
+                        item.Name,
+                        item.DofusDbId
+                    );
+
+                    await InvokeAsync(
+                        StateHasChanged
+                    );
                 }
             }
-        );
+        }
+        catch (Exception exn)
+        {
+            Logger.LogError(
+                exn,
+                "An error occured while searching for best crush."
+            );
+        }
+        finally
+        {
+            _searching = false;
+
+            await InvokeAsync(
+                StateHasChanged
+            );
+        }
     }
 
     async Task Refresh(

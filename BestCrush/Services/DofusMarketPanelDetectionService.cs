@@ -1,4 +1,4 @@
-using OpenCvSharp;
+﻿using OpenCvSharp;
 
 using CvPoint = OpenCvSharp.Point;
 using CvRect = OpenCvSharp.Rect;
@@ -127,8 +127,8 @@ public sealed class DofusMarketPanelDetectionService
         // Le template est placé sur la ligne
         // "Lot / Prix".
         //
-        // Ces offsets récupèrent tout le panneau
-        // de détail situé autour.
+        // Ces offsets définissent un repère canonique
+        // autour de cette ancre.
         int panelX =
             maxLocation.X - 20;
 
@@ -138,49 +138,26 @@ public sealed class DofusMarketPanelDetectionService
         int panelWidth = 400;
         int panelHeight = 815;
 
-        panelX =
-            Math.Max(
-                0,
-                panelX
-            );
-
-        panelY =
-            Math.Max(
-                0,
-                panelY
-            );
-
-        panelWidth =
-            Math.Min(
-                panelWidth,
-                capture.Width - panelX
-            );
-
-        panelHeight =
-            Math.Min(
-                panelHeight,
-                capture.Height - panelY
-            );
-
-        if (panelWidth <= 0 ||
-            panelHeight <= 0)
-        {
-            return null;
-        }
-
-        CvRect panelRect =
-            new(
+        // Ne jamais tronquer la taille logique du panneau.
+        //
+        // Si le rectangle théorique déborde de la capture,
+        // on conserve tout de même un canvas 400x815 et on
+        // copie la partie réellement visible à sa position
+        // exacte. "Lot / Prix" reste donc toujours au même
+        // emplacement dans l'image de travail.
+        using Mat panel =
+            CreateCanonicalPanel(
+                capture,
                 panelX,
                 panelY,
                 panelWidth,
                 panelHeight
             );
 
-        using Mat panel =
-            new(
-                capture,
-                panelRect
-            );
+        if (panel.Empty())
+        {
+            return null;
+        }
 
         string directory =
             Path.GetDirectoryName(
@@ -208,6 +185,111 @@ public sealed class DofusMarketPanelDetectionService
             panelHeight
         );
     }
+
+    private static Mat CreateCanonicalPanel(
+        Mat capture,
+        int desiredX,
+        int desiredY,
+        int desiredWidth,
+        int desiredHeight)
+    {
+        if (desiredWidth <= 0 ||
+            desiredHeight <= 0)
+        {
+            return new Mat();
+        }
+
+        int sourceLeft =
+            Math.Max(
+                0,
+                desiredX
+            );
+
+        int sourceTop =
+            Math.Max(
+                0,
+                desiredY
+            );
+
+        int sourceRight =
+            Math.Min(
+                capture.Width,
+                desiredX +
+                desiredWidth
+            );
+
+        int sourceBottom =
+            Math.Min(
+                capture.Height,
+                desiredY +
+                desiredHeight
+            );
+
+        int copyWidth =
+            sourceRight -
+            sourceLeft;
+
+        int copyHeight =
+            sourceBottom -
+            sourceTop;
+
+        if (copyWidth <= 0 ||
+            copyHeight <= 0)
+        {
+            return new Mat();
+        }
+
+        Mat canonical =
+            new(
+                desiredHeight,
+                desiredWidth,
+                capture.Type(),
+                Scalar.All(0)
+            );
+
+        int destinationX =
+            sourceLeft -
+            desiredX;
+
+        int destinationY =
+            sourceTop -
+            desiredY;
+
+        CvRect sourceRect =
+            new(
+                sourceLeft,
+                sourceTop,
+                copyWidth,
+                copyHeight
+            );
+
+        CvRect destinationRect =
+            new(
+                destinationX,
+                destinationY,
+                copyWidth,
+                copyHeight
+            );
+
+        using Mat sourceRegion =
+            new(
+                capture,
+                sourceRect
+            );
+
+        using Mat destinationRegion =
+            new(
+                canonical,
+                destinationRect
+            );
+
+        sourceRegion.CopyTo(
+            destinationRegion
+        );
+
+        return canonical;
+    }
+
     private async Task<DofusMarketPanelDetectionResult?>
         DetectSellPanelAsync(
             Mat capture,
@@ -343,9 +425,8 @@ public sealed class DofusMarketPanelDetectionService
         // Le template correspond à
         // "ACTUELLEMENT EN VENTE".
         //
-        // Les valeurs ci-dessous ramènent
-        // au coin supérieur gauche du
-        // panneau de détail HDV.
+        // Les valeurs ci-dessous définissent le repère
+        // canonique du panneau de détail HDV à cette échelle.
         int panelX =
             bestLocation.X -
             (int)Math.Round(
@@ -368,49 +449,22 @@ public sealed class DofusMarketPanelDetectionService
                 815 * bestScale
             );
 
-        panelX =
-            Math.Max(
-                0,
-                panelX
-            );
-
-        panelY =
-            Math.Max(
-                0,
-                panelY
-            );
-
-        panelWidth =
-            Math.Min(
-                panelWidth,
-                capture.Width - panelX
-            );
-
-        panelHeight =
-            Math.Min(
-                panelHeight,
-                capture.Height - panelY
-            );
-
-        if (panelWidth <= 0 ||
-            panelHeight <= 0)
-        {
-            return null;
-        }
-
-        CvRect panelRect =
-            new(
+        // Même principe que pour ACHAT :
+        // le clipping de la capture ne modifie jamais
+        // les coordonnées relatives utilisées ensuite.
+        using Mat panel =
+            CreateCanonicalPanel(
+                capture,
                 panelX,
                 panelY,
                 panelWidth,
                 panelHeight
             );
 
-        using Mat panel =
-            new(
-                capture,
-                panelRect
-            );
+        if (panel.Empty())
+        {
+            return null;
+        }
 
         string directory =
             Path.GetDirectoryName(
