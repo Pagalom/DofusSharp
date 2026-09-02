@@ -42,6 +42,11 @@ public sealed class OverlayControlBarPage : ContentPage
                         e.TotalY
                     );
                     break;
+
+                case GestureStatus.Completed:
+                case GestureStatus.Canceled:
+                    _service.EndDrag();
+                    break;
             }
         };
         grip.GestureRecognizers.Add(drag);

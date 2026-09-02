@@ -44,7 +44,9 @@ public sealed class CrushSessionService(
         coefficientScanService,
     IServiceScopeFactory serviceScopeFactory,
     CurrentServerState currentServerState,
-    MarketDataChangeNotifier marketDataChangeNotifier)
+    MarketDataChangeNotifier marketDataChangeNotifier,
+    OverlayLayoutSettingsService
+        overlayLayoutSettingsService)
 {
     private Window? _window;
     private CrushSessionOverlayPage? _page;
@@ -140,8 +142,22 @@ public sealed class CrushSessionService(
     private int _currentX = 750;
     private int _currentY = 80;
 
+    private int _currentWidth = 390;
+    private int _currentHeight = 520;
+
     private int _dragStartX;
     private int _dragStartY;
+
+    private int _resizeStartX;
+    private int _resizeStartY;
+    private int _resizeStartWidth;
+    private int _resizeStartHeight;
+
+    private OverlayResizeEdge
+        _resizeEdge;
+
+    private const int MinimumOverlayWidth = 300;
+    private const int MinimumOverlayHeight = 220;
 
     private const int GwlExStyle = -20;
     private const long WsExLayered =
@@ -273,8 +289,8 @@ public sealed class CrushSessionService(
         return
             x >= _currentX &&
             y >= _currentY &&
-            x < _currentX + 390 &&
-            y < _currentY + 520;
+            x < _currentX + _currentWidth &&
+            y < _currentY + _currentHeight;
 #else
         return false;
 #endif
@@ -353,6 +369,8 @@ public sealed class CrushSessionService(
 
         _isVisible = true;
 
+        LoadStoredLayout();
+
         CrushSessionOverlayPage page =
             new(
                 this
@@ -364,11 +382,11 @@ public sealed class CrushSessionService(
                 Title =
                     "BestCrush — Résultat concassage",
 
-                Width = 390,
-                Height = 520,
+                Width = _currentWidth,
+                Height = _currentHeight,
 
-                X = 750,
-                Y = 80
+                X = _currentX,
+                Y = _currentY
             };
 
         window.Created +=
@@ -431,8 +449,8 @@ public sealed class CrushSessionService(
 
                 _appWindow.Resize(
                     new SizeInt32(
-                        390,
-                        520
+                        _currentWidth,
+                        _currentHeight
                     )
                 );
 
@@ -535,30 +553,261 @@ public sealed class CrushSessionService(
             return;
         }
 
-        int newX =
-            _dragStartX +
+        OverlayWindowLayout constrained =
+            overlayLayoutSettingsService
+                .ConstrainToVisibleScreen(
+                    new OverlayWindowLayout(
+                        _dragStartX +
+                            (int)Math.Round(
+                                totalX
+                            ),
+                        _dragStartY +
+                            (int)Math.Round(
+                                totalY
+                            ),
+                        _currentWidth,
+                        _currentHeight
+                    ),
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight
+                );
+
+        ApplyLayout(
+            constrained
+        );
+#endif
+    }
+
+    public void EndDrag()
+    {
+#if WINDOWS
+        SaveCurrentLayout();
+#endif
+    }
+
+    public void BeginResize(
+        OverlayResizeEdge edge)
+    {
+#if WINDOWS
+        _resizeEdge =
+            edge;
+
+        _resizeStartX =
+            _currentX;
+
+        _resizeStartY =
+            _currentY;
+
+        _resizeStartWidth =
+            _currentWidth;
+
+        _resizeStartHeight =
+            _currentHeight;
+#endif
+    }
+
+    public void Resize(
+        double totalX,
+        double totalY)
+    {
+#if WINDOWS
+        if (_appWindow is null)
+        {
+            return;
+        }
+
+        int dx =
             (int)Math.Round(
                 totalX
             );
 
-        int newY =
-            _dragStartY +
+        int dy =
             (int)Math.Round(
                 totalY
             );
 
-        _appWindow.Move(
-            new PointInt32(
-                newX,
-                newY
+        int newX =
+            _resizeStartX;
+
+        int newY =
+            _resizeStartY;
+
+        int newWidth =
+            _resizeStartWidth;
+
+        int newHeight =
+            _resizeStartHeight;
+
+        if (_resizeEdge.HasFlag(
+            OverlayResizeEdge.Right))
+        {
+            newWidth =
+                _resizeStartWidth +
+                dx;
+        }
+
+        if (_resizeEdge.HasFlag(
+            OverlayResizeEdge.Bottom))
+        {
+            newHeight =
+                _resizeStartHeight +
+                dy;
+        }
+
+        if (_resizeEdge.HasFlag(
+            OverlayResizeEdge.Left))
+        {
+            newWidth =
+                _resizeStartWidth -
+                dx;
+
+            newX =
+                _resizeStartX +
+                dx;
+        }
+
+        if (_resizeEdge.HasFlag(
+            OverlayResizeEdge.Top))
+        {
+            newHeight =
+                _resizeStartHeight -
+                dy;
+
+            newY =
+                _resizeStartY +
+                dy;
+        }
+
+        OverlayWindowLayout constrained =
+            overlayLayoutSettingsService
+                .ConstrainToVisibleScreen(
+                    new OverlayWindowLayout(
+                        newX,
+                        newY,
+                        newWidth,
+                        newHeight
+                    ),
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight
+                );
+
+        ApplyLayout(
+            constrained
+        );
+#endif
+    }
+
+    public void EndResize()
+    {
+#if WINDOWS
+        SaveCurrentLayout();
+#endif
+    }
+
+    public void RestoreDefaultLayout()
+    {
+#if WINDOWS
+        OverlayWindowLayout layout =
+            overlayLayoutSettingsService
+                .GetDefaultLayout(
+                    OverlayLayoutKind
+                        .Crush
+                );
+
+        layout =
+            overlayLayoutSettingsService
+                .ConstrainToVisibleScreen(
+                    layout,
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight
+                );
+
+        ApplyLayout(
+            layout
+        );
+
+        SaveCurrentLayout();
+#endif
+    }
+
+    private void LoadStoredLayout()
+    {
+#if WINDOWS
+        OverlayWindowLayout layout =
+            overlayLayoutSettingsService
+                .GetValidatedLayout(
+                    OverlayLayoutKind
+                        .Crush,
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight,
+                    allowResize: true
+                );
+
+        _currentX =
+            layout.X;
+
+        _currentY =
+            layout.Y;
+
+        _currentWidth =
+            layout.Width;
+
+        _currentHeight =
+            layout.Height;
+#endif
+    }
+
+    private void ApplyLayout(
+        OverlayWindowLayout layout)
+    {
+#if WINDOWS
+        _currentX =
+            layout.X;
+
+        _currentY =
+            layout.Y;
+
+        _currentWidth =
+            layout.Width;
+
+        _currentHeight =
+            layout.Height;
+
+        if (_appWindow is null)
+        {
+            return;
+        }
+
+        _appWindow.Resize(
+            new SizeInt32(
+                _currentWidth,
+                _currentHeight
             )
         );
 
-        _currentX =
-            newX;
+        _appWindow.Move(
+            new PointInt32(
+                _currentX,
+                _currentY
+            )
+        );
+#endif
+    }
 
-        _currentY =
-            newY;
+    private void SaveCurrentLayout()
+    {
+#if WINDOWS
+        overlayLayoutSettingsService
+            .SaveLayout(
+                OverlayLayoutKind
+                    .Crush,
+                new OverlayWindowLayout(
+                    _currentX,
+                    _currentY,
+                    _currentWidth,
+                    _currentHeight
+                )
+            );
 #endif
     }
 
@@ -702,12 +951,12 @@ public sealed class CrushSessionService(
                 _currentX &&
             cursor.X <
                 _currentX +
-                390 &&
+                _currentWidth &&
             cursor.Y >=
                 _currentY &&
             cursor.Y <
                 _currentY +
-                520)
+                _currentHeight)
         {
             return;
         }

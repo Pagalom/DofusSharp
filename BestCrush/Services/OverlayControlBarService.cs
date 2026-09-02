@@ -17,7 +17,9 @@ public sealed record OverlayControlBarBindings(
     Action OpenSettings
 );
 
-public sealed class OverlayControlBarService
+public sealed class OverlayControlBarService(
+    OverlayLayoutSettingsService
+        overlayLayoutSettingsService)
 {
     private Window? _window;
     private OverlayControlBarPage? _page;
@@ -27,8 +29,8 @@ public sealed class OverlayControlBarService
     private AppWindow? _appWindow;
     private IntPtr _hwnd = IntPtr.Zero;
 
-    private int _currentX = 40;
-    private int _currentY = 10;
+    private int _currentX = 210;
+    private int _currentY = 5;
     private int _currentWidth = 205;
     private int _currentHeight = 50;
 
@@ -61,16 +63,18 @@ public sealed class OverlayControlBarService
             return;
         }
 
+        LoadStoredLayout();
+
         OverlayControlBarPage page =
             new(this);
 
         Window window = new(page)
         {
             Title = "BestCrush",
-            Width = 205,
-            Height = 50,
-            X = 40,
-            Y = 10
+            Width = _currentWidth,
+            Height = _currentHeight,
+            X = _currentX,
+            Y = _currentY
         };
 
         _page = page;
@@ -175,8 +179,11 @@ public sealed class OverlayControlBarService
     public void BeginDrag()
     {
 #if WINDOWS
-        _dragStartX = _currentX;
-        _dragStartY = _currentY;
+        _dragStartX =
+            _currentX;
+
+        _dragStartY =
+            _currentY;
 #endif
     }
 
@@ -190,23 +197,138 @@ public sealed class OverlayControlBarService
             return;
         }
 
-        int newX =
-            _dragStartX +
-            (int)Math.Round(totalX);
+        OverlayWindowLayout constrained =
+            overlayLayoutSettingsService
+                .ConstrainToVisibleScreen(
+                    new OverlayWindowLayout(
+                        _dragStartX +
+                            (int)Math.Round(
+                                totalX
+                            ),
+                        _dragStartY +
+                            (int)Math.Round(
+                                totalY
+                            ),
+                        _currentWidth,
+                        _currentHeight
+                    ),
+                    _currentWidth,
+                    _currentHeight
+                );
 
-        int newY =
-            _dragStartY +
-            (int)Math.Round(totalY);
+        ApplyLayout(
+            constrained
+        );
+#endif
+    }
 
-        _appWindow.Move(
-            new PointInt32(
-                newX,
-                newY
+    public void EndDrag()
+    {
+#if WINDOWS
+        SaveCurrentLayout();
+#endif
+    }
+
+    public void RestoreDefaultLayout()
+    {
+#if WINDOWS
+        OverlayWindowLayout layout =
+            overlayLayoutSettingsService
+                .GetValidatedLayout(
+                    OverlayLayoutKind
+                        .ControlBar,
+                    _currentWidth,
+                    _currentHeight,
+                    allowResize: false
+                );
+
+        // ResetAll() a déjà remis X=210 / Y=5.
+        ApplyLayout(
+            layout
+        );
+
+        SaveCurrentLayout();
+#endif
+    }
+
+    private void LoadStoredLayout()
+    {
+#if WINDOWS
+        OverlayWindowLayout layout =
+            overlayLayoutSettingsService
+                .GetValidatedLayout(
+                    OverlayLayoutKind
+                        .ControlBar,
+                    _currentWidth,
+                    _currentHeight,
+                    allowResize: false
+                );
+
+        _currentX =
+            layout.X;
+
+        _currentY =
+            layout.Y;
+
+        _currentWidth =
+            layout.Width;
+
+        _currentHeight =
+            layout.Height;
+#endif
+    }
+
+    private void ApplyLayout(
+        OverlayWindowLayout layout)
+    {
+#if WINDOWS
+        _currentX =
+            layout.X;
+
+        _currentY =
+            layout.Y;
+
+        _currentWidth =
+            layout.Width;
+
+        _currentHeight =
+            layout.Height;
+
+        if (_appWindow is null)
+        {
+            return;
+        }
+
+        _appWindow.Resize(
+            new SizeInt32(
+                _currentWidth,
+                _currentHeight
             )
         );
 
-        _currentX = newX;
-        _currentY = newY;
+        _appWindow.Move(
+            new PointInt32(
+                _currentX,
+                _currentY
+            )
+        );
+#endif
+    }
+
+    private void SaveCurrentLayout()
+    {
+#if WINDOWS
+        overlayLayoutSettingsService
+            .SaveLayout(
+                OverlayLayoutKind
+                    .ControlBar,
+                new OverlayWindowLayout(
+                    _currentX,
+                    _currentY,
+                    _currentWidth,
+                    _currentHeight
+                )
+            );
 #endif
     }
 

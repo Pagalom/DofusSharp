@@ -127,6 +127,12 @@ public sealed class CrushSessionOverlayPage
                                 e.TotalY
                             );
                         break;
+
+                    case GestureStatus.Completed:
+                    case GestureStatus.Canceled:
+                        _sessionService
+                            .EndDrag();
+                        break;
                 }
             };
 
@@ -228,8 +234,191 @@ public sealed class CrushSessionOverlayPage
                 }
             };
 
+        Grid resizeContainer =
+            CreateResizeContainer(
+                content
+            );
+
         Content =
-            content;
+            resizeContainer;
+    }
+
+    private Grid CreateResizeContainer(
+        View content)
+    {
+        Grid container =
+            new()
+            {
+                RowDefinitions =
+                {
+                    new RowDefinition(10),
+                    new RowDefinition(
+                        GridLength.Star
+                    ),
+                    new RowDefinition(10)
+                },
+
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(10),
+                    new ColumnDefinition(
+                        GridLength.Star
+                    ),
+                    new ColumnDefinition(10)
+                }
+            };
+
+        Grid.SetRow(
+            content,
+            0
+        );
+
+        Grid.SetColumn(
+            content,
+            0
+        );
+
+        Grid.SetRowSpan(
+            content,
+            3
+        );
+
+        Grid.SetColumnSpan(
+            content,
+            3
+        );
+
+        container.Children.Add(
+            content
+        );
+
+        AddResizeZone(
+            container,
+            0,
+            1,
+            OverlayResizeEdge.Top
+        );
+
+        AddResizeZone(
+            container,
+            2,
+            1,
+            OverlayResizeEdge.Bottom
+        );
+
+        AddResizeZone(
+            container,
+            1,
+            0,
+            OverlayResizeEdge.Left
+        );
+
+        AddResizeZone(
+            container,
+            1,
+            2,
+            OverlayResizeEdge.Right
+        );
+
+        AddResizeZone(
+            container,
+            0,
+            0,
+            OverlayResizeEdge.Top |
+            OverlayResizeEdge.Left
+        );
+
+        AddResizeZone(
+            container,
+            0,
+            2,
+            OverlayResizeEdge.Top |
+            OverlayResizeEdge.Right
+        );
+
+        AddResizeZone(
+            container,
+            2,
+            0,
+            OverlayResizeEdge.Bottom |
+            OverlayResizeEdge.Left
+        );
+
+        AddResizeZone(
+            container,
+            2,
+            2,
+            OverlayResizeEdge.Bottom |
+            OverlayResizeEdge.Right
+        );
+
+        return container;
+    }
+
+    private void AddResizeZone(
+        Grid container,
+        int row,
+        int column,
+        OverlayResizeEdge edge)
+    {
+        BoxView resizeZone =
+            new()
+            {
+                BackgroundColor =
+                    Colors.Transparent
+            };
+
+        PanGestureRecognizer gesture =
+            new();
+
+        gesture.PanUpdated +=
+            (_, e) =>
+            {
+                switch (
+                    e.StatusType)
+                {
+                    case GestureStatus.Started:
+                        _sessionService
+                            .BeginResize(
+                                edge
+                            );
+                        break;
+
+                    case GestureStatus.Running:
+                        _sessionService
+                            .Resize(
+                                e.TotalX,
+                                e.TotalY
+                            );
+                        break;
+
+                    case GestureStatus.Completed:
+                    case GestureStatus.Canceled:
+                        _sessionService
+                            .EndResize();
+                        break;
+                }
+            };
+
+        resizeZone
+            .GestureRecognizers
+            .Add(
+                gesture
+            );
+
+        Grid.SetRow(
+            resizeZone,
+            row
+        );
+
+        Grid.SetColumn(
+            resizeZone,
+            column
+        );
+
+        container.Children.Add(
+            resizeZone
+        );
     }
 
     public void Update(

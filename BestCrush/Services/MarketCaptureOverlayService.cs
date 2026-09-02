@@ -8,7 +8,9 @@ using Windows.Graphics;
 
 namespace BestCrush.Services;
 
-public sealed class MarketCaptureOverlayService
+public sealed class MarketCaptureOverlayService(
+    OverlayLayoutSettingsService
+        overlayLayoutSettingsService)
 {
     private Window? _window;
     private MarketCaptureOverlayPage? _page;
@@ -30,6 +32,17 @@ public sealed class MarketCaptureOverlayService
 
     private int _dragStartX;
     private int _dragStartY;
+
+    private int _resizeStartX;
+    private int _resizeStartY;
+    private int _resizeStartWidth;
+    private int _resizeStartHeight;
+
+    private OverlayResizeEdge
+        _resizeEdge;
+
+    private const int MinimumOverlayWidth = 260;
+    private const int MinimumOverlayHeight = 180;
 
     private const int GwlExStyle = -20;
     private const long WsExLayered = 0x00080000L;
@@ -145,8 +158,11 @@ public sealed class MarketCaptureOverlayService
     public void BeginDrag()
     {
 #if WINDOWS
-        _dragStartX = _currentX;
-        _dragStartY = _currentY;
+        _dragStartX =
+            _currentX;
+
+        _dragStartY =
+            _currentY;
 #endif
     }
 
@@ -160,23 +176,180 @@ public sealed class MarketCaptureOverlayService
             return;
         }
 
+        OverlayWindowLayout constrained =
+            overlayLayoutSettingsService
+                .ConstrainToVisibleScreen(
+                    new OverlayWindowLayout(
+                        _dragStartX +
+                            (int)Math.Round(
+                                totalX
+                            ),
+                        _dragStartY +
+                            (int)Math.Round(
+                                totalY
+                            ),
+                        _currentWidth,
+                        _currentHeight
+                    ),
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight
+                );
+
+        ApplyLayout(
+            constrained
+        );
+#endif
+    }
+
+    public void EndDrag()
+    {
+#if WINDOWS
+        SaveCurrentLayout();
+#endif
+    }
+
+    public void BeginResize(
+        OverlayResizeEdge edge)
+    {
+#if WINDOWS
+        _resizeEdge =
+            edge;
+
+        _resizeStartX =
+            _currentX;
+
+        _resizeStartY =
+            _currentY;
+
+        _resizeStartWidth =
+            _currentWidth;
+
+        _resizeStartHeight =
+            _currentHeight;
+#endif
+    }
+
+    public void Resize(
+        double totalX,
+        double totalY)
+    {
+#if WINDOWS
+        if (_appWindow is null)
+        {
+            return;
+        }
+
+        int dx =
+            (int)Math.Round(
+                totalX
+            );
+
+        int dy =
+            (int)Math.Round(
+                totalY
+            );
+
         int newX =
-            _dragStartX +
-            (int)Math.Round(totalX);
+            _resizeStartX;
 
         int newY =
-            _dragStartY +
-            (int)Math.Round(totalY);
+            _resizeStartY;
 
-        _appWindow.Move(
-            new PointInt32(
-                newX,
-                newY
-            )
+        int newWidth =
+            _resizeStartWidth;
+
+        int newHeight =
+            _resizeStartHeight;
+
+        if (_resizeEdge.HasFlag(
+            OverlayResizeEdge.Right))
+        {
+            newWidth =
+                _resizeStartWidth +
+                dx;
+        }
+
+        if (_resizeEdge.HasFlag(
+            OverlayResizeEdge.Bottom))
+        {
+            newHeight =
+                _resizeStartHeight +
+                dy;
+        }
+
+        if (_resizeEdge.HasFlag(
+            OverlayResizeEdge.Left))
+        {
+            newWidth =
+                _resizeStartWidth -
+                dx;
+
+            newX =
+                _resizeStartX +
+                dx;
+        }
+
+        if (_resizeEdge.HasFlag(
+            OverlayResizeEdge.Top))
+        {
+            newHeight =
+                _resizeStartHeight -
+                dy;
+
+            newY =
+                _resizeStartY +
+                dy;
+        }
+
+        OverlayWindowLayout constrained =
+            overlayLayoutSettingsService
+                .ConstrainToVisibleScreen(
+                    new OverlayWindowLayout(
+                        newX,
+                        newY,
+                        newWidth,
+                        newHeight
+                    ),
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight
+                );
+
+        ApplyLayout(
+            constrained
+        );
+#endif
+    }
+
+    public void EndResize()
+    {
+#if WINDOWS
+        SaveCurrentLayout();
+#endif
+    }
+
+    public void RestoreDefaultLayout()
+    {
+#if WINDOWS
+        OverlayWindowLayout layout =
+            overlayLayoutSettingsService
+                .GetDefaultLayout(
+                    OverlayLayoutKind
+                        .Market
+                );
+
+        layout =
+            overlayLayoutSettingsService
+                .ConstrainToVisibleScreen(
+                    layout,
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight
+                );
+
+        ApplyLayout(
+            layout
         );
 
-        _currentX = newX;
-        _currentY = newY;
+        SaveCurrentLayout();
 #endif
     }
 
@@ -411,16 +584,18 @@ public sealed class MarketCaptureOverlayService
             return;
         }
 
+        LoadStoredLayout();
+
         MarketCaptureOverlayPage page =
             new(this);
 
         Window window = new(page)
         {
             Title = "BestCrush — Mise à jour marché",
-            Width = 330,
-            Height = 300,
-            X = 395,
-            Y = 70
+            Width = _currentWidth,
+            Height = _currentHeight,
+            X = _currentX,
+            Y = _currentY
         };
 
         _page = page;
@@ -458,6 +633,87 @@ public sealed class MarketCaptureOverlayService
         };
 
         Application.Current?.OpenWindow(window);
+    }
+
+    private void LoadStoredLayout()
+    {
+#if WINDOWS
+        OverlayWindowLayout layout =
+            overlayLayoutSettingsService
+                .GetValidatedLayout(
+                    OverlayLayoutKind
+                        .Market,
+                    MinimumOverlayWidth,
+                    MinimumOverlayHeight,
+                    allowResize: true
+                );
+
+        _currentX =
+            layout.X;
+
+        _currentY =
+            layout.Y;
+
+        _currentWidth =
+            layout.Width;
+
+        _currentHeight =
+            layout.Height;
+#endif
+    }
+
+    private void ApplyLayout(
+        OverlayWindowLayout layout)
+    {
+#if WINDOWS
+        _currentX =
+            layout.X;
+
+        _currentY =
+            layout.Y;
+
+        _currentWidth =
+            layout.Width;
+
+        _currentHeight =
+            layout.Height;
+
+        if (_appWindow is null)
+        {
+            return;
+        }
+
+        _appWindow.Resize(
+            new SizeInt32(
+                _currentWidth,
+                _currentHeight
+            )
+        );
+
+        _appWindow.Move(
+            new PointInt32(
+                _currentX,
+                _currentY
+            )
+        );
+#endif
+    }
+
+    private void SaveCurrentLayout()
+    {
+#if WINDOWS
+        overlayLayoutSettingsService
+            .SaveLayout(
+                OverlayLayoutKind
+                    .Market,
+                new OverlayWindowLayout(
+                    _currentX,
+                    _currentY,
+                    _currentWidth,
+                    _currentHeight
+                )
+            );
+#endif
     }
 
 #if WINDOWS

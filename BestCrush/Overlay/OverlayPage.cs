@@ -81,6 +81,11 @@ public sealed class OverlayPage : ContentPage
                         e.TotalY
                     );
                     break;
+
+                case GestureStatus.Completed:
+                case GestureStatus.Canceled:
+                    overlayService.EndDrag();
+                    break;
             }
         };
 
@@ -654,6 +659,11 @@ public sealed class OverlayPage : ContentPage
                         e.TotalX,
                         e.TotalY
                     );
+                    break;
+
+                case GestureStatus.Completed:
+                case GestureStatus.Canceled:
+                    overlayService.EndResize();
                     break;
             }
         };

@@ -52,6 +52,7 @@ public static class MauiProgram
             builder.Services.AddSingleton<RunesService>();
             builder.Services.AddSingleton<CharacteristicsService>();
             builder.Services.AddSingleton<CrushService>();
+            builder.Services.AddSingleton<BestCrush.Services.OverlayLayoutSettingsService>();
             builder.Services.AddSingleton<BestCrush.Services.MarketCaptureOverlayService>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayControlBarService>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayService>();
