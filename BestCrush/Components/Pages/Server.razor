@@ -1,4 +1,4 @@
-﻿@inject ItemsService ItemsService
+@inject ItemsService ItemsService
 @inject RunesService RunesService
 @inject BestCrush.Services.BestCrushSettingsService BestCrushSettings
 @inject CrushService CrushService
@@ -341,11 +341,37 @@
                         ? group.MaxBy(result => result.Yield)
                         : group.MaxBy(result => result.Benefits));
 
-            IOrderedEnumerable<ItemCrushResult> bestLinesOrdered =
-                bestLines.OrderByDescending(result =>
-                    _sortOrder == SortOrder.BestYield
-                        ? result.Yield
-                        : result.Benefits);
+            IEnumerable<ItemCrushResult> bestLinesOrdered =
+                _sortOrder switch
+                {
+                    SortOrder.BestYield =>
+                        bestLines.OrderByDescending(
+                            result => result.Yield
+                        ),
+
+                    SortOrder.NameAscending =>
+                        bestLines.OrderBy(
+                            result => result.Equipment.Name,
+                            StringComparer.CurrentCultureIgnoreCase
+                        ),
+
+                    SortOrder.HighestCoefficient =>
+                        bestLines
+                            .OrderByDescending(
+                                result =>
+                                    result.Coefficient
+                                        .CoefficientPercent
+                            )
+                            .ThenBy(
+                                result => result.Equipment.Name,
+                                StringComparer.CurrentCultureIgnoreCase
+                            ),
+
+                    _ =>
+                        bestLines.OrderByDescending(
+                            result => result.Benefits
+                        )
+                };
 
             <div class="my-4">
                 <div class="d-flex align-items-center justify-content-end gap-2 mb-2 px-3">
@@ -355,6 +381,8 @@
                             <option value="">Sélectionner l'ordre de tri...</option>
                             <option value="@SortOrder.BestBenefit" checked="@(_sortOrder == SortOrder.BestBenefit)">Bénéfice (flat)</option>
                             <option value="@SortOrder.BestYield" checked="@(_sortOrder == SortOrder.BestYield)">Rendement (%)</option>
+                            <option value="@SortOrder.NameAscending" checked="@(_sortOrder == SortOrder.NameAscending)">Nom (A → Z)</option>
+                            <option value="@SortOrder.HighestCoefficient" checked="@(_sortOrder == SortOrder.HighestCoefficient)">Coefficient (décroissant)</option>
                         </InputSelect>
                     </div>
                     <div>
@@ -464,6 +492,35 @@
 
         @if (_unrankedItems is { Count: > 0 } unrankedItems)
         {
+            IEnumerable<Equipment> unrankedItemsOrdered =
+                _sortOrder switch
+                {
+                    SortOrder.NameAscending =>
+                        unrankedItems.OrderBy(
+                            item => item.Name,
+                            StringComparer.CurrentCultureIgnoreCase
+                        ),
+
+                    SortOrder.HighestCoefficient =>
+                        unrankedItems
+                            .OrderByDescending(
+                                item =>
+                                    _coefficients.TryGetValue(
+                                        item.DofusDbId,
+                                        out CoefficientObservation? coefficient
+                                    )
+                                        ? coefficient.CoefficientPercent
+                                        : double.MinValue
+                            )
+                            .ThenBy(
+                                item => item.Name,
+                                StringComparer.CurrentCultureIgnoreCase
+                            ),
+
+                    _ =>
+                        unrankedItems
+                };
+
             <div class="my-4">
 
                 <h5>
@@ -475,7 +532,7 @@
 
                 <div class="list-group">
 
-                    @foreach (Equipment item in unrankedItems)
+                    @foreach (Equipment item in unrankedItemsOrdered)
                     {
                         <div class="list-group-item">
 

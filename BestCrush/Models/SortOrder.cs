@@ -1,7 +1,9 @@
-﻿namespace BestCrush.Models;
+namespace BestCrush.Models;
 
 public enum SortOrder
 {
     BestBenefit,
-    BestYield
+    BestYield,
+    NameAscending,
+    HighestCoefficient
 }
