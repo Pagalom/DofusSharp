@@ -17,7 +17,7 @@ public class GameDataUpgradeHandler(
 {
     private const string
         RuneCatalogUpgradeVersion =
-            "dofusdb-only-v1";
+            "dofusdb-only-v2";
 
     public async Task UpgradeAsync(
         Version newVersion,
