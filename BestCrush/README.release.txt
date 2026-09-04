@@ -1,4 +1,4 @@
-BestCrush v0.1.2
+BestCrush v0.1.4
 ==================
 
 BestCrush est un outil compagnon pour Dofus permettant de :
@@ -6,8 +6,10 @@ BestCrush est un outil compagnon pour Dofus permettant de :
 - suivre les prix locaux des runes, ressources et équipements ;
 - calculer le coût réel minimum des crafts ;
 - estimer la rentabilité du concassage ;
+- choisir entre un jet moyen ou un jet prudent pour l'estimation du concassage ;
 - lire automatiquement certaines données en jeu ;
-- suivre les runes réellement obtenues lors d'une session de concassage.
+- suivre les runes réellement obtenues lors d'une session de concassage ;
+- trier les résultats par bénéfice, rendement, nom ou coefficient.
 
 INSTALLATION
 ------------
@@ -32,6 +34,15 @@ RACCOURCIS
 Clic molette : lecture contextuelle
 F7           : masquer / restaurer les overlays
 F9           : démarrer / arrêter une session de concassage
+
+DONNÉES
+-------
+
+Les équipements, ressources, recettes, caractéristiques et le catalogue des runes
+proviennent de DofusDB.
+
+DoFocus est utilisé uniquement pour obtenir un coefficient initial de concassage
+lorsqu'aucun coefficient local n'est encore disponible.
 
 IMPORTANT
 ---------
