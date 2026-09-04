@@ -1,4 +1,4 @@
-using BestCrush.Domain.Services;
+﻿using BestCrush.Domain.Services;
 using Microsoft.Maui.Storage;
 
 namespace BestCrush.Services;
@@ -20,6 +20,9 @@ public sealed class BestCrushSettingsService
 
     private const string TargetRoiKey =
         "Settings.TargetRoiPercent";
+
+    private const string CrushYieldEstimationModeKey =
+        "Settings.CrushYieldEstimationMode";
 
     private const string
         DevToolRemoveScreenshotsByDefaultKey =
@@ -97,6 +100,31 @@ public sealed class BestCrushSettingsService
             Preferences.Set(
                 DevToolRemoveScreenshotsByDefaultKey,
                 value
+            );
+    }
+
+    public CrushYieldEstimationMode CrushYieldEstimationMode
+    {
+        get
+        {
+            int storedValue =
+                Preferences.Get(
+                    CrushYieldEstimationModeKey,
+                    (int)CrushYieldEstimationMode.Average
+                );
+
+            return Enum.IsDefined(
+                typeof(CrushYieldEstimationMode),
+                storedValue
+            )
+                ? (CrushYieldEstimationMode)storedValue
+                : CrushYieldEstimationMode.Average;
+        }
+
+        set =>
+            Preferences.Set(
+                CrushYieldEstimationModeKey,
+                (int)value
             );
     }
 

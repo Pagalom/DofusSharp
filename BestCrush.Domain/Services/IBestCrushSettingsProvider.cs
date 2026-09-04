@@ -1,4 +1,10 @@
-namespace BestCrush.Domain.Services;
+﻿namespace BestCrush.Domain.Services;
+
+public enum CrushYieldEstimationMode
+{
+    Conservative = 0,
+    Average = 1
+}
 
 public interface IBestCrushSettingsProvider
 {
@@ -9,6 +15,8 @@ public interface IBestCrushSettingsProvider
     bool ResourceCaptureEnabled { get; }
 
     bool CoefficientCaptureEnabled { get; }
+
+    CrushYieldEstimationMode CrushYieldEstimationMode { get; }
 
     double TargetRoiPercent { get; }
 

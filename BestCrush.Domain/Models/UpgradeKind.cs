@@ -3,5 +3,6 @@
 public enum UpgradeKind
 {
     Application,
-    DofusDb
+    DofusDb,
+    RuneCatalog
 }

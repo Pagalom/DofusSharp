@@ -1,146 +1,107 @@
 ﻿using BestCrush.Domain.Models;
-using DofusSharp.Dofocus.ApiClients;
-using DofusSharp.Dofocus.ApiClients.Models.Runes;
-using DofusSharp.DofusDb.ApiClients.Models.Characteristics;
 using Microsoft.EntityFrameworkCore;
 
 namespace BestCrush.Domain.Services;
 
-public class RunesService(CharacteristicsService characteristicsService, BestCrushDbContext context, IDofocusClientFactory dofocusClientFactory)
+public class RunesService(
+    BestCrushDbContext context)
 {
-    IReadOnlyCollection<DofocusRune>? _runes;
-    readonly SemaphoreSlim _runesSemaphore = new(1, 1);
-
-    IReadOnlyDictionary<Characteristic, DofocusRune>? _runesByCharacteristics;
-    readonly SemaphoreSlim _runesByCharacteristicsSemaphore = new(1, 1);
-
-    public async Task ClearCachesAsync()
+    public Task ClearCachesAsync()
     {
-        await _runesSemaphore.WaitAsync();
-        try
-        {
-            _runes = null;
-        }
-        finally
-        {
-            _runesSemaphore.Release();
-        }
-
-        await _runesByCharacteristicsSemaphore.WaitAsync();
-        try
-        {
-            _runesByCharacteristics = null;
-        }
-        finally
-        {
-            _runesByCharacteristicsSemaphore.Release();
-        }
+        // Le catalogue des runes est désormais entièrement local.
+        // Il n'existe plus de cache DoFocus à invalider.
+        return Task.CompletedTask;
     }
-    public async Task<IReadOnlyCollection<Rune>> GetLocalRunesAsync(
-    CancellationToken cancellationToken = default)
+
+    public async Task<IReadOnlyCollection<Rune>>
+        GetLocalRunesAsync(
+            CancellationToken cancellationToken = default)
     {
         return await context.Runes
             .AsNoTracking()
-            .OrderBy(r => r.Name)
-            .ToListAsync(cancellationToken);
+            .OrderBy(rune => rune.Name)
+            .ToListAsync(
+                cancellationToken
+            );
     }
 
-    public async Task<IReadOnlyDictionary<Rune, DofocusRunePriceRecord>> GetRunePricesAsync(string serverName)
+    public async Task<IReadOnlyCollection<Rune>>
+        GetRunesAsync(
+            bool forceRefresh = false,
+            CancellationToken cancellationToken = default)
     {
-        IReadOnlyCollection<DofocusRune> runes = await GetRunesAsync();
-        Dictionary<Rune, DofocusRunePriceRecord> result = new();
-        foreach (DofocusRune dofocusRune in runes)
+        // Conservé pour les appelants historiques.
+        // forceRefresh n'a plus de sens : la BDD locale est
+        // désormais l'unique source du catalogue des runes.
+        _ = forceRefresh;
+
+        return await GetLocalRunesAsync(
+            cancellationToken
+        );
+    }
+
+    public async Task<
+        IReadOnlyDictionary<
+            Characteristic,
+            Rune>>
+        GetRunesByCharacteristicAsync(
+            bool forceRefresh = false,
+            CancellationToken cancellationToken = default)
+    {
+        _ = forceRefresh;
+
+        IReadOnlyCollection<Rune> runes =
+            await GetLocalRunesAsync(
+                cancellationToken
+            );
+
+        Dictionary<
+            Characteristic,
+            Rune> result = [];
+
+        foreach (
+            IGrouping<Characteristic, Rune> group
+            in runes.GroupBy(
+                rune => rune.Characteristic
+            ))
         {
-            Rune? rune = context.Runes.SingleOrDefault(r => r.DofusDbId == dofocusRune.Id);
-            if (rune is null)
+            Rune? basicRune =
+                group
+                    .Where(rune =>
+                        !IsPowerVariant(
+                            rune.Name
+                        ))
+                    .OrderBy(rune =>
+                        rune.DofusDbId)
+                    .FirstOrDefault()
+                ?? group
+                    .OrderBy(rune =>
+                        rune.DofusDbId)
+                    .FirstOrDefault();
+
+            if (basicRune is null)
             {
                 continue;
             }
 
-            DofocusRunePriceRecord? price = dofocusRune.LatestPrices.Where(p => p.ServerName == serverName).OrderByDescending(p => p.DateUpdated).FirstOrDefault();
-            if (price is null)
-            {
-                continue;
-            }
-
-            result.Add(rune, price);
+            result[group.Key] =
+                basicRune;
         }
+
         return result;
     }
 
-    public async Task<IReadOnlyCollection<DofocusRune>> GetRunesAsync(bool forceRefresh = false)
+    private static bool IsPowerVariant(
+        string runeName)
     {
-        if (!forceRefresh && _runes != null)
-        {
-            return _runes;
-        }
-
-        await _runesSemaphore.WaitAsync();
-        try
-        {
-            if (!forceRefresh && _runes != null)
-            {
-                return _runes;
-            }
-
-            IDofocusRunesClient client = dofocusClientFactory.Runes();
-            _runes = await client.GetRunesAsync();
-            return _runes;
-        }
-        finally
-        {
-            _runesSemaphore.Release();
-        }
-    }
-
-    public async Task<IReadOnlyDictionary<Characteristic, DofocusRune>> GetRunesByCharacteristicAsync(bool forceRefresh = false)
-    {
-        if (_runesByCharacteristics != null)
-        {
-            return _runesByCharacteristics;
-        }
-
-        await _runesByCharacteristicsSemaphore.WaitAsync();
-        try
-        {
-            if (_runesByCharacteristics != null)
-            {
-                return _runesByCharacteristics;
-            }
-
-            IReadOnlyCollection<DofocusRune> runes = await GetRunesAsync(forceRefresh);
-            IReadOnlyDictionary<long, DofusDbCharacteristic> characteristics = await characteristicsService.GetDofusDbCharacteristicsAsync();
-
-            Dictionary<Characteristic, DofocusRune> result = new();
-            foreach (DofocusRune rune in runes)
-            {
-                // for some reason Dofocus uses null for hunting runes instead of the actual characteristic id
-                DofusDbCharacteristic? dofusDbCharacteristic = rune.CharacteristicId is null
-                    ? characteristics.Values.SingleOrDefault(c => c.Keyword == Characteristic.Hunting.ToDofusDbKeyword())
-                    : characteristics.TryGetValue(rune.CharacteristicId.Value, out DofusDbCharacteristic? value)
-                        ? value
-                        : null;
-                if (dofusDbCharacteristic is null)
-                {
-                    continue;
-                }
-
-                Characteristic? characteristic = CharacteristicExtensions.CharacteristicFromDofusDbKeyword(dofusDbCharacteristic.Keyword ?? "");
-                if (characteristic is null)
-                {
-                    continue;
-                }
-
-                result.Add(characteristic.Value, rune);
-            }
-
-            _runesByCharacteristics = result;
-
-            return result;
-        }
-        finally
-        {
-            _runesByCharacteristicsSemaphore.Release();
-        }
+        return
+            runeName.StartsWith(
+                "Rune Pa ",
+                StringComparison.OrdinalIgnoreCase
+            ) ||
+            runeName.StartsWith(
+                "Rune Ra ",
+                StringComparison.OrdinalIgnoreCase
+            );
     }
 }

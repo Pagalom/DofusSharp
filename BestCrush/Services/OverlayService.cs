@@ -1,4 +1,4 @@
-using BestCrush.Overlay;
+﻿using BestCrush.Overlay;
 using System.Threading.Channels;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Extensions.DependencyInjection;
@@ -1723,10 +1723,16 @@ private bool _hasF7VisibilitySnapshot;
                 " "
             ).Trim();
 
+        // Dans l'HDV, tout ce qui suit "Niv." / "Niveau"
+        // appartient aux métadonnées et non au nom de l'objet.
+        //
+        // On ne dépend volontairement plus de la lecture du niveau :
+        // l'OCR peut confondre "1" avec "l", comme dans "Niv.l".
+        // Dès que le marqueur de niveau est détecté, le nom s'arrête.
         string primaryName =
             System.Text.RegularExpressions.Regex.Replace(
                 compact,
-                @"\s+(?:NIV\.?|NIVEAU)\s*\d+\b.*$",
+                @"\s+(?:NIVEAU|NIV\.?).*$",
                 string.Empty,
                 System.Text.RegularExpressions.RegexOptions.IgnoreCase
             ).Trim();
@@ -2053,7 +2059,7 @@ private bool _hasF7VisibilitySnapshot;
             );
     }
 
-    private async Task RefreshFocusedProfitabilityAsync()
+    public async Task RefreshFocusedProfitabilityAsync()
     {
         long refreshVersion =
             Interlocked.Increment(

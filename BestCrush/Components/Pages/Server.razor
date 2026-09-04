@@ -1,4 +1,4 @@
-@inject ItemsService ItemsService
+﻿@inject ItemsService ItemsService
 @inject RunesService RunesService
 @inject BestCrush.Services.BestCrushSettingsService BestCrushSettings
 @inject CrushService CrushService
@@ -19,7 +19,6 @@
 @using BestCrush.Domain.Services
 @using BestCrush.Models
 @using DofusSharp.Dofocus.ApiClients.Models.Items
-@using DofusSharp.Dofocus.ApiClients.Models.Runes
 @using Microsoft.Extensions.Logging
 
 
@@ -89,7 +88,7 @@
 
                     <div class="mb-4">
                         <label class="form-label fw-bold">
-                            Capture automatique F8
+                            Données capturées automatiquement
                         </label>
 
                         <div class="text-muted small mb-3">
@@ -171,6 +170,40 @@
                             </option>
 
                         </select>
+                    </div>
+
+                    <hr />
+
+                    <div class="mb-2">
+                        <label class="form-label fw-bold"
+                            for="crush-yield-estimation-mode">
+                            Estimation du jet de concassage
+                        </label>
+
+                        <div class="text-muted small mb-2">
+                            Détermine le jet utilisé pour estimer le nombre
+                            de runes obtenu lors du concassage.
+                        </div>
+
+                        <select id="crush-yield-estimation-mode"
+                                class="form-select"
+                                value="@BestCrushSettings.CrushYieldEstimationMode"
+                                @onchange="OnCrushYieldEstimationModeChanged">
+
+                            <option value="@CrushYieldEstimationMode.Conservative">
+                                Jet prudent de concassage
+                            </option>
+
+                            <option value="@CrushYieldEstimationMode.Average">
+                                Jet moyen de concassage
+                            </option>
+
+                        </select>
+
+                        <div class="text-muted small mt-2">
+                            Prudent : utilise le jet minimum de chaque caractéristique.
+                            Moyen : utilise la moyenne entre le minimum et le maximum.
+                        </div>
                     </div>
 
                     <hr />
@@ -741,6 +774,38 @@
         }
     }
 
+    private async Task OnCrushYieldEstimationModeChanged(
+        ChangeEventArgs args)
+    {
+        if (!Enum.TryParse(
+            args.Value?.ToString(),
+            out CrushYieldEstimationMode mode))
+        {
+            return;
+        }
+
+        if (BestCrushSettings.CrushYieldEstimationMode ==
+            mode)
+        {
+            return;
+        }
+
+        BestCrushSettings.CrushYieldEstimationMode =
+            mode;
+
+        await OverlayService
+            .RefreshFocusedProfitabilityAsync();
+
+        if (_allItems is not null &&
+            (_rankedItems is not null ||
+             _unrankedItems is not null))
+        {
+            await Search(
+                forceRefresh: false
+            );
+        }
+    }
+
     async Task Count()
     {
         if (_searching)
@@ -780,7 +845,7 @@
             Task<IReadOnlyCollection<Equipment>> itemsTask =
                 ItemsService.GetEquipmentsAsync();
 
-            Task<IReadOnlyDictionary<Characteristic, DofocusRune>>
+            Task<IReadOnlyDictionary<Characteristic, Rune>>
                 runesByCharacteristicAsync =
                     RunesService.GetRunesByCharacteristicAsync();
 

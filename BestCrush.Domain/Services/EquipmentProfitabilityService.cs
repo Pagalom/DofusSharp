@@ -1,4 +1,4 @@
-using BestCrush.Domain.Models;
+﻿using BestCrush.Domain.Models;
 
 using DofusSharp.Dofocus.ApiClients.Models.Items;
 
@@ -9,7 +9,8 @@ public sealed class EquipmentProfitabilityService(
     CrushService crushService,
     CoefficientService coefficientService,
     MarketPriceService marketPriceService,
-    CraftCostService craftCostService)
+    CraftCostService craftCostService,
+    IBestCrushSettingsProvider settingsProvider)
 {
     public async Task<EquipmentProfitabilityContext>
         LoadContextAsync(
@@ -139,16 +140,23 @@ public sealed class EquipmentProfitabilityService(
             100;
 
         Dictionary<Characteristic, double>
-            averageLines =
+            estimatedLines =
                 equipment.Characteristics
                     .ToDictionary(
                         characteristic =>
                             characteristic.Characteristic,
                         characteristic =>
-                            (double)(
-                                characteristic.From +
-                                characteristic.To
-                            ) / 2
+                            settingsProvider
+                                .CrushYieldEstimationMode ==
+                                    CrushYieldEstimationMode.Conservative
+                                ? Math.Min(
+                                    characteristic.From,
+                                    characteristic.To
+                                )
+                                : (
+                                    characteristic.From +
+                                    characteristic.To
+                                ) / 2.0
                     );
 
         List<EquipmentProfitabilityScenario>
@@ -157,7 +165,7 @@ public sealed class EquipmentProfitabilityService(
         IReadOnlyDictionary<Rune, double>
             runesWithoutFocus =
                 crushService.GetCrushResult(
-                    averageLines,
+                    estimatedLines,
                     equipment.Level,
                     coefficientMultiplier
                 );
@@ -190,7 +198,7 @@ public sealed class EquipmentProfitabilityService(
         foreach ((
             Characteristic characteristic,
             double value)
-            in averageLines)
+            in estimatedLines)
         {
             if (value <= 0)
             {
@@ -201,7 +209,7 @@ public sealed class EquipmentProfitabilityService(
                 runesWithFocus =
                     crushService
                         .GetFocusedCrushResult(
-                            averageLines,
+                            estimatedLines,
                             characteristic,
                             equipment.Level,
                             coefficientMultiplier
