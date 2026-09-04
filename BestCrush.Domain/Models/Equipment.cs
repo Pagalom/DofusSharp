@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace BestCrush.Domain.Models;
 
@@ -25,4 +25,5 @@ public class Equipment : IItem
     public EquipmentType Type { get; set; }
     public ICollection<ItemCharacteristicLine> Characteristics { get; set; } = [];
     public ICollection<RecipeEntry> Recipe { get; set; } = [];
+    public ICollection<EquipmentRecipeEntry> EquipmentRecipe { get; set; } = [];
 }

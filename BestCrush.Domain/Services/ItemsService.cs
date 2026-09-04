@@ -13,7 +13,17 @@ public class ItemsService(BestCrushDbContext context, IDofusDbClientsFactory dof
     readonly ConcurrentDictionary<long, DofocusItem> _cachedItems = [];
 
     public async Task<IReadOnlyCollection<Equipment>> GetEquipmentsAsync() =>
-        await context.Equipments.Include(i => i.Characteristics).Include(i => i.Recipe).ThenInclude(i => i.Resource).Where(i => i.Recipe.Count > 0).AsNoTracking().ToArrayAsync();
+        await context.Equipments
+            .Include(i => i.Characteristics)
+            .Include(i => i.Recipe)
+                .ThenInclude(i => i.Resource)
+            .Include(i => i.EquipmentRecipe)
+                .ThenInclude(i => i.IngredientEquipment)
+            .Where(i =>
+                i.Recipe.Count > 0 ||
+                i.EquipmentRecipe.Count > 0)
+            .AsNoTracking()
+            .ToArrayAsync();
     public async Task<IReadOnlyCollection<Equipment>>
         GetAllEquipmentsAsync(
             CancellationToken cancellationToken = default)
@@ -22,6 +32,8 @@ public class ItemsService(BestCrushDbContext context, IDofusDbClientsFactory dof
             .Include(equipment => equipment.Characteristics)
             .Include(equipment => equipment.Recipe)
                 .ThenInclude(entry => entry.Resource)
+            .Include(equipment => equipment.EquipmentRecipe)
+                .ThenInclude(entry => entry.IngredientEquipment)
             .AsNoTracking()
             .OrderBy(equipment => equipment.Name)
             .ToArrayAsync(cancellationToken);

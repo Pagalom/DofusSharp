@@ -4,7 +4,8 @@ public sealed record CraftResourceCostLine(
     long DofusDbId,
     string ResourceName,
     int RequiredQuantity,
-    MarketPurchaseResult? Purchase)
+    MarketPurchaseResult? Purchase,
+    MarketObjectType ObjectType = MarketObjectType.Resource)
 {
     public bool HasPrice =>
         Purchase is not null;

@@ -1,4 +1,4 @@
-﻿using BestCrush.Domain.Models;
+using BestCrush.Domain.Models;
 
 using DofusSharp.Dofocus.ApiClients.Models.Items;
 
@@ -107,15 +107,16 @@ public sealed class EquipmentProfitabilityService(
         CraftCostResult craftCost =
             craftCostService.Calculate(
                 equipment,
-                context.ResourcePrices
+                context.ResourcePrices,
+                context.EquipmentPrices
             );
 
         if (!craftCost.IsComplete)
         {
             missingData.Add(
                 $"Craft incomplet : " +
-                $"{craftCost.MissingResourceCount} " +
-                "prix de ressource manquant(s)"
+                $"{craftCost.MissingIngredientCount} " +
+                "prix d'ingrédient manquant(s)"
             );
         }
 

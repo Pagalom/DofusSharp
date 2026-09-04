@@ -7,9 +7,13 @@ public sealed record CraftCostResult(
         Resources.All(resource =>
             resource.HasPrice);
 
-    public int MissingResourceCount =>
+    public int MissingIngredientCount =>
         Resources.Count(resource =>
             !resource.HasPrice);
+
+    // Conservé pour compatibilité avec les vues / tests existants.
+    public int MissingResourceCount =>
+        MissingIngredientCount;
 
     public long KnownCost =>
         Resources

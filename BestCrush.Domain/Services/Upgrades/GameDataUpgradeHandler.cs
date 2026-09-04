@@ -1,4 +1,4 @@
-﻿using BestCrush.Domain.Models;
+using BestCrush.Domain.Models;
 using DofusSharp.DofusDb.ApiClients;
 using DofusSharp.DofusDb.ApiClients.Models.Characteristics;
 using DofusSharp.DofusDb.ApiClients.Models.Items;
@@ -54,6 +54,56 @@ public class GameDataUpgradeHandler(
                     cancellationToken
                 );
 
+
+        bool hasLegacyEquipmentIngredients =
+            await (
+                from resource in dbContext.Resources
+                join equipment in dbContext.Equipments
+                    on resource.DofusDbId equals equipment.DofusDbId
+                select resource.Id
+            )
+            .AnyAsync(
+                cancellationToken
+            );
+
+        // Avant cette évolution, tous les ingrédients de recette
+        // étaient créés comme Resource, y compris les équipements.
+        // Un DofusDbId présent à la fois dans Resources et Equipments
+        // signale donc l'ancien catalogue et déclenche une reconstruction
+        // complète des seules données de jeu.
+        if (oldVersion == newVersion &&
+            hasLegacyEquipmentIngredients)
+        {
+            logger.LogInformation(
+                "Migrating recipe ingredients: equipment ingredients will no longer be stored as resources."
+            );
+
+            progress?.Report(
+                "Mise à jour des ingrédients de recettes."
+            );
+
+            await RebuildGameDataAsync(
+                progress,
+                cancellationToken
+            );
+
+            await EnsureRuneCatalogUpgradeMarkerAsync(
+                cancellationToken
+            );
+
+            await dbContext.SaveChangesAsync(
+                cancellationToken
+            );
+
+            progress?.Report(
+                "Les ingrédients de recettes ont été mis à jour.",
+                100,
+                true
+            );
+
+            return;
+        }
+
         // Une installation déjà à jour côté DofusDB peut encore
         // posséder l'ancien catalogue tronqué par DoFocus.
         //
@@ -103,67 +153,8 @@ public class GameDataUpgradeHandler(
             "Mise à jour des données du jeu."
         );
 
-        await ClearTables(
-            progress?.DeriveSubtask(
-                0,
-                25
-            ),
-            cancellationToken
-        );
-
-        (
-            Dictionary<long, DofusDbCharacteristic>
-                characteristicsDict,
-            Dictionary<long, DofusDbRecipe>
-                recipesDict,
-            DofusDbItem[] equipments,
-            DofusDbItem[] ingredients
-        ) =
-            await FetchDataAsync(
-                progress?.DeriveSubtask(
-                    25,
-                    50
-                ),
-                cancellationToken
-            );
-
-        CreateIngredients(
-            ingredients,
-            progress?.DeriveSubtask(
-                50,
-                60
-            )
-        );
-
-        await dbContext.SaveChangesAsync(
-            cancellationToken
-        );
-
-        await CreateEquipmentsAsync(
-            characteristicsDict,
-            recipesDict,
-            equipments,
-            progress?.DeriveSubtask(
-                60,
-                80
-            ),
-            cancellationToken
-        );
-
-        await dbContext.SaveChangesAsync(
-            cancellationToken
-        );
-
-        await CreateRunesAsync(
-            characteristicsDict,
-            progress?.DeriveSubtask(
-                80,
-                100
-            ),
-            cancellationToken
-        );
-
-        await dbContext.SaveChangesAsync(
+        await RebuildGameDataAsync(
+            progress,
             cancellationToken
         );
 
@@ -201,6 +192,97 @@ public class GameDataUpgradeHandler(
         logger.LogInformation(
             "Successfully upgraded DofusDB data to version {NewVersion}.",
             newVersion
+        );
+    }
+
+    private async Task RebuildGameDataAsync(
+        ProgressSync<ProgressMessage>? progress,
+        CancellationToken cancellationToken)
+    {
+        await ClearTables(
+            progress?.DeriveSubtask(
+                0,
+                25
+            ),
+            cancellationToken
+        );
+
+        (
+            Dictionary<long, DofusDbCharacteristic>
+                characteristicsDict,
+            Dictionary<long, DofusDbRecipe>
+                recipesDict,
+            DofusDbItem[] equipments,
+            DofusDbItem[] ingredients
+        ) =
+            await FetchDataAsync(
+                progress?.DeriveSubtask(
+                    25,
+                    50
+                ),
+                cancellationToken
+            );
+
+        HashSet<long> equipmentIds =
+            equipments
+                .Where(equipment =>
+                    equipment.Id.HasValue)
+                .Select(equipment =>
+                    equipment.Id!.Value)
+                .ToHashSet();
+
+        CreateIngredients(
+            ingredients,
+            equipmentIds,
+            progress?.DeriveSubtask(
+                50,
+                60
+            )
+        );
+
+        await dbContext.SaveChangesAsync(
+            cancellationToken
+        );
+
+        await CreateEquipmentsAsync(
+            characteristicsDict,
+            equipments,
+            progress?.DeriveSubtask(
+                60,
+                75
+            ),
+            cancellationToken
+        );
+
+        await dbContext.SaveChangesAsync(
+            cancellationToken
+        );
+
+        await CreateRecipesAsync(
+            recipesDict,
+            equipments,
+            progress?.DeriveSubtask(
+                75,
+                85
+            ),
+            cancellationToken
+        );
+
+        await dbContext.SaveChangesAsync(
+            cancellationToken
+        );
+
+        await CreateRunesAsync(
+            characteristicsDict,
+            progress?.DeriveSubtask(
+                85,
+                100
+            ),
+            cancellationToken
+        );
+
+        await dbContext.SaveChangesAsync(
+            cancellationToken
         );
     }
 
@@ -310,17 +392,19 @@ public class GameDataUpgradeHandler(
 
     async Task ClearTables(ProgressSync<ProgressMessage>? progress, CancellationToken cancellationToken)
     {
-        progress?.ReportStep("Suppression des anciennes données", 1, 6);
+        progress?.ReportStep("Suppression des anciennes données", 1, 7);
         await ClearTableAsync<ItemCharacteristicLine>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 2, 6);
+        progress?.ReportStep("Suppression des anciennes données", 2, 7);
         await ClearTableAsync<RecipeEntry>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 3, 6);
+        progress?.ReportStep("Suppression des anciennes données", 3, 7);
+        await ClearTableAsync<EquipmentRecipeEntry>(cancellationToken);
+        progress?.ReportStep("Suppression des anciennes données", 4, 7);
         await ClearTableAsync<Resource>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 4, 6);
+        progress?.ReportStep("Suppression des anciennes données", 5, 7);
         await ClearTableAsync<Equipment>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 5, 6);
+        progress?.ReportStep("Suppression des anciennes données", 6, 7);
         await ClearTableAsync<Rune>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 6, 6);
+        progress?.ReportStep("Suppression des anciennes données", 7, 7);
     }
 
     async Task ClearTableAsync<T>(CancellationToken cancellationToken = default)
@@ -368,13 +452,25 @@ public class GameDataUpgradeHandler(
         return (characteristicsDict, recipesDict, equipments, ingredients);
     }
 
-    void CreateIngredients(DofusDbItem[] ingredients, ProgressSync<ProgressMessage>? progress)
+    void CreateIngredients(
+        DofusDbItem[] ingredients,
+        IReadOnlySet<long> equipmentIds,
+        ProgressSync<ProgressMessage>? progress)
     {
         ProgressSync<ProgressMessage>? ingredientsProgress = progress?.DeriveSubtask(50, 70);
         for (int index = 0; index < ingredients.Length; index++)
         {
             ingredientsProgress?.ReportStep($"Création des ingrédients {index}/{ingredients.Length}", index, ingredients.Length);
             DofusDbItem ingredient = ingredients[index];
+
+            if (ingredient.Id is long ingredientId &&
+                equipmentIds.Contains(ingredientId))
+            {
+                // Un équipement utilisé dans une recette reste un
+                // équipement et ne doit pas apparaître comme ressource.
+                continue;
+            }
+
             Resource? resource = CreateResource(ingredient);
             if (resource is null)
             {
@@ -388,9 +484,8 @@ public class GameDataUpgradeHandler(
         ingredientsProgress?.ReportStep($"Création des ingrédients {ingredients.Length}/{ingredients.Length}", ingredients.Length, ingredients.Length);
     }
 
-    async Task CreateEquipmentsAsync(
+    Task CreateEquipmentsAsync(
         Dictionary<long, DofusDbCharacteristic> characteristicsDict,
-        Dictionary<long, DofusDbRecipe> recipesDict,
         DofusDbItem[] equipments,
         ProgressSync<ProgressMessage>? progress = null,
         CancellationToken cancellationToken = default
@@ -408,7 +503,11 @@ public class GameDataUpgradeHandler(
                 continue;
             }
 
-            Equipment? equipment = await CreateEquipmentAsync(dofusDbItem, characteristicsDict, recipesDict, cancellationToken);
+            Equipment? equipment =
+                CreateEquipment(
+                    dofusDbItem,
+                    characteristicsDict
+                );
             if (equipment is null)
             {
                 logger.LogWarning("Could not map equipment {Name} ({Id}).", dofusDbItem.Name?.Fr ?? "???", dofusDbItem.Id?.ToString() ?? "???");
@@ -418,13 +517,13 @@ public class GameDataUpgradeHandler(
         }
 
         equipmentsProgress?.ReportStep($"Création des équipements {equipments.Length}/{equipments.Length}", equipments.Length, equipments.Length);
+
+        return Task.CompletedTask;
     }
 
-    async Task<Equipment?> CreateEquipmentAsync(
+    Equipment? CreateEquipment(
         DofusDbItem dofusDbItem,
-        Dictionary<long, DofusDbCharacteristic> characteristics,
-        Dictionary<long, DofusDbRecipe> recipes,
-        CancellationToken cancellationToken = default
+        Dictionary<long, DofusDbCharacteristic> characteristics
     )
     {
         if (dofusDbItem.Id is null)
@@ -440,8 +539,11 @@ public class GameDataUpgradeHandler(
             Type = EquipmentTypeExtensions.EquipmentTypeFromDofusDbTypeId(dofusDbItem.TypeId ?? 0) ?? EquipmentType.MagicWeapon
         };
 
-        CreateCharacteristicLines(dofusDbItem, equipment, characteristics);
-        await CreateRecipeAsync(dofusDbItem, equipment, recipes, cancellationToken);
+        CreateCharacteristicLines(
+            dofusDbItem,
+            equipment,
+            characteristics
+        );
 
         return equipment;
     }
@@ -468,26 +570,125 @@ public class GameDataUpgradeHandler(
         }
     }
 
-    async Task CreateRecipeAsync(DofusDbItem dofusDbItem, Equipment equipment, Dictionary<long, DofusDbRecipe> recipes, CancellationToken cancellationToken = default)
+    async Task CreateRecipesAsync(
+        Dictionary<long, DofusDbRecipe> recipes,
+        DofusDbItem[] dofusDbEquipments,
+        ProgressSync<ProgressMessage>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        if (dofusDbItem.HasRecipe != true || !recipes.TryGetValue(equipment.DofusDbId, out DofusDbRecipe? recipe) || recipe.Ingredients is null || recipe.Quantities is null)
-        {
-            return;
-        }
+        Dictionary<long, Equipment> equipments =
+            await dbContext.Equipments
+                .ToDictionaryAsync(
+                    equipment =>
+                        equipment.DofusDbId,
+                    cancellationToken
+                );
 
-        for (int index = 0; index < recipe.Ingredients.Count; index++)
-        {
-            DofusDbItem ingredient = recipe.Ingredients[index];
-            int quantity = recipe.Quantities[index];
+        Dictionary<long, Resource> resources =
+            await dbContext.Resources
+                .ToDictionaryAsync(
+                    resource =>
+                        resource.DofusDbId,
+                    cancellationToken
+                );
 
-            Resource? resource = await dbContext.Resources.SingleOrDefaultAsync(r => r.DofusDbId == ingredient.Id!.Value, cancellationToken);
-            if (resource is null)
+        for (int index = 0;
+            index < dofusDbEquipments.Length;
+            index++)
+        {
+            progress?.ReportStep(
+                $"Création des recettes {index}/{dofusDbEquipments.Length}",
+                index,
+                dofusDbEquipments.Length
+            );
+
+            DofusDbItem dofusDbItem =
+                dofusDbEquipments[index];
+
+            if (dofusDbItem.Id is not long equipmentId ||
+                dofusDbItem.HasRecipe != true ||
+                !recipes.TryGetValue(
+                    equipmentId,
+                    out DofusDbRecipe? recipe) ||
+                recipe.Ingredients is null ||
+                recipe.Quantities is null ||
+                !equipments.TryGetValue(
+                    equipmentId,
+                    out Equipment? equipment))
             {
                 continue;
             }
 
-            equipment.Recipe.Add(new RecipeEntry(equipment, resource, quantity));
+            int ingredientCount =
+                Math.Min(
+                    recipe.Ingredients.Count,
+                    recipe.Quantities.Count
+                );
+
+            for (int ingredientIndex = 0;
+                ingredientIndex < ingredientCount;
+                ingredientIndex++)
+            {
+                DofusDbItem ingredient =
+                    recipe.Ingredients[
+                        ingredientIndex
+                    ];
+
+                if (ingredient.Id is not long ingredientId)
+                {
+                    continue;
+                }
+
+                int quantity =
+                    recipe.Quantities[
+                        ingredientIndex
+                    ];
+
+                if (equipments.TryGetValue(
+                    ingredientId,
+                    out Equipment? ingredientEquipment))
+                {
+                    equipment.EquipmentRecipe.Add(
+                        new EquipmentRecipeEntry(
+                            equipment,
+                            ingredientEquipment,
+                            quantity
+                        )
+                    );
+
+                    continue;
+                }
+
+                if (resources.TryGetValue(
+                    ingredientId,
+                    out Resource? resource))
+                {
+                    equipment.Recipe.Add(
+                        new RecipeEntry(
+                            equipment,
+                            resource,
+                            quantity
+                        )
+                    );
+
+                    continue;
+                }
+
+                logger.LogWarning(
+                    "Could not map recipe ingredient {Name} ({Id}) for equipment {EquipmentName} ({EquipmentId}).",
+                    ingredient.Name?.Fr ?? "???",
+                    ingredientId,
+                    equipment.Name,
+                    equipment.DofusDbId
+                );
+            }
         }
+
+        progress?.ReportStep(
+            $"Création des recettes {dofusDbEquipments.Length}/{dofusDbEquipments.Length}",
+            dofusDbEquipments.Length,
+            dofusDbEquipments.Length
+        );
     }
 
     static Resource? CreateResource(DofusDbItem dofusDbItem)

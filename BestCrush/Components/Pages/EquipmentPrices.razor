@@ -282,7 +282,7 @@
 
         if (string.IsNullOrWhiteSpace(value))
         {
-            await MarketPriceService.ClearManualAsync(
+            await MarketPriceService.ClearLocalAsync(
                 MarketObjectType.Equipment,
                 row.DofusDbId,
                 ServerName,
@@ -299,9 +299,11 @@
 
             row.Price = effective?.Price;
             row.Source = effective?.Source;
+            row.ManualPrice = null;
+            row.GamePrice = null;
 
             _lastSavedMessage =
-                $"{row.Name} : valeur manuelle réinitialisée.";
+                $"{row.Name} : valeur réinitialisée.";
             MarketDataChangeNotifier.Notify(
                 MarketObjectType.Equipment,
                 row.DofusDbId,

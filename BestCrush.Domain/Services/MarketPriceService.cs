@@ -75,6 +75,50 @@ public class MarketPriceService(BestCrushDbContext context,
         );
     }
 
+    public async Task ClearLocalAsync(
+        MarketObjectType objectType,
+        long dofusDbId,
+        string serverName,
+        int quantity,
+        CancellationToken cancellationToken = default)
+    {
+        DateTime observedAtUtc =
+            DateTime.UtcNow;
+
+        MarketPriceObservation manualClear = new()
+        {
+            ObjectType = objectType,
+            DofusDbId = dofusDbId,
+            ServerName = serverName,
+            Price = 0,
+            Quantity = quantity,
+            Source = MarketPriceSource.Manual,
+            IsCleared = true,
+            ObservedAtUtc = observedAtUtc
+        };
+
+        MarketPriceObservation gameClear = new()
+        {
+            ObjectType = objectType,
+            DofusDbId = dofusDbId,
+            ServerName = serverName,
+            Price = 0,
+            Quantity = quantity,
+            Source = MarketPriceSource.InGameAutomatic,
+            IsCleared = true,
+            ObservedAtUtc = observedAtUtc
+        };
+
+        context.MarketPriceObservations.AddRange(
+            manualClear,
+            gameClear
+        );
+
+        await context.SaveChangesAsync(
+            cancellationToken
+        );
+    }
+
     public async Task<
         IReadOnlyDictionary<
             (
@@ -145,13 +189,18 @@ public class MarketPriceService(BestCrushDbContext context,
                 ? latestManual
                 : null;
 
-        MarketPriceObservation? game =
+        MarketPriceObservation? latestGame =
             ordered.FirstOrDefault(
                 p =>
                     p.Source ==
-                        MarketPriceSource.InGameAutomatic &&
-                    !p.IsCleared
+                        MarketPriceSource.InGameAutomatic
             );
+
+        MarketPriceObservation? game =
+            latestGame is not null &&
+            !latestGame.IsCleared
+                ? latestGame
+                : null;
 
         if (dataPriorityProvider.Priority ==
             DataPriority.InGameAutomatic)

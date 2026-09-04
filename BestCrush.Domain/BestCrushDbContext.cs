@@ -1,4 +1,4 @@
-﻿using BestCrush.Domain.Models;
+using BestCrush.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace BestCrush.Domain;
@@ -10,6 +10,7 @@ public class BestCrushDbContext : DbContext
     public DbSet<Upgrade> Upgrades { get; set; }
 
     public DbSet<Equipment> Equipments { get; set; }
+    public DbSet<EquipmentRecipeEntry> EquipmentRecipeEntries { get; set; }
     public DbSet<Rune> Runes { get; set; }
     public DbSet<Resource> Resources { get; set; }
     public DbSet<MarketPriceObservation> MarketPriceObservations { get; set; }
@@ -19,6 +20,8 @@ public class BestCrushDbContext : DbContext
     {
         modelBuilder.Entity<Equipment>().HasMany(e => e.Characteristics).WithOne(e => e.Equipment).OnDelete(DeleteBehavior.Cascade);
         modelBuilder.Entity<Equipment>().HasMany(e => e.Recipe).WithOne(e => e.Equipment).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<Equipment>().HasMany(e => e.EquipmentRecipe).WithOne(e => e.Equipment).OnDelete(DeleteBehavior.Cascade);
+        modelBuilder.Entity<EquipmentRecipeEntry>().HasOne(e => e.IngredientEquipment).WithMany().OnDelete(DeleteBehavior.Restrict);
         modelBuilder.Entity<CoefficientObservation>()
         .HasIndex(c => new
         {
