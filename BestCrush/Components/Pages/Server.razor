@@ -494,6 +494,15 @@
 
                             </div>
 
+                            @if (_coefficients.TryGetValue(
+                                item.DofusDbId,
+                                out CoefficientObservation? coefficient))
+                            {
+                                <div class="small mt-1 @(coefficient.Source == CoefficientSource.DofocusInitial ? "text-primary" : "text-secondary")">
+                                    Coeff. @coefficient.CoefficientPercent.ToString("0.##") %
+                                </div>
+                            }
+
                             @if (_craftCostsByItem.TryGetValue(
                                 item.DofusDbId,
                                 out CraftCostResult? craftCost))
