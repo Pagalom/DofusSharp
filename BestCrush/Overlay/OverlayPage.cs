@@ -576,12 +576,6 @@ public sealed class OverlayPage : ContentPage
                 value
             );
 
-        string previousText =
-            _footer.Text;
-
-        Color previousColor =
-            _footer.TextColor;
-
         string feedback =
             $"✓ {value} copié";
 
@@ -593,15 +587,15 @@ public sealed class OverlayPage : ContentPage
 
         await Task.Delay(1200);
 
-        // On ne restaure l'ancien footer que si
-        // rien d'autre ne l'a modifié entre-temps.
+        // On revient au message gris par défaut uniquement
+        // si rien d'autre n'a modifié le footer entre-temps.
         if (_footer.Text == feedback)
         {
             _footer.Text =
-                previousText;
+                "En attente d'un équipement";
 
             _footer.TextColor =
-                previousColor;
+                Colors.Gray;
         }
     }
 
