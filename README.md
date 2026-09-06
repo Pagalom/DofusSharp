@@ -2,9 +2,9 @@
 
 > Outil compagnon pour **Dofus** permettant de suivre les prix du marché, calculer la rentabilité du concassage et analyser les runes réellement obtenues.
 
-**BestCrush** est développé sur un fork de [DofusSharp](https://github.com/DofusSharp/DofusSharp), un ensemble de bibliothèques et d'applications C# autour de Dofus.
+**BestCrush** est développé dans un fork de [DofusSharp](https://github.com/DofusSharp/DofusSharp), un ensemble de bibliothèques et d'applications C# autour de Dofus.
 
-Cette version de BestCrush ajoute une gestion locale du marché, des captures en jeu, des overlays Windows et un suivi réel des résultats de concassage.
+Cette version de BestCrush ajoute une gestion locale du marché, des captures en jeu par OCR, des overlays Windows et un suivi réel des résultats de concassage.
 
 ---
 
@@ -26,8 +26,10 @@ Pour une release Windows :
 
 - Windows 10 ou Windows 11 64 bits.
 - Microsoft Edge WebView2 Runtime.
+- Dofus lancé en mode fenêtré ou dans une configuration permettant à BestCrush de détecter sa fenêtre.
 
-Les releases incluent le runtime .NET et les composants Windows App SDK nécessaires.  
+Les releases self-contained incluent le runtime .NET et les composants Windows App SDK nécessaires.  
+WebView2 est généralement déjà installé sur les versions récentes de Windows.
 
 ---
 
@@ -49,22 +51,26 @@ Les prix peuvent provenir :
 - d'une saisie manuelle ;
 - d'une capture automatique en jeu.
 
+Une valeur peut également être volontairement vidée : une cellule vide signifie **donnée non renseignée**, et non `0 kama`.
+
 ### Lots HDV
 
-Pour les ressources et les runes, BestCrush peut enregistrer plusieurs tailles de lots (si disponibles) :
+Pour les ressources et les runes, BestCrush peut enregistrer plusieurs tailles de lots :
 
 - x1 ;
 - x10 ;
 - x100 ;
-- x1000.
+- x1000 lorsque disponible.
 
-Ces données servent ensuite aux calculs de craft.
+Ces données servent ensuite aux calculs de craft et de valorisation.
 
 ---
 
 ## Coût réel d'un craft
 
-Pour chaque ingrédient, BestCrush cherche le **montant minimum réellement nécessaire pour acheter suffisamment de ressources**, en combinant les tailles de lots disponibles.
+BestCrush ne calcule pas seulement un prix unitaire théorique.
+
+Pour chaque ingrédient, il cherche le **montant minimum réellement nécessaire pour acheter suffisamment de ressources**, en combinant les tailles de lots disponibles.
 
 Exemple :
 
@@ -87,6 +93,8 @@ Total = 33 558 K
 
 Le surplus éventuel d'un lot est payé en totalité : le calcul représente donc les **kamas réellement à dépenser à l'HDV**.
 
+Un équipement peut lui-même être utilisé comme ingrédient d'une recette. Dans ce cas, BestCrush le conserve comme **équipement** et utilise son **prix local d'achat x1** dans le coût du craft parent. Son propre coût de craft n'est pas substitué automatiquement, car BestCrush ne peut pas savoir si le joueur possède le métier, le niveau ou les ressources nécessaires pour le fabriquer.
+
 ---
 
 ## Rentabilité du concassage
@@ -102,6 +110,8 @@ Pour un équipement sélectionné, BestCrush peut afficher :
 
 Les scénarios peuvent tenir compte des caractéristiques de l'équipement et des runes correspondantes.
 
+Une donnée nécessaire manquante rend la catégorie concernée **rouge**, afin de ne pas présenter un résultat partiel comme totalement fiable.
+
 ### Couleur des données
 
 Les couleurs de l'overlay permettent d'identifier rapidement l'état des informations :
@@ -115,17 +125,23 @@ Les couleurs de l'overlay permettent d'identifier rapidement l'état des informa
 
 # Captures en jeu
 
+BestCrush fonctionne comme une application externe.
+
+Il ne s'injecte pas dans le processus Dofus : la lecture repose sur des captures de la fenêtre du jeu, de la détection d'interface, de l'OCR et des données locales.
+
 ## Clic molette — lecture contextuelle
 
 Par défaut, le **clic sur la molette** déclenche une lecture de la zone Dofus située sous le contexte courant.
 
 Selon l'écran détecté, BestCrush peut notamment :
 
-- sélectionner un équipement de l'inventaire comme cible ;
+- sélectionner un équipement comme cible ;
 - lire un prix d'équipement en HDV ;
 - enregistrer les prix d'une rune ;
 - enregistrer les prix d'une ressource ;
 - lire un résultat de concassage et son coefficient.
+
+Une rune ou une ressource capturée **ne remplace jamais l'équipement actuellement en focus**.
 
 ### Serveur obligatoire
 
@@ -148,14 +164,27 @@ Affiche l'équipement actuellement en focus ainsi que :
 - bénéfices ;
 - données manquantes.
 
+Les valeurs affichées sont interactives :
+
+- clic sur le nom d'un équipement, d'une rune ou d'un ingrédient : copie le nom ;
+- clic sur un prix ou une valeur : copie la valeur numérique sans espace ni `K` ;
+- clic sur le coefficient : copie sa valeur sans `%` ;
+- survol du coefficient : affiche la date de l'observation au format `JJ/MM/AAAA` ;
+- clic sur cette date : copie la date.
+
 ## Mise à jour marché
 
 Affiche les informations liées aux captures de marché :
 
 - objet reconnu ;
 - type de donnée ;
-- nombre de lots enregistrés ;
+- lots enregistrés ;
+- prix détectés ;
+- prix effectivement utilisés ;
+- indication lorsqu'une valeur manuelle reste prioritaire ;
 - succès ou erreur de lecture.
+
+Pour les runes et ressources, les lots `x1`, `x10`, `x100` et `x1000` reconnus sont détaillés directement dans l'overlay. Les noms et prix affichés sont copiables individuellement.
 
 ## Résultat concassage
 
@@ -163,9 +192,21 @@ Affiche les runes réellement reconnues pendant une session de concassage :
 
 - nom de la rune ;
 - quantité obtenue ;
-- valeur estimée ;
+- détail des lots utilisés pour sa valorisation ;
+- valeur estimée par rune ;
 - valeur totale de la session ;
 - nombre de cellules reconnues.
+
+Interactions de copie :
+
+- clic sur le nom d'une rune : copie le nom ;
+- clic sur sa quantité : copie la quantité ;
+- clic sur sa valeur : copie la valeur numérique ;
+- clic sur un terme du détail des lots : copie une formule Excel comme `=2*99000` ;
+- double-clic sur le détail des lots : copie la formule complète comme `=2*99000+4*9900+5*990+2*99` ;
+- clic sur la valeur réelle totale : copie le total.
+
+Les prix peuvent être abrégés visuellement (`k`, `M`, `Md`) pour garder l'overlay lisible, mais les valeurs copiées restent exactes.
 
 ## Barre de contrôle
 
@@ -189,7 +230,7 @@ Une petite barre always-on-top permet d'afficher ou masquer individuellement :
 `F7` masque les overlays actuellement visibles.  
 Un second appui restaure uniquement ceux qui étaient visibles avant le masquage.
 
-> La configuration personnalisable des raccourcis est prévue.
+> La configuration personnalisable des raccourcis est prévue dans une évolution ultérieure.
 
 ---
 
@@ -210,6 +251,7 @@ Après le concassage :
 5. La cellule est comptée une seule fois pendant la session.
 6. Les quantités identiques sont agrégées.
 7. Leur valeur est calculée à partir des prix locaux.
+8. Le détail des lots utilisés pour cette valorisation est affiché sous chaque rune.
 
 La valeur totale est automatiquement recalculée lorsque les prix locaux des runes changent.
 
@@ -223,7 +265,7 @@ BestCrush affiche alors :
 Ne pas scroller
 ```
 
-Je n'ai pas encore réussi à passer cette limitation.
+Cette limitation évite de compter deux fois des cellules après déplacement du contenu du panneau.
 
 Pour le moment, il est donc recommandé de concasser suffisamment peu d'objets pour que toutes les lignes de résultat restent visibles simultanément.
 
@@ -233,7 +275,7 @@ Pour le moment, il est donc recommandé de concasser suffisamment peu d'objets p
 
 BestCrush peut utiliser DoFocus comme **source initiale de coefficient**.
 
-Un coefficient récupéré depuis DoFocus est affiché en **bleu** dans l'overlay tant qu'il n'a pas été remplacé par une donnée locale plus pertinente.
+Un coefficient récupéré depuis DoFocus est affiché en **bleu** dans l'overlay tant qu'il n'a pas été remplacé par une donnée locale plus pertinente. Vider volontairement un coefficient local permet de revenir au coefficient DoFocus disponible.
 
 Les prix du marché local ne dépendent pas de DoFocus.
 
@@ -259,6 +301,20 @@ Une capture en jeu ne doit pas remplacer silencieusement une valeur manuelle pri
 Une nouvelle lecture en jeu peut devenir la valeur active.
 
 Cette logique s'applique notamment aux prix et coefficients gérés localement.
+
+---
+
+# Rafraîchissement automatique
+
+Lorsqu'un prix est modifié ou capturé, BestCrush diffuse l'information aux vues concernées.
+
+Cela permet notamment de mettre automatiquement à jour :
+
+- les pages de prix locaux ;
+- l'overlay de rentabilité ;
+- la valorisation d'une session F9 déjà terminée.
+
+Les pages de prix disposent également d'un bouton **Rafraîchir** pour forcer manuellement une relecture de la base locale.
 
 ---
 
@@ -349,6 +405,46 @@ Puis relancer la compilation.
 
 ---
 
+# Générer une version Windows distribuable
+
+Pour créer une publication Windows x64 autonome :
+
+```powershell
+dotnet publish .\BestCrush\BestCrush.csproj `
+  -f net10.0-windows10.0.19041.0 `
+  -c Release `
+  -p:RuntimeIdentifierOverride=win-x64 `
+  -p:WindowsPackageType=None `
+  -p:WindowsAppSDKSelfContained=true `
+  --self-contained true `
+  -o .\publish\BestCrush
+```
+
+L'exécutable se trouve ensuite dans :
+
+```text
+publish\BestCrush\BestCrush.exe
+```
+
+Il faut distribuer **l'ensemble du contenu du dossier `publish\BestCrush`**, et pas uniquement l'EXE.
+
+## Créer l'archive pour GitHub Releases
+
+Exemple :
+
+```powershell
+Compress-Archive `
+  -Path .\publish\BestCrush\* `
+  -DestinationPath .\BestCrush-v0.1.5-win-x64.zip `
+  -Force
+```
+
+L'archive obtenue peut être ajoutée directement aux assets d'une GitHub Release.
+
+Elle n'a pas besoin d'être commitée dans le dépôt.
+
+---
+
 # Structure du dépôt
 
 ```text
@@ -374,6 +470,27 @@ DofusSharp/
 └── dofusdb/
     └── Outils DofusDB issus du projet DofusSharp
 ```
+
+---
+
+# Principes du projet
+
+BestCrush privilégie plusieurs principes :
+
+**Données locales avant tout**  
+Les prix utilisés pour les calculs sont ceux du marché réellement observé par l'utilisateur.
+
+**Pas d'écrasement silencieux**  
+Les saisies manuelles peuvent rester prioritaires sur les captures automatiques.
+
+**Mode dégradé utilisable**  
+Une donnée automatiquement récupérable doit pouvoir être saisie manuellement si la lecture automatique échoue.
+
+**Focus unique**  
+Une capture de rune ou de ressource complète les données sans modifier l'équipement analysé.
+
+**Résultats prudents**  
+Une donnée nécessaire manquante est signalée clairement au lieu d'être remplacée par une valeur inventée.
 
 ---
 
@@ -449,15 +566,27 @@ L'utilisateur reste responsable de l'utilisation qu'il fait du logiciel et du re
 
 ---
 
-## État du projet
+## Feuille de route
 
-BestCrush évolue encore rapidement.
+BestCrush évolue encore rapidement. La feuille de route est organisée par étapes plutôt que par dates fixes afin de conserver un ordre de développement clair.
 
-Les prochaines évolutions prévues comprennent notamment :
+| Étape | État | Objectif |
+|---|---|---|
+| **0 — Base v0.1.5** | ✅ Terminé | Prix et valeurs copiables dans les overlays, détails de valorisation des runes, date/source du coefficient, meilleure visibilité des coefficients sur les objets incomplets, tri par nom/coefficient et prise en charge des équipements comme ingrédients de recette. |
+| **1 — Historique global** | ⬜ À faire | Ajouter un bouton **Historique** avec des sous-onglets **Ressources**, **Items**, **Runes** et **Concassages**. Conserver les données dans le temps avec leurs dates et le maximum d'informations utiles pour chaque observation/session. |
+| **2 — Fiabilisation des valeurs et ergonomie des overlays** | 🟡 À vérifier / à faire | Comparer précisément la valorisation des runes de concassage avec les calculs Excel et corriger si nécessaire la sélection des prix/lots. Harmoniser les zones de redimensionnement des overlays **Mise à jour marché** et **Résultat concassage** avec celles de l'overlay **Rentabilité**, afin que les bordures cliquables soient identiques et faciles à repérer. |
+| **3 — Seuil de rentabilité du coefficient** | ⬜ À faire | Calculer, avec les prix actuels de l'équipement, des ressources et des runes, jusqu'à quel coefficient le concassage reste rentable. |
+| **4 — Recherche et analyse avancées** | ⬜ À faire | Ajouter davantage de tris et filtres : coefficient ou multiplicateur pertinent, caractéristiques combinées (par exemple Ré Eau + Do Feu), et autres critères utiles à l'analyse des équipements. |
+| **5 — Historique et analytics marché avancés** | ⬜ À faire | Exploiter les historiques pour graphiques, tendances, comparaisons, ratios et analyses entre runes, ressources, équipements et caractéristiques. |
+| **6 — Personnalisation** | ⬜ À faire | Rendre les raccourcis clavier/souris configurables et poursuivre les raffinements d'ergonomie. |
 
-- configuration des raccourcis clavier et souris ;
-- amélioration continue de la reconnaissance OCR ;
-- raffinements de l'ergonomie des overlays ;
-- amélioration des outils de mise à jour du marché.
+### Points déjà clôturés dans cette passe
+
+- copie individuelle des noms, prix, valeurs et quantités utiles ;
+- copie Excel simple/double-clic du détail de valorisation des runes ;
+- date du coefficient et distinction visuelle des coefficients DoFocus ;
+- coefficients visibles et pris en compte dans les tris des objets incomplets ;
+- mise en avant et copie de la quantité de runes dans le résultat de concassage.
 
 Les retours de test sont particulièrement utiles à ce stade.
+

@@ -93,6 +93,8 @@ Total = 33 558 K
 
 Le surplus éventuel d'un lot est payé en totalité : le calcul représente donc les **kamas réellement à dépenser à l'HDV**.
 
+Un équipement peut lui-même être utilisé comme ingrédient d'une recette. Dans ce cas, BestCrush le conserve comme **équipement** et utilise son **prix local d'achat x1** dans le coût du craft parent. Son propre coût de craft n'est pas substitué automatiquement, car BestCrush ne peut pas savoir si le joueur possède le métier, le niveau ou les ressources nécessaires pour le fabriquer.
+
 ---
 
 ## Rentabilité du concassage
@@ -162,14 +164,27 @@ Affiche l'équipement actuellement en focus ainsi que :
 - bénéfices ;
 - données manquantes.
 
+Les valeurs affichées sont interactives :
+
+- clic sur le nom d'un équipement, d'une rune ou d'un ingrédient : copie le nom ;
+- clic sur un prix ou une valeur : copie la valeur numérique sans espace ni `K` ;
+- clic sur le coefficient : copie sa valeur sans `%` ;
+- survol du coefficient : affiche la date de l'observation au format `JJ/MM/AAAA` ;
+- clic sur cette date : copie la date.
+
 ## Mise à jour marché
 
 Affiche les informations liées aux captures de marché :
 
 - objet reconnu ;
 - type de donnée ;
-- nombre de lots enregistrés ;
+- lots enregistrés ;
+- prix détectés ;
+- prix effectivement utilisés ;
+- indication lorsqu'une valeur manuelle reste prioritaire ;
 - succès ou erreur de lecture.
+
+Pour les runes et ressources, les lots `x1`, `x10`, `x100` et `x1000` reconnus sont détaillés directement dans l'overlay. Les noms et prix affichés sont copiables individuellement.
 
 ## Résultat concassage
 
@@ -177,9 +192,21 @@ Affiche les runes réellement reconnues pendant une session de concassage :
 
 - nom de la rune ;
 - quantité obtenue ;
-- valeur estimée ;
+- détail des lots utilisés pour sa valorisation ;
+- valeur estimée par rune ;
 - valeur totale de la session ;
 - nombre de cellules reconnues.
+
+Interactions de copie :
+
+- clic sur le nom d'une rune : copie le nom ;
+- clic sur sa quantité : copie la quantité ;
+- clic sur sa valeur : copie la valeur numérique ;
+- clic sur un terme du détail des lots : copie une formule Excel comme `=2*99000` ;
+- double-clic sur le détail des lots : copie la formule complète comme `=2*99000+4*9900+5*990+2*99` ;
+- clic sur la valeur réelle totale : copie le total.
+
+Les prix peuvent être abrégés visuellement (`k`, `M`, `Md`) pour garder l'overlay lisible, mais les valeurs copiées restent exactes.
 
 ## Barre de contrôle
 
@@ -224,6 +251,7 @@ Après le concassage :
 5. La cellule est comptée une seule fois pendant la session.
 6. Les quantités identiques sont agrégées.
 7. Leur valeur est calculée à partir des prix locaux.
+8. Le détail des lots utilisés pour cette valorisation est affiché sous chaque rune.
 
 La valeur totale est automatiquement recalculée lorsque les prix locaux des runes changent.
 
@@ -247,7 +275,7 @@ Pour le moment, il est donc recommandé de concasser suffisamment peu d'objets p
 
 BestCrush peut utiliser DoFocus comme **source initiale de coefficient**.
 
-Un coefficient récupéré depuis DoFocus est affiché en **bleu** dans l'overlay tant qu'il n'a pas été remplacé par une donnée locale plus pertinente.
+Un coefficient récupéré depuis DoFocus est affiché en **bleu** dans l'overlay tant qu'il n'a pas été remplacé par une donnée locale plus pertinente. Vider volontairement un coefficient local permet de revenir au coefficient DoFocus disponible.
 
 Les prix du marché local ne dépendent pas de DoFocus.
 
@@ -407,7 +435,7 @@ Exemple :
 ```powershell
 Compress-Archive `
   -Path .\publish\BestCrush\* `
-  -DestinationPath .\BestCrush-v0.1.0-win-x64.zip `
+  -DestinationPath .\BestCrush-v0.1.5-win-x64.zip `
   -Force
 ```
 
@@ -538,15 +566,27 @@ L'utilisateur reste responsable de l'utilisation qu'il fait du logiciel et du re
 
 ---
 
-## État du projet
+## Feuille de route
 
-BestCrush évolue encore rapidement.
+BestCrush évolue encore rapidement. La feuille de route est organisée par étapes plutôt que par dates fixes afin de conserver un ordre de développement clair.
 
-Les prochaines évolutions prévues comprennent notamment :
+| Étape | État | Objectif |
+|---|---|---|
+| **0 — Base v0.1.5** | ✅ Terminé | Prix et valeurs copiables dans les overlays, détails de valorisation des runes, date/source du coefficient, meilleure visibilité des coefficients sur les objets incomplets, tri par nom/coefficient et prise en charge des équipements comme ingrédients de recette. |
+| **1 — Historique global** | ⬜ À faire | Ajouter un bouton **Historique** avec des sous-onglets **Ressources**, **Items**, **Runes** et **Concassages**. Conserver les données dans le temps avec leurs dates et le maximum d'informations utiles pour chaque observation/session. |
+| **2 — Fiabilisation des valeurs et ergonomie des overlays** | 🟡 À vérifier / à faire | Comparer précisément la valorisation des runes de concassage avec les calculs Excel et corriger si nécessaire la sélection des prix/lots. Harmoniser les zones de redimensionnement des overlays **Mise à jour marché** et **Résultat concassage** avec celles de l'overlay **Rentabilité**, afin que les bordures cliquables soient identiques et faciles à repérer. |
+| **3 — Seuil de rentabilité du coefficient** | ⬜ À faire | Calculer, avec les prix actuels de l'équipement, des ressources et des runes, jusqu'à quel coefficient le concassage reste rentable. |
+| **4 — Recherche et analyse avancées** | ⬜ À faire | Ajouter davantage de tris et filtres : coefficient ou multiplicateur pertinent, caractéristiques combinées (par exemple Ré Eau + Do Feu), et autres critères utiles à l'analyse des équipements. |
+| **5 — Historique et analytics marché avancés** | ⬜ À faire | Exploiter les historiques pour graphiques, tendances, comparaisons, ratios et analyses entre runes, ressources, équipements et caractéristiques. |
+| **6 — Personnalisation** | ⬜ À faire | Rendre les raccourcis clavier/souris configurables et poursuivre les raffinements d'ergonomie. |
 
-- configuration des raccourcis clavier et souris ;
-- amélioration continue de la reconnaissance OCR ;
-- raffinements de l'ergonomie des overlays ;
-- amélioration des outils de mise à jour du marché.
+### Points déjà clôturés dans cette passe
+
+- copie individuelle des noms, prix, valeurs et quantités utiles ;
+- copie Excel simple/double-clic du détail de valorisation des runes ;
+- date du coefficient et distinction visuelle des coefficients DoFocus ;
+- coefficients visibles et pris en compte dans les tris des objets incomplets ;
+- mise en avant et copie de la quantité de runes dans le résultat de concassage.
 
 Les retours de test sont particulièrement utiles à ce stade.
+
