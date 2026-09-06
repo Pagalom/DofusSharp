@@ -59,6 +59,44 @@ IDataPriorityProvider dataPriorityProvider)
         );
     }
 
+    public async Task ClearLocalAsync(
+        long dofusDbId,
+        string serverName,
+        CancellationToken cancellationToken = default)
+    {
+        DateTime observedAtUtc =
+            DateTime.UtcNow;
+
+        CoefficientObservation manualClear = new()
+        {
+            DofusDbId = dofusDbId,
+            ServerName = serverName,
+            CoefficientPercent = 0,
+            Source = CoefficientSource.Manual,
+            IsCleared = true,
+            ObservedAtUtc = observedAtUtc
+        };
+
+        CoefficientObservation gameClear = new()
+        {
+            DofusDbId = dofusDbId,
+            ServerName = serverName,
+            CoefficientPercent = 0,
+            Source = CoefficientSource.InGameAutomatic,
+            IsCleared = true,
+            ObservedAtUtc = observedAtUtc
+        };
+
+        context.CoefficientObservations.AddRange(
+            manualClear,
+            gameClear
+        );
+
+        await context.SaveChangesAsync(
+            cancellationToken
+        );
+    }
+
     public async Task<
         IReadOnlyDictionary<
             (
@@ -124,14 +162,22 @@ IDataPriorityProvider dataPriorityProvider)
                 ? latestManual
                 : null;
 
-        CoefficientObservation? game =
+        CoefficientObservation? latestGame =
             ordered.FirstOrDefault(
                 c =>
                     c.Source ==
-                        CoefficientSource.InGameAutomatic &&
-                    !c.IsCleared
+                        CoefficientSource.InGameAutomatic
             );
 
+        CoefficientObservation? game =
+            latestGame is not null &&
+            !latestGame.IsCleared
+                ? latestGame
+                : null;
+
+        // DoFocus reste toujours un fallback autorisé.
+        // On ignore d'éventuels anciens marqueurs clear
+        // créés par une version précédente du correctif.
         CoefficientObservation? dofocus =
             ordered.FirstOrDefault(
                 c =>

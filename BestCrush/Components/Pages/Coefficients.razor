@@ -2,9 +2,11 @@
 
 @using BestCrush.Domain.Models
 @using BestCrush.Domain.Services
+@using BestCrush.Services
 
 @inject ItemsService ItemsService
 @inject CoefficientService CoefficientService
+@inject MarketDataChangeNotifier MarketDataChangeNotifier
 
 <div class="container-fluid py-4 px-5">
 
@@ -213,12 +215,18 @@
 
         if (string.IsNullOrWhiteSpace(value))
         {
-            await CoefficientService.ClearManualAsync(
+            await CoefficientService.ClearLocalAsync(
                 row.DofusDbId,
                 ServerName
             );
 
             row.ManualCoefficient = null;
+            row.GameCoefficient = null;
+
+            bool refreshedFromDofocus =
+                await TryRefreshDofocusCoefficientAsync(
+                    row
+                );
 
             CoefficientObservation? effective =
                 await CoefficientService.GetLatestObservationAsync(
@@ -233,7 +241,19 @@
                 effective?.Source;
 
             _lastSavedMessage =
-                $"{row.Name} : valeur manuelle réinitialisée.";
+                effective?.Source ==
+                    CoefficientSource.DofocusInitial
+                    ? refreshedFromDofocus
+                        ? $"{row.Name} : valeurs locales réinitialisées, coefficient DoFocus actualisé."
+                        : $"{row.Name} : valeurs locales réinitialisées, coefficient DoFocus utilisé."
+                    : $"{row.Name} : valeurs locales réinitialisées, aucun coefficient DoFocus disponible.";
+
+            MarketDataChangeNotifier.Notify(
+                MarketObjectType.Equipment,
+                row.DofusDbId,
+                ServerName,
+                0
+            );
 
             return;
         }
@@ -258,6 +278,59 @@
             $"{row.Name} : coefficient {coefficient:0.##}% enregistré.";
         
         row.ManualCoefficient = coefficient;
+
+        MarketDataChangeNotifier.Notify(
+            MarketObjectType.Equipment,
+            row.DofusDbId,
+            ServerName,
+            0
+        );
+    }
+
+    private async Task<bool>
+        TryRefreshDofocusCoefficientAsync(
+            CoefficientRow row)
+    {
+        try
+        {
+            var detailedItem =
+                await ItemsService.GetItemAsync(
+                    row.DofusDbId,
+                    forceRefresh: true
+                );
+
+            var dofocusCoefficient =
+                detailedItem.Coefficients
+                    .Where(record =>
+                        record.ServerName ==
+                            ServerName)
+                    .OrderByDescending(record =>
+                        record.LastUpdate)
+                    .FirstOrDefault();
+
+            if (dofocusCoefficient is null ||
+                dofocusCoefficient.Coefficient <= 0)
+            {
+                return false;
+            }
+
+            await CoefficientService
+                .AddObservationAsync(
+                    row.DofusDbId,
+                    ServerName,
+                    dofocusCoefficient.Coefficient,
+                    CoefficientSource.DofocusInitial
+                );
+
+            return true;
+        }
+        catch
+        {
+            // Si DoFocus est indisponible, l'ancien
+            // coefficient DoFocus déjà stocké reste
+            // utilisable comme fallback.
+            return false;
+        }
     }
 
     private static string GetSourceLetter(
@@ -267,6 +340,7 @@
         {
             CoefficientSource.Manual => "M",
             CoefficientSource.InGameAutomatic => "J",
+            CoefficientSource.DofocusInitial => "D",
             _ => "–"
         };
     }
@@ -303,6 +377,15 @@
         {
             lines.Add(
                 $"Jeu : {game:0.##} %"
+            );
+        }
+
+        if (row.Source ==
+                CoefficientSource.DofocusInitial &&
+            row.CoefficientPercent is double dofocus)
+        {
+            lines.Add(
+                $"DoFocus : {dofocus:0.##} %"
             );
         }
 

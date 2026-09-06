@@ -1,4 +1,4 @@
-﻿using BestCrush.Overlay;
+using BestCrush.Overlay;
 using System.Threading.Channels;
 using Microsoft.Maui.ApplicationModel;
 using Microsoft.Extensions.DependencyInjection;
@@ -760,21 +760,18 @@ private bool _hasF7VisibilitySnapshot;
                                 string sellServerName =
                                     currentServerState.ServerName!;
 
-                                foreach (DofusMarketLot lot in sellLots)
-                                {
-                                    await sellMarketPriceService
-                                        .AddObservationAsync(
+                                IReadOnlyList<
+                                    MarketCapturePriceLine>
+                                    sellPriceLines =
+                                        await RecordMarketLotsAsync(
+                                            sellMarketPriceService,
                                             MarketObjectType.Rune,
                                             sellRuneRecognition
                                                 .Rune
                                                 .DofusDbId,
                                             sellServerName,
-                                            lot.Price,
-                                            lot.Quantity,
-                                            MarketPriceSource
-                                                .InGameAutomatic
+                                            sellLots
                                         );
-                                }
 
                                 marketDataChangeNotifier.Notify(
                                     MarketObjectType.Rune,
@@ -782,18 +779,23 @@ private bool _hasF7VisibilitySnapshot;
                                     sellServerName,
                                     0
                                 );
+
                                 PostUi(
                                     () =>
                                     {
-                                        marketCaptureOverlayService.ShowAuxiliaryMarketDataRecorded(
-                                                                                sellRuneRecognition
-                                                                                    .Rune
-                                                                                    .Name,
-                                                                                sellLots.Count,
-                                                                                focusedEquipmentState
-                                                                                    .Equipment?
-                                                                                    .Name
-                                                                            );
+                                        marketCaptureOverlayService
+                                            .ShowAuxiliaryMarketDataRecorded(
+                                                sellRuneRecognition
+                                                    .Rune
+                                                    .Name,
+                                                "Rune",
+                                                sellRuneRecognition
+                                                    .Confidence,
+                                                sellPriceLines,
+                                                focusedEquipmentState
+                                                    .Equipment?
+                                                    .Name
+                                            );
                                     }
                                 );
 
@@ -1208,18 +1210,18 @@ private bool _hasF7VisibilitySnapshot;
                                 string runeServerName =
                                     currentServerState.ServerName!;
 
-                                foreach (DofusMarketLot lot in materialLots)
-                                {
-                                    await hdvMarketPriceService
-                                        .AddObservationAsync(
+                                IReadOnlyList<
+                                    MarketCapturePriceLine>
+                                    runePriceLines =
+                                        await RecordMarketLotsAsync(
+                                            hdvMarketPriceService,
                                             MarketObjectType.Rune,
-                                            runeRecognition.Rune.DofusDbId,
+                                            runeRecognition
+                                                .Rune
+                                                .DofusDbId,
                                             runeServerName,
-                                            lot.Price,
-                                            lot.Quantity,
-                                            MarketPriceSource.InGameAutomatic
+                                            materialLots
                                         );
-                                }
 
                                 marketDataChangeNotifier.Notify(
                                     MarketObjectType.Rune,
@@ -1234,7 +1236,9 @@ private bool _hasF7VisibilitySnapshot;
                                         marketCaptureOverlayService
                                             .ShowAuxiliaryMarketDataRecorded(
                                                 runeRecognition.Rune.Name,
-                                                materialLots.Count,
+                                                "Rune",
+                                                runeRecognition.Confidence,
+                                                runePriceLines,
                                                 focusedEquipmentState
                                                     .Equipment?
                                                     .Name
@@ -1281,18 +1285,18 @@ private bool _hasF7VisibilitySnapshot;
                                 string resourceServerName =
                                     currentServerState.ServerName!;
 
-                                foreach (DofusMarketLot lot in materialLots)
-                                {
-                                    await hdvMarketPriceService
-                                        .AddObservationAsync(
+                                IReadOnlyList<
+                                    MarketCapturePriceLine>
+                                    resourcePriceLines =
+                                        await RecordMarketLotsAsync(
+                                            hdvMarketPriceService,
                                             MarketObjectType.Resource,
-                                            resourceRecognition.Resource.DofusDbId,
+                                            resourceRecognition
+                                                .Resource
+                                                .DofusDbId,
                                             resourceServerName,
-                                            lot.Price,
-                                            lot.Quantity,
-                                            MarketPriceSource.InGameAutomatic
+                                            materialLots
                                         );
-                                }
 
                                 marketDataChangeNotifier.Notify(
                                     MarketObjectType.Resource,
@@ -1307,7 +1311,9 @@ private bool _hasF7VisibilitySnapshot;
                                         marketCaptureOverlayService
                                             .ShowAuxiliaryMarketDataRecorded(
                                                 resourceRecognition.Resource.Name,
-                                                materialLots.Count,
+                                                "Ressource",
+                                                resourceRecognition.Confidence,
+                                                resourcePriceLines,
                                                 focusedEquipmentState
                                                     .Equipment?
                                                     .Name
@@ -1716,6 +1722,68 @@ private bool _hasF7VisibilitySnapshot;
             return string.Empty;
         }
 
+        // L'HDV affiche le nom sur la première ligne puis les
+        // métadonnées (niveau, type d'objet...) sur la suivante.
+        //
+        // Il faut donc préserver les retours à la ligne OCR :
+        // les compacter trop tôt peut transformer par exemple
+        //
+        // Billiréole
+        // Niv. 100 - Chapeau
+        //
+        // en "Billiréole A Chapeau" si l'OCR rate "Niv. 100".
+        string[] lines =
+            recognizedText
+                .Split(
+                    ['\r', '\n'],
+                    StringSplitOptions.RemoveEmptyEntries |
+                    StringSplitOptions.TrimEntries
+                );
+
+        foreach (string rawLine in lines)
+        {
+            string line =
+                System.Text.RegularExpressions.Regex.Replace(
+                    rawLine,
+                    @"\s+",
+                    " "
+                ).Trim();
+
+            if (string.IsNullOrWhiteSpace(line))
+            {
+                continue;
+            }
+
+            // Une ligne qui commence directement par Niv./Niveau
+            // est une ligne de métadonnées, pas un nom d'objet.
+            if (System.Text.RegularExpressions.Regex.IsMatch(
+                line,
+                @"^(?:NIVEAU|NIV\.?)\b",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase
+            ))
+            {
+                continue;
+            }
+
+            // Si le nom et "Niv." ont tout de même été lus sur la
+            // même ligne, on conserve le comportement historique
+            // et on coupe au marqueur de niveau.
+            string candidate =
+                System.Text.RegularExpressions.Regex.Replace(
+                    line,
+                    @"\s+(?:NIVEAU|NIV\.?).*$",
+                    string.Empty,
+                    System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                ).Trim();
+
+            if (!string.IsNullOrWhiteSpace(candidate))
+            {
+                return candidate;
+            }
+        }
+
+        // Fallback de sécurité si l'OCR renvoie un bloc atypique
+        // sans retour à la ligne exploitable.
         string compact =
             System.Text.RegularExpressions.Regex.Replace(
                 recognizedText,
@@ -1723,12 +1791,6 @@ private bool _hasF7VisibilitySnapshot;
                 " "
             ).Trim();
 
-        // Dans l'HDV, tout ce qui suit "Niv." / "Niveau"
-        // appartient aux métadonnées et non au nom de l'objet.
-        //
-        // On ne dépend volontairement plus de la lecture du niveau :
-        // l'OCR peut confondre "1" avec "l", comme dans "Niv.l".
-        // Dès que le marqueur de niveau est détecté, le nom s'arrête.
         string primaryName =
             System.Text.RegularExpressions.Regex.Replace(
                 compact,
@@ -2002,6 +2064,61 @@ private bool _hasF7VisibilitySnapshot;
             // une lecture HDV.
         }
     }
+    private static async Task<
+        IReadOnlyList<MarketCapturePriceLine>>
+        RecordMarketLotsAsync(
+            MarketPriceService marketPriceService,
+            MarketObjectType objectType,
+            long dofusDbId,
+            string serverName,
+            IReadOnlyList<DofusMarketLot> lots)
+    {
+        List<MarketCapturePriceLine> result =
+            [];
+
+        foreach (DofusMarketLot lot in lots)
+        {
+            MarketPriceObservation captured =
+                await marketPriceService
+                    .AddObservationAsync(
+                        objectType,
+                        dofusDbId,
+                        serverName,
+                        lot.Price,
+                        lot.Quantity,
+                        MarketPriceSource.InGameAutomatic
+                    );
+
+            MarketPriceObservation? effective =
+                await marketPriceService
+                    .GetLatestObservationAsync(
+                        objectType,
+                        dofusDbId,
+                        serverName,
+                        lot.Quantity
+                    );
+
+            MarketPriceObservation applied =
+                effective
+                ?? captured;
+
+            result.Add(
+                new MarketCapturePriceLine(
+                    lot.Quantity,
+                    captured.Price,
+                    applied.Price,
+                    applied.Source ==
+                        MarketPriceSource.Manual
+                )
+            );
+        }
+
+        return result
+            .OrderBy(line =>
+                line.Quantity)
+            .ToArray();
+    }
+
     private static void PostUi(
         Action action)
     {

@@ -3,6 +3,7 @@ using BestCrush.Services;
 using BestCrush.Domain.Models;
 
 using Microsoft.Maui.ApplicationModel.DataTransfer;
+using System.Globalization;
 
 namespace BestCrush.Overlay;
 
@@ -436,6 +437,12 @@ public sealed class OverlayPage : ContentPage
         );
 
         AttachHoverTooltip(
+            _coefficientLine,
+            ShowCoefficientTooltip,
+            165
+        );
+
+        AttachHoverTooltip(
             _runeValueLine,
             ShowRuneComparisonTooltip,
             145
@@ -470,6 +477,77 @@ public sealed class OverlayPage : ContentPage
                     ? focusedName
                     : null;
             }
+        );
+
+        MakeCopyable(
+            _runeValueLine,
+            () =>
+                _currentScenario is null
+                    ? null
+                    : FormatClipboardNumber(
+                        _currentScenario.EstimatedRuneValue
+                    )
+        );
+
+        MakeCopyable(
+            _purchaseLine,
+            () =>
+                _currentProfitability?
+                    .EquipmentCost?
+                    .Price
+                    .ToString(
+                        CultureInfo.InvariantCulture
+                    )
+        );
+
+        MakeCopyable(
+            _craftLine,
+            () =>
+            {
+                CraftCostResult? craftCost =
+                    _currentProfitability?
+                        .CraftCost;
+
+                if (craftCost is null)
+                {
+                    return null;
+                }
+
+                if (craftCost.TotalCost is long totalCost)
+                {
+                    return totalCost.ToString(
+                        CultureInfo.InvariantCulture
+                    );
+                }
+
+                return craftCost.KnownCost > 0
+                    ? craftCost.KnownCost.ToString(
+                        CultureInfo.InvariantCulture
+                    )
+                    : null;
+            }
+        );
+
+        MakeCopyable(
+            _purchaseResultLine,
+            () =>
+                _currentScenario?
+                    .PurchaseBenefit is double benefit
+                    ? FormatClipboardNumber(
+                        benefit
+                    )
+                    : null
+        );
+
+        MakeCopyable(
+            _craftResultLine,
+            () =>
+                _currentScenario?
+                    .CraftBenefit is double benefit
+                    ? FormatClipboardNumber(
+                        benefit
+                    )
+                    : null
         );
 
         Content = resizeContainer;
@@ -557,6 +635,18 @@ public sealed class OverlayPage : ContentPage
         target.GestureRecognizers.Add(
             tap
         );
+    }
+
+    private static string FormatClipboardNumber(
+        double value)
+    {
+        return Math.Round(
+                value
+            )
+            .ToString(
+                "0",
+                CultureInfo.InvariantCulture
+            );
     }
 
     private async Task CopyToClipboardAsync(
@@ -895,36 +985,9 @@ public sealed class OverlayPage : ContentPage
                     ? $"{result.CraftCost.KnownCost:N0} K connus"
                     : "incomplet";
         
-        if (result.Coefficient is null)
-        {
-            SetFreshnessLine(
-                _coefficientLine,
-                "Coefficient : À scanner",
-                null
-            );
-        }
-        else if (
-            result.Coefficient.Source ==
-                CoefficientSource.DofocusInitial)
-        {
-            SetColoredLine(
-                _coefficientLine,
-                $"Coefficient : " +
-                $"{result.Coefficient.CoefficientPercent:0.##} %",
-                Color.FromArgb("#5AB0FF")
-            );
-        }
-        else
-        {
-            SetFreshnessLine(
-                _coefficientLine,
-                $"Coefficient : " +
-                $"{result.Coefficient.CoefficientPercent:0.##} %",
-                DataFreshnessEvaluator.Evaluate(
-                    result.Coefficient.ObservedAtUtc
-                )
-            );
-        }
+        SetCoefficientLine(
+            result.Coefficient
+        );
 
         if (scenario is null)
         {
@@ -1044,6 +1107,189 @@ public sealed class OverlayPage : ContentPage
         }
     }
 
+    private void SetCoefficientLine(
+        CoefficientObservation? coefficient)
+    {
+        if (coefficient is null)
+        {
+            SetFreshnessLine(
+                _coefficientLine,
+                "Coefficient : À scanner",
+                null
+            );
+
+            return;
+        }
+
+        bool isDofocus =
+            coefficient.Source ==
+                CoefficientSource.DofocusInitial;
+
+        Color textColor =
+            isDofocus
+                ? Color.FromArgb(
+                    "#5AB0FF"
+                )
+                : Colors.White;
+
+        Color indicatorColor =
+            isDofocus
+                ? Color.FromArgb(
+                    "#5AB0FF"
+                )
+                : GetFreshnessColor(
+                    DataFreshnessEvaluator
+                        .Evaluate(
+                            coefficient
+                                .ObservedAtUtc
+                        )
+                );
+
+        FormattedString formatted =
+            new();
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = "● ",
+                TextColor =
+                    indicatorColor
+            }
+        );
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = "Coefficient : ",
+                TextColor =
+                    textColor
+            }
+        );
+
+        Span coefficientValue =
+            new()
+            {
+                Text =
+                    $"{coefficient.CoefficientPercent:0.##} %",
+                TextColor =
+                    textColor,
+                TextDecorations =
+                    TextDecorations.Underline
+            };
+
+        string clipboardValue =
+            coefficient
+                .CoefficientPercent
+                .ToString(
+                    "0.##",
+                    CultureInfo.CurrentCulture
+                );
+
+        TapGestureRecognizer tap =
+            new();
+
+        tap.Tapped +=
+            async (_, _) =>
+            {
+                await CopyToClipboardAsync(
+                    clipboardValue
+                );
+            };
+
+        coefficientValue
+            .GestureRecognizers
+            .Add(
+                tap
+            );
+
+        formatted.Spans.Add(
+            coefficientValue
+        );
+
+        _coefficientLine.FormattedText =
+            formatted;
+    }
+
+    private void ShowCoefficientTooltip()
+    {
+        EquipmentProfitabilityResult? result =
+            _currentProfitability;
+
+        CoefficientObservation? coefficient =
+            result?.Coefficient;
+
+        if (coefficient is null)
+        {
+            _hoverTooltip.IsVisible =
+                false;
+
+            return;
+        }
+
+        _hoverTooltipContent
+            .Children
+            .Clear();
+
+        HorizontalStackLayout line =
+            new()
+            {
+                Spacing = 0
+            };
+
+        Label prefix =
+            new()
+            {
+                Text = "Pris le : ",
+                TextColor =
+                    Colors.LightGray,
+                FontSize = 12
+            };
+
+        string date =
+            coefficient
+                .ObservedAtUtc
+                .ToLocalTime()
+                .ToString(
+                    "dd/MM/yyyy",
+                    CultureInfo.InvariantCulture
+                );
+
+        Label dateLabel =
+            new()
+            {
+                Text = date,
+                TextColor =
+                    Colors.White,
+                FontSize = 12,
+                FontAttributes =
+                    FontAttributes.Bold,
+                TextDecorations =
+                    TextDecorations.Underline
+            };
+
+        MakeCopyable(
+            dateLabel,
+            () => date
+        );
+
+        line.Children.Add(
+            prefix
+        );
+
+        line.Children.Add(
+            dateLabel
+        );
+
+        _hoverTooltipContent
+            .Children
+            .Add(
+                line
+            );
+
+        _hoverTooltip.IsVisible =
+            true;
+    }
+
     private void ShowRuneComparisonTooltip()
     {
         EquipmentProfitabilityResult? result =
@@ -1131,16 +1377,17 @@ public sealed class OverlayPage : ContentPage
                     : null;
 
             string unitPriceText;
+            double? unitPrice = null;
 
             if (hasRuneValue &&
                 runeQuantity > 0)
             {
-                double unitPrice =
+                unitPrice =
                     runeValue.Value /
                     runeQuantity;
 
                 unitPriceText =
-                    $" ({unitPrice:N0} K/u)";
+                    $" ({unitPrice.Value:N0} K/u)";
             }
             else
             {
@@ -1191,6 +1438,27 @@ public sealed class OverlayPage : ContentPage
                 runeNameLabel,
                 () => runeName
             );
+
+            MakeCopyable(
+                unitPriceLabel,
+                () =>
+                    unitPrice is double value
+                        ? FormatClipboardNumber(
+                            value
+                        )
+                        : null
+            );
+
+            if (hasRuneValue)
+            {
+                MakeCopyable(
+                    right,
+                    () =>
+                        FormatClipboardNumber(
+                            scenario.EstimatedRuneValue
+                        )
+                );
+            }
 
             left.Children.Add(
                 runeNameLabel
@@ -1426,6 +1694,17 @@ public sealed class OverlayPage : ContentPage
                     : Colors.White;
         }
 
+        if (noFocus is not null)
+        {
+            MakeCopyable(
+                totalValue,
+                () =>
+                    FormatClipboardNumber(
+                        noFocus.EstimatedRuneValue
+                    )
+            );
+        }
+
         totalRow.Add(
             totalName,
             0,
@@ -1631,6 +1910,18 @@ public sealed class OverlayPage : ContentPage
                             ? "À scanner"
                             : $"{resource.Purchase.TotalCost:N0} K"
                 };
+
+            if (resource.Purchase is not null)
+            {
+                MakeCopyable(
+                    price,
+                    () =>
+                        resource.Purchase.TotalCost
+                            .ToString(
+                                CultureInfo.InvariantCulture
+                            )
+                );
+            }
 
             row.Add(
                 name,

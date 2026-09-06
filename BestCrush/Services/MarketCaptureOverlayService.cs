@@ -8,6 +8,13 @@ using Windows.Graphics;
 
 namespace BestCrush.Services;
 
+public sealed record MarketCapturePriceLine(
+    int Quantity,
+    long CapturedPrice,
+    long EffectivePrice,
+    bool EffectivePriceIsManual
+);
+
 public sealed class MarketCaptureOverlayService(
     OverlayLayoutSettingsService
         overlayLayoutSettingsService)
@@ -441,13 +448,17 @@ public sealed class MarketCaptureOverlayService(
 
     public void ShowAuxiliaryMarketDataRecorded(
         string objectName,
-        int lotCount,
+        string objectKind,
+        double confidence,
+        IReadOnlyList<MarketCapturePriceLine> prices,
         string? focusedEquipmentName) =>
         Update(
             page =>
                 page.ShowAuxiliaryMarketDataRecorded(
                     objectName,
-                    lotCount,
+                    objectKind,
+                    confidence,
+                    prices,
                     focusedEquipmentName
                 )
         );

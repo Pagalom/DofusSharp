@@ -77,6 +77,70 @@ public sealed class DofusItemRecognitionService(
                     recognizedType
                 );
 
+        ItemRecognitionResult? primaryMatch =
+            FindBestMatch(
+                candidates,
+                normalizedInput
+            );
+
+        if (primaryMatch is not null)
+        {
+            return primaryMatch;
+        }
+
+        // Certains bandeaux HDV sont OCRisés sur une seule ligne :
+        //
+        // "Billiréole A Chapeau"
+        //
+        // alors que "Chapeau" est la métadonnée de type et que
+        // "A" est un pictogramme / séparateur mal lu.
+        //
+        // On ne nettoie qu'en SECONDE tentative, après échec de
+        // la reconnaissance normale. Ainsi un vrai nom d'objet
+        // contenant un mot de type n'est jamais amputé tant que
+        // sa reconnaissance standard fonctionne.
+        if (recognizedType is not null)
+        {
+            string cleanedItemName =
+                RemoveTrailingEquipmentTypeArtifact(
+                    itemNameText,
+                    recognizedType.Value
+                );
+
+            string normalizedCleanedInput =
+                Normalize(
+                    cleanedItemName
+                );
+
+            if (!string.IsNullOrWhiteSpace(
+                    normalizedCleanedInput) &&
+                !string.Equals(
+                    normalizedCleanedInput,
+                    normalizedInput,
+                    StringComparison.Ordinal
+                ))
+            {
+                ItemRecognitionResult? cleanedMatch =
+                    FindBestMatch(
+                        candidates,
+                        normalizedCleanedInput
+                    );
+
+                if (cleanedMatch is not null)
+                {
+                    return cleanedMatch;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static ItemRecognitionResult?
+        FindBestMatch(
+            IReadOnlyCollection<Equipment> candidates,
+            string normalizedInput)
+    {
         List<ItemRecognitionResult> matches =
             candidates
                 .Select(equipment =>
@@ -157,6 +221,73 @@ public sealed class DofusItemRecognitionService(
         }
 
         return best;
+    }
+
+    private static string
+        RemoveTrailingEquipmentTypeArtifact(
+            string itemNameText,
+            EquipmentType recognizedType)
+    {
+        string normalizedText =
+            Normalize(
+                itemNameText
+            );
+
+        string normalizedType =
+            Normalize(
+                recognizedType
+                    .ToDisplayName()
+            );
+
+        string typeSuffix =
+            $" {normalizedType}";
+
+        if (string.IsNullOrWhiteSpace(
+                normalizedType) ||
+            !normalizedText.EndsWith(
+                typeSuffix,
+                StringComparison.Ordinal
+            ))
+        {
+            return itemNameText;
+        }
+
+        string candidate =
+            normalizedText[
+                ..^typeSuffix.Length
+            ]
+            .Trim();
+
+        if (string.IsNullOrWhiteSpace(
+            candidate))
+        {
+            return itemNameText;
+        }
+
+        string[] tokens =
+            candidate.Split(
+                ' ',
+                StringSplitOptions
+                    .RemoveEmptyEntries |
+                StringSplitOptions
+                    .TrimEntries
+            );
+
+        // Le séparateur entre nom et type peut devenir une
+        // lettre isolée ("A", "I", "X"...). On ne retire
+        // qu'un token d'un seul caractère afin de ne jamais
+        // supprimer un vrai mot du nom.
+        if (tokens.Length > 1 &&
+            tokens[^1].Length == 1)
+        {
+            candidate =
+                string.Join(
+                    ' ',
+                    tokens[..^1]
+                );
+        }
+
+        return candidate;
     }
 
     private static IReadOnlyCollection<Equipment>

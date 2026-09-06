@@ -1,6 +1,7 @@
 using BestCrush.Services;
 using System.Globalization;
 using Microsoft.Maui.ApplicationModel.DataTransfer;
+using Microsoft.Maui.Layouts;
 
 namespace BestCrush.Overlay;
 
@@ -11,9 +12,13 @@ public sealed class CrushSessionOverlayPage
     private readonly Label _scannedCells;
     private readonly VerticalStackLayout _runes;
     private readonly Label _total;
+    private readonly Label _copyFeedback;
 
     private double? _lastTotalValue;
     private int _copyFeedbackVersion;
+    private int _formulaTapVersion;
+    private DateTime _lastFormulaDoubleTapUtc =
+        DateTime.MinValue;
 
     private readonly CrushSessionService
         _sessionService;
@@ -182,17 +187,22 @@ public sealed class CrushSessionOverlayPage
                     TextDecorations.Underline
             };
 
-        TapGestureRecognizer totalTap =
-            new();
-
-        totalTap.Tapped +=
-            async (_, _) =>
+        _copyFeedback =
+            new Label
             {
-                await CopyTotalAsync();
+                Text = string.Empty,
+                TextColor = Colors.LightGreen,
+                FontSize = 12
             };
 
-        _total.GestureRecognizers.Add(
-            totalTap
+        MakeCopyable(
+            _total,
+            () =>
+                _lastTotalValue is double total
+                    ? FormatClipboardNumber(
+                        total
+                    )
+                    : null
         );
 
         VerticalStackLayout content =
@@ -230,7 +240,9 @@ public sealed class CrushSessionOverlayPage
                             )
                     },
 
-                    _total
+                    _total,
+
+                    _copyFeedback
                 }
             };
 
@@ -467,22 +479,260 @@ public sealed class CrushSessionOverlayPage
             CrushSessionRuneLine rune
             in snapshot.Runes)
         {
-            string value =
-                rune.Value is double runeValue
-                    ? $"{runeValue:N0} K"
-                    : "prix manquant";
+            Grid row =
+                new()
+                {
+                    RowDefinitions =
+                    {
+                        new RowDefinition(
+                            GridLength.Auto
+                        ),
+                        new RowDefinition(
+                            GridLength.Auto
+                        )
+                    },
 
-            _runes.Children.Add(
-                new Label
+                    ColumnDefinitions =
+                    {
+                        new ColumnDefinition(
+                            GridLength.Star
+                        ),
+                        new ColumnDefinition(
+                            GridLength.Auto
+                        )
+                    },
+
+                    RowSpacing = 2,
+                    ColumnSpacing = 10
+                };
+
+            HorizontalStackLayout identity =
+                new()
+                {
+                    Spacing = 0
+                };
+
+            Label nameLabel =
+                new()
+                {
+                    Text = rune.Name,
+                    TextColor = Colors.White,
+                    FontSize = 13
+                };
+
+            Label quantityPrefix =
+                new()
+                {
+                    Text = " x",
+                    TextColor = Colors.White,
+                    FontSize = 13
+                };
+
+            Label quantityLabel =
+                new()
                 {
                     Text =
-                        $"{rune.Name} x{rune.Quantity}    {value}",
+                        rune.Quantity.ToString(
+                            CultureInfo.InvariantCulture
+                        ),
+                    TextColor = Colors.White,
+                    FontSize = 13,
+                    TextDecorations =
+                        TextDecorations.Underline
+                };
+
+            string runeName =
+                rune.Name;
+
+            MakeCopyable(
+                nameLabel,
+                () => runeName
+            );
+
+            MakeCopyable(
+                quantityLabel,
+                () =>
+                    rune.Quantity.ToString(
+                        CultureInfo.InvariantCulture
+                    )
+            );
+
+            identity.Children.Add(
+                nameLabel
+            );
+
+            identity.Children.Add(
+                quantityPrefix
+            );
+
+            identity.Children.Add(
+                quantityLabel
+            );
+
+            Label valueLabel =
+                new()
+                {
+                    Text =
+                        rune.Value is double runeValue
+                            ? $"{runeValue:N0} K"
+                            : "prix manquant",
 
                     TextColor =
-                        Colors.White,
+                        rune.Value is null
+                            ? Colors.Red
+                            : Colors.White,
 
-                    FontSize = 13
+                    FontSize = 13,
+
+                    FontAttributes =
+                        FontAttributes.Bold,
+
+                    HorizontalTextAlignment =
+                        TextAlignment.End
+                };
+
+            if (rune.Value is double copyRuneValue)
+            {
+                MakeCopyable(
+                    valueLabel,
+                    () =>
+                        FormatClipboardNumber(
+                            copyRuneValue
+                        )
+                );
+            }
+
+            row.Add(
+                identity,
+                0,
+                0
+            );
+
+            row.Add(
+                valueLabel,
+                1,
+                0
+            );
+
+            if (rune.Lots.Count > 0)
+            {
+                FlexLayout formulaLayout =
+                    new()
+                    {
+                        Direction =
+                            FlexDirection.Row,
+
+                        Wrap =
+                            FlexWrap.Wrap,
+
+                        AlignItems =
+                            FlexAlignItems.Center,
+
+                        Margin =
+                            new Thickness(
+                                0,
+                                1,
+                                0,
+                                1
+                            )
+                    };
+
+                string fullFormula =
+                    BuildExcelFormula(
+                        rune.Lots
+                    );
+
+                formulaLayout.Children.Add(
+                    new Label
+                    {
+                        Text = "(",
+                        TextColor =
+                            Colors.LightGray,
+                        FontSize = 11
+                    }
+                );
+
+                for (
+                    int index = 0;
+                    index < rune.Lots.Count;
+                    index++)
+                {
+                    CrushSessionRuneLotLine lot =
+                        rune.Lots[index];
+
+                    if (index > 0)
+                    {
+                        formulaLayout.Children.Add(
+                            new Label
+                            {
+                                Text = " + ",
+                                TextColor =
+                                    Colors.LightGray,
+                                FontSize = 11
+                            }
+                        );
+                    }
+
+                    Label term =
+                        new()
+                        {
+                            FormattedText =
+                                BuildLotTermFormattedString(
+                                    lot
+                                ),
+
+                            FontSize = 11,
+
+                            TextDecorations =
+                                TextDecorations.Underline
+                        };
+
+                    string termFormula =
+                        "=" +
+                        BuildExcelTerm(
+                            lot
+                        );
+
+                    MakeFormulaTermCopyable(
+                        term,
+                        termFormula,
+                        fullFormula
+                    );
+
+                    formulaLayout.Children.Add(
+                        term
+                    );
                 }
+
+                formulaLayout.Children.Add(
+                    new Label
+                    {
+                        Text = ")",
+                        TextColor =
+                            Colors.LightGray,
+                        FontSize = 11
+                    }
+                );
+
+                MakeDoubleCopyable(
+                    formulaLayout,
+                    fullFormula
+                );
+
+                Grid.SetColumnSpan(
+                    formulaLayout,
+                    2
+                );
+
+                row.Add(
+                    formulaLayout,
+                    0,
+                    1
+                );
+            }
+
+            _runes.Children.Add(
+                row
             );
         }
 
@@ -491,51 +741,323 @@ public sealed class CrushSessionOverlayPage
 
         _copyFeedbackVersion++;
 
+        _copyFeedback.Text =
+            string.Empty;
+
         RefreshTotalLabel();
     }
 
-    private async Task CopyTotalAsync()
+    private static string FormatCompactPrice(
+        long value)
     {
-        if (_lastTotalValue
-            is not double total)
+        CultureInfo french =
+            CultureInfo.GetCultureInfo(
+                "fr-FR"
+            );
+
+        long absolute =
+            Math.Abs(
+                value
+            );
+
+        if (absolute >=
+            1_000_000_000)
         {
-            return;
+            return
+                (value / 1_000_000_000d)
+                    .ToString(
+                        "0.#",
+                        french
+                    ) +
+                "Md";
         }
 
-        string clipboardValue =
-            Math.Round(
-                total
+        if (absolute >=
+            1_000_000)
+        {
+            return
+                (value / 1_000_000d)
+                    .ToString(
+                        "0.#",
+                        french
+                    ) +
+                "M";
+        }
+
+        if (absolute >=
+            1_000)
+        {
+            return
+                (value / 1_000d)
+                    .ToString(
+                        "0.#",
+                        french
+                    ) +
+                "k";
+        }
+
+        return value.ToString(
+            "N0",
+            french
+        );
+    }
+
+    private static FormattedString
+        BuildLotTermFormattedString(
+            CrushSessionRuneLotLine lot)
+    {
+        Color color =
+            lot.IsEstimated
+                ? Colors.Orange
+                : Colors.LightGray;
+
+        FormattedString formatted =
+            new();
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text =
+                    lot.IsEstimated
+                        ? $"~{lot.Count}x"
+                        : $"{lot.Count}x",
+
+                TextColor = color
+            }
+        );
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text =
+                    FormatCompactPrice(
+                        lot.LotPrice
+                    ),
+
+                TextColor = color,
+
+                FontAttributes =
+                    FontAttributes.Bold
+            }
+        );
+
+        if (lot.IsEstimated &&
+            lot.LotQuantity > 1)
+        {
+            formatted.Spans.Add(
+                new Span
+                {
+                    Text =
+                        $"/{lot.LotQuantity}",
+
+                    TextColor = color
+                }
+            );
+        }
+
+        return formatted;
+    }
+
+    private static string BuildExcelTerm(
+        CrushSessionRuneLotLine lot)
+    {
+        if (lot.IsEstimated &&
+            lot.LotQuantity > 1)
+        {
+            return
+                $"{lot.Count}*" +
+                $"{lot.LotPrice}/" +
+                $"{lot.LotQuantity}";
+        }
+
+        return
+            $"{lot.Count}*" +
+            $"{lot.LotPrice}";
+    }
+
+    private static string BuildExcelFormula(
+        IReadOnlyList<
+            CrushSessionRuneLotLine> lots)
+    {
+        return
+            "=" +
+            string.Join(
+                "+",
+                lots.Select(
+                    BuildExcelTerm
+                )
+            );
+    }
+
+    private void MakeFormulaTermCopyable(
+        View target,
+        string termFormula,
+        string fullFormula)
+    {
+        TapGestureRecognizer singleTap =
+            new()
+            {
+                NumberOfTapsRequired = 1
+            };
+
+        singleTap.Tapped +=
+            async (_, _) =>
+            {
+                int version =
+                    ++_formulaTapVersion;
+
+                await Task.Delay(
+                    280
+                );
+
+                if (version !=
+                    _formulaTapVersion)
+                {
+                    return;
+                }
+
+                if (DateTime.UtcNow -
+                        _lastFormulaDoubleTapUtc <
+                    TimeSpan.FromMilliseconds(
+                        400
+                    ))
+                {
+                    return;
+                }
+
+                await CopyToClipboardAsync(
+                    termFormula
+                );
+            };
+
+        TapGestureRecognizer doubleTap =
+            new()
+            {
+                NumberOfTapsRequired = 2
+            };
+
+        doubleTap.Tapped +=
+            async (_, _) =>
+            {
+                _lastFormulaDoubleTapUtc =
+                    DateTime.UtcNow;
+
+                _formulaTapVersion++;
+
+                await CopyToClipboardAsync(
+                    fullFormula
+                );
+            };
+
+        target.GestureRecognizers.Add(
+            singleTap
+        );
+
+        target.GestureRecognizers.Add(
+            doubleTap
+        );
+    }
+
+    private void MakeDoubleCopyable(
+        View target,
+        string fullFormula)
+    {
+        TapGestureRecognizer doubleTap =
+            new()
+            {
+                NumberOfTapsRequired = 2
+            };
+
+        doubleTap.Tapped +=
+            async (_, _) =>
+            {
+                _lastFormulaDoubleTapUtc =
+                    DateTime.UtcNow;
+
+                _formulaTapVersion++;
+
+                await CopyToClipboardAsync(
+                    fullFormula
+                );
+            };
+
+        target.GestureRecognizers.Add(
+            doubleTap
+        );
+    }
+
+    private void MakeCopyable(
+        View target,
+        Func<string?> getText)
+    {
+        TapGestureRecognizer tap =
+            new();
+
+        tap.Tapped +=
+            async (_, _) =>
+            {
+                await CopyToClipboardAsync(
+                    getText()
+                );
+            };
+
+        target.GestureRecognizers.Add(
+            tap
+        );
+    }
+
+    private static string FormatClipboardNumber(
+        double value)
+    {
+        return Math.Round(
+                value
             )
             .ToString(
                 "0",
                 CultureInfo.InvariantCulture
             );
+    }
+
+    private async Task CopyToClipboardAsync(
+        string? text)
+    {
+        if (string.IsNullOrWhiteSpace(
+            text))
+        {
+            return;
+        }
+
+        string value =
+            text.Trim();
 
         await Clipboard.Default
             .SetTextAsync(
-                clipboardValue
+                value
             );
 
         int feedbackVersion =
             ++_copyFeedbackVersion;
 
-        _total.Text =
-            $"Valeur réelle : {total:N0} K — Copié !";
+        string feedback =
+            $"✓ {value} copié";
 
-        _total.TextColor =
-            Colors.LightGreen;
+        _copyFeedback.Text =
+            feedback;
 
         await Task.Delay(
             900
         );
 
         if (feedbackVersion !=
-            _copyFeedbackVersion)
+                _copyFeedbackVersion ||
+            _copyFeedback.Text !=
+                feedback)
         {
             return;
         }
 
-        RefreshTotalLabel();
+        _copyFeedback.Text =
+            string.Empty;
     }
 
     private void RefreshTotalLabel()

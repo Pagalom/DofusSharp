@@ -1,4 +1,6 @@
 using BestCrush.Services;
+using System.Globalization;
+using Microsoft.Maui.ApplicationModel.DataTransfer;
 
 namespace BestCrush.Overlay;
 
@@ -104,6 +106,16 @@ public sealed class MarketCaptureOverlayPage : ContentPage
             FontSize = 12
         };
 
+        MakeCopyable(
+            _objectName,
+            () =>
+                string.IsNullOrWhiteSpace(
+                    _objectName.Text
+                )
+                    ? null
+                    : _objectName.Text
+        );
+
         VerticalStackLayout content = new()
         {
             Spacing = 9,
@@ -125,6 +137,135 @@ public sealed class MarketCaptureOverlayPage : ContentPage
 
         Content =
             resizeContainer;
+    }
+
+    private void MakeCopyable(
+        View target,
+        Func<string?> getText)
+    {
+        TapGestureRecognizer tap =
+            new();
+
+        tap.Tapped +=
+            async (_, _) =>
+            {
+                await CopyToClipboardAsync(
+                    getText()
+                );
+            };
+
+        target.GestureRecognizers.Add(
+            tap
+        );
+    }
+
+    private void SetCopyableDetails(
+        params (
+            string Text,
+            string? ClipboardValue
+        )[] segments)
+    {
+        FormattedString formatted =
+            new();
+
+        foreach ((
+            string text,
+            string? clipboardValue)
+            in segments)
+        {
+            Span span =
+                new()
+                {
+                    Text = text,
+                    TextColor = Colors.White
+                };
+
+            if (!string.IsNullOrWhiteSpace(
+                clipboardValue))
+            {
+                string copyValue =
+                    clipboardValue;
+
+                TapGestureRecognizer tap =
+                    new();
+
+                tap.Tapped +=
+                    async (_, _) =>
+                    {
+                        await CopyToClipboardAsync(
+                            copyValue
+                        );
+                    };
+
+                span.GestureRecognizers.Add(
+                    tap
+                );
+            }
+
+            formatted.Spans.Add(
+                span
+            );
+        }
+
+        _details.FormattedText =
+            formatted;
+    }
+
+    private async Task CopyToClipboardAsync(
+        string? text)
+    {
+        if (string.IsNullOrWhiteSpace(
+            text))
+        {
+            return;
+        }
+
+        string value =
+            text.Trim();
+
+        await Clipboard.Default
+            .SetTextAsync(
+                value
+            );
+
+        string previousText =
+            _footer.Text;
+
+        Color previousColor =
+            _footer.TextColor;
+
+        string feedback =
+            $"✓ {value} copié";
+
+        _footer.Text =
+            feedback;
+
+        _footer.TextColor =
+            Colors.LightGreen;
+
+        await Task.Delay(
+            1200
+        );
+
+        if (_footer.Text !=
+            feedback)
+        {
+            return;
+        }
+
+        _footer.Text =
+            previousText;
+
+        _footer.TextColor =
+            previousColor;
+    }
+
+    private static string FormatClipboardNumber(
+        long value)
+    {
+        return value.ToString(
+            CultureInfo.InvariantCulture
+        );
     }
 
     private static Grid CreateResizeContainer(
@@ -432,6 +573,26 @@ public sealed class MarketCaptureOverlayPage : ContentPage
                 ? Colors.Orange
                 : Colors.LightGreen
         );
+
+        if (price is long copyPrice)
+        {
+            SetCopyableDetails(
+                (
+                    "Première offre réelle : ",
+                    null
+                ),
+                (
+                    $"{copyPrice:N0} K",
+                    FormatClipboardNumber(
+                        copyPrice
+                    )
+                ),
+                (
+                    ".",
+                    null
+                )
+            );
+        }
     }
 
     public void ShowMarketEquipmentRecorded(
@@ -458,6 +619,35 @@ public sealed class MarketCaptureOverlayPage : ContentPage
             "✓ Observation locale enregistrée",
             Colors.LightGreen
         );
+
+        SetCopyableDetails(
+            (
+                $"Reconnaissance : {confidence:P0}\nPrix détecté : ",
+                null
+            ),
+            (
+                $"{capturedPrice:N0} K",
+                FormatClipboardNumber(
+                    capturedPrice
+                )
+            ),
+            (
+                "\nPrix utilisé : ",
+                null
+            ),
+            (
+                $"{effectivePrice:N0} K",
+                FormatClipboardNumber(
+                    effectivePrice
+                )
+            ),
+            (
+                manualPricePreserved
+                    ? " (manuel conservé)"
+                    : string.Empty,
+                null
+            )
+        );
     }
 
     public void ShowMarketEquipmentRecognitionFailed(
@@ -475,25 +665,154 @@ public sealed class MarketCaptureOverlayPage : ContentPage
             "Aucune donnée enregistrée",
             Colors.Red
         );
+
+        SetCopyableDetails(
+            (
+                "Prix détecté : ",
+                null
+            ),
+            (
+                $"{detectedPrice:N0} K",
+                FormatClipboardNumber(
+                    detectedPrice
+                )
+            ),
+            (
+                "\nLe nom OCR n'a pas été associé à un objet DofusDB.",
+                null
+            )
+        );
     }
 
     public void ShowAuxiliaryMarketDataRecorded(
         string objectName,
-        int lotCount,
+        string objectKind,
+        double confidence,
+        IReadOnlyList<MarketCapturePriceLine> prices,
         string? focusedEquipmentName)
     {
         string focusText =
-            string.IsNullOrWhiteSpace(focusedEquipmentName)
+            string.IsNullOrWhiteSpace(
+                focusedEquipmentName)
                 ? "Aucun équipement actuellement en focus."
                 : $"Focus conservé : {focusedEquipmentName}.";
 
         SetState(
-            $"✓ {objectName} mis à jour",
+            "✓ Prix HDV enregistrés",
             Colors.LightGreen,
             objectName,
-            $"{lotCount} lot(s) enregistré(s).\n{focusText}",
+            $"{objectKind} — reconnaissance {confidence:P0}\n" +
+            $"{prices.Count} lot(s) enregistré(s).\n" +
+            focusText,
             "✓ Prix locaux mis à jour",
             Colors.LightGreen
+        );
+
+        List<(
+            string Text,
+            string? ClipboardValue)>
+            segments =
+                [];
+
+        segments.Add(
+            (
+                $"{objectKind} — reconnaissance {confidence:P0}\n",
+                null
+            )
+        );
+
+        foreach (
+            MarketCapturePriceLine price
+            in prices.OrderBy(
+                price =>
+                    price.Quantity))
+        {
+            segments.Add(
+                (
+                    $"x{price.Quantity} — détecté : ",
+                    null
+                )
+            );
+
+            segments.Add(
+                (
+                    $"{price.CapturedPrice:N0} K",
+                    FormatClipboardNumber(
+                        price.CapturedPrice
+                    )
+                )
+            );
+
+            segments.Add(
+                (
+                    " | utilisé : ",
+                    null
+                )
+            );
+
+            segments.Add(
+                (
+                    $"{price.EffectivePrice:N0} K",
+                    FormatClipboardNumber(
+                        price.EffectivePrice
+                    )
+                )
+            );
+
+            if (price.EffectivePriceIsManual)
+            {
+                segments.Add(
+                    (
+                        " (manuel)",
+                        null
+                    )
+                );
+            }
+
+            segments.Add(
+                (
+                    "\n",
+                    null
+                )
+            );
+        }
+
+        if (string.IsNullOrWhiteSpace(
+            focusedEquipmentName))
+        {
+            segments.Add(
+                (
+                    "Aucun équipement actuellement en focus.",
+                    null
+                )
+            );
+        }
+        else
+        {
+            segments.Add(
+                (
+                    "Focus conservé : ",
+                    null
+                )
+            );
+
+            segments.Add(
+                (
+                    focusedEquipmentName,
+                    focusedEquipmentName
+                )
+            );
+
+            segments.Add(
+                (
+                    ".",
+                    null
+                )
+            );
+        }
+
+        SetCopyableDetails(
+            segments.ToArray()
         );
     }
 
@@ -653,6 +972,26 @@ public sealed class MarketCaptureOverlayPage : ContentPage
             "✓ Données locales mises à jour",
             Colors.LightGreen
         );
+
+        if (equipmentPrice is long copyEquipmentPrice)
+        {
+            SetCopyableDetails(
+                (
+                    $"Reconnaissance : {recognitionConfidence:P0}\nPrix équipement : ",
+                    null
+                ),
+                (
+                    $"{copyEquipmentPrice:N0} K",
+                    FormatClipboardNumber(
+                        copyEquipmentPrice
+                    )
+                ),
+                (
+                    $"\nCoefficient : {coefficientText}",
+                    null
+                )
+            );
+        }
     }
 
     private void SetState(
@@ -666,6 +1005,7 @@ public sealed class MarketCaptureOverlayPage : ContentPage
         _status.Text = status;
         _status.TextColor = statusColor;
         _objectName.Text = objectName;
+        _details.FormattedText = null;
         _details.Text = details;
         _footer.Text = footer;
         _footer.TextColor = footerColor;
