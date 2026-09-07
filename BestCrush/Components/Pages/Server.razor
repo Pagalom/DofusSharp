@@ -42,6 +42,10 @@
         href="@($"/servers/{ServerName}/coefficients")">
             Coefficients
         </a>
+        <a class="btn btn-outline-secondary"
+           href="@BestCrush.Components.KnownRoutes.History(ServerName)">
+            Historique
+        </a>
         <button type="button"
                 class="btn btn-outline-info"
                 @onclick="OverlayService.Toggle">
