@@ -1,4 +1,4 @@
-BestCrush v0.1.5
+BestCrush v0.1.6
 ==================
 
 BestCrush est un outil compagnon pour Dofus permettant de :
@@ -9,24 +9,30 @@ BestCrush est un outil compagnon pour Dofus permettant de :
 - choisir entre un jet moyen ou un jet prudent pour l'estimation du concassage ;
 - lire automatiquement certaines données en jeu ;
 - suivre les runes réellement obtenues lors d'une session de concassage ;
+- consulter l'historique des prix, coefficients et concassages ;
+- conserver les sessions de concassage afin de pouvoir les consulter ultérieurement ;
 - trier les résultats par bénéfice, rendement, nom ou coefficient.
 
-NOUVEAUTÉS v0.1.5
+NOUVEAUTÉS v0.1.6
 -----------------
 
-- prise en charge des équipements utilisés comme ingrédients de recette ;
-- amélioration de la reconnaissance OCR des équipements en HDV ;
-- remise à zéro cohérente des prix locaux ;
-- remise à zéro d'un coefficient local avec retour au coefficient DoFocus disponible ;
-- affichage détaillé des lots rune / ressource dans "Mise à jour marché" ;
-- valeurs et prix cliquables dans les overlays ;
-- détail du calcul de valorisation des runes pendant une session de concassage ;
-- affichage de la date du coefficient utilisé dans l'overlay Rentabilité ;
-- amélioration de l'affichage et de la copie des résultats de concassage.
+- ajout d'un historique global propre à chaque serveur ;
+- historique des prix des ressources, runes et équipements ;
+- historique des coefficients des équipements ;
+- ajout des onglets Ressources, Items, Runes et Concassages ;
+- persistance des sessions de concassage F9 dans la base locale ;
+- conservation de la valorisation utilisée au moment du concassage :
+  quantités, lots, prix, sources et dates des observations ;
+- affichage détaillé des équipements et runes d'une ancienne session de concassage ;
+- filtres et tris dans les différentes vues de l'historique ;
+- filtrage des équipements par rune obtenable ;
+- filtrage des concassages par rune réellement obtenue ;
+- utilisation des icônes Dofus des équipements, ressources et runes dans l'historique ;
+- amélioration et harmonisation des bordures de redimensionnement des overlays ;
+- zones de déplacement des overlays plus faciles à identifier.
 
 INSTALLATION
 ------------
-
 1. Extraire entièrement cette archive dans un dossier.
 2. Lancer BestCrush.exe.
 3. Sélectionner votre serveur dans BestCrush avant toute capture.
