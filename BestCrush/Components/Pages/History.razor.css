@@ -1,0 +1,175 @@
+.history-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: .5rem;
+}
+
+.history-table-wrap,
+.history-crush-list {
+    border: 1px solid rgba(108, 117, 125, .35);
+    border-radius: .5rem;
+    overflow: hidden;
+}
+
+.history-sort {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.history-sort:hover,
+.history-sort.active {
+    color: var(--bs-primary);
+}
+
+.history-cleared-row {
+    opacity: .65;
+}
+
+.history-secondary-filter {
+    min-height: 78px;
+}
+
+.history-rune-filter-wrap {
+    width: min(420px, 100%);
+}
+
+.history-rune-filter-button {
+    width: 100%;
+    min-height: 42px;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    text-align: left;
+}
+
+.history-rune-picker {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    z-index: 1200;
+    width: min(430px, calc(100vw - 3rem));
+    max-height: 360px;
+    overflow-y: auto;
+    padding: .35rem;
+    border: 1px solid #495057;
+    border-radius: .5rem;
+    background: #212529;
+}
+
+.history-rune-option {
+    width: 100%;
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+    gap: .6rem;
+    padding: .35rem .5rem;
+    border: 0;
+    border-radius: .35rem;
+    background: transparent;
+    color: #f8f9fa;
+    text-align: left;
+}
+
+.history-rune-option:hover {
+    background: #343a40;
+}
+
+.history-empty-icon {
+    display: inline-block;
+    width: 30px;
+    height: 30px;
+    border: 1px dashed #6c757d;
+    border-radius: .25rem;
+}
+
+.history-crush-header,
+.history-crush-summary {
+    grid-template-columns: 155px minmax(220px, 1.25fr) minmax(220px, 1.25fr) 100px 135px 46px;
+    gap: 1rem;
+    align-items: center;
+}
+
+.history-crush-header {
+    padding: .7rem 1rem;
+    background: rgba(108, 117, 125, .08);
+    border-bottom: 1px solid rgba(108, 117, 125, .35);
+    font-weight: 600;
+}
+
+.history-crush-card + .history-crush-card {
+    border-top: 1px solid rgba(108, 117, 125, .35);
+}
+
+.history-crush-summary {
+    display: grid;
+    padding: .85rem 1rem;
+}
+
+.history-crush-summary:hover {
+    background: rgba(108, 117, 125, .06);
+}
+
+.history-crush-details {
+    padding: 1rem;
+    background: rgba(108, 117, 125, .04);
+}
+
+.history-icon-token {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    min-width: 0;
+    padding: .15rem .35rem;
+    border: 1px solid rgba(108, 117, 125, .28);
+    border-radius: .35rem;
+}
+
+.history-icon-token span {
+    overflow: hidden;
+    max-width: 160px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.history-detail-line,
+.history-rune-detail {
+    padding: .55rem .65rem;
+    border: 1px solid rgba(108, 117, 125, .25);
+    border-radius: .4rem;
+}
+
+.history-lots {
+    padding-top: .45rem;
+    border-top: 1px dashed rgba(108, 117, 125, .35);
+}
+
+.history-mobile-label {
+    display: none;
+    margin-bottom: .2rem;
+    color: #6c757d;
+    font-size: .78rem;
+}
+
+.min-w-0 {
+    min-width: 0;
+}
+
+@media (max-width: 991.98px) {
+    .history-crush-summary {
+        grid-template-columns: 1fr 1fr;
+    }
+
+    .history-mobile-label {
+        display: block;
+    }
+}
+
+@media (max-width: 575.98px) {
+    .history-crush-summary {
+        grid-template-columns: 1fr;
+    }
+}

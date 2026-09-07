@@ -435,7 +435,7 @@ Exemple :
 ```powershell
 Compress-Archive `
   -Path .\publish\BestCrush\* `
-  -DestinationPath .\BestCrush-v0.1.5-win-x64.zip `
+  -DestinationPath .\BestCrush-v0.1.6-win-x64.zip `
   -Force
 ```
 
@@ -572,9 +572,9 @@ BestCrush évolue encore rapidement. La feuille de route est organisée par éta
 
 | Étape | État | Objectif |
 |---|---|---|
-| **0 — Base v0.1.5** | ✅ Terminé | Prix et valeurs copiables dans les overlays, détails de valorisation des runes, date/source du coefficient, meilleure visibilité des coefficients sur les objets incomplets, tri par nom/coefficient et prise en charge des équipements comme ingrédients de recette. |
-| **1 — Historique global** | ⬜ À faire | Ajouter un bouton **Historique** avec des sous-onglets **Ressources**, **Items**, **Runes** et **Concassages**. Conserver les données dans le temps avec leurs dates et le maximum d'informations utiles pour chaque observation/session. |
-| **2 — Fiabilisation des valeurs et ergonomie des overlays** | 🟡 À vérifier / à faire | Comparer précisément la valorisation des runes de concassage avec les calculs Excel et corriger si nécessaire la sélection des prix/lots. Harmoniser les zones de redimensionnement des overlays **Mise à jour marché** et **Résultat concassage** avec celles de l'overlay **Rentabilité**, afin que les bordures cliquables soient identiques et faciles à repérer. |
+| **0 — Base v0.1.6** | ✅ Terminé | Prix et valeurs copiables dans les overlays, détails de valorisation des runes, date/source du coefficient, meilleure visibilité des coefficients sur les objets incomplets, tri par nom/coefficient, prise en charge des équipements comme ingrédients de recette et ergonomie harmonisée des overlays. |
+| **1 — Historique global** | ✅ Terminé | Historique par serveur avec les sous-onglets **Ressources**, **Items**, **Runes** et **Concassages**. Conservation datée des observations et persistance des sessions de concassage avec leur valorisation au moment du concassage. |
+| **2 — Fiabilisation des valeurs de concassage** | 🟡 À vérifier | Comparer précisément la valorisation des runes de concassage avec les calculs Excel et corriger si nécessaire la sélection des prix et des lots. |
 | **3 — Seuil de rentabilité du coefficient** | ⬜ À faire | Calculer, avec les prix actuels de l'équipement, des ressources et des runes, jusqu'à quel coefficient le concassage reste rentable. |
 | **4 — Recherche et analyse avancées** | ⬜ À faire | Ajouter davantage de tris et filtres : coefficient ou multiplicateur pertinent, caractéristiques combinées (par exemple Ré Eau + Do Feu), et autres critères utiles à l'analyse des équipements. |
 | **5 — Historique et analytics marché avancés** | ⬜ À faire | Exploiter les historiques pour graphiques, tendances, comparaisons, ratios et analyses entre runes, ressources, équipements et caractéristiques. |
@@ -587,6 +587,9 @@ BestCrush évolue encore rapidement. La feuille de route est organisée par éta
 - date du coefficient et distinction visuelle des coefficients DoFocus ;
 - coefficients visibles et pris en compte dans les tris des objets incomplets ;
 - mise en avant et copie de la quantité de runes dans le résultat de concassage.
+- historique global par serveur pour les ressources, items, runes et concassages ;
+- persistance des sessions de concassage avec leurs prix, lots, sources et dates ;
+- harmonisation des bordures, zones de redimensionnement et zones de déplacement des overlays.
 
 Les retours de test sont particulièrement utiles à ce stade.
 

@@ -20,7 +20,9 @@ public sealed record CrushSessionRuneLotLine(
     long Count,
     int LotQuantity,
     long LotPrice,
-    bool IsEstimated
+    bool IsEstimated,
+    MarketPriceSource? PriceSource = null,
+    DateTime? PriceObservedAtUtc = null
 );
 
 public sealed record CrushSessionRuneLine(
@@ -89,6 +91,32 @@ public sealed class CrushSessionService(
         long,
         AccumulatedRune>
         _runes = [];
+
+    private readonly Dictionary<
+        long,
+        CrushCoefficientScanResult>
+        _sessionEquipments = [];
+
+    private DateTime
+        _sessionStartedAtUtc;
+
+    private string?
+        _sessionServerName;
+
+    private bool
+        _historySaveRequested;
+
+    private bool
+        _historySaveStarted;
+
+    private bool
+        _historySaved;
+
+    private int
+        _activeCaptureCount;
+
+    private int
+        _pendingProcessingCount;
 
     // Les captures sont produites rapidement par
     // la surveillance souris puis traitées derrière.
@@ -214,6 +242,16 @@ public sealed class CrushSessionService(
 
         _sessionId++;
 
+        lock (_stateLock)
+        {
+            _sessionStartedAtUtc =
+                DateTime.UtcNow;
+
+            _sessionServerName =
+                currentServerState
+                    .ServerName;
+        }
+
         _isRunning = true;
 
         EnsureProcessingWorker();
@@ -231,10 +269,14 @@ public sealed class CrushSessionService(
 
         StopMouseMonitoring();
 
+        RequestHistorySave();
+
         PublishSnapshot();
 
         // Les captures déjà en file continuent
         // volontairement leur traitement.
+        // L'historique n'est figé qu'une fois
+        // la capture active et la file terminées.
     }
 
     public void Show()
@@ -532,6 +574,30 @@ public sealed class CrushSessionService(
             _errorMessage = null;
 
             _coefficientsScanned = false;
+
+            _sessionStartedAtUtc =
+                default;
+
+            _sessionServerName =
+                null;
+
+            _historySaveRequested =
+                false;
+
+            _historySaveStarted =
+                false;
+
+            _historySaved =
+                false;
+
+            _activeCaptureCount =
+                0;
+
+            _pendingProcessingCount =
+                0;
+
+            _sessionEquipments
+                .Clear();
 
             _scannedRuneCells
                 .Clear();
@@ -970,95 +1036,144 @@ public sealed class CrushSessionService(
             return;
         }
 
-        // Cette partie reste volontairement dans
-        // le producteur : la capture doit représenter
-        // exactement la position où la souris s'est
-        // immobilisée.
-        DofusCaptureResult capture =
-            await dofusCaptureService
-                .CaptureAsync(
-                    dofusWindow,
-                    cancellationToken
-                );
-
-        double relativeX =
-            (
-                cursor.X -
-                dofusWindow.X
-            ) /
-            (double)
-                dofusWindow.Width;
-
-        double relativeY =
-            (
-                cursor.Y -
-                dofusWindow.Y
-            ) /
-            (double)
-                dofusWindow.Height;
-
-        int captureX =
-            (int)Math.Round(
-                relativeX *
-                capture.Width
-            );
-
-        int captureY =
-            (int)Math.Round(
-                relativeY *
-                capture.Height
-            );
-
-        captureX =
-            Math.Clamp(
-                captureX,
-                0,
-                capture.Width - 1
-            );
-
-        captureY =
-            Math.Clamp(
-                captureY,
-                0,
-                capture.Height - 1
-            );
-
-        long sessionId =
-            _sessionId;
+        long sessionId;
 
         lock (_stateLock)
         {
-            _idleCaptureCount++;
+            if (!_isRunning)
+            {
+                return;
+            }
 
-            _lastCursorX =
-                captureX;
+            sessionId =
+                _sessionId;
 
-            _lastCursorY =
-                captureY;
+            _activeCaptureCount++;
         }
 
-        PublishSnapshot();
-
-        CapturedCursorWorkItem workItem =
-            new(
-                sessionId,
-                capture.FilePath,
-                captureX,
-                captureY
-            );
-
-        if (!_processingQueue
-            .Writer
-            .TryWrite(
-                workItem
-            ))
+        try
         {
-            // La capture n'entrera jamais dans le
-            // worker, elle n'est donc plus utile.
-            dofusCaptureService
-                .DeleteCaptureArtifacts(
-                    capture.FilePath
+            // Cette partie reste volontairement dans
+            // le producteur : la capture doit représenter
+            // exactement la position où la souris s'est
+            // immobilisée.
+            DofusCaptureResult capture =
+                await dofusCaptureService
+                    .CaptureAsync(
+                        dofusWindow,
+                        cancellationToken
+                    );
+
+            if (sessionId !=
+                _sessionId)
+            {
+                dofusCaptureService
+                    .DeleteCaptureArtifacts(
+                        capture.FilePath
+                    );
+
+                return;
+            }
+
+            double relativeX =
+                (
+                    cursor.X -
+                    dofusWindow.X
+                ) /
+                (double)
+                    dofusWindow.Width;
+
+            double relativeY =
+                (
+                    cursor.Y -
+                    dofusWindow.Y
+                ) /
+                (double)
+                    dofusWindow.Height;
+
+            int captureX =
+                (int)Math.Round(
+                    relativeX *
+                    capture.Width
                 );
+
+            int captureY =
+                (int)Math.Round(
+                    relativeY *
+                    capture.Height
+                );
+
+            captureX =
+                Math.Clamp(
+                    captureX,
+                    0,
+                    capture.Width - 1
+                );
+
+            captureY =
+                Math.Clamp(
+                    captureY,
+                    0,
+                    capture.Height - 1
+                );
+
+            lock (_stateLock)
+            {
+                if (sessionId !=
+                    _sessionId)
+                {
+                    dofusCaptureService
+                        .DeleteCaptureArtifacts(
+                            capture.FilePath
+                        );
+
+                    return;
+                }
+
+                _idleCaptureCount++;
+
+                _lastCursorX =
+                    captureX;
+
+                _lastCursorY =
+                    captureY;
+
+                _pendingProcessingCount++;
+            }
+
+            PublishSnapshot();
+
+            CapturedCursorWorkItem workItem =
+                new(
+                    sessionId,
+                    capture.FilePath,
+                    captureX,
+                    captureY
+                );
+
+            if (!_processingQueue
+                .Writer
+                .TryWrite(
+                    workItem
+                ))
+            {
+                // La capture n'entrera jamais dans le
+                // worker, elle n'est donc plus utile.
+                dofusCaptureService
+                    .DeleteCaptureArtifacts(
+                        capture.FilePath
+                    );
+
+                CompletePendingWork(
+                    sessionId
+                );
+            }
+        }
+        finally
+        {
+            CompleteActiveCapture(
+                sessionId
+            );
         }
 #endif
     }
@@ -1108,6 +1223,11 @@ public sealed class CrushSessionService(
                             workItem
                                 .CaptureFilePath
                         );
+
+                    CompletePendingWork(
+                        workItem
+                            .SessionId
+                    );
                 }
             }
         }
@@ -1177,6 +1297,17 @@ public sealed class CrushSessionService(
                         _errorMessage is null)
                     {
                         _coefficientsScanned = true;
+
+                        foreach (
+                            CrushCoefficientScanResult result
+                            in coefficientResults)
+                        {
+                            _sessionEquipments[
+                                result.DofusDbId
+                            ] =
+                                result;
+                        }
+
                         coefficientsUpdated = true;
                     }
                 }
@@ -1578,7 +1709,9 @@ public sealed class CrushSessionService(
                     count,
                     lot.Quantity,
                     lot.Price,
-                    false
+                    false,
+                    lot.Source,
+                    lot.ObservedAtUtc
                 )
             );
 
@@ -1609,12 +1742,252 @@ public sealed class CrushSessionService(
                     remaining,
                     fallback.Quantity,
                     fallback.Price,
-                    true
+                    true,
+                    fallback.Source,
+                    fallback.ObservedAtUtc
                 )
             );
         }
 
         return result;
+    }
+
+    private void RequestHistorySave()
+    {
+        CrushHistorySessionWriteModel?
+            history = null;
+
+        lock (_stateLock)
+        {
+            _historySaveRequested =
+                true;
+
+            history =
+                TryPrepareHistorySaveLocked(
+                    _sessionId
+                );
+        }
+
+        ScheduleHistorySave(
+            history
+        );
+    }
+
+    private void CompleteActiveCapture(
+        long sessionId)
+    {
+        CrushHistorySessionWriteModel?
+            history = null;
+
+        lock (_stateLock)
+        {
+            if (sessionId !=
+                _sessionId)
+            {
+                return;
+            }
+
+            if (_activeCaptureCount > 0)
+            {
+                _activeCaptureCount--;
+            }
+
+            history =
+                TryPrepareHistorySaveLocked(
+                    sessionId
+                );
+        }
+
+        ScheduleHistorySave(
+            history
+        );
+    }
+
+    private void CompletePendingWork(
+        long sessionId)
+    {
+        CrushHistorySessionWriteModel?
+            history = null;
+
+        lock (_stateLock)
+        {
+            if (sessionId !=
+                _sessionId)
+            {
+                return;
+            }
+
+            if (_pendingProcessingCount > 0)
+            {
+                _pendingProcessingCount--;
+            }
+
+            history =
+                TryPrepareHistorySaveLocked(
+                    sessionId
+                );
+        }
+
+        ScheduleHistorySave(
+            history
+        );
+    }
+
+    private CrushHistorySessionWriteModel?
+        TryPrepareHistorySaveLocked(
+            long sessionId)
+    {
+        if (sessionId !=
+                _sessionId ||
+            !_historySaveRequested ||
+            _historySaveStarted ||
+            _historySaved ||
+            _activeCaptureCount > 0 ||
+            _pendingProcessingCount > 0 ||
+            _errorMessage is not null ||
+            _runes.Count == 0 ||
+            string.IsNullOrWhiteSpace(
+                _sessionServerName))
+        {
+            return null;
+        }
+
+        IReadOnlyList<
+            CrushHistoryEquipmentWriteModel>
+            equipments =
+                _sessionEquipments
+                    .Values
+                    .OrderBy(result =>
+                        result.RowY)
+                    .Select(result =>
+                        new
+                        CrushHistoryEquipmentWriteModel(
+                            result.DofusDbId,
+                            result.EquipmentName,
+                            result.CoefficientPercent,
+                            CoefficientSource
+                                .InGameAutomatic,
+                            result.RowY
+                        )
+                    )
+                    .ToArray();
+
+        IReadOnlyList<
+            CrushHistoryRuneWriteModel>
+            runes =
+                _runes
+                    .OrderBy(entry =>
+                        entry.Value.Name)
+                    .Select(entry =>
+                        new
+                        CrushHistoryRuneWriteModel(
+                            entry.Key,
+                            entry.Value.Name,
+                            entry.Value.Quantity,
+                            entry.Value.Value,
+                            entry.Value.Lots
+                                .Select(lot =>
+                                    new
+                                    CrushHistoryRuneLotWriteModel(
+                                        lot.Count,
+                                        lot.LotQuantity,
+                                        lot.LotPrice,
+                                        lot.IsEstimated,
+                                        lot.PriceSource,
+                                        lot.PriceObservedAtUtc
+                                    )
+                                )
+                                .ToArray()
+                        )
+                    )
+                    .ToArray();
+
+        double? totalValue =
+            runes.All(rune =>
+                rune.Value is not null)
+                ? runes.Sum(rune =>
+                    rune.Value
+                        .GetValueOrDefault())
+                : null;
+
+        _historySaveStarted =
+            true;
+
+        return new CrushHistorySessionWriteModel(
+            _sessionServerName!,
+            _sessionStartedAtUtc == default
+                ? DateTime.UtcNow
+                : _sessionStartedAtUtc,
+            DateTime.UtcNow,
+            totalValue,
+            equipments,
+            runes
+        );
+    }
+
+    private void ScheduleHistorySave(
+        CrushHistorySessionWriteModel?
+            history)
+    {
+        if (history is null)
+        {
+            return;
+        }
+
+        _ =
+            PersistHistoryAsync(
+                _sessionId,
+                history
+            );
+    }
+
+    private async Task PersistHistoryAsync(
+        long sessionId,
+        CrushHistorySessionWriteModel
+            history)
+    {
+        try
+        {
+            using IServiceScope scope =
+                serviceScopeFactory
+                    .CreateScope();
+
+            HistoryService historyService =
+                scope
+                    .ServiceProvider
+                    .GetRequiredService<
+                        HistoryService>();
+
+            await historyService
+                .SaveCrushSessionAsync(
+                    history
+                );
+
+            lock (_stateLock)
+            {
+                if (sessionId ==
+                    _sessionId)
+                {
+                    _historySaved =
+                        true;
+                }
+            }
+        }
+        catch
+        {
+            lock (_stateLock)
+            {
+                if (sessionId ==
+                    _sessionId)
+                {
+                    _historySaveStarted =
+                        false;
+                }
+            }
+
+            // L'historique ne doit jamais casser
+            // une session F9 ou l'overlay.
+        }
     }
 
     private bool IsAlreadyScannedLocked(

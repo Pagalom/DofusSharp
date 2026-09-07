@@ -8,5 +8,6 @@ static class KnownRoutes
 
     public static string Servers() => "/servers";
     public static string Server(string server) => $"/servers/{server}";
+    public static string History(string server) => $"/servers/{server}/history";
     public static string Server(DofocusServer server) => Server(server.Name);
 }

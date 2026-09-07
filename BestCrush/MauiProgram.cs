@@ -81,6 +81,7 @@ public static class MauiProgram
             builder.Services.AddScoped<CoefficientService>();
             builder.Services.AddScoped<CraftCostService>();
             builder.Services.AddScoped<EquipmentProfitabilityService>();
+            builder.Services.AddScoped<HistoryService>();
             builder.Services.AddScoped<ApplicationUpgradesHandler>();
             builder.Services.AddScoped<GameDataUpgradeHandler>();
             builder.Services.AddScoped<ItemsService>();

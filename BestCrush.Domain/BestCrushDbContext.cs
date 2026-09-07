@@ -16,6 +16,11 @@ public class BestCrushDbContext : DbContext
     public DbSet<MarketPriceObservation> MarketPriceObservations { get; set; }
     public DbSet<CoefficientObservation> CoefficientObservations { get; set; }
 
+    public DbSet<CrushHistorySession> CrushHistorySessions { get; set; }
+    public DbSet<CrushHistoryEquipment> CrushHistoryEquipments { get; set; }
+    public DbSet<CrushHistoryRune> CrushHistoryRunes { get; set; }
+    public DbSet<CrushHistoryRuneLot> CrushHistoryRuneLots { get; set; }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         modelBuilder.Entity<Equipment>().HasMany(e => e.Characteristics).WithOne(e => e.Equipment).OnDelete(DeleteBehavior.Cascade);
@@ -29,6 +34,45 @@ public class BestCrushDbContext : DbContext
             c.ServerName,
             c.ObservedAtUtc
         });
+        modelBuilder.Entity<CrushHistorySession>()
+        .HasMany(session => session.Equipments)
+        .WithOne(equipment => equipment.Session)
+        .HasForeignKey(equipment => equipment.SessionId)
+        .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CrushHistorySession>()
+        .HasMany(session => session.Runes)
+        .WithOne(rune => rune.Session)
+        .HasForeignKey(rune => rune.SessionId)
+        .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CrushHistoryRune>()
+        .HasMany(rune => rune.Lots)
+        .WithOne(lot => lot.Rune)
+        .HasForeignKey(lot => lot.RuneId)
+        .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<CrushHistorySession>()
+        .HasIndex(session => new
+        {
+            session.ServerName,
+            session.CompletedAtUtc
+        });
+
+        modelBuilder.Entity<CrushHistoryEquipment>()
+        .HasIndex(equipment => new
+        {
+            equipment.SessionId,
+            equipment.DofusDbId
+        });
+
+        modelBuilder.Entity<CrushHistoryRune>()
+        .HasIndex(rune => new
+        {
+            rune.SessionId,
+            rune.DofusDbId
+        });
+
         modelBuilder.Entity<Equipment>().HasAlternateKey(u => u.DofusDbId);
         modelBuilder.Entity<Rune>().HasAlternateKey(u => u.DofusDbId);
         modelBuilder.Entity<Resource>().HasAlternateKey(u => u.DofusDbId);

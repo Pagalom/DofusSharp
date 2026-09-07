@@ -1,0 +1,1012 @@
+@page "/servers/{ServerName}/history"
+
+@inject HistoryService HistoryService
+@inject ItemsService ItemsService
+@inject RunesService RunesService
+
+@using BestCrush.Components.Pure
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using BestCrush.Models
+@using Rune = BestCrush.Domain.Models.Rune
+
+<div class="container history-page">
+    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+        <div>
+            <h2 class="mb-1">Historique</h2>
+            <div class="text-secondary">Serveur : @ServerName</div>
+        </div>
+
+        <div class="d-flex gap-2">
+            <button type="button"
+                    class="btn btn-outline-secondary"
+                    disabled="@_loading"
+                    @onclick="RefreshAsync">
+                Rafraîchir
+            </button>
+
+            <a class="btn btn-outline-secondary"
+               href="@BestCrush.Components.KnownRoutes.Server(ServerName)">
+                Retour
+            </a>
+        </div>
+    </div>
+
+    <div class="history-tabs mb-3">
+        <button type="button"
+                class="@TabClass(HistoryTab.Resources)"
+                @onclick="() => SelectTabAsync(HistoryTab.Resources)">
+            Ressources
+        </button>
+        <button type="button"
+                class="@TabClass(HistoryTab.Items)"
+                @onclick="() => SelectTabAsync(HistoryTab.Items)">
+            Items
+        </button>
+        <button type="button"
+                class="@TabClass(HistoryTab.Runes)"
+                @onclick="() => SelectTabAsync(HistoryTab.Runes)">
+            Runes
+        </button>
+        <button type="button"
+                class="@TabClass(HistoryTab.Crushes)"
+                @onclick="() => SelectTabAsync(HistoryTab.Crushes)">
+            Concassages
+        </button>
+    </div>
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <div class="row g-2 align-items-end">
+                <div class="col-12 col-lg">
+                    <label class="form-label small text-secondary mb-1">Recherche</label>
+                    <input class="form-control"
+                           placeholder="Nom d'objet ou de rune..."
+                           @bind="_searchText" />
+                </div>
+
+                @if (_tab != HistoryTab.Crushes)
+                {
+                    <div class="col-6 col-md-3 col-lg-2">
+                        <label class="form-label small text-secondary mb-1">Niveau min.</label>
+                        <input type="number"
+                               min="0"
+                               max="200"
+                               class="form-control"
+                               @bind="_levelMin" />
+                    </div>
+                    <div class="col-6 col-md-3 col-lg-2">
+                        <label class="form-label small text-secondary mb-1">Niveau max.</label>
+                        <input type="number"
+                               min="0"
+                               max="200"
+                               class="form-control"
+                               @bind="_levelMax" />
+                    </div>
+                }
+
+                @if (_tab == HistoryTab.Items)
+                {
+                    <div class="col-12 col-md-6 col-lg-3">
+                        <label class="form-label small text-secondary mb-1">Type d'équipement</label>
+                        <select class="form-select"
+                                value="@(_equipmentType?.ToString() ?? string.Empty)"
+                                @onchange="OnEquipmentTypeChanged">
+                            <option value="">Tous les types</option>
+                            @foreach (EquipmentType type in Enum.GetValues<EquipmentType>())
+                            {
+                                <option value="@type">@type.ToDisplayName()</option>
+                            }
+                        </select>
+                    </div>
+                }
+
+                <div class="col-auto">
+                    <button type="button"
+                            class="btn btn-primary"
+                            disabled="@_loading"
+                            @onclick="ApplyFiltersAsync">
+                        Filtrer
+                    </button>
+                </div>
+                <div class="col-auto">
+                    <button type="button"
+                            class="btn btn-outline-secondary"
+                            disabled="@_loading"
+                            @onclick="ResetFiltersAsync">
+                        Réinitialiser
+                    </button>
+                </div>
+            </div>
+
+            @if (_tab == HistoryTab.Items || _tab == HistoryTab.Crushes)
+            {
+                <div class="history-secondary-filter mt-3 pt-3 border-top">
+                    <div class="small text-secondary mb-2">
+                        @(_tab == HistoryTab.Items ? "Rune obtenable" : "Rune obtenue")
+                    </div>
+
+                    <div class="position-relative history-rune-filter-wrap">
+                        <button type="button"
+                                class="btn btn-outline-secondary history-rune-filter-button"
+                                @onclick="ToggleRunePicker">
+                            @if (SelectedFilterRune is Rune selectedRune)
+                            {
+                                <span class="d-flex align-items-center gap-2">
+                                    <ItemIcon Item="selectedRune"
+                                              Background="IconBackground.Slot"
+                                              Size="Size.Tiny" />
+                                    <span>@selectedRune.Name</span>
+                                </span>
+                            }
+                            else
+                            {
+                                <span>Toutes les runes</span>
+                            }
+                        </button>
+
+                        @if (_runePickerOpen)
+                        {
+                            <div class="history-rune-picker shadow">
+                                <button type="button"
+                                        class="history-rune-option"
+                                        @onclick="() => SelectRuneFilterAsync(null)">
+                                    <span class="history-empty-icon"></span>
+                                    <span>Toutes les runes</span>
+                                </button>
+
+                                @foreach (Rune rune in _runes)
+                                {
+                                    <button type="button"
+                                            class="history-rune-option"
+                                            @onclick="() => SelectRuneFilterAsync(rune.DofusDbId)">
+                                        <ItemIcon Item="rune"
+                                                  Background="IconBackground.Slot"
+                                                  Size="Size.Tiny" />
+                                        <span>@rune.Name</span>
+                                    </button>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="alert alert-danger">
+            @_errorMessage
+        </div>
+    }
+
+    @if (_loading)
+    {
+        <div class="text-center py-5 text-secondary">
+            Chargement de l'historique…
+        </div>
+    }
+    else
+    {
+        @if (_tab == HistoryTab.Resources || _tab == HistoryTab.Runes)
+        {
+                IReadOnlyList<MarketHistoryRow> rows =
+                    _marketHistory?.Rows ?? [];
+
+                <div class="table-responsive history-table-wrap">
+                    <table class="table table-striped table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>
+                                    <button class="@SortButtonClass(HistorySortColumn.Date)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Date)">
+                                        Date @SortIndicator(HistorySortColumn.Date)
+                                    </button>
+                                </th>
+                                <th>
+                                    <button class="@SortButtonClass(HistorySortColumn.Name)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Name)">
+                                        Nom @SortIndicator(HistorySortColumn.Name)
+                                    </button>
+                                </th>
+                                <th class="text-end">
+                                    <button class="@SortButtonClass(HistorySortColumn.Level)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Level)">
+                                        Niveau @SortIndicator(HistorySortColumn.Level)
+                                    </button>
+                                </th>
+                                <th class="text-end">
+                                    <button class="@SortButtonClass(HistorySortColumn.Quantity)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Quantity)">
+                                        Lot @SortIndicator(HistorySortColumn.Quantity)
+                                    </button>
+                                </th>
+                                <th class="text-end">
+                                    <button class="@SortButtonClass(HistorySortColumn.Value)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Value)">
+                                        Prix @SortIndicator(HistorySortColumn.Value)
+                                    </button>
+                                </th>
+                                <th>
+                                    <button class="@SortButtonClass(HistorySortColumn.Source)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Source)">
+                                        Source @SortIndicator(HistorySortColumn.Source)
+                                    </button>
+                                </th>
+                                <th>État</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (rows.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="7" class="text-center text-secondary py-4">
+                                        Aucune observation ne correspond aux filtres.
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (MarketHistoryRow row in rows)
+                                {
+                                    <tr class="@(row.IsCleared ? "history-cleared-row" : null)">
+                                        <td class="text-nowrap">@FormatDate(row.ObservedAtUtc)</td>
+                                        <td>
+                                            <div class="d-flex align-items-center gap-2">
+                                                @if (GetMarketItem(row) is IItem item)
+                                                {
+                                                    <ItemIcon Item="item"
+                                                              Background="IconBackground.Slot"
+                                                              Size="Size.Tiny" />
+                                                }
+                                                <span class="fw-semibold">@row.Name</span>
+                                            </div>
+                                        </td>
+                                        <td class="text-end">@row.Level</td>
+                                        <td class="text-end">x@row.Quantity</td>
+                                        <td class="text-end text-nowrap">
+                                            @(row.IsCleared ? "—" : $"{row.Price:N0} K")
+                                        </td>
+                                        <td>@FormatMarketSource(row.Source)</td>
+                                        <td>
+                                            @if (row.IsCleared)
+                                            {
+                                                <span class="badge text-bg-secondary">Supprimé</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge text-bg-success">Enregistré</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+        }
+        else if (_tab == HistoryTab.Items)
+        {
+                IReadOnlyList<ItemHistoryRow> rows =
+                    _itemHistory?.Rows ?? [];
+
+                <div class="table-responsive history-table-wrap">
+                    <table class="table table-striped table-hover align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>
+                                    <button class="@SortButtonClass(HistorySortColumn.Date)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Date)">
+                                        Date @SortIndicator(HistorySortColumn.Date)
+                                    </button>
+                                </th>
+                                <th>
+                                    <button class="@SortButtonClass(HistorySortColumn.Name)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Name)">
+                                        Item @SortIndicator(HistorySortColumn.Name)
+                                    </button>
+                                </th>
+                                <th class="text-end">
+                                    <button class="@SortButtonClass(HistorySortColumn.Level)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Level)">
+                                        Niveau @SortIndicator(HistorySortColumn.Level)
+                                    </button>
+                                </th>
+                                <th>
+                                    <button class="@SortButtonClass(HistorySortColumn.Type)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Type)">
+                                        Type @SortIndicator(HistorySortColumn.Type)
+                                    </button>
+                                </th>
+                                <th>
+                                    <button class="@SortButtonClass(HistorySortColumn.DataKind)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.DataKind)">
+                                        Donnée @SortIndicator(HistorySortColumn.DataKind)
+                                    </button>
+                                </th>
+                                <th class="text-end">
+                                    <button class="@SortButtonClass(HistorySortColumn.Value)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Value)">
+                                        Valeur @SortIndicator(HistorySortColumn.Value)
+                                    </button>
+                                </th>
+                                <th>
+                                    <button class="@SortButtonClass(HistorySortColumn.Source)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Source)">
+                                        Source @SortIndicator(HistorySortColumn.Source)
+                                    </button>
+                                </th>
+                                <th>État</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @if (rows.Count == 0)
+                            {
+                                <tr>
+                                    <td colspan="8" class="text-center text-secondary py-4">
+                                        Aucune observation ne correspond aux filtres.
+                                    </td>
+                                </tr>
+                            }
+                            else
+                            {
+                                @foreach (ItemHistoryRow row in rows)
+                                {
+                                    <tr class="@(row.IsCleared ? "history-cleared-row" : null)">
+                                        <td class="text-nowrap">@FormatDate(row.ObservedAtUtc)</td>
+                                        <td>
+                                            <div class="d-flex align-items-center gap-2">
+                                                @if (_equipments.GetValueOrDefault(row.DofusDbId) is Equipment equipment)
+                                                {
+                                                    <ItemIcon Item="equipment"
+                                                              Background="IconBackground.Slot"
+                                                              Size="Size.Tiny" />
+                                                }
+                                                <span class="fw-semibold">@row.Name</span>
+                                            </div>
+                                        </td>
+                                        <td class="text-end">@row.Level</td>
+                                        <td>@row.Type.ToDisplayName()</td>
+                                        <td>@FormatDataKind(row.DataKind)</td>
+                                        <td class="text-end text-nowrap">@FormatItemValue(row)</td>
+                                        <td>@FormatItemSource(row)</td>
+                                        <td>
+                                            @if (row.IsCleared)
+                                            {
+                                                <span class="badge text-bg-secondary">Supprimé</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge text-bg-success">Enregistré</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            }
+                        </tbody>
+                    </table>
+                </div>
+        }
+        else
+        {
+                IReadOnlyList<CrushHistorySession> rows =
+                    _crushHistory?.Rows ?? [];
+
+                <div class="history-crush-list">
+                    <div class="history-crush-header d-none d-lg-grid">
+                        <div>
+                            <button class="@SortButtonClass(HistorySortColumn.Date)"
+                                    @onclick="() => SortByAsync(HistorySortColumn.Date)">
+                                Date @SortIndicator(HistorySortColumn.Date)
+                            </button>
+                        </div>
+                        <div>
+                            <button class="@SortButtonClass(HistorySortColumn.Name)"
+                                    @onclick="() => SortByAsync(HistorySortColumn.Name)">
+                                Items @SortIndicator(HistorySortColumn.Name)
+                            </button>
+                        </div>
+                        <div>
+                            <button class="@SortButtonClass(HistorySortColumn.Rune)"
+                                    @onclick="() => SortByAsync(HistorySortColumn.Rune)">
+                                Runes @SortIndicator(HistorySortColumn.Rune)
+                            </button>
+                        </div>
+                        <div class="text-end">
+                            <button class="@SortButtonClass(HistorySortColumn.Quantity)"
+                                    @onclick="() => SortByAsync(HistorySortColumn.Quantity)">
+                                Quantité @SortIndicator(HistorySortColumn.Quantity)
+                            </button>
+                        </div>
+                        <div class="text-end">
+                            <button class="@SortButtonClass(HistorySortColumn.Value)"
+                                    @onclick="() => SortByAsync(HistorySortColumn.Value)">
+                                Valeur @SortIndicator(HistorySortColumn.Value)
+                            </button>
+                        </div>
+                        <div></div>
+                    </div>
+
+                    @if (rows.Count == 0)
+                    {
+                        <div class="text-center text-secondary py-5 border rounded">
+                            Aucun concassage ne correspond aux filtres.
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (CrushHistorySession session in rows)
+                        {
+                            bool expanded = _expandedSessions.Contains(session.Id);
+                            int totalQuantity = session.Runes.Sum(rune => rune.Quantity);
+
+                            <div class="history-crush-card">
+                                <div class="history-crush-summary">
+                                    <div>
+                                        <div class="history-mobile-label">Date</div>
+                                        <div class="text-nowrap">@FormatDate(session.CompletedAtUtc)</div>
+                                    </div>
+
+                                    <div>
+                                        <div class="history-mobile-label">Items</div>
+                                        <div class="d-flex flex-wrap align-items-center gap-1">
+                                            @foreach (CrushHistoryEquipment equipmentLine in session.Equipments.OrderBy(e => e.RowY))
+                                            {
+                                                <div class="history-icon-token" title="@equipmentLine.EquipmentName">
+                                                    @if (_equipments.GetValueOrDefault(equipmentLine.DofusDbId) is Equipment equipment)
+                                                    {
+                                                        <ItemIcon Item="equipment"
+                                                                  Background="IconBackground.Slot"
+                                                                  Size="Size.Tiny" />
+                                                    }
+                                                    <span>@equipmentLine.EquipmentName</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <div class="history-mobile-label">Runes</div>
+                                        <div class="d-flex flex-wrap align-items-center gap-1">
+                                            @foreach (CrushHistoryRune runeLine in session.Runes.OrderBy(r => r.RuneName))
+                                            {
+                                                <div class="history-icon-token" title="@runeLine.RuneName">
+                                                    @if (_runesById.GetValueOrDefault(runeLine.DofusDbId) is Rune rune)
+                                                    {
+                                                        <ItemIcon Item="rune"
+                                                                  Background="IconBackground.Slot"
+                                                                  Size="Size.Tiny" />
+                                                    }
+                                                    <span>@runeLine.RuneName</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+
+                                    <div class="text-lg-end">
+                                        <div class="history-mobile-label">Quantité</div>
+                                        <strong>@totalQuantity.ToString("N0")</strong>
+                                    </div>
+
+                                    <div class="text-lg-end">
+                                        <div class="history-mobile-label">Valeur</div>
+                                        <strong>@FormatKamas(session.TotalValue)</strong>
+                                    </div>
+
+                                    <div class="text-lg-end">
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-secondary"
+                                                title="Afficher les détails"
+                                                @onclick="() => ToggleSession(session.Id)">
+                                            @(expanded ? "▼" : "▶")
+                                        </button>
+                                    </div>
+                                </div>
+
+                                @if (expanded)
+                                {
+                                    <div class="history-crush-details border-top">
+                                        <div class="row g-4">
+                                            <div class="col-12 col-xl-5">
+                                                <h6>Équipements</h6>
+                                                <div class="d-flex flex-column gap-2">
+                                                    @foreach (CrushHistoryEquipment equipmentLine in session.Equipments.OrderBy(e => e.RowY))
+                                                    {
+                                                        <div class="d-flex align-items-center justify-content-between gap-3 history-detail-line">
+                                                            <div class="d-flex align-items-center gap-2 min-w-0">
+                                                                @if (_equipments.GetValueOrDefault(equipmentLine.DofusDbId) is Equipment equipment)
+                                                                {
+                                                                    <ItemIcon Item="equipment"
+                                                                              Background="IconBackground.Slot"
+                                                                              Size="Size.Tiny" />
+                                                                }
+                                                                <span class="text-truncate">@equipmentLine.EquipmentName</span>
+                                                            </div>
+                                                            <div class="text-end text-nowrap">
+                                                                <strong>@equipmentLine.CoefficientPercent.ToString("0.##") %</strong>
+                                                                <div class="small text-secondary">@FormatCoefficientSource(equipmentLine.CoefficientSource)</div>
+                                                            </div>
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+
+                                            <div class="col-12 col-xl-7">
+                                                <h6>Runes obtenues</h6>
+                                                <div class="d-flex flex-column gap-2">
+                                                    @foreach (CrushHistoryRune runeLine in session.Runes.OrderBy(r => r.RuneName))
+                                                    {
+                                                        <div class="history-rune-detail">
+                                                            <div class="d-flex align-items-center justify-content-between gap-3">
+                                                                <div class="d-flex align-items-center gap-2 min-w-0">
+                                                                    @if (_runesById.GetValueOrDefault(runeLine.DofusDbId) is Rune rune)
+                                                                    {
+                                                                        <ItemIcon Item="rune"
+                                                                                  Background="IconBackground.Slot"
+                                                                                  Size="Size.Tiny" />
+                                                                    }
+                                                                    <div>
+                                                                        <div class="fw-semibold">@runeLine.RuneName</div>
+                                                                        <div class="small text-secondary">×@(runeLine.Quantity.ToString("N0"))</div>
+                                                                    </div>
+                                                                </div>
+                                                                <strong class="text-nowrap">@FormatKamas(runeLine.Value)</strong>
+                                                            </div>
+
+                                                            @if (runeLine.Lots.Count > 0)
+                                                            {
+                                                                <div class="history-lots mt-2">
+                                                                    @foreach (CrushHistoryRuneLot lot in runeLine.Lots.OrderByDescending(l => l.LotQuantity))
+                                                                    {
+                                                                        <div class="small d-flex flex-wrap justify-content-between gap-2">
+                                                                            <span>
+                                                                                @(lot.Count.ToString("N0"))×@(lot.LotQuantity)
+                                                                                = @((lot.Count * lot.LotPrice).ToString("N0")) K
+                                                                            </span>
+                                                                            <span class="text-secondary">
+                                                                                @lot.LotPrice.ToString("N0") K / lot
+                                                                                @if (lot.IsEstimated)
+                                                                                {
+                                                                                    <span> • estimé</span>
+                                                                                }
+                                                                                @if (lot.PriceSource is MarketPriceSource source)
+                                                                                {
+                                                                                    <span> • @FormatMarketSource(source)</span>
+                                                                                }
+                                                                                @if (lot.PriceObservedAtUtc is DateTime observedAt)
+                                                                                {
+                                                                                    <span> • @FormatDate(observedAt)</span>
+                                                                                }
+                                                                            </span>
+                                                                        </div>
+                                                                    }
+                                                                </div>
+                                                            }
+                                                        </div>
+                                                    }
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div class="d-flex justify-content-end mt-3 pt-3 border-top">
+                                            <div class="text-end">
+                                                <div class="small text-secondary">Valeur totale figée à la date du concassage</div>
+                                                <div class="fs-5 fw-bold">@FormatKamas(session.TotalValue)</div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    }
+                </div>
+        }
+
+        @if (CurrentHasMore)
+        {
+            <div class="d-flex justify-content-center my-4">
+                <button type="button"
+                        class="btn btn-outline-secondary"
+                        @onclick="LoadMoreAsync">
+                    Charger @PageIncrement entrées de plus
+                </button>
+            </div>
+        }
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string ServerName { get; set; } = string.Empty;
+
+    private const int InitialTake = 100;
+    private const int PageIncrement = 100;
+
+    private HistoryTab _tab = HistoryTab.Resources;
+    private HistorySortColumn _sortColumn = HistorySortColumn.Date;
+    private HistorySortDirection _sortDirection = HistorySortDirection.Descending;
+
+    private string? _searchText;
+    private int? _levelMin;
+    private int? _levelMax;
+    private EquipmentType? _equipmentType;
+    private long? _itemRuneFilterId;
+    private long? _crushRuneFilterId;
+    private bool _runePickerOpen;
+
+    private int _take = InitialTake;
+    private bool _loading;
+    private string? _errorMessage;
+
+    private HistoryPage<MarketHistoryRow>? _marketHistory;
+    private HistoryPage<ItemHistoryRow>? _itemHistory;
+    private HistoryPage<CrushHistorySession>? _crushHistory;
+
+    private Dictionary<long, Resource> _resources = [];
+    private Dictionary<long, Equipment> _equipments = [];
+    private Dictionary<long, Rune> _runesById = [];
+    private List<Rune> _runes = [];
+
+    private HashSet<Guid> _expandedSessions = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadCatalogsAsync();
+        await LoadCurrentAsync();
+    }
+
+    private async Task LoadCatalogsAsync()
+    {
+        IReadOnlyCollection<Resource> resources =
+            await ItemsService.GetResourcesAsync();
+
+        IReadOnlyCollection<Equipment> equipments =
+            await ItemsService.GetAllEquipmentsAsync();
+
+        IReadOnlyCollection<Rune> runes =
+            await RunesService.GetLocalRunesAsync();
+
+        _resources = resources.ToDictionary(item => item.DofusDbId);
+        _equipments = equipments.ToDictionary(item => item.DofusDbId);
+        _runes = runes.OrderBy(rune => rune.Name).ToList();
+        _runesById = _runes.ToDictionary(rune => rune.DofusDbId);
+    }
+
+    private async Task LoadCurrentAsync()
+    {
+        _loading = true;
+        _errorMessage = null;
+
+        try
+        {
+            switch (_tab)
+            {
+                case HistoryTab.Resources:
+                    _marketHistory = await HistoryService.GetMarketHistoryAsync(
+                        MarketObjectType.Resource,
+                        ServerName,
+                        _searchText,
+                        _levelMin,
+                        _levelMax,
+                        _sortColumn,
+                        _sortDirection,
+                        _take
+                    );
+                    break;
+
+                case HistoryTab.Runes:
+                    _marketHistory = await HistoryService.GetMarketHistoryAsync(
+                        MarketObjectType.Rune,
+                        ServerName,
+                        _searchText,
+                        _levelMin,
+                        _levelMax,
+                        _sortColumn,
+                        _sortDirection,
+                        _take
+                    );
+                    break;
+
+                case HistoryTab.Items:
+                    _itemHistory = await HistoryService.GetItemHistoryAsync(
+                        ServerName,
+                        _searchText,
+                        _levelMin,
+                        _levelMax,
+                        _equipmentType,
+                        _itemRuneFilterId,
+                        _sortColumn,
+                        _sortDirection,
+                        _take
+                    );
+                    break;
+
+                case HistoryTab.Crushes:
+                    _crushHistory = await HistoryService.GetCrushHistoryAsync(
+                        ServerName,
+                        _searchText,
+                        _crushRuneFilterId,
+                        _sortColumn,
+                        _sortDirection,
+                        _take
+                    );
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task SelectTabAsync(HistoryTab tab)
+    {
+        if (_tab == tab)
+        {
+            return;
+        }
+
+        _tab = tab;
+        _take = InitialTake;
+        _sortColumn = HistorySortColumn.Date;
+        _sortDirection = HistorySortDirection.Descending;
+        _runePickerOpen = false;
+        _expandedSessions.Clear();
+
+        await LoadCurrentAsync();
+    }
+
+    private async Task RefreshAsync()
+    {
+        await LoadCurrentAsync();
+    }
+
+    private async Task ApplyFiltersAsync()
+    {
+        NormalizeLevels();
+        _take = InitialTake;
+        _runePickerOpen = false;
+        await LoadCurrentAsync();
+    }
+
+    private async Task ResetFiltersAsync()
+    {
+        _searchText = null;
+        _levelMin = null;
+        _levelMax = null;
+        _equipmentType = null;
+
+        if (_tab == HistoryTab.Items)
+        {
+            _itemRuneFilterId = null;
+        }
+        else if (_tab == HistoryTab.Crushes)
+        {
+            _crushRuneFilterId = null;
+        }
+
+        _take = InitialTake;
+        _runePickerOpen = false;
+        await LoadCurrentAsync();
+    }
+
+    private void NormalizeLevels()
+    {
+        if (_levelMin is < 0)
+        {
+            _levelMin = 0;
+        }
+
+        if (_levelMax is > 200)
+        {
+            _levelMax = 200;
+        }
+
+        if (_levelMin is int min &&
+            _levelMax is int max &&
+            min > max)
+        {
+            (_levelMin, _levelMax) = (_levelMax, _levelMin);
+        }
+    }
+
+    private void OnEquipmentTypeChanged(ChangeEventArgs args)
+    {
+        string? value = args.Value?.ToString();
+
+        _equipmentType = Enum.TryParse(
+            value,
+            ignoreCase: true,
+            out EquipmentType parsed)
+                ? parsed
+                : null;
+    }
+
+    private void ToggleRunePicker()
+    {
+        _runePickerOpen = !_runePickerOpen;
+    }
+
+    private async Task SelectRuneFilterAsync(long? dofusDbId)
+    {
+        if (_tab == HistoryTab.Items)
+        {
+            _itemRuneFilterId = dofusDbId;
+        }
+        else if (_tab == HistoryTab.Crushes)
+        {
+            _crushRuneFilterId = dofusDbId;
+        }
+
+        _runePickerOpen = false;
+        _take = InitialTake;
+        await LoadCurrentAsync();
+    }
+
+    private Rune? SelectedFilterRune
+    {
+        get
+        {
+            long? id = _tab == HistoryTab.Items
+                ? _itemRuneFilterId
+                : _crushRuneFilterId;
+
+            return id is long value
+                ? _runesById.GetValueOrDefault(value)
+                : null;
+        }
+    }
+
+    private async Task SortByAsync(HistorySortColumn column)
+    {
+        if (_sortColumn == column)
+        {
+            _sortDirection = _sortDirection == HistorySortDirection.Ascending
+                ? HistorySortDirection.Descending
+                : HistorySortDirection.Ascending;
+        }
+        else
+        {
+            _sortColumn = column;
+            _sortDirection = DefaultDirection(column);
+        }
+
+        _take = InitialTake;
+        await LoadCurrentAsync();
+    }
+
+    private static HistorySortDirection DefaultDirection(HistorySortColumn column) =>
+        column switch
+        {
+            HistorySortColumn.Name or
+            HistorySortColumn.Level or
+            HistorySortColumn.Type or
+            HistorySortColumn.Source or
+            HistorySortColumn.DataKind or
+            HistorySortColumn.Rune => HistorySortDirection.Ascending,
+
+            _ => HistorySortDirection.Descending
+        };
+
+    private string SortIndicator(HistorySortColumn column)
+    {
+        if (_sortColumn != column)
+        {
+            return "↕";
+        }
+
+        return _sortDirection == HistorySortDirection.Ascending
+            ? "▲"
+            : "▼";
+    }
+
+    private string SortButtonClass(HistorySortColumn column) =>
+        _sortColumn == column
+            ? "history-sort active"
+            : "history-sort";
+
+    private async Task LoadMoreAsync()
+    {
+        _take += PageIncrement;
+        await LoadCurrentAsync();
+    }
+
+    private bool CurrentHasMore =>
+        _tab switch
+        {
+            HistoryTab.Resources or HistoryTab.Runes => _marketHistory?.HasMore == true,
+            HistoryTab.Items => _itemHistory?.HasMore == true,
+            HistoryTab.Crushes => _crushHistory?.HasMore == true,
+            _ => false
+        };
+
+    private string TabClass(HistoryTab tab) =>
+        tab == _tab
+            ? "btn btn-primary"
+            : "btn btn-outline-secondary";
+
+    private IItem? GetMarketItem(MarketHistoryRow row)
+    {
+        return _tab == HistoryTab.Resources
+            ? _resources.GetValueOrDefault(row.DofusDbId)
+            : _runesById.GetValueOrDefault(row.DofusDbId);
+    }
+
+    private void ToggleSession(Guid sessionId)
+    {
+        if (!_expandedSessions.Add(sessionId))
+        {
+            _expandedSessions.Remove(sessionId);
+        }
+    }
+
+    private static string FormatDate(DateTime utc) =>
+        utc.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+
+    private static string FormatMarketSource(MarketPriceSource source) =>
+        source switch
+        {
+            MarketPriceSource.Manual => "Manuel",
+            MarketPriceSource.InGameAutomatic => "Jeu",
+            _ => source.ToString()
+        };
+
+    private static string FormatCoefficientSource(CoefficientSource source) =>
+        source switch
+        {
+            CoefficientSource.Manual => "Manuel",
+            CoefficientSource.InGameAutomatic => "Jeu",
+            CoefficientSource.DofocusInitial => "DoFocus",
+            _ => source.ToString()
+        };
+
+    private static string FormatDataKind(ItemHistoryDataKind kind) =>
+        kind switch
+        {
+            ItemHistoryDataKind.Price => "Prix",
+            ItemHistoryDataKind.Coefficient => "Coefficient",
+            _ => kind.ToString()
+        };
+
+    private static string FormatItemSource(ItemHistoryRow row)
+    {
+        if (row.MarketSource is MarketPriceSource marketSource)
+        {
+            return FormatMarketSource(marketSource);
+        }
+
+        return row.CoefficientSource is CoefficientSource coefficientSource
+            ? FormatCoefficientSource(coefficientSource)
+            : "—";
+    }
+
+    private static string FormatItemValue(ItemHistoryRow row)
+    {
+        if (row.IsCleared)
+        {
+            return "—";
+        }
+
+        return row.DataKind == ItemHistoryDataKind.Price
+            ? $"{row.Value:N0} K"
+            : $"{row.Value:0.##} %";
+    }
+
+    private static string FormatKamas(double? value) =>
+        value is double amount
+            ? $"{amount:N0} K"
+            : "Indisponible";
+
+    private enum HistoryTab
+    {
+        Resources,
+        Items,
+        Runes,
+        Crushes
+    }
+}

@@ -34,8 +34,7 @@ public sealed class CrushSessionOverlayPage
                 "#17191C"
             );
 
-        Padding =
-            new Thickness(14);
+        Padding = 0;
 
         Label title =
             new()
@@ -55,39 +54,24 @@ public sealed class CrushSessionOverlayPage
                     LayoutOptions.Center
             };
 
-        Button close =
+        Label dragHint =
             new()
             {
-                Text = "✕",
-
+                Text = "⋮⋮",
                 FontSize = 16,
-
-                TextColor =
-                    Colors.LightGray,
-
-                BackgroundColor =
-                    Colors.Transparent,
-
-                Padding =
-                    new Thickness(
-                        8,
-                        2
-                    ),
-
-                HorizontalOptions =
-                    LayoutOptions.End
-            };
-
-        close.Clicked +=
-            (_, _) =>
-            {
-                _sessionService
-                    .CloseAndReset();
+                TextColor = Colors.Gray,
+                VerticalOptions = LayoutOptions.Center,
+                HorizontalOptions = LayoutOptions.End
             };
 
         Grid header =
             new()
             {
+                BackgroundColor =
+                    Color.FromArgb(
+                        "#1B1E22"
+                    ),
+
                 ColumnDefinitions =
                 {
                     new ColumnDefinition(
@@ -107,7 +91,7 @@ public sealed class CrushSessionOverlayPage
         );
 
         header.Add(
-            close,
+            dragHint,
             1,
             0
         );
@@ -143,6 +127,31 @@ public sealed class CrushSessionOverlayPage
 
         header.GestureRecognizers.Add(
             dragGesture
+        );
+
+        PointerGestureRecognizer dragPointer =
+            new();
+
+        dragPointer.PointerEntered +=
+            (_, _) =>
+            {
+                header.BackgroundColor =
+                    Color.FromArgb(
+                        "#22262A"
+                    );
+            };
+
+        dragPointer.PointerExited +=
+            (_, _) =>
+            {
+                header.BackgroundColor =
+                    Color.FromArgb(
+                        "#1B1E22"
+                    );
+            };
+
+        header.GestureRecognizers.Add(
+            dragPointer
         );
 
         _status =
@@ -209,6 +218,9 @@ public sealed class CrushSessionOverlayPage
             new()
             {
                 Spacing = 10,
+
+                Margin =
+                    new Thickness(14),
 
                 Children =
                 {
@@ -377,7 +389,9 @@ public sealed class CrushSessionOverlayPage
             new()
             {
                 BackgroundColor =
-                    Colors.Transparent
+                    Color.FromArgb(
+                        "#1D2024"
+                    )
             };
 
         PanGestureRecognizer gesture =
@@ -417,6 +431,32 @@ public sealed class CrushSessionOverlayPage
             .Add(
                 gesture
             );
+
+
+        PointerGestureRecognizer pointer =
+            new();
+
+        pointer.PointerEntered +=
+            (_, _) =>
+            {
+                resizeZone.BackgroundColor =
+                    Color.FromArgb(
+                        "#2A2E33"
+                    );
+            };
+
+        pointer.PointerExited +=
+            (_, _) =>
+            {
+                resizeZone.BackgroundColor =
+                    Color.FromArgb(
+                        "#1D2024"
+                    );
+            };
+
+        resizeZone.GestureRecognizers.Add(
+            pointer
+        );
 
         Grid.SetRow(
             resizeZone,
