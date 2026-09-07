@@ -56,6 +56,11 @@ public sealed class OverlayPage : ContentPage
 
         Grid dragZone = new()
         {
+            BackgroundColor =
+                Color.FromArgb(
+                    "#1B1E22"
+                ),
+
             ColumnDefinitions =
             {
                 new ColumnDefinition(GridLength.Star),
@@ -91,6 +96,31 @@ public sealed class OverlayPage : ContentPage
         };
 
         dragZone.GestureRecognizers.Add(dragGesture);
+
+        PointerGestureRecognizer dragPointer =
+            new();
+
+        dragPointer.PointerEntered +=
+            (_, _) =>
+            {
+                dragZone.BackgroundColor =
+                    Color.FromArgb(
+                        "#22262A"
+                    );
+            };
+
+        dragPointer.PointerExited +=
+            (_, _) =>
+            {
+                dragZone.BackgroundColor =
+                    Color.FromArgb(
+                        "#1B1E22"
+                    );
+            };
+
+        dragZone.GestureRecognizers.Add(
+            dragPointer
+        );
         
         Label status = new()
         {
@@ -723,7 +753,9 @@ public sealed class OverlayPage : ContentPage
         BoxView resizeZone = new()
         {
             BackgroundColor =
-                Colors.Transparent
+                Color.FromArgb(
+                    "#1D2024"
+                )
         };
 
         PanGestureRecognizer gesture = new();
@@ -754,6 +786,32 @@ public sealed class OverlayPage : ContentPage
 
         resizeZone.GestureRecognizers.Add(
             gesture
+        );
+
+
+        PointerGestureRecognizer pointer =
+            new();
+
+        pointer.PointerEntered +=
+            (_, _) =>
+            {
+                resizeZone.BackgroundColor =
+                    Color.FromArgb(
+                        "#2A2E33"
+                    );
+            };
+
+        pointer.PointerExited +=
+            (_, _) =>
+            {
+                resizeZone.BackgroundColor =
+                    Color.FromArgb(
+                        "#1D2024"
+                    );
+            };
+
+        resizeZone.GestureRecognizers.Add(
+            pointer
         );
 
         Grid.SetRow(

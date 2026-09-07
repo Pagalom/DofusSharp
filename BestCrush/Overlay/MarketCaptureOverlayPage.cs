@@ -15,7 +15,7 @@ public sealed class MarketCaptureOverlayPage : ContentPage
         MarketCaptureOverlayService overlayService)
     {
         BackgroundColor = Color.FromArgb("#17191C");
-        Padding = new Thickness(14);
+        Padding = 0;
 
         Label title = new()
         {
@@ -26,21 +26,22 @@ public sealed class MarketCaptureOverlayPage : ContentPage
             VerticalOptions = LayoutOptions.Center
         };
 
-        Button close = new()
+        Label dragHint = new()
         {
-            Text = "✕",
-            FontSize = 15,
-            TextColor = Colors.LightGray,
-            BackgroundColor = Colors.Transparent,
-            Padding = new Thickness(8, 2),
+            Text = "⋮⋮",
+            FontSize = 16,
+            TextColor = Colors.Gray,
+            VerticalOptions = LayoutOptions.Center,
             HorizontalOptions = LayoutOptions.End
         };
 
-        close.Clicked += (_, _) =>
-            overlayService.Hide();
-
         Grid header = new()
         {
+            BackgroundColor =
+                Color.FromArgb(
+                    "#1B1E22"
+                ),
+
             ColumnDefinitions =
             {
                 new ColumnDefinition(GridLength.Star),
@@ -49,7 +50,7 @@ public sealed class MarketCaptureOverlayPage : ContentPage
         };
 
         header.Add(title, 0, 0);
-        header.Add(close, 1, 0);
+        header.Add(dragHint, 1, 0);
 
         PanGestureRecognizer dragGesture = new();
         dragGesture.PanUpdated += (_, e) =>
@@ -74,6 +75,31 @@ public sealed class MarketCaptureOverlayPage : ContentPage
             }
         };
         header.GestureRecognizers.Add(dragGesture);
+
+        PointerGestureRecognizer dragPointer =
+            new();
+
+        dragPointer.PointerEntered +=
+            (_, _) =>
+            {
+                header.BackgroundColor =
+                    Color.FromArgb(
+                        "#22262A"
+                    );
+            };
+
+        dragPointer.PointerExited +=
+            (_, _) =>
+            {
+                header.BackgroundColor =
+                    Color.FromArgb(
+                        "#1B1E22"
+                    );
+            };
+
+        header.GestureRecognizers.Add(
+            dragPointer
+        );
 
         _status = new Label
         {
@@ -119,6 +145,7 @@ public sealed class MarketCaptureOverlayPage : ContentPage
         VerticalStackLayout content = new()
         {
             Spacing = 9,
+            Margin = new Thickness(14),
             Children =
             {
                 header,
@@ -402,7 +429,9 @@ public sealed class MarketCaptureOverlayPage : ContentPage
             new()
             {
                 BackgroundColor =
-                    Colors.Transparent
+                    Color.FromArgb(
+                        "#1D2024"
+                    )
             };
 
         PanGestureRecognizer gesture =
@@ -442,6 +471,32 @@ public sealed class MarketCaptureOverlayPage : ContentPage
             .Add(
                 gesture
             );
+
+
+        PointerGestureRecognizer pointer =
+            new();
+
+        pointer.PointerEntered +=
+            (_, _) =>
+            {
+                resizeZone.BackgroundColor =
+                    Color.FromArgb(
+                        "#2A2E33"
+                    );
+            };
+
+        pointer.PointerExited +=
+            (_, _) =>
+            {
+                resizeZone.BackgroundColor =
+                    Color.FromArgb(
+                        "#1D2024"
+                    );
+            };
+
+        resizeZone.GestureRecognizers.Add(
+            pointer
+        );
 
         Grid.SetRow(
             resizeZone,
