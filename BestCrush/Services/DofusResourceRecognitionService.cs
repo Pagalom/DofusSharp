@@ -29,55 +29,141 @@ public sealed class DofusResourceRecognitionService(
             await itemsService
                 .GetResourcesAsync();
 
-        Resource? prefixMatch =
+        List<ResourceCandidate> candidates =
             resources
-                .Select(resource => new
-                {
-                    Resource = resource,
-                    NormalizedName =
+                .Select(resource =>
+                    new ResourceCandidate(
+                        resource,
                         Normalize(resource.Name)
-                })
-                .Where(candidate =>
-                    normalizedInput.StartsWith(
+                    )
+                )
+                .ToList();
+
+        ResourceCandidate? exactMatch =
+            candidates
+                .FirstOrDefault(candidate =>
+                    normalizedInput.Equals(
                         candidate.NormalizedName,
                         StringComparison.Ordinal
-                    ) &&
-                    (
-                        normalizedInput.Length ==
-                            candidate.NormalizedName.Length ||
-                        char.IsWhiteSpace(
-                            normalizedInput[
-                                candidate.NormalizedName.Length
-                            ]
-                        )
+                    )
+                );
+
+        if (exactMatch is not null)
+        {
+            return new ResourceRecognitionResult(
+                exactMatch.Resource,
+                1.0
+            );
+        }
+
+        ResourceCandidate? prefixMatch =
+            candidates
+                .Where(candidate =>
+                    StartsWithWholeName(
+                        normalizedInput,
+                        candidate.NormalizedName
                     )
                 )
                 .OrderByDescending(candidate =>
                     candidate.NormalizedName.Length)
-                .Select(candidate =>
-                    candidate.Resource)
                 .FirstOrDefault();
 
         if (prefixMatch is not null)
         {
+            // Le texte OCR peut contenir des métadonnées après le nom
+            // (type, niveau, etc.). On conserve donc le comportement
+            // "préfixe exact = nom valide".
+            //
+            // Exception importante : si ce préfixe correspond aussi au
+            // début d'un AUTRE nom de ressource plus long, on vérifie
+            // d'abord si la suite du texte OCR correspond presque
+            // parfaitement à cette ressource plus précise.
+            //
+            // Exemple :
+            //   OCR       : "Pince de Crabe Yolonistc"
+            //   préfixe   : "Pince de Crabe"
+            //   vrai nom  : "Pince de Crabe Yoloniste"
+            //
+            // Le texte situé après le vrai nom n'est pas utilisé :
+            // la comparaison d'une extension porte seulement sur les
+            // premiers mots nécessaires pour couvrir ce nom candidat.
+            List<ResourceRecognitionResult>
+                longerPrefixMatches =
+                    candidates
+                        .Where(candidate =>
+                            candidate.NormalizedName.Length >
+                                prefixMatch.NormalizedName.Length &&
+                            candidate.NormalizedName.StartsWith(
+                                prefixMatch.NormalizedName + " ",
+                                StringComparison.Ordinal
+                            )
+                        )
+                        .Select(candidate =>
+                        {
+                            string comparableInput =
+                                TakeLeadingWords(
+                                    normalizedInput,
+                                    CountWords(
+                                        candidate.NormalizedName
+                                    )
+                                );
+
+                            double confidence =
+                                Similarity(
+                                    comparableInput,
+                                    candidate.NormalizedName
+                                );
+
+                            return new ResourceRecognitionResult(
+                                candidate.Resource,
+                                confidence
+                            );
+                        })
+                        .OrderByDescending(result =>
+                            result.Confidence)
+                        .ToList();
+
+            if (longerPrefixMatches.Count > 0)
+            {
+                ResourceRecognitionResult
+                    bestLongerPrefixMatch =
+                        longerPrefixMatches[0];
+
+                bool isStrongLongerMatch =
+                    bestLongerPrefixMatch.Confidence >=
+                        0.90;
+
+                bool isUnambiguousLongerMatch =
+                    longerPrefixMatches.Count == 1 ||
+                    bestLongerPrefixMatch.Confidence -
+                        longerPrefixMatches[1].Confidence >=
+                            0.05;
+
+                if (isStrongLongerMatch &&
+                    isUnambiguousLongerMatch)
+                {
+                    return bestLongerPrefixMatch;
+                }
+            }
+
             return new ResourceRecognitionResult(
-                prefixMatch,
+                prefixMatch.Resource,
                 1.0
             );
         }
 
         List<ResourceRecognitionResult> matches =
-            resources
-                .Select(resource =>
+            candidates
+                .Select(candidate =>
                 {
                     double confidence =
                         Similarity(
                             normalizedInput,
-                            Normalize(resource.Name)
+                            candidate.NormalizedName
                         );
 
                     return new ResourceRecognitionResult(
-                        resource,
+                        candidate.Resource,
                         confidence
                     );
                 })
@@ -106,6 +192,62 @@ public sealed class DofusResourceRecognitionService(
         }
 
         return best;
+    }
+
+    private static bool StartsWithWholeName(
+        string input,
+        string candidateName)
+    {
+        return input.StartsWith(
+                   candidateName,
+                   StringComparison.Ordinal
+               ) &&
+               (
+                   input.Length ==
+                       candidateName.Length ||
+                   char.IsWhiteSpace(
+                       input[
+                           candidateName.Length
+                       ]
+                   )
+               );
+    }
+
+    private static int CountWords(
+        string value)
+    {
+        return value
+            .Split(
+                ' ',
+                StringSplitOptions.RemoveEmptyEntries
+            )
+            .Length;
+    }
+
+    private static string TakeLeadingWords(
+        string value,
+        int wordCount)
+    {
+        if (wordCount <= 0)
+        {
+            return string.Empty;
+        }
+
+        string[] words =
+            value.Split(
+                ' ',
+                StringSplitOptions.RemoveEmptyEntries
+            );
+
+        return string.Join(
+            ' ',
+            words.Take(
+                Math.Min(
+                    wordCount,
+                    words.Length
+                )
+            )
+        );
     }
 
     private static string ExtractItemName(
@@ -264,6 +406,11 @@ public sealed class DofusResourceRecognitionService(
             second.Length
         ];
     }
+
+    private sealed record ResourceCandidate(
+        Resource Resource,
+        string NormalizedName
+    );
 }
 
 public sealed record ResourceRecognitionResult(
