@@ -4,6 +4,14 @@ public enum SortOrder
 {
     BestBenefit,
     BestYield,
+    PurchaseBenefit,
+    PurchaseYield,
+    CraftBenefit,
+    CraftYield,
+    HighestTargetMargin,
+    HighestRuneValue,
     NameAscending,
-    HighestCoefficient
+    HighestCoefficient,
+    LevelAscending,
+    LevelDescending
 }

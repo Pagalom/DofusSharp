@@ -1,14 +1,10 @@
-@inject ItemsService ItemsService
+﻿@inject ItemsService ItemsService
 @inject RunesService RunesService
 @inject BestCrush.Services.BestCrushSettingsService BestCrushSettings
-@inject CrushService CrushService
 @inject ILogger<Server> Logger
-@inject CoefficientService CoefficientService
 @inject BestCrush.Services.OverlayService OverlayService
 @inject BestCrush.Services.CurrentServerState CurrentServerState
 @inject IDataPriorityProvider DataPriorityProvider
-@inject MarketPriceService MarketPriceService
-@inject CraftCostService CraftCostService
 @inject EquipmentProfitabilityService EquipmentProfitabilityService
 
 @implements IDisposable
@@ -20,6 +16,7 @@
 @using BestCrush.Models
 @using DofusSharp.Dofocus.ApiClients.Models.Items
 @using Microsoft.Extensions.Logging
+@using System.Text.Json
 
 
 <div class="container">
@@ -286,8 +283,113 @@
 
     </div>
 
+    <div class="card border-0 bg-light mb-3">
+        <div class="card-body py-2">
+            <div class="d-flex align-items-center gap-2 flex-wrap">
+                <label class="small fw-semibold text-nowrap" for="saved-filter-select">
+                    Filtres enregistrés
+                </label>
+
+                <select id="saved-filter-select"
+                        class="form-select form-select-sm"
+                        style="width:auto; min-width:220px"
+                        value="@(_selectedPresetId?.ToString() ?? string.Empty)"
+                        @onchange="ApplyPresetAsync"
+                        disabled="@_searching">
+                    <option value="">— Aucun —</option>
+                    @foreach (SearchFilterPreset preset in _filterPresets.OrderBy(p => p.Name))
+                    {
+                        <option value="@preset.Id">
+                            @PresetDisplayName(preset)
+                        </option>
+                    }
+                </select>
+
+                <button type="button"
+                        class="btn btn-outline-secondary btn-sm"
+                        @onclick="BeginNewPreset"
+                        disabled="@_searching">
+                    Nouveau
+                </button>
+
+                <button type="button"
+                        class="btn btn-outline-primary btn-sm"
+                        @onclick="SaveCurrentPreset"
+                        disabled="@_searching">
+                    Enregistrer
+                </button>
+
+                <button type="button"
+                        class="btn btn-outline-secondary btn-sm"
+                        @onclick="BeginRenamePreset"
+                        disabled="@(_searching || _selectedPresetId is null)">
+                    Renommer
+                </button>
+
+                @if (_confirmDeletePreset)
+                {
+                    <button type="button"
+                            class="btn btn-danger btn-sm"
+                            @onclick="DeleteSelectedPreset"
+                            disabled="@_searching">
+                        Confirmer la suppression
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            @onclick="() => _confirmDeletePreset = false">
+                        Annuler
+                    </button>
+                }
+                else
+                {
+                    <button type="button"
+                            class="btn btn-outline-danger btn-sm"
+                            @onclick="() => _confirmDeletePreset = true"
+                            disabled="@(_searching || _selectedPresetId is null)">
+                        Supprimer
+                    </button>
+                }
+
+                <button type="button"
+                        class="btn btn-outline-success btn-sm ms-auto"
+                        title="Données complètes et fraîches, coefficient connu"
+                        @onclick="ApplyOpportunitiesAsync"
+                        disabled="@_searching">
+                    Opportunités
+                </button>
+            </div>
+
+            @if (_presetEditorMode is not null)
+            {
+                <div class="d-flex align-items-center gap-2 mt-2">
+                    <input class="form-control form-control-sm"
+                           style="max-width:320px"
+                           placeholder="Nom du filtre"
+                           @bind="_presetNameDraft" />
+                    <button type="button"
+                            class="btn btn-primary btn-sm"
+                            @onclick="ConfirmPresetEditor">
+                        Valider
+                    </button>
+                    <button type="button"
+                            class="btn btn-outline-secondary btn-sm"
+                            @onclick="CancelPresetEditor">
+                        Annuler
+                    </button>
+                </div>
+            }
+
+            @if (!string.IsNullOrWhiteSpace(_presetMessage))
+            {
+                <div class="small @PresetMessageCssClass() mt-2">@_presetMessage</div>
+            }
+        </div>
+    </div>
+
     <form method="post" @onsubmit="Count" @formname="search-form">
-        <SearchItemsForm Model="Model" Disabled="_searching"></SearchItemsForm>
+        <SearchItemsForm Model="Model"
+                         AvailableRunes="_availableRunes"
+                         Disabled="_searching" />
         <div class="d-flex justify-content-center my-4">
             <button class="btn btn-primary" type="submit" disabled="@_searching">Rechercher les objets</button>
         </div>
@@ -295,7 +397,13 @@
 
     @if (_allItems is not null && _rankedItems is null)
     {
-        <div class="text-center">@_allItems.Length objet(s) correspondent aux critères de recherche.</div>
+        <div class="text-center">
+            @_allItems.Length objet(s) correspondent aux critères structurels.
+            @if (HasEconomicFilters())
+            {
+                <span class="text-secondary">Les filtres économiques seront appliqués pendant le calcul.</span>
+            }
+        </div>
 
         <div class="d-flex justify-content-center my-4">
             <button class="btn btn-primary" @onclick="() => Search(false)" disabled="@_searching">Trouver le <span class="fw-semibold">Best Crush</span></button>
@@ -305,10 +413,10 @@
 
     @if (_allItems is not null && _searching)
     {
-        int ranked = _rankedItems?.GroupBy(i => i.Equipment).Count() ?? 0;
-        int unranked = _unrankedItems?.Count ?? 0;
-        int done = ranked + unranked;
-        double ratio = (double)done / _allItems.Length;
+        int done = _processedItems;
+        double ratio = _allItems.Length == 0
+            ? 1
+            : (double)done / _allItems.Length;
         int percent = (int)(ratio * 100);
 
         {
@@ -326,53 +434,32 @@
                 _rankedItems.GroupBy(i => i.Equipment);
 
             IEnumerable<ItemCrushResult> bestLines =
-                equipments.Select(group =>
-                    _sortOrder == SortOrder.BestYield
-                        ? group.MaxBy(result => result.Yield)
-                        : group.MaxBy(result => result.Benefits));
+                equipments.Select(
+                    SelectBestScenarioForCurrentSort
+                );
 
             IEnumerable<ItemCrushResult> bestLinesOrdered =
-                _sortOrder switch
-                {
-                    SortOrder.BestYield =>
-                        bestLines.OrderByDescending(
-                            result => result.Yield
-                        ),
-
-                    SortOrder.NameAscending =>
-                        bestLines.OrderBy(
-                            result => result.Equipment.Name,
-                            StringComparer.CurrentCultureIgnoreCase
-                        ),
-
-                    SortOrder.HighestCoefficient =>
-                        bestLines
-                            .OrderByDescending(
-                                result =>
-                                    result.Coefficient
-                                        .CoefficientPercent
-                            )
-                            .ThenBy(
-                                result => result.Equipment.Name,
-                                StringComparer.CurrentCultureIgnoreCase
-                            ),
-
-                    _ =>
-                        bestLines.OrderByDescending(
-                            result => result.Benefits
-                        )
-                };
+                OrderResults(
+                    bestLines
+                );
 
             <div class="my-4">
                 <div class="d-flex align-items-center justify-content-end gap-2 mb-2 px-3">
                     <div class="d-flex gap-2">
                         <label for="sort-order" class="col-form-label col-form-label-sm text-nowrap">Tri par</label>
                         <InputSelect TValue="SortOrder" @bind-Value="_sortOrder" class="form-select form-select-sm" id="sort-order">
-                            <option value="">Sélectionner l'ordre de tri...</option>
-                            <option value="@SortOrder.BestBenefit" checked="@(_sortOrder == SortOrder.BestBenefit)">Bénéfice (flat)</option>
-                            <option value="@SortOrder.BestYield" checked="@(_sortOrder == SortOrder.BestYield)">Rendement (%)</option>
-                            <option value="@SortOrder.NameAscending" checked="@(_sortOrder == SortOrder.NameAscending)">Nom (A → Z)</option>
-                            <option value="@SortOrder.HighestCoefficient" checked="@(_sortOrder == SortOrder.HighestCoefficient)">Coefficient (décroissant)</option>
+                            <option value="@SortOrder.BestBenefit">Bénéfice — meilleur mode</option>
+                            <option value="@SortOrder.BestYield">ROI — meilleur mode</option>
+                            <option value="@SortOrder.PurchaseBenefit">Bénéfice achat</option>
+                            <option value="@SortOrder.PurchaseYield">ROI achat</option>
+                            <option value="@SortOrder.CraftBenefit">Bénéfice craft</option>
+                            <option value="@SortOrder.CraftYield">ROI craft</option>
+                            <option value="@SortOrder.HighestTargetMargin">Marge avant seuil</option>
+                            <option value="@SortOrder.HighestRuneValue">Valeur runes ajustée</option>
+                            <option value="@SortOrder.NameAscending">Nom (A → Z)</option>
+                            <option value="@SortOrder.HighestCoefficient">Coefficient (décroissant)</option>
+                            <option value="@SortOrder.LevelAscending">Niveau (croissant)</option>
+                            <option value="@SortOrder.LevelDescending">Niveau (décroissant)</option>
                         </InputSelect>
                     </div>
                     <div>
@@ -410,6 +497,14 @@
                                                 FocusedCharacteristic="item.FocusedCharacteristic"
                                                 Runes="item.Runes"
                                                 RuneValues="item.RuneValues"
+                                                AdjustedRuneValue="item.AdjustedRuneValue"
+                                                CalculatedPurchaseBenefit="item.PurchaseBenefit"
+                                                CalculatedPurchaseYield="item.PurchaseYield"
+                                                CalculatedCraftBenefit="item.CraftBenefit"
+                                                CalculatedCraftYield="item.CraftYield"
+                                                TargetRoiPercent="item.TargetRoiPercent"
+                                                PurchaseState="item.PurchaseState"
+                                                CraftState="item.CraftState"
                                                 SortOrder="_sortOrder"
                                                 NoImage="_searching"
                                                 Refresh="() => Refresh(item.Equipment)"
@@ -442,6 +537,14 @@
                                                 FocusedCharacteristic="item.FocusedCharacteristic"
                                                 Runes="item.Runes"
                                                 RuneValues="item.RuneValues"
+                                                AdjustedRuneValue="item.AdjustedRuneValue"
+                                                CalculatedPurchaseBenefit="item.PurchaseBenefit"
+                                                CalculatedPurchaseYield="item.PurchaseYield"
+                                                CalculatedCraftBenefit="item.CraftBenefit"
+                                                CalculatedCraftYield="item.CraftYield"
+                                                TargetRoiPercent="item.TargetRoiPercent"
+                                                PurchaseState="item.PurchaseState"
+                                                CraftState="item.CraftState"
                                                 SortOrder="_sortOrder"
                                                 NoImage="_searching"
                                                 Refresh="() => Refresh(item.Equipment)"
@@ -480,7 +583,7 @@
             </div>
         }
 
-        @if (_unrankedItems is { Count: > 0 } unrankedItems)
+        @if (_unrankedItems is { Count: > 0 } unrankedItems && !HasEconomicFilters())
         {
             IEnumerable<Equipment> unrankedItemsOrdered =
                 _sortOrder switch
@@ -502,6 +605,22 @@
                                         ? coefficient.CoefficientPercent
                                         : double.MinValue
                             )
+                            .ThenBy(
+                                item => item.Name,
+                                StringComparer.CurrentCultureIgnoreCase
+                            ),
+
+                    SortOrder.LevelAscending =>
+                        unrankedItems
+                            .OrderBy(item => item.Level)
+                            .ThenBy(
+                                item => item.Name,
+                                StringComparer.CurrentCultureIgnoreCase
+                            ),
+
+                    SortOrder.LevelDescending =>
+                        unrankedItems
+                            .OrderByDescending(item => item.Level)
                             .ThenBy(
                                 item => item.Name,
                                 StringComparer.CurrentCultureIgnoreCase
@@ -529,7 +648,12 @@
                             <div class="d-flex justify-content-between align-items-center">
 
                                 <div>
-                                    <strong>@item.Name</strong>
+                                    <strong role="button"
+                                            class="text-decoration-underline"
+                                            title="Cliquer pour copier le nom"
+                                            @onclick="() => CopyTextAsync(item.Name)">
+                                        @item.Name
+                                    </strong>
                                     <span class="text-secondary">
                                         Niv. @item.Level
                                     </span>
@@ -546,7 +670,13 @@
                                 out CoefficientObservation? coefficient))
                             {
                                 <div class="small mt-1 @(coefficient.Source == CoefficientSource.DofocusInitial ? "text-primary" : "text-secondary")">
-                                    Coeff. @coefficient.CoefficientPercent.ToString("0.##") %
+                                    Coeff.
+                                    <span role="button"
+                                          class="text-decoration-underline"
+                                          title="Cliquer pour copier le coefficient"
+                                          @onclick="() => CopyPercentAsync(coefficient.CoefficientPercent)">
+                                        @coefficient.CoefficientPercent.ToString("0.##") %
+                                    </span>
                                 </div>
                             }
 
@@ -601,6 +731,14 @@
 
             </div>
         }
+
+        @if (_rankedItems.Count == 0 &&
+            (HasEconomicFilters() || _unrankedItems.Count == 0))
+        {
+            <div class="text-center text-secondary border rounded py-4 my-4">
+                Aucun équipement ne satisfait les filtres actuels.
+            </div>
+        }
     }
 </div>
 
@@ -627,7 +765,18 @@
     private string? _loadedServerName;
 
     private bool _searching;
+    private int _processedItems;
     private bool _showSettings;
+
+    private IReadOnlyList<Rune> _availableRunes =
+        Array.Empty<Rune>();
+
+    private List<SearchFilterPreset> _filterPresets = [];
+    private Guid? _selectedPresetId;
+    private string? _presetEditorMode;
+    private string _presetNameDraft = string.Empty;
+    private bool _confirmDeletePreset;
+    private string? _presetMessage;
     private void OpenSettings()
     {
         _showSettings = true;
@@ -662,6 +811,26 @@
     [SupplyParameterFromForm]
     private SearchItemsModel? Model { get; set; }
 
+    protected override async Task OnInitializedAsync()
+    {
+        _availableRunes =
+            (await RunesService.GetRunesAsync())
+                .OrderBy(
+                    rune => rune.Name,
+                    StringComparer.CurrentCultureIgnoreCase
+                )
+                .ToArray();
+
+        _filterPresets =
+            BestCrushSettings
+                .GetSearchFilterPresets()
+                .OrderBy(
+                    preset => preset.Name,
+                    StringComparer.CurrentCultureIgnoreCase
+                )
+                .ToList();
+    }
+
     protected override void OnParametersSet()
     {
         CurrentServerState.SelectServer(
@@ -686,6 +855,34 @@
 
         LoadSessionState(
             useSuppliedModel: firstLoad
+        );
+    }
+
+    private static Task CopyTextAsync(
+        string? value)
+    {
+        if (string.IsNullOrWhiteSpace(
+            value))
+        {
+            return Task.CompletedTask;
+        }
+
+        return Microsoft.Maui.ApplicationModel.DataTransfer
+            .Clipboard
+            .Default
+            .SetTextAsync(
+                value.Trim()
+            );
+    }
+
+    private static Task CopyPercentAsync(
+        double value)
+    {
+        return CopyTextAsync(
+            value.ToString(
+                "0.##",
+                System.Globalization.CultureInfo.CurrentCulture
+            )
         );
     }
 
@@ -871,6 +1068,7 @@
 
         _rankedItems = null;
         _unrankedItems = null;
+        _processedItems = 0;
 
         StateHasChanged();
 
@@ -889,6 +1087,7 @@
 
         _rankedItems = null;
         _unrankedItems = null;
+        _processedItems = 0;
         _searching = true;
         _missingDataByItem.Clear();
 
@@ -970,23 +1169,31 @@
                         );
                     }
 
-                    List<ItemCrushResult> result =
+                    List<ItemCrushResult> allResults =
                         profitability.Scenarios
                             .Select(ToItemCrushResult)
                             .ToList();
 
-                    if (result.Count == 0)
+                    List<ItemCrushResult> result =
+                        allResults
+                            .Where(MatchesExactRuneFilters)
+                            .Where(PassesEconomicFilters)
+                            .ToList();
+
+                    if (Model?.CompleteDataOnly == true &&
+                        profitability.MissingData.Count > 0)
+                    {
+                        result.Clear();
+                    }
+
+                    if (allResults.Count == 0)
                     {
                         _unrankedItems.Add(item);
                     }
-                    else
+                    else if (result.Count > 0)
                     {
                         _rankedItems.AddRange(result);
                     }
-
-                    await InvokeAsync(
-                        StateHasChanged
-                    );
                 }
                 catch (Exception exn)
                 {
@@ -1008,6 +1215,12 @@
                         StateHasChanged
                     );
                 }
+
+                _processedItems++;
+
+                await InvokeAsync(
+                    StateHasChanged
+                );
             }
         }
         catch (Exception exn)
@@ -1104,20 +1317,30 @@
                     equipment.DofusDbId
             );
 
-            List<ItemCrushResult> result =
+            List<ItemCrushResult> allResults =
                 profitability.Scenarios
-                    .Select(
-                        ToItemCrushResult
-                    )
+                    .Select(ToItemCrushResult)
                     .ToList();
 
-            if (result.Count == 0)
+            List<ItemCrushResult> result =
+                allResults
+                    .Where(MatchesExactRuneFilters)
+                    .Where(PassesEconomicFilters)
+                    .ToList();
+
+            if (Model?.CompleteDataOnly == true &&
+                profitability.MissingData.Count > 0)
+            {
+                result.Clear();
+            }
+
+            if (allResults.Count == 0)
             {
                 _unrankedItems.Add(
                     equipment
                 );
             }
-            else
+            else if (result.Count > 0)
             {
                 _rankedItems.AddRange(
                     result
@@ -1166,297 +1389,742 @@
             && warnings.Count > 0;
     }
 
-    async Task<IReadOnlyCollection<ItemCrushResult>> ComputeBenefit(
-        Equipment equipment,
-        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> runePrices,
-        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> equipmentPrices,
-        bool forceRefresh)
+    private string PresetMessageCssClass()
     {
-        CoefficientObservation? itemCoefficient;
-
-        if (!_coefficients.TryGetValue(
-            equipment.DofusDbId,
-            out itemCoefficient))
-        {
-            DofocusItem detailedItem;
-
-            try
-            {
-                detailedItem =
-                    await ItemsService.GetItemAsync(
-                        equipment.DofusDbId,
-                        forceRefresh
-                    );
-            }
-            catch
-            {
-                AddMissingData(
-                    equipment,
-                    "Coefficient de brisage indisponible"
-                );
-
-                return [];
-            }
-
-            DofocusCoefficientRecord? dofocusCoefficient =
-                detailedItem.Coefficients
-                    .Where(c => c.ServerName == ServerName)
-                    .OrderByDescending(c => c.LastUpdate)
-                    .FirstOrDefault();
-
-            if (dofocusCoefficient is null)
-            {
-                AddMissingData(
-                    equipment,
-                    "Coefficient de brisage indisponible"
-                );
-
-                return [];
-            }
-
-            itemCoefficient =
-                await CoefficientService.AddObservationAsync(
-                    equipment.DofusDbId,
-                    ServerName,
-                    dofocusCoefficient.Coefficient,
-                    CoefficientSource.DofocusInitial
-                );
-
-            _coefficients[equipment.DofusDbId] =
-                itemCoefficient;
-        }
-
-        double coefficient =
-            itemCoefficient.CoefficientPercent / 100;
-
-        equipmentPrices.TryGetValue(
-            (equipment.DofusDbId, 1),
-            out MarketPriceObservation? itemCost
-        );
-
-        if (itemCost is null)
-        {
-            AddMissingData(
-                equipment,
-                "Prix local de l'équipement manquant"
-            );
-        }
-
-        CraftCostResult craftCost =
-            _craftCostsByItem.TryGetValue(
-                equipment.DofusDbId,
-                out CraftCostResult? knownCraftCost)
-                ? knownCraftCost
-                : CraftCostService.Calculate(
-                    equipment,
-                    _resourcePrices
-                );
-
-        if (!craftCost.IsComplete)
-        {
-            AddMissingData(
-                equipment,
-                $"Craft incomplet : {craftCost.MissingResourceCount} prix de ressource manquant(s)"
-            );
-        }
-
-        if (itemCost is null &&
-            craftCost.TotalCost is null)
-        {
-            return [];
-        }
-
-        List<ItemCrushResult> result = [];
-        Dictionary<Characteristic, double> averageLines = equipment.Characteristics.ToDictionary(c => c.Characteristic, c => (double)(c.From + c.To) / 2);
-        IReadOnlyDictionary<Rune, double> runesWithoutFocus = CrushService.GetCrushResult(averageLines, equipment.Level, coefficient);
-        
-        IReadOnlyDictionary<Rune, MarketValueResult>? valuesWithoutFocus =
-        CalculateRuneValues(
-            equipment,
-            runesWithoutFocus,
-            runePrices
-        );
-        if (valuesWithoutFocus is not null)
-        {
-            double priceWithoutFocus =
-                valuesWithoutFocus.Values.Sum(value =>
-                    value.Value);
-
-            double? purchaseBenefitWithoutFocus =
-                itemCost is null
-                    ? null
-                    : priceWithoutFocus - itemCost.Price;
-
-            double? purchaseYieldWithoutFocus =
-                itemCost is null
-                    ? null
-                    : itemCost.Price == 0
-                        ? 0
-                        : purchaseBenefitWithoutFocus /
-                        itemCost.Price;
-
-            double? craftBenefitWithoutFocus =
-                craftCost.TotalCost is long craftPrice
-                    ? priceWithoutFocus - craftPrice
-                    : null;
-
-            double? craftYieldWithoutFocus =
-                craftCost.TotalCost is long craftCostValue
-                    ? craftCostValue == 0
-                        ? 0
-                        : craftBenefitWithoutFocus /
-                        craftCostValue
-                    : null;
-
-            result.Add(
-                new ItemCrushResult(
-                    equipment,
-                    itemCoefficient,
-                    itemCost,
-                    craftCost,
-                    purchaseBenefitWithoutFocus,
-                    purchaseYieldWithoutFocus,
-                    craftBenefitWithoutFocus,
-                    craftYieldWithoutFocus,
-                    null,
-                    runesWithoutFocus,
-                    valuesWithoutFocus
-                )
-            );
-        }
-        
-        foreach ((Characteristic characteristic, double value) in averageLines)
-        {
-            if (value <= 0)
-            {
-                continue;
-            }
-
-            IReadOnlyDictionary<Rune, double> runesWithFocus = CrushService.GetFocusedCrushResult(averageLines, characteristic, equipment.Level, coefficient);
-            
-            
-            IReadOnlyDictionary<Rune, MarketValueResult>? valuesWithFocus =
-                CalculateRuneValues(
-                    equipment,
-                    runesWithFocus,
-                    runePrices
-                );
-
-            if (valuesWithFocus is null)
-            {
-                continue;
-            }
-
-            double priceWithFocus =
-                valuesWithFocus.Values.Sum(value =>
-                    value.Value);
-
-            double? purchaseBenefitWithFocus =
-                itemCost is null
-                    ? null
-                    : priceWithFocus - itemCost.Price;
-
-            double? purchaseYieldWithFocus =
-                itemCost is null
-                    ? null
-                    : itemCost.Price == 0
-                        ? 0
-                        : purchaseBenefitWithFocus /
-                        itemCost.Price;
-
-            double? craftBenefitWithFocus =
-                craftCost.TotalCost is long craftPrice
-                    ? priceWithFocus - craftPrice
-                    : null;
-
-            double? craftYieldWithFocus =
-                craftCost.TotalCost is long craftCostValue
-                    ? craftCostValue == 0
-                        ? 0
-                        : craftBenefitWithFocus /
-                        craftCostValue
-                    : null;
-
-            result.Add(
-                new ItemCrushResult(
-                    equipment,
-                    itemCoefficient,
-                    itemCost,
-                    craftCost,
-                    purchaseBenefitWithFocus,
-                    purchaseYieldWithFocus,
-                    craftBenefitWithFocus,
-                    craftYieldWithFocus,
-                    characteristic,
-                    runesWithFocus,
-                    valuesWithFocus
-                )
-            );
-        }
-
-        return result;
+        return _presetMessage?.StartsWith(
+            "⚠",
+            StringComparison.Ordinal
+        ) == true
+            ? "text-danger"
+            : "text-success";
     }
 
-    IReadOnlyDictionary<Rune, MarketValueResult>? CalculateRuneValues(
-        Equipment equipment,
-        IReadOnlyDictionary<Rune, double> runes,
-        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> prices)
+    private SearchFilterPreset? GetSelectedPreset()
     {
-        Dictionary<Rune, MarketValueResult> result = [];
-
-        bool hasMissingPrice = false;
-
-        foreach ((Rune rune, double quantity) in runes)
+        if (_selectedPresetId is not Guid id)
         {
-            if (quantity <= 0)
-            {
-                continue;
-            }
-
-            MarketValueResult? value =
-                MarketPriceService.CalculateValue(
-                    rune.DofusDbId,
-                    quantity,
-                    prices
-                );
-
-            if (value is null)
-            {
-                AddMissingData(
-                    equipment,
-                    $"Prix de rune manquant : {rune.Name}"
-                );
-
-                hasMissingPrice = true;
-                continue;
-            }
-
-            result[rune] = value.Value;
+            return null;
         }
 
-        return hasMissingPrice
-            ? null
-            : result;
+        return _filterPresets.FirstOrDefault(
+            preset => preset.Id == id
+        );
+    }
+
+    private string PresetDisplayName(
+        SearchFilterPreset preset)
+    {
+        bool modified =
+            _selectedPresetId == preset.Id &&
+            IsSelectedPresetModified();
+
+        return modified
+            ? $"{preset.Name} • modifié"
+            : preset.Name;
+    }
+
+    private bool IsSelectedPresetModified()
+    {
+        SearchFilterPreset? preset =
+            GetSelectedPreset();
+
+        if (preset is null ||
+            Model is null)
+        {
+            return false;
+        }
+
+        return preset.SortOrder != _sortOrder ||
+            !string.Equals(
+                JsonSerializer.Serialize(
+                    preset.Filters
+                ),
+                JsonSerializer.Serialize(
+                    Model
+                ),
+                StringComparison.Ordinal
+            );
+    }
+
+    private static SearchItemsModel CloneSearchModel(
+        SearchItemsModel model)
+    {
+        string json =
+            JsonSerializer.Serialize(
+                model
+            );
+
+        return JsonSerializer
+            .Deserialize<SearchItemsModel>(
+                json
+            )
+            ?? new SearchItemsModel();
+    }
+
+    private void PersistFilterPresets()
+    {
+        _filterPresets =
+            _filterPresets
+                .OrderBy(
+                    preset => preset.Name,
+                    StringComparer.CurrentCultureIgnoreCase
+                )
+                .ToList();
+
+        BestCrushSettings
+            .SaveSearchFilterPresets(
+                _filterPresets
+            );
+    }
+
+    private void BeginNewPreset()
+    {
+        Model = new SearchItemsModel();
+        _sortOrder = SortOrder.BestBenefit;
+        _selectedPresetId = null;
+        _presetEditorMode = "create";
+        _presetNameDraft = string.Empty;
+        _confirmDeletePreset = false;
+        _presetMessage = null;
+
+        _allItems = null;
+        _rankedItems = null;
+        _unrankedItems = null;
+    }
+
+    private void SaveCurrentPreset()
+    {
+        SearchFilterPreset? preset =
+            GetSelectedPreset();
+
+        if (preset is null)
+        {
+            _presetEditorMode = "create";
+            _presetNameDraft = string.Empty;
+            _presetMessage = null;
+            return;
+        }
+
+        preset.Filters =
+            CloneSearchModel(
+                Model ?? new SearchItemsModel()
+            );
+
+        preset.SortOrder =
+            _sortOrder;
+
+        PersistFilterPresets();
+
+        _presetMessage =
+            $"✓ Filtre « {preset.Name} » mis à jour.";
+    }
+
+    private void BeginRenamePreset()
+    {
+        SearchFilterPreset? preset =
+            GetSelectedPreset();
+
+        if (preset is null)
+        {
+            return;
+        }
+
+        _presetEditorMode = "rename";
+        _presetNameDraft = preset.Name;
+        _presetMessage = null;
+    }
+
+    private void ConfirmPresetEditor()
+    {
+        string name =
+            _presetNameDraft.Trim();
+
+        if (string.IsNullOrWhiteSpace(
+            name))
+        {
+            _presetMessage =
+                "⚠ Donne un nom au filtre.";
+            return;
+        }
+
+        SearchFilterPreset? selected =
+            GetSelectedPreset();
+
+        bool duplicateName =
+            _filterPresets.Any(
+                preset =>
+                    !ReferenceEquals(
+                        preset,
+                        selected
+                    ) &&
+                    string.Equals(
+                        preset.Name,
+                        name,
+                        StringComparison.CurrentCultureIgnoreCase
+                    )
+            );
+
+        if (duplicateName)
+        {
+            _presetMessage =
+                "⚠ Un filtre porte déjà ce nom.";
+            return;
+        }
+
+        if (string.Equals(
+            _presetEditorMode,
+            "rename",
+            StringComparison.Ordinal))
+        {
+            if (selected is null)
+            {
+                CancelPresetEditor();
+                return;
+            }
+
+            selected.Name = name;
+            PersistFilterPresets();
+            _presetMessage =
+                $"✓ Filtre renommé « {name} ».";
+        }
+        else
+        {
+            SearchFilterPreset preset =
+                new()
+                {
+                    Name = name,
+                    Filters = CloneSearchModel(
+                        Model ?? new SearchItemsModel()
+                    ),
+                    SortOrder = _sortOrder
+                };
+
+            _filterPresets.Add(
+                preset
+            );
+
+            _selectedPresetId =
+                preset.Id;
+
+            PersistFilterPresets();
+            _presetMessage =
+                $"✓ Filtre « {name} » créé.";
+        }
+
+        _presetEditorMode = null;
+        _presetNameDraft = string.Empty;
+    }
+
+    private void CancelPresetEditor()
+    {
+        _presetEditorMode = null;
+        _presetNameDraft = string.Empty;
+    }
+
+    private void DeleteSelectedPreset()
+    {
+        SearchFilterPreset? preset =
+            GetSelectedPreset();
+
+        if (preset is null)
+        {
+            _confirmDeletePreset = false;
+            return;
+        }
+
+        string name = preset.Name;
+
+        _filterPresets.Remove(
+            preset
+        );
+
+        PersistFilterPresets();
+
+        _selectedPresetId = null;
+        _confirmDeletePreset = false;
+        _presetEditorMode = null;
+        _presetMessage =
+            $"✓ Filtre « {name} » supprimé.";
+    }
+
+    private async Task ApplyPresetAsync(
+        ChangeEventArgs args)
+    {
+        string? rawValue =
+            args.Value?.ToString();
+
+        if (!Guid.TryParse(
+            rawValue,
+            out Guid id))
+        {
+            _selectedPresetId = null;
+            return;
+        }
+
+        SearchFilterPreset? preset =
+            _filterPresets.FirstOrDefault(
+                candidate => candidate.Id == id
+            );
+
+        if (preset is null)
+        {
+            return;
+        }
+
+        _selectedPresetId = id;
+        Model = CloneSearchModel(
+            preset.Filters
+        );
+        _sortOrder = preset.SortOrder;
+        _presetEditorMode = null;
+        _confirmDeletePreset = false;
+        _presetMessage = null;
+
+        SaveSessionState();
+
+        await Search(
+            forceRefresh: false
+        );
+    }
+
+    private async Task ApplyOpportunitiesAsync()
+    {
+        Model ??= new SearchItemsModel();
+
+        Model.ProfitabilityMode =
+            ProfitabilityFilterMode.Best;
+        Model.CompleteDataOnly = true;
+        Model.FreshDataOnly = true;
+        Model.RequireCoefficient = true;
+
+        _sortOrder = SortOrder.BestYield;
+        _selectedPresetId = null;
+        _presetMessage =
+            "✓ Filtre Opportunités appliqué.";
+
+        await Search(
+            forceRefresh: false
+        );
+    }
+
+    private bool HasEconomicFilters()
+    {
+        return Model is not null &&
+            (
+                Model.MinimumRoiPercent is not null ||
+                Model.MinimumBenefit is not null ||
+                Model.CompleteDataOnly ||
+                Model.FreshDataOnly ||
+                Model.RequireCoefficient ||
+                Model.RuneFilters.Count > 0
+            );
+    }
+
+    private bool MatchesExactRuneFilters(
+        ItemCrushResult item)
+    {
+        IReadOnlyList<RuneFilterCriterion> criteria =
+            Model?.RuneFilters ?? [];
+
+        if (criteria.Count == 0)
+        {
+            return true;
+        }
+
+        HashSet<long> obtainedRuneIds =
+            item.Runes
+                .Where(entry => entry.Value > 0)
+                .Select(entry => entry.Key.DofusDbId)
+                .ToHashSet();
+
+        return Model!.RuneMatchMode ==
+            RuneFilterMatchMode.All
+                ? criteria.All(
+                    criterion =>
+                        obtainedRuneIds.Contains(
+                            criterion.DofusDbId
+                        )
+                )
+                : criteria.Any(
+                    criterion =>
+                        obtainedRuneIds.Contains(
+                            criterion.DofusDbId
+                        )
+                );
+    }
+
+    private bool PassesEconomicFilters(
+        ItemCrushResult item)
+    {
+        SearchItemsModel? model =
+            Model;
+
+        if (model is null)
+        {
+            return true;
+        }
+
+        if (model.RequireCoefficient &&
+            item.Coefficient.CoefficientPercent <= 0)
+        {
+            return false;
+        }
+
+        if (model.CompleteDataOnly &&
+            IsPartial(item))
+        {
+            return false;
+        }
+
+        if (model.FreshDataOnly &&
+            !HasFreshData(item))
+        {
+            return false;
+        }
+
+        double effectiveYield =
+            GetEffectiveYield(item);
+
+        if (model.MinimumRoiPercent
+                is double minimumRoi &&
+            effectiveYield * 100.0 < minimumRoi)
+        {
+            return false;
+        }
+
+        double effectiveBenefit =
+            GetEffectiveBenefit(item);
+
+        if (model.MinimumBenefit
+                is double minimumBenefit &&
+            effectiveBenefit < minimumBenefit)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool HasFreshData(
+        ItemCrushResult item)
+    {
+        if (DataFreshnessEvaluator
+                .Evaluate(
+                    item.Coefficient.ObservedAtUtc
+                ) != DataFreshness.Fresh)
+        {
+            return false;
+        }
+
+        if (item.RuneValues.Values.Any(
+            value =>
+                value.Freshness !=
+                    DataFreshness.Fresh))
+        {
+            return false;
+        }
+
+        bool purchaseFresh =
+            item.Cost is not null &&
+            DataFreshnessEvaluator
+                .Evaluate(
+                    item.Cost.ObservedAtUtc
+                ) == DataFreshness.Fresh;
+
+        bool craftFresh =
+            item.CraftCost.IsComplete &&
+            item.CraftCost.Resources.All(
+                resource =>
+                    resource.Purchase?.Freshness ==
+                        DataFreshness.Fresh
+            );
+
+        return (Model?.ProfitabilityMode ??
+            ProfitabilityFilterMode.Best) switch
+        {
+            ProfitabilityFilterMode.Purchase =>
+                purchaseFresh,
+
+            ProfitabilityFilterMode.Craft =>
+                craftFresh,
+
+            _ =>
+                purchaseFresh || craftFresh
+        };
+    }
+
+    private double GetEffectiveBenefit(
+        ItemCrushResult item)
+    {
+        return (Model?.ProfitabilityMode ??
+            ProfitabilityFilterMode.Best) switch
+        {
+            ProfitabilityFilterMode.Purchase =>
+                item.PurchaseBenefit ??
+                    double.MinValue,
+
+            ProfitabilityFilterMode.Craft =>
+                item.CraftBenefit ??
+                    double.MinValue,
+
+            _ => item.Benefits
+        };
+    }
+
+    private double GetEffectiveYield(
+        ItemCrushResult item)
+    {
+        return (Model?.ProfitabilityMode ??
+            ProfitabilityFilterMode.Best) switch
+        {
+            ProfitabilityFilterMode.Purchase =>
+                item.PurchaseYield ??
+                    double.MinValue,
+
+            ProfitabilityFilterMode.Craft =>
+                item.CraftYield ??
+                    double.MinValue,
+
+            _ => item.Yield
+        };
+    }
+
+    private double GetEffectiveTargetMargin(
+        ItemCrushResult item)
+    {
+        return (Model?.ProfitabilityMode ??
+            ProfitabilityFilterMode.Best) switch
+        {
+            ProfitabilityFilterMode.Purchase =>
+                item.PurchaseTargetMargin ??
+                    double.MinValue,
+
+            ProfitabilityFilterMode.Craft =>
+                item.CraftTargetMargin ??
+                    double.MinValue,
+
+            _ => Math.Max(
+                item.PurchaseTargetMargin ??
+                    double.MinValue,
+                item.CraftTargetMargin ??
+                    double.MinValue
+            )
+        };
+    }
+
+    private ItemCrushResult SelectBestScenarioForCurrentSort(
+        IGrouping<Equipment, ItemCrushResult> group)
+    {
+        Func<ItemCrushResult, double> selector =
+            _sortOrder switch
+            {
+                SortOrder.BestYield =>
+                    GetEffectiveYield,
+
+                SortOrder.PurchaseBenefit =>
+                    result =>
+                        result.PurchaseBenefit ??
+                            double.MinValue,
+
+                SortOrder.PurchaseYield =>
+                    result =>
+                        result.PurchaseYield ??
+                            double.MinValue,
+
+                SortOrder.CraftBenefit =>
+                    result =>
+                        result.CraftBenefit ??
+                            double.MinValue,
+
+                SortOrder.CraftYield =>
+                    result =>
+                        result.CraftYield ??
+                            double.MinValue,
+
+                SortOrder.HighestTargetMargin =>
+                    GetEffectiveTargetMargin,
+
+                SortOrder.HighestRuneValue =>
+                    result =>
+                        result.AdjustedRuneValue,
+
+                _ => GetEffectiveBenefit
+            };
+
+        return group
+            .OrderByDescending(
+                selector
+            )
+            .First();
+    }
+
+    private IEnumerable<ItemCrushResult> OrderResults(
+        IEnumerable<ItemCrushResult> results)
+    {
+        return _sortOrder switch
+        {
+            SortOrder.BestYield =>
+                results.OrderByDescending(
+                    GetEffectiveYield
+                ),
+
+            SortOrder.PurchaseBenefit =>
+                results.OrderByDescending(
+                    result =>
+                        result.PurchaseBenefit ??
+                            double.MinValue
+                ),
+
+            SortOrder.PurchaseYield =>
+                results.OrderByDescending(
+                    result =>
+                        result.PurchaseYield ??
+                            double.MinValue
+                ),
+
+            SortOrder.CraftBenefit =>
+                results.OrderByDescending(
+                    result =>
+                        result.CraftBenefit ??
+                            double.MinValue
+                ),
+
+            SortOrder.CraftYield =>
+                results.OrderByDescending(
+                    result =>
+                        result.CraftYield ??
+                            double.MinValue
+                ),
+
+            SortOrder.HighestTargetMargin =>
+                results.OrderByDescending(
+                    GetEffectiveTargetMargin
+                ),
+
+            SortOrder.HighestRuneValue =>
+                results.OrderByDescending(
+                    result =>
+                        result.AdjustedRuneValue
+                ),
+
+            SortOrder.NameAscending =>
+                results.OrderBy(
+                    result => result.Equipment.Name,
+                    StringComparer.CurrentCultureIgnoreCase
+                ),
+
+            SortOrder.HighestCoefficient =>
+                results
+                    .OrderByDescending(
+                        result =>
+                            result.Coefficient
+                                .CoefficientPercent
+                    )
+                    .ThenBy(
+                        result => result.Equipment.Name,
+                        StringComparer.CurrentCultureIgnoreCase
+                    ),
+
+            SortOrder.LevelAscending =>
+                results
+                    .OrderBy(
+                        result =>
+                            result.Equipment.Level
+                    )
+                    .ThenBy(
+                        result => result.Equipment.Name,
+                        StringComparer.CurrentCultureIgnoreCase
+                    ),
+
+            SortOrder.LevelDescending =>
+                results
+                    .OrderByDescending(
+                        result =>
+                            result.Equipment.Level
+                    )
+                    .ThenBy(
+                        result => result.Equipment.Name,
+                        StringComparer.CurrentCultureIgnoreCase
+                    ),
+
+            _ =>
+                results.OrderByDescending(
+                    GetEffectiveBenefit
+                )
+        };
     }
 
     IEnumerable<Equipment> FilterItems(IReadOnlyCollection<Equipment> items)
     {
         IEnumerable<Equipment> result = items;
 
-        if (Model?.LevelMin is not null)
+        if (!string.IsNullOrWhiteSpace(
+            Model?.SearchText))
         {
-            result = result.Where(i => i.Level >= Model.LevelMin);
+            string search =
+                Model.SearchText.Trim();
+
+            result = result.Where(
+                item =>
+                    item.Name.Contains(
+                        search,
+                        StringComparison.CurrentCultureIgnoreCase
+                    )
+            );
         }
 
-        if (Model?.LevelMax is not null)
+        if (Model?.LevelMin is int levelMin)
         {
-            result = result.Where(i => i.Level <= Model.LevelMax);
+            result = result.Where(
+                item => item.Level >= levelMin
+            );
         }
 
-        HashSet<EquipmentType> equipmentTypes = ComputeEquipmentTypes();
+        if (Model?.LevelMax is int levelMax)
+        {
+            result = result.Where(
+                item => item.Level <= levelMax
+            );
+        }
+
+        HashSet<EquipmentType> equipmentTypes =
+            ComputeEquipmentTypes();
+
         if (equipmentTypes.Count > 0)
         {
-            result = result.Where(i => equipmentTypes.Contains(i.Type));
+            result = result.Where(
+                item =>
+                    equipmentTypes.Contains(
+                        item.Type
+                    )
+            );
+        }
+
+        IReadOnlyList<RuneFilterCriterion> criteria =
+            Model?.RuneFilters ?? [];
+
+        if (criteria.Count > 0)
+        {
+            result = result.Where(
+                equipment =>
+                {
+                    bool Matches(
+                        RuneFilterCriterion criterion)
+                    {
+                        return equipment.Characteristics
+                            .Any(
+                                candidate =>
+                                    candidate.Characteristic ==
+                                    criterion.Characteristic
+                            );
+                    }
+
+                    return Model!.RuneMatchMode ==
+                        RuneFilterMatchMode.All
+                            ? criteria.All(Matches)
+                            : criteria.Any(Matches);
+                }
+            );
         }
 
         return result;
@@ -1583,7 +2251,16 @@
             scenario.CraftYield,
             scenario.FocusedCharacteristic,
             scenario.Runes,
-            scenario.RuneValues
+            scenario.RuneValues,
+            scenario.AdjustedRuneValue,
+            scenario.TargetRoiPercent,
+            scenario.MaximumCostAtTargetRoi,
+            scenario.PurchaseTargetMargin,
+            scenario.CraftTargetMargin,
+            scenario.PurchaseMinimumCoefficientPercent,
+            scenario.CraftMinimumCoefficientPercent,
+            scenario.PurchaseState,
+            scenario.CraftState
         );
     }
 
@@ -1598,7 +2275,16 @@
         double? CraftYield,
         Characteristic? FocusedCharacteristic,
         IReadOnlyDictionary<Rune, double> Runes,
-        IReadOnlyDictionary<Rune, MarketValueResult> RuneValues)
+        IReadOnlyDictionary<Rune, MarketValueResult> RuneValues,
+        double AdjustedRuneValue,
+        double TargetRoiPercent,
+        double? MaximumCostAtTargetRoi,
+        double? PurchaseTargetMargin,
+        double? CraftTargetMargin,
+        double? PurchaseMinimumCoefficientPercent,
+        double? CraftMinimumCoefficientPercent,
+        ProfitabilityState PurchaseState,
+        ProfitabilityState CraftState)
     {
         public double Benefits =>
             PurchaseBenefit is null

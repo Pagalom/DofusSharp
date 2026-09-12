@@ -1,5 +1,7 @@
-﻿using BestCrush.Domain.Services;
+using BestCrush.Domain.Services;
+using BestCrush.Models;
 using Microsoft.Maui.Storage;
+using System.Text.Json;
 
 namespace BestCrush.Services;
 
@@ -26,6 +28,9 @@ public sealed class BestCrushSettingsService
 
     private const string CrushValueDiscountKey =
         "Settings.CrushValueDiscountPercent";
+
+    private const string SearchFilterPresetsKey =
+        "Settings.SearchFilterPresets";
 
     private const string
         DevToolRemoveScreenshotsByDefaultKey =
@@ -167,6 +172,54 @@ public sealed class BestCrushSettingsService
                     100.0
                 )
             );
+    }
+
+    public IReadOnlyList<SearchFilterPreset>
+        GetSearchFilterPresets()
+    {
+        string json =
+            Preferences.Get(
+                SearchFilterPresetsKey,
+                string.Empty
+            );
+
+        if (string.IsNullOrWhiteSpace(
+            json))
+        {
+            return [];
+        }
+
+        try
+        {
+            return JsonSerializer
+                .Deserialize<List<SearchFilterPreset>>(
+                    json
+                )
+                ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    public void SaveSearchFilterPresets(
+        IEnumerable<SearchFilterPreset> presets)
+    {
+        string json =
+            JsonSerializer.Serialize(
+                presets
+                    .OrderBy(
+                        preset => preset.Name,
+                        StringComparer.CurrentCultureIgnoreCase
+                    )
+                    .ToList()
+            );
+
+        Preferences.Set(
+            SearchFilterPresetsKey,
+            json
+        );
     }
 
     double IBestCrushSettingsProvider
