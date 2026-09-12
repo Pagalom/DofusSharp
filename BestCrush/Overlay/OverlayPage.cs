@@ -24,11 +24,16 @@ public sealed class OverlayPage : ContentPage
     private readonly VerticalStackLayout _profitabilityDetails;
     private readonly Label _runeValueLine;
     private readonly Label _discountedRuneValueLine;
+    private readonly Label _targetRoiLine;
     private readonly Label _coefficientLine;
     private readonly Label _purchaseLine;
     private readonly Label _purchaseResultLine;
+    private readonly Label _purchaseLimitLine;
+    private readonly Label _purchaseStateLine;
     private readonly Label _craftLine;
     private readonly Label _craftResultLine;
+    private readonly Label _craftLimitLine;
+    private readonly Label _craftStateLine;
     private readonly Label _partialLine;
 
     private readonly Label _footer;
@@ -174,6 +179,12 @@ public sealed class OverlayPage : ContentPage
             FontSize = 14
         };
 
+        _targetRoiLine = new Label
+        {
+            TextColor = Colors.White,
+            FontSize = 13
+        };
+
         _purchaseLine = new Label
         {
             TextColor = Colors.White,
@@ -186,6 +197,19 @@ public sealed class OverlayPage : ContentPage
             FontSize = 14
         };
 
+        _purchaseLimitLine = new Label
+        {
+            TextColor = Colors.White,
+            FontSize = 13
+        };
+
+        _purchaseStateLine = new Label
+        {
+            TextColor = Colors.Gray,
+            FontSize = 13,
+            FontAttributes = FontAttributes.Bold
+        };
+
         _craftLine = new Label
         {
             TextColor = Colors.White,
@@ -196,6 +220,19 @@ public sealed class OverlayPage : ContentPage
         {
             TextColor = Colors.White,
             FontSize = 14
+        };
+
+        _craftLimitLine = new Label
+        {
+            TextColor = Colors.White,
+            FontSize = 13
+        };
+
+        _craftStateLine = new Label
+        {
+            TextColor = Colors.Gray,
+            FontSize = 13,
+            FontAttributes = FontAttributes.Bold
         };
 
         _partialLine = new Label
@@ -213,6 +250,7 @@ public sealed class OverlayPage : ContentPage
                 _coefficientLine,
                 _runeValueLine,
                 _discountedRuneValueLine,
+                _targetRoiLine,
 
                 new BoxView
                 {
@@ -222,6 +260,8 @@ public sealed class OverlayPage : ContentPage
 
                 _purchaseLine,
                 _purchaseResultLine,
+                _purchaseLimitLine,
+                _purchaseStateLine,
 
                 new BoxView
                 {
@@ -231,6 +271,8 @@ public sealed class OverlayPage : ContentPage
 
                 _craftLine,
                 _craftResultLine,
+                _craftLimitLine,
+                _craftStateLine,
 
                 new BoxView
                 {
@@ -527,18 +569,6 @@ public sealed class OverlayPage : ContentPage
                     )
         );
 
-        MakeCopyable(
-            _discountedRuneValueLine,
-            () =>
-                GetDiscountedRuneValue(
-                    _currentProfitability,
-                    _currentScenario
-                ) is double adjustedValue
-                    ? FormatClipboardNumber(
-                        adjustedValue
-                    )
-                    : null
-        );
 
         MakeCopyable(
             _purchaseLine,
@@ -579,27 +609,7 @@ public sealed class OverlayPage : ContentPage
             }
         );
 
-        MakeCopyable(
-            _purchaseResultLine,
-            () =>
-                _currentScenario?
-                    .PurchaseBenefit is double benefit
-                    ? FormatClipboardNumber(
-                        benefit
-                    )
-                    : null
-        );
 
-        MakeCopyable(
-            _craftResultLine,
-            () =>
-                _currentScenario?
-                    .CraftBenefit is double benefit
-                    ? FormatClipboardNumber(
-                        benefit
-                    )
-                    : null
-        );
 
         Content = resizeContainer;
     }
@@ -1046,6 +1056,15 @@ public sealed class OverlayPage : ContentPage
         _currentScenario =
             scenario;
         
+
+        bool dynamicLimitsVisible =
+            scenario is not null &&
+            scenario.TargetRoiPercent > 0.000001;
+
+        SetDynamicProfitabilityVisibility(
+            dynamicLimitsVisible
+        );
+
         int missingDataCount =
             GetMissingDataCount(
                 result,
@@ -1079,8 +1098,18 @@ public sealed class OverlayPage : ContentPage
             _discountedRuneValueLine.Text =
                 "Valeur ajustée : indisponible";
 
+            _discountedRuneValueLine.FormattedText =
+                null;
+
             _discountedRuneValueLine.TextColor =
                 Colors.Red;
+
+            _targetRoiLine.Text = "";
+            _targetRoiLine.FormattedText = null;
+
+            SetDynamicProfitabilityVisibility(
+                false
+            );
 
             SetFreshnessLine(
                 _purchaseLine,
@@ -1092,7 +1121,15 @@ public sealed class OverlayPage : ContentPage
                     )
             );
 
-            _purchaseResultLine.Text = "";
+            _purchaseResultLine.Text = "→ indisponible";
+            _purchaseResultLine.FormattedText = null;
+            _purchaseResultLine.TextColor = Colors.Gray;
+            _purchaseLimitLine.Text = "Limites ROI : indisponibles";
+            _purchaseLimitLine.FormattedText = null;
+            SetProfitabilityStateLine(
+                _purchaseStateLine,
+                ProfitabilityState.Unavailable
+            );
 
             SetFreshnessLine(
                 _craftLine,
@@ -1102,7 +1139,15 @@ public sealed class OverlayPage : ContentPage
                 )
             );
 
-            _craftResultLine.Text = "";
+            _craftResultLine.Text = "→ incomplet";
+            _craftResultLine.FormattedText = null;
+            _craftResultLine.TextColor = Colors.Gray;
+            _craftLimitLine.Text = "Limites ROI : indisponibles";
+            _craftLimitLine.FormattedText = null;
+            SetProfitabilityStateLine(
+                _craftStateLine,
+                ProfitabilityState.Unavailable
+            );
 
             _partialLine.Text =
                 missingDataCount > 0
@@ -1129,29 +1174,22 @@ public sealed class OverlayPage : ContentPage
             )
         );
 
-        double? adjustedRuneValue =
-            GetDiscountedRuneValue(
-                result,
-                scenario
+        SetAdjustedRuneValueLine(
+            scenario
+        );
+
+        if (dynamicLimitsVisible)
+        {
+            SetTargetRoiLine(
+                scenario.TargetRoiPercent
             );
-
-        double? discountPercent =
-            GetDiscountPercent(
-                scenario.EstimatedRuneValue,
-                adjustedRuneValue
+        }
+        else
+        {
+            ClearLabel(
+                _targetRoiLine
             );
-
-        _discountedRuneValueLine.Text =
-            adjustedRuneValue is double adjusted
-                ? discountPercent is double discount
-                    ? $"Valeur ajustée (-{discount:0.##} %) : {adjusted:N0} K"
-                    : $"Valeur ajustée : {adjusted:N0} K"
-                : "Valeur ajustée : indisponible";
-
-        _discountedRuneValueLine.TextColor =
-            adjustedRuneValue is null
-                ? Colors.Red
-                : Colors.LightGreen;
+        }
 
         SetFreshnessLine(
             _purchaseLine,
@@ -1163,20 +1201,41 @@ public sealed class OverlayPage : ContentPage
                 )
         );
 
-        _purchaseResultLine.Text =
-            scenario.PurchaseBenefit is double purchaseBenefit &&
-            scenario.PurchaseYield is double purchaseYield
-                ? $"→ {FormatProfitability(
-                    purchaseBenefit,
-                    purchaseYield)}"
-                : "→ indisponible";
-        
-        _purchaseResultLine.TextColor =
-            scenario.PurchaseBenefit is double purchaseBenefitColor
-                ? purchaseBenefitColor > 0
-                    ? Colors.LightGreen
-                    : Colors.Red
-                : Colors.Gray;
+        SetProfitabilityResultLine(
+            _purchaseResultLine,
+            scenario.PurchaseBenefit,
+            scenario.PurchaseYield,
+            scenario.PurchaseState,
+            dynamicLimitsVisible
+        );
+
+        if (dynamicLimitsVisible)
+        {
+            SetDynamicLimitLine(
+                _purchaseLimitLine,
+                "Prix max.",
+                scenario.MaximumCostAtTargetRoi,
+                scenario.PurchaseTargetMargin,
+                scenario.PurchaseMinimumCoefficientPercent,
+                scenario.TargetRoiPercent,
+                scenario.PurchaseState
+            );
+
+            SetProfitabilityStateLine(
+                _purchaseStateLine,
+                scenario.PurchaseState
+            );
+        }
+        else
+        {
+            ClearLabel(
+                _purchaseLimitLine
+            );
+
+            ClearLabel(
+                _purchaseStateLine
+            );
+        }
 
         SetFreshnessLine(
             _craftLine,
@@ -1186,20 +1245,41 @@ public sealed class OverlayPage : ContentPage
             )
         );
 
-        _craftResultLine.Text =
-            scenario.CraftBenefit is double craftBenefit &&
-            scenario.CraftYield is double craftYield
-                ? $"→ {FormatProfitability(
-                    craftBenefit,
-                    craftYield)}"
-                : "→ incomplet";
-        
-        _craftResultLine.TextColor =
-            scenario.CraftBenefit is double craftBenefitColor
-                ? craftBenefitColor > 0
-                    ? Colors.LightGreen
-                    : Colors.Red
-                : Colors.Gray;
+        SetProfitabilityResultLine(
+            _craftResultLine,
+            scenario.CraftBenefit,
+            scenario.CraftYield,
+            scenario.CraftState,
+            dynamicLimitsVisible
+        );
+
+        if (dynamicLimitsVisible)
+        {
+            SetDynamicLimitLine(
+                _craftLimitLine,
+                "Coût max.",
+                scenario.MaximumCostAtTargetRoi,
+                scenario.CraftTargetMargin,
+                scenario.CraftMinimumCoefficientPercent,
+                scenario.TargetRoiPercent,
+                scenario.CraftState
+            );
+
+            SetProfitabilityStateLine(
+                _craftStateLine,
+                scenario.CraftState
+            );
+        }
+        else
+        {
+            ClearLabel(
+                _craftLimitLine
+            );
+
+            ClearLabel(
+                _craftStateLine
+            );
+        }
 
         if (result.IsPartial)
         {
@@ -1216,52 +1296,421 @@ public sealed class OverlayPage : ContentPage
         }
     }
 
-    private static double? GetDiscountedRuneValue(
-        EquipmentProfitabilityResult? result,
-        EquipmentProfitabilityScenario? scenario)
+    private void SetAdjustedRuneValueLine(
+        EquipmentProfitabilityScenario scenario)
     {
-        if (result is null ||
-            scenario is null)
-        {
-            return null;
-        }
+        FormattedString formatted =
+            new();
 
-        if (result.EquipmentCost is not null &&
-            scenario.PurchaseBenefit
-                is double purchaseBenefit)
-        {
-            return
-                result.EquipmentCost.Price +
-                purchaseBenefit;
-        }
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = "Valeur ajustée (-",
+                TextColor = Colors.LightGreen
+            }
+        );
 
-        if (result.CraftCost.TotalCost
-                is long craftCost &&
-            scenario.CraftBenefit
-                is double craftBenefit)
-        {
-            return
-                craftCost +
-                craftBenefit;
-        }
+        formatted.Spans.Add(
+            CreateCopyableSpan(
+                $"{scenario.DiscountPercent:0.##}",
+                FormatClipboardPercent(
+                    scenario.DiscountPercent
+                ),
+                Colors.LightGreen
+            )
+        );
 
-        return null;
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = " %) : ",
+                TextColor = Colors.LightGreen
+            }
+        );
+
+        formatted.Spans.Add(
+            CreateCopyableSpan(
+                $"{scenario.AdjustedRuneValue:N0} K",
+                FormatClipboardNumber(
+                    scenario.AdjustedRuneValue
+                ),
+                Colors.LightGreen,
+                FontAttributes.Bold
+            )
+        );
+
+        _discountedRuneValueLine.Text = null;
+        _discountedRuneValueLine.FormattedText =
+            formatted;
     }
 
-    private static double? GetDiscountPercent(
-        double rawValue,
-        double? adjustedValue)
+    private void SetDynamicProfitabilityVisibility(
+        bool isVisible)
     {
-        if (rawValue <= 0 ||
-            adjustedValue is not double adjusted)
+        _targetRoiLine.IsVisible =
+            isVisible;
+
+        _purchaseLimitLine.IsVisible =
+            isVisible;
+
+        _purchaseStateLine.IsVisible =
+            isVisible;
+
+        _craftLimitLine.IsVisible =
+            isVisible;
+
+        _craftStateLine.IsVisible =
+            isVisible;
+    }
+
+    private static void ClearLabel(
+        Label label)
+    {
+        label.Text = "";
+        label.FormattedText = null;
+    }
+
+    private void SetTargetRoiLine(
+        double targetRoiPercent)
+    {
+        FormattedString formatted =
+            new();
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = "ROI cible : ",
+                TextColor = Colors.White
+            }
+        );
+
+        formatted.Spans.Add(
+            CreateCopyableSpan(
+                $"{targetRoiPercent:0.##} %",
+                FormatClipboardPercent(
+                    targetRoiPercent
+                ),
+                Colors.White,
+                FontAttributes.Bold
+            )
+        );
+
+        _targetRoiLine.Text = null;
+        _targetRoiLine.FormattedText =
+            formatted;
+    }
+
+    private void SetProfitabilityResultLine(
+        Label label,
+        double? benefit,
+        double? yield,
+        ProfitabilityState state,
+        bool dynamicLimitsVisible)
+    {
+        if (benefit is not double currentBenefit ||
+            yield is not double currentYield)
         {
-            return null;
+            label.FormattedText = null;
+            label.Text = "→ indisponible";
+            label.TextColor = Colors.Gray;
+            return;
         }
 
-        return Math.Clamp(
-            (1.0 - adjusted / rawValue) * 100.0,
-            0.0,
-            100.0
+        Color color =
+            dynamicLimitsVisible
+                ? GetProfitabilityStateColor(
+                    state
+                )
+                : currentBenefit > 0
+                    ? Colors.LightGreen
+                    : Colors.Red;
+
+        string benefitSign =
+            currentBenefit >= 0
+                ? "+"
+                : "";
+
+        string yieldSign =
+            currentYield >= 0
+                ? "+"
+                : "";
+
+        FormattedString formatted =
+            new();
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = "→ ",
+                TextColor = color
+            }
+        );
+
+        formatted.Spans.Add(
+            CreateCopyableSpan(
+                $"{benefitSign}{currentBenefit:N0} K",
+                FormatClipboardNumber(
+                    currentBenefit
+                ),
+                color,
+                FontAttributes.Bold
+            )
+        );
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = " (",
+                TextColor = color
+            }
+        );
+
+        formatted.Spans.Add(
+            CreateCopyableSpan(
+                $"{yieldSign}{currentYield:P0}",
+                FormatClipboardPercent(
+                    currentYield * 100.0
+                ),
+                color,
+                FontAttributes.Bold
+            )
+        );
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = ")",
+                TextColor = color
+            }
+        );
+
+        label.Text = null;
+        label.FormattedText = formatted;
+    }
+
+    private void SetDynamicLimitLine(
+        Label label,
+        string maximumLabel,
+        double? maximumCost,
+        double? targetMargin,
+        double? minimumCoefficientPercent,
+        double targetRoiPercent,
+        ProfitabilityState state)
+    {
+        if (maximumCost is not double currentMaximumCost)
+        {
+            label.FormattedText = null;
+            label.Text = "Limites ROI : indisponibles";
+            label.TextColor = Colors.Gray;
+            return;
+        }
+
+        Color stateColor =
+            GetProfitabilityStateColor(
+                state
+            );
+
+        FormattedString formatted =
+            new();
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = $"{maximumLabel} ROI ",
+                TextColor = Colors.LightGray
+            }
+        );
+
+        formatted.Spans.Add(
+            CreateCopyableSpan(
+                $"{targetRoiPercent:0.##} %",
+                FormatClipboardPercent(
+                    targetRoiPercent
+                ),
+                Colors.LightGray
+            )
+        );
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = " : ",
+                TextColor = Colors.LightGray
+            }
+        );
+
+        formatted.Spans.Add(
+            CreateCopyableSpan(
+                $"{currentMaximumCost:N0} K",
+                FormatClipboardNumber(
+                    currentMaximumCost
+                ),
+                Colors.White,
+                FontAttributes.Bold
+            )
+        );
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = "\nMarge cible : ",
+                TextColor = Colors.LightGray
+            }
+        );
+
+        if (targetMargin is double currentMargin)
+        {
+            string marginSign =
+                currentMargin >= 0
+                    ? "+"
+                    : "";
+
+            formatted.Spans.Add(
+                CreateCopyableSpan(
+                    $"{marginSign}{currentMargin:N0} K",
+                    FormatClipboardNumber(
+                        currentMargin
+                    ),
+                    stateColor,
+                    FontAttributes.Bold
+                )
+            );
+        }
+        else
+        {
+            formatted.Spans.Add(
+                new Span
+                {
+                    Text = "—",
+                    TextColor = Colors.Gray
+                }
+            );
+        }
+
+        formatted.Spans.Add(
+            new Span
+            {
+                Text = " · Coeff. min. : ",
+                TextColor = Colors.LightGray
+            }
+        );
+
+        if (minimumCoefficientPercent is double minimumCoefficient)
+        {
+            formatted.Spans.Add(
+                CreateCopyableSpan(
+                    $"{minimumCoefficient:0.##} %",
+                    FormatClipboardPercent(
+                        minimumCoefficient
+                    ),
+                    Colors.White,
+                    FontAttributes.Bold
+                )
+            );
+        }
+        else
+        {
+            formatted.Spans.Add(
+                new Span
+                {
+                    Text = "—",
+                    TextColor = Colors.Gray
+                }
+            );
+        }
+
+        label.Text = null;
+        label.FormattedText = formatted;
+    }
+
+    private static void SetProfitabilityStateLine(
+        Label label,
+        ProfitabilityState state)
+    {
+        label.FormattedText = null;
+        label.Text =
+            state switch
+            {
+                ProfitabilityState.TargetReached =>
+                    "● RENTABLE",
+
+                ProfitabilityState.PositiveBelowTarget =>
+                    "● FAIBLE MARGE",
+
+                ProfitabilityState.NonProfitable =>
+                    "● NON RENTABLE",
+
+                _ =>
+                    "● INDISPONIBLE"
+            };
+
+        label.TextColor =
+            GetProfitabilityStateColor(
+                state
+            );
+    }
+
+    private static Color GetProfitabilityStateColor(
+        ProfitabilityState state)
+    {
+        return state switch
+        {
+            ProfitabilityState.TargetReached =>
+                Colors.LightGreen,
+
+            ProfitabilityState.PositiveBelowTarget =>
+                Colors.Orange,
+
+            ProfitabilityState.NonProfitable =>
+                Colors.Red,
+
+            _ =>
+                Colors.Gray
+        };
+    }
+
+    private Span CreateCopyableSpan(
+        string text,
+        string clipboardValue,
+        Color color,
+        FontAttributes fontAttributes =
+            FontAttributes.None)
+    {
+        Span span =
+            new()
+            {
+                Text = text,
+                TextColor = color,
+                FontAttributes =
+                    fontAttributes,
+                TextDecorations =
+                    TextDecorations.Underline
+            };
+
+        TapGestureRecognizer tap =
+            new();
+
+        tap.Tapped +=
+            async (_, _) =>
+            {
+                await CopyToClipboardAsync(
+                    clipboardValue
+                );
+            };
+
+        span.GestureRecognizers.Add(
+            tap
+        );
+
+        return span;
+    }
+
+    private static string FormatClipboardPercent(
+        double value)
+    {
+        return value.ToString(
+            "0.##",
+            CultureInfo.CurrentCulture
         );
     }
 
