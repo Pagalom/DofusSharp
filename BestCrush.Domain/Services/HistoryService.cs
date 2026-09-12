@@ -95,6 +95,8 @@ public sealed record CrushHistorySessionWriteModel(
     DateTime StartedAtUtc,
     DateTime CompletedAtUtc,
     double? TotalValue,
+    double DiscountPercent,
+    double? DiscountedTotalValue,
     IReadOnlyList<CrushHistoryEquipmentWriteModel> Equipments,
     IReadOnlyList<CrushHistoryRuneWriteModel> Runes
 );
@@ -176,7 +178,9 @@ public sealed class HistoryService(
                 sessionData.ServerName,
                 sessionData.StartedAtUtc,
                 sessionData.CompletedAtUtc,
-                sessionData.TotalValue
+                sessionData.TotalValue,
+                sessionData.DiscountPercent,
+                sessionData.DiscountedTotalValue
             );
 
         foreach (

@@ -23,6 +23,7 @@ public sealed class OverlayPage : ContentPage
 
     private readonly VerticalStackLayout _profitabilityDetails;
     private readonly Label _runeValueLine;
+    private readonly Label _discountedRuneValueLine;
     private readonly Label _coefficientLine;
     private readonly Label _purchaseLine;
     private readonly Label _purchaseResultLine;
@@ -167,6 +168,12 @@ public sealed class OverlayPage : ContentPage
             FontSize = 14
         };
 
+        _discountedRuneValueLine = new Label
+        {
+            TextColor = Colors.LightGreen,
+            FontSize = 14
+        };
+
         _purchaseLine = new Label
         {
             TextColor = Colors.White,
@@ -205,6 +212,7 @@ public sealed class OverlayPage : ContentPage
             {
                 _coefficientLine,
                 _runeValueLine,
+                _discountedRuneValueLine,
 
                 new BoxView
                 {
@@ -517,6 +525,19 @@ public sealed class OverlayPage : ContentPage
                     : FormatClipboardNumber(
                         _currentScenario.EstimatedRuneValue
                     )
+        );
+
+        MakeCopyable(
+            _discountedRuneValueLine,
+            () =>
+                GetDiscountedRuneValue(
+                    _currentProfitability,
+                    _currentScenario
+                ) is double adjustedValue
+                    ? FormatClipboardNumber(
+                        adjustedValue
+                    )
+                    : null
         );
 
         MakeCopyable(
@@ -1055,6 +1076,12 @@ public sealed class OverlayPage : ContentPage
                 null
             );
 
+            _discountedRuneValueLine.Text =
+                "Valeur ajustée : indisponible";
+
+            _discountedRuneValueLine.TextColor =
+                Colors.Red;
+
             SetFreshnessLine(
                 _purchaseLine,
                 $"Achat équipement : {equipmentPrice}",
@@ -1095,12 +1122,36 @@ public sealed class OverlayPage : ContentPage
 
         SetFreshnessLine(
             _runeValueLine,
-            $"Valeur runes ({focusLabel}) : " +
+            $"Valeur runes brute ({focusLabel}) : " +
             $"{scenario.EstimatedRuneValue:N0} K",
             GetRuneFreshness(
                 result
             )
         );
+
+        double? adjustedRuneValue =
+            GetDiscountedRuneValue(
+                result,
+                scenario
+            );
+
+        double? discountPercent =
+            GetDiscountPercent(
+                scenario.EstimatedRuneValue,
+                adjustedRuneValue
+            );
+
+        _discountedRuneValueLine.Text =
+            adjustedRuneValue is double adjusted
+                ? discountPercent is double discount
+                    ? $"Valeur ajustée (-{discount:0.##} %) : {adjusted:N0} K"
+                    : $"Valeur ajustée : {adjusted:N0} K"
+                : "Valeur ajustée : indisponible";
+
+        _discountedRuneValueLine.TextColor =
+            adjustedRuneValue is null
+                ? Colors.Red
+                : Colors.LightGreen;
 
         SetFreshnessLine(
             _purchaseLine,
@@ -1163,6 +1214,55 @@ public sealed class OverlayPage : ContentPage
         {
             _partialLine.Text = "";
         }
+    }
+
+    private static double? GetDiscountedRuneValue(
+        EquipmentProfitabilityResult? result,
+        EquipmentProfitabilityScenario? scenario)
+    {
+        if (result is null ||
+            scenario is null)
+        {
+            return null;
+        }
+
+        if (result.EquipmentCost is not null &&
+            scenario.PurchaseBenefit
+                is double purchaseBenefit)
+        {
+            return
+                result.EquipmentCost.Price +
+                purchaseBenefit;
+        }
+
+        if (result.CraftCost.TotalCost
+                is long craftCost &&
+            scenario.CraftBenefit
+                is double craftBenefit)
+        {
+            return
+                craftCost +
+                craftBenefit;
+        }
+
+        return null;
+    }
+
+    private static double? GetDiscountPercent(
+        double rawValue,
+        double? adjustedValue)
+    {
+        if (rawValue <= 0 ||
+            adjustedValue is not double adjusted)
+        {
+            return null;
+        }
+
+        return Math.Clamp(
+            (1.0 - adjusted / rawValue) * 100.0,
+            0.0,
+            100.0
+        );
     }
 
     private void SetCoefficientLine(

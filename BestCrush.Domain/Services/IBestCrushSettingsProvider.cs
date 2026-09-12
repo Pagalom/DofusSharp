@@ -22,4 +22,14 @@ public interface IBestCrushSettingsProvider
 
     double TargetRoi =>
         TargetRoiPercent / 100.0;
+
+    double CrushValueDiscountPercent { get; }
+
+    double CrushValueMultiplier =>
+        1.0 -
+        Math.Clamp(
+            CrushValueDiscountPercent,
+            0.0,
+            100.0
+        ) / 100.0;
 }

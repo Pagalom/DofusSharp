@@ -408,7 +408,7 @@ public sealed class EquipmentProfitabilityService(
         return result;
     }
 
-    private static EquipmentProfitabilityScenario
+    private EquipmentProfitabilityScenario
         BuildScenario(
             Equipment equipment,
             CoefficientObservation coefficient,
@@ -426,10 +426,14 @@ public sealed class EquipmentProfitabilityService(
             runeValues.Values.Sum(value =>
                 value.Value);
 
+        double adjustedRuneValue =
+            runeValue *
+            settingsProvider.CrushValueMultiplier;
+
         double? purchaseBenefit =
             itemCost is null
                 ? null
-                : runeValue -
+                : adjustedRuneValue -
                   itemCost.Price;
 
         double? purchaseYield =
@@ -443,7 +447,7 @@ public sealed class EquipmentProfitabilityService(
         double? craftBenefit =
             craftCost.TotalCost is long
                 craftPrice
-                    ? runeValue -
+                    ? adjustedRuneValue -
                       craftPrice
                     : null;
 

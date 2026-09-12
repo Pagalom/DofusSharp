@@ -12,9 +12,12 @@ public sealed class CrushSessionOverlayPage
     private readonly Label _scannedCells;
     private readonly VerticalStackLayout _runes;
     private readonly Label _total;
+    private readonly Label _discountedTotal;
     private readonly Label _copyFeedback;
 
     private double? _lastTotalValue;
+    private double? _lastDiscountedTotalValue;
+    private double _lastDiscountPercent;
     private int _copyFeedbackVersion;
     private int _formulaTapVersion;
     private DateTime _lastFormulaDoubleTapUtc =
@@ -182,7 +185,26 @@ public sealed class CrushSessionOverlayPage
             new Label
             {
                 Text =
-                    "Valeur réelle : —",
+                    "Valeur brute : —",
+
+                TextColor =
+                    Colors.White,
+
+                FontSize = 15,
+
+                FontAttributes =
+                    FontAttributes.Bold,
+
+                TextDecorations =
+                    TextDecorations.Underline
+            };
+
+
+        _discountedTotal =
+            new Label
+            {
+                Text =
+                    "Valeur ajustée : —",
 
                 TextColor =
                     Colors.White,
@@ -208,6 +230,17 @@ public sealed class CrushSessionOverlayPage
             _total,
             () =>
                 _lastTotalValue is double total
+                    ? FormatClipboardNumber(
+                        total
+                    )
+                    : null
+        );
+
+        MakeCopyable(
+            _discountedTotal,
+            () =>
+                _lastDiscountedTotalValue
+                    is double total
                     ? FormatClipboardNumber(
                         total
                     )
@@ -253,6 +286,8 @@ public sealed class CrushSessionOverlayPage
                     },
 
                     _total,
+
+                    _discountedTotal,
 
                     _copyFeedback
                 }
@@ -779,6 +814,12 @@ public sealed class CrushSessionOverlayPage
         _lastTotalValue =
             snapshot.TotalValue;
 
+        _lastDiscountedTotalValue =
+            snapshot.DiscountedTotalValue;
+
+        _lastDiscountPercent =
+            snapshot.DiscountPercent;
+
         _copyFeedbackVersion++;
 
         _copyFeedback.Text =
@@ -1105,12 +1146,24 @@ public sealed class CrushSessionOverlayPage
         _total.Text =
             _lastTotalValue
                 is double total
-                ? $"Valeur réelle : {total:N0} K"
-                : "Valeur réelle : —";
+                ? $"Valeur brute : {total:N0} K"
+                : "Valeur brute : —";
 
         _total.TextColor =
             _lastTotalValue is null
                 ? Colors.White
                 : Colors.LightBlue;
+
+        _discountedTotal.Text =
+            _lastDiscountedTotalValue
+                is double adjustedTotal
+                ? $"Valeur ajustée (-{_lastDiscountPercent:0.##} %) : " +
+                  $"{adjustedTotal:N0} K"
+                : $"Valeur ajustée (-{_lastDiscountPercent:0.##} %) : —";
+
+        _discountedTotal.TextColor =
+            _lastDiscountedTotalValue is null
+                ? Colors.White
+                : Colors.LightGreen;
     }
 }
