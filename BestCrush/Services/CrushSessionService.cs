@@ -40,6 +40,8 @@ public sealed record CrushSessionSnapshot(
     int? LastCursorY,
     IReadOnlyList<CrushSessionRuneLine> Runes,
     double? TotalValue,
+    double DiscountPercent,
+    double? DiscountedTotalValue,
     string? ErrorMessage
 );
 
@@ -56,7 +58,8 @@ public sealed class CrushSessionService(
     CurrentServerState currentServerState,
     MarketDataChangeNotifier marketDataChangeNotifier,
     OverlayLayoutSettingsService
-        overlayLayoutSettingsService)
+        overlayLayoutSettingsService,
+    IBestCrushSettingsProvider settingsProvider)
 {
     private Window? _window;
     private CrushSessionOverlayPage? _page;
@@ -102,6 +105,9 @@ public sealed class CrushSessionService(
 
     private string?
         _sessionServerName;
+
+    private double
+        _sessionDiscountPercent;
 
     private bool
         _historySaveRequested;
@@ -250,6 +256,14 @@ public sealed class CrushSessionService(
             _sessionServerName =
                 currentServerState
                     .ServerName;
+
+            _sessionDiscountPercent =
+                Math.Clamp(
+                    settingsProvider
+                        .CrushValueDiscountPercent,
+                    0.0,
+                    100.0
+                );
         }
 
         _isRunning = true;
@@ -580,6 +594,9 @@ public sealed class CrushSessionService(
 
             _sessionServerName =
                 null;
+
+            _sessionDiscountPercent =
+                0.0;
 
             _historySaveRequested =
                 false;
@@ -925,6 +942,16 @@ public sealed class CrushSessionService(
                     )
                     : null;
 
+            double? discountedTotalValue =
+                totalValue is double rawTotal
+                    ? rawTotal *
+                      (
+                          1.0 -
+                          _sessionDiscountPercent /
+                          100.0
+                      )
+                    : null;
+
             return new CrushSessionSnapshot(
                 _isRunning,
                 _scannedRuneCells.Count,
@@ -933,6 +960,8 @@ public sealed class CrushSessionService(
                 _lastCursorY,
                 runeLines,
                 totalValue,
+                _sessionDiscountPercent,
+                discountedTotalValue,
                 _errorMessage
             );
         }
@@ -1910,6 +1939,16 @@ public sealed class CrushSessionService(
                         .GetValueOrDefault())
                 : null;
 
+        double? discountedTotalValue =
+            totalValue is double rawTotal
+                ? rawTotal *
+                  (
+                      1.0 -
+                      _sessionDiscountPercent /
+                      100.0
+                  )
+                : null;
+
         _historySaveStarted =
             true;
 
@@ -1920,6 +1959,8 @@ public sealed class CrushSessionService(
                 : _sessionStartedAtUtc,
             DateTime.UtcNow,
             totalValue,
+            _sessionDiscountPercent,
+            discountedTotalValue,
             equipments,
             runes
         );

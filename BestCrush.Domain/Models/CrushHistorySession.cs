@@ -12,12 +12,16 @@ public class CrushHistorySession
         string serverName,
         DateTime startedAtUtc,
         DateTime completedAtUtc,
-        double? totalValue)
+        double? totalValue,
+        double discountPercent,
+        double? discountedTotalValue)
     {
         ServerName = serverName;
         StartedAtUtc = startedAtUtc;
         CompletedAtUtc = completedAtUtc;
         TotalValue = totalValue;
+        DiscountPercent = discountPercent;
+        DiscountedTotalValue = discountedTotalValue;
     }
 
     public Guid Id { get; private set; }
@@ -29,6 +33,8 @@ public class CrushHistorySession
     public DateTime CompletedAtUtc { get; private set; }
 
     public double? TotalValue { get; private set; }
+    public double DiscountPercent { get; private set; }
+    public double? DiscountedTotalValue { get; private set; }
 
     public ICollection<CrushHistoryEquipment> Equipments { get; set; } = [];
     public ICollection<CrushHistoryRune> Runes { get; set; } = [];

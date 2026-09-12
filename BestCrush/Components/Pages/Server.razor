@@ -72,7 +72,7 @@
 
                 <div class="card shadow"
                     style="
-                        width: 460px;
+                        width: 540px;
                         max-width: calc(100vw - 40px);
                         padding: 20px;
                         max-height: calc(100vh - 40px);
@@ -90,7 +90,9 @@
                         </button>
                     </div>
 
-                    <div class="mb-4">
+                    <div class="border rounded p-3 mb-3">
+                        <h6 class="mb-3">Marché &amp; capture</h6>
+
                         <label class="form-label fw-bold">
                             Données capturées automatiquement
                         </label>
@@ -102,56 +104,44 @@
 
                         <div class="form-check form-switch mb-2">
                             <input class="form-check-input"
-                                type="checkbox"
-                                id="capture-equipment"
-                                @bind="BestCrushSettings.EquipmentCaptureEnabled" />
-
-                            <label class="form-check-label"
-                                for="capture-equipment">
+                                   type="checkbox"
+                                   id="capture-equipment"
+                                   @bind="BestCrushSettings.EquipmentCaptureEnabled" />
+                            <label class="form-check-label" for="capture-equipment">
                                 Prix des équipements
                             </label>
                         </div>
 
                         <div class="form-check form-switch mb-2">
                             <input class="form-check-input"
-                                type="checkbox"
-                                id="capture-runes"
-                                @bind="BestCrushSettings.RuneCaptureEnabled" />
-
-                            <label class="form-check-label"
-                                for="capture-runes">
+                                   type="checkbox"
+                                   id="capture-runes"
+                                   @bind="BestCrushSettings.RuneCaptureEnabled" />
+                            <label class="form-check-label" for="capture-runes">
                                 Prix des runes
                             </label>
                         </div>
 
                         <div class="form-check form-switch mb-2">
                             <input class="form-check-input"
-                                type="checkbox"
-                                id="capture-resources"
-                                @bind="BestCrushSettings.ResourceCaptureEnabled" />
-
-                            <label class="form-check-label"
-                                for="capture-resources">
+                                   type="checkbox"
+                                   id="capture-resources"
+                                   @bind="BestCrushSettings.ResourceCaptureEnabled" />
+                            <label class="form-check-label" for="capture-resources">
                                 Prix des ressources
                             </label>
                         </div>
 
-                        <div class="form-check form-switch">
+                        <div class="form-check form-switch mb-4">
                             <input class="form-check-input"
-                                type="checkbox"
-                                id="capture-coefficients"
-                                @bind="BestCrushSettings.CoefficientCaptureEnabled" />
-
-                            <label class="form-check-label"
-                                for="capture-coefficients">
+                                   type="checkbox"
+                                   id="capture-coefficients"
+                                   @bind="BestCrushSettings.CoefficientCaptureEnabled" />
+                            <label class="form-check-label" for="capture-coefficients">
                                 Coefficients de brisage
                             </label>
                         </div>
-                    </div>
 
-                    <hr />
-
-                    <div class="mb-4">
                         <label class="form-label fw-bold">
                             Priorité des données
                         </label>
@@ -164,23 +154,16 @@
                         <select class="form-select"
                                 value="@DataPriorityProvider.Priority"
                                 @onchange="OnDataPriorityChanged">
-
-                            <option value="@DataPriority.Manual">
-                                Manuel
-                            </option>
-
-                            <option value="@DataPriority.InGameAutomatic">
-                                Capture jeu
-                            </option>
-
+                            <option value="@DataPriority.Manual">Manuel</option>
+                            <option value="@DataPriority.InGameAutomatic">Capture jeu</option>
                         </select>
                     </div>
 
-                    <hr />
+                    <div class="border rounded p-3 mb-3">
+                        <h6 class="mb-3">Concassage &amp; rentabilité</h6>
 
-                    <div class="mb-2">
                         <label class="form-label fw-bold"
-                            for="crush-yield-estimation-mode">
+                               for="crush-yield-estimation-mode">
                             Estimation du jet de concassage
                         </label>
 
@@ -193,28 +176,43 @@
                                 class="form-select"
                                 value="@BestCrushSettings.CrushYieldEstimationMode"
                                 @onchange="OnCrushYieldEstimationModeChanged">
-
                             <option value="@CrushYieldEstimationMode.Conservative">
                                 Jet prudent de concassage
                             </option>
-
                             <option value="@CrushYieldEstimationMode.Average">
                                 Jet moyen de concassage
                             </option>
-
                         </select>
 
-                        <div class="text-muted small mt-2">
+                        <div class="text-muted small mt-2 mb-4">
                             Prudent : utilise le jet minimum de chaque caractéristique.
                             Moyen : utilise la moyenne entre le minimum et le maximum.
                         </div>
-                    </div>
 
-                    <hr />
-
-                    <div class="mb-2">
                         <label class="form-label fw-bold"
-                            for="target-roi">
+                               for="crush-value-discount">
+                            Décote de valorisation du concassage
+                        </label>
+
+                        <div class="text-muted small mb-2">
+                            Réduit la valeur théorique des runes pour estimer
+                            plus prudemment la valeur réellement récupérable.
+                            Cette décote est aussi utilisée pour les bénéfices et rendements.
+                        </div>
+
+                        <div class="input-group mb-4">
+                            <input id="crush-value-discount"
+                                   type="number"
+                                   class="form-control"
+                                   min="0"
+                                   max="100"
+                                   step="0.5"
+                                   @bind="BestCrushSettings.CrushValueDiscountPercent" />
+                            <span class="input-group-text">%</span>
+                        </div>
+
+                        <label class="form-label fw-bold"
+                               for="target-roi">
                             Objectif de rentabilité
                         </label>
 
@@ -225,53 +223,18 @@
 
                         <div class="input-group">
                             <input id="target-roi"
-                                type="number"
-                                class="form-control"
-                                min="0"
-                                max="1000"
-                                step="1"
-                                @bind="BestCrushSettings.TargetRoiPercent" />
-
-                            <span class="input-group-text">
-                                %
-                            </span>
+                                   type="number"
+                                   class="form-control"
+                                   min="0"
+                                   max="1000"
+                                   step="1"
+                                   @bind="BestCrushSettings.TargetRoiPercent" />
+                            <span class="input-group-text">%</span>
                         </div>
                     </div>
 
-                    <hr />
-
-                    <div class="mb-2">
-                        <label class="form-label fw-bold">
-                            Outils développeur
-                        </label>
-
-                        <div class="text-muted small mb-3">
-                            Permet de conserver temporairement les captures
-                            et les crops OCR pour analyser les détections.
-                        </div>
-
-                        <div class="form-check form-switch">
-                            <input class="form-check-input"
-                                type="checkbox"
-                                id="devtool-remove-screenshots"
-                                @bind="BestCrushSettings.DevTool_RemoveScreenshotsByDefault" />
-
-                            <label class="form-check-label"
-                                for="devtool-remove-screenshots">
-                                DevTool_RemoveScreenshotsByDefault
-                            </label>
-                        </div>
-
-                        <div class="text-muted small mt-2">
-                            Activé : les captures sont supprimées après traitement.
-                            Désactivé : les captures et crops de debug sont conservés.
-                        </div>
-                    <hr />
-
-                    <div class="mb-2">
-                        <label class="form-label fw-bold">
-                            Disposition des overlays
-                        </label>
+                    <div class="border rounded p-3 mb-3">
+                        <h6 class="mb-3">Interface &amp; overlays</h6>
 
                         <div class="text-muted small mb-3">
                             Les positions et tailles sont conservées automatiquement
@@ -292,8 +255,31 @@
                             </div>
                         }
                     </div>
-                    </div>
 
+                    <div class="border rounded p-3">
+                        <h6 class="mb-3">Développement</h6>
+
+                        <div class="text-muted small mb-3">
+                            Permet de conserver temporairement les captures
+                            et les crops OCR pour analyser les détections.
+                        </div>
+
+                        <div class="form-check form-switch">
+                            <input class="form-check-input"
+                                   type="checkbox"
+                                   id="devtool-remove-screenshots"
+                                   @bind="BestCrushSettings.DevTool_RemoveScreenshotsByDefault" />
+                            <label class="form-check-label"
+                                   for="devtool-remove-screenshots">
+                                DevTool_RemoveScreenshotsByDefault
+                            </label>
+                        </div>
+
+                        <div class="text-muted small mt-2">
+                            Activé : les captures sont supprimées après traitement.
+                            Désactivé : les captures et crops de debug sont conservés.
+                        </div>
+                    </div>
                 </div>
             </div>
         }

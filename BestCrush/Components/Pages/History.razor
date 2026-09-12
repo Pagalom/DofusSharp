@@ -491,7 +491,20 @@
 
                                     <div class="text-lg-end">
                                         <div class="history-mobile-label">Valeur</div>
-                                        <strong>@FormatKamas(session.TotalValue)</strong>
+                                            @if (session.DiscountedTotalValue.HasValue)
+                                            {
+                                                <strong>@FormatKamas(session.DiscountedTotalValue.Value)</strong>
+
+                                                <div class="small text-secondary">
+                                                    Brute : @FormatKamas(session.TotalValue)
+                                                    • -@session.DiscountPercent.ToString("0.##") %
+                                                </div>
+                                            }
+                                        else
+                                        {
+                                            <strong>@FormatKamas(session.TotalValue)</strong>
+                                            <div class="small text-secondary">Décote non enregistrée</div>
+                                        }
                                     </div>
 
                                     <div class="text-lg-end">
@@ -591,8 +604,25 @@
 
                                         <div class="d-flex justify-content-end mt-3 pt-3 border-top">
                                             <div class="text-end">
-                                                <div class="small text-secondary">Valeur totale figée à la date du concassage</div>
-                                                <div class="fs-5 fw-bold">@FormatKamas(session.TotalValue)</div>
+                                                <div class="small text-secondary">Valeurs figées à la date du concassage</div>
+                                                <div>
+                                                    Valeur brute :
+                                                    <strong>@FormatKamas(session.TotalValue)</strong>
+                                                </div>
+
+                                                    @if (session.DiscountedTotalValue.HasValue)
+                                                    {
+                                                        <div class="fs-5 fw-bold">
+                                                            Valeur ajustée (-@session.DiscountPercent.ToString("0.##") %) :
+                                                            @FormatKamas(session.DiscountedTotalValue.Value)
+                                                        </div>
+                                                    }
+                                                else
+                                                {
+                                                    <div class="small text-secondary">
+                                                        Décote non enregistrée pour cette ancienne session
+                                                    </div>
+                                                }
                                             </div>
                                         </div>
                                     </div>

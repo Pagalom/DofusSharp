@@ -24,6 +24,9 @@ public sealed class BestCrushSettingsService
     private const string CrushYieldEstimationModeKey =
         "Settings.CrushYieldEstimationMode";
 
+    private const string CrushValueDiscountKey =
+        "Settings.CrushValueDiscountPercent";
+
     private const string
         DevToolRemoveScreenshotsByDefaultKey =
             "Settings.DevTool_RemoveScreenshotsByDefault";
@@ -147,7 +150,30 @@ public sealed class BestCrushSettingsService
             );
     }
 
+    public double CrushValueDiscountPercent
+    {
+        get =>
+            Preferences.Get(
+                CrushValueDiscountKey,
+                5.0
+            );
+
+        set =>
+            Preferences.Set(
+                CrushValueDiscountKey,
+                Math.Clamp(
+                    value,
+                    0.0,
+                    100.0
+                )
+            );
+    }
+
     double IBestCrushSettingsProvider
         .TargetRoiPercent =>
             TargetRoiPercent;
+
+    double IBestCrushSettingsProvider
+        .CrushValueDiscountPercent =>
+            CrushValueDiscountPercent;
 }
