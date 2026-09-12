@@ -1,6 +1,14 @@
-﻿@using BestCrush.Domain.Models
+@using BestCrush.Domain.Models
 @using BestCrush.Models
 <div id="search-items-form">
+    <div class="d-flex flex-column align-items-center mb-3">
+        <div class="fw-semibold mb-1">Recherche</div>
+        <InputText @bind-Value="Model.SearchText"
+                   class="form-control"
+                   style="max-width:420px"
+                   placeholder="Nom de l'équipement"
+                   disabled="@Disabled" />
+    </div>
     <div class="d-flex flex-column align-items-center mb-3">
         <div class="fw-semibold mb-1">Niveau</div>
         <div class="input-group justify-content-center">
@@ -128,6 +136,227 @@
             </div>
         </div>
     </div>
+
+    <div class="d-flex justify-content-center mb-3">
+        <button type="button"
+                class="btn btn-outline-secondary btn-sm"
+                @onclick="ToggleAdvanced"
+                disabled="@Disabled">
+            @(_advancedVisible ? "Masquer les filtres avancés" : "Filtres avancés")
+        </button>
+    </div>
+
+    @if (HasAdvancedFilters())
+    {
+        <div class="d-flex justify-content-center align-items-center gap-1 flex-wrap mb-3">
+            <span class="small text-secondary me-1">Filtres actifs :</span>
+
+            @foreach (RuneFilterCriterion criterion in Model.RuneFilters.ToArray())
+            {
+                <button type="button"
+                        class="btn btn-outline-secondary btn-sm py-0"
+                        title="Retirer ce filtre"
+                        @onclick="() => RemoveRuneFilter(criterion)"
+                        disabled="@Disabled">
+                    @criterion.RuneName ×
+                </button>
+            }
+
+            @if (Model.MinimumRoiPercent is double minimumRoi)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0"
+                        @onclick="ClearMinimumRoi" disabled="@Disabled">
+                    ROI ≥ @minimumRoi.ToString("0.##") % ×
+                </button>
+            }
+
+            @if (Model.MinimumBenefit is double minimumBenefit)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0"
+                        @onclick="ClearMinimumBenefit" disabled="@Disabled">
+                    Bénéfice ≥ @minimumBenefit.ToString("N0") K ×
+                </button>
+            }
+
+            @if (Model.CompleteDataOnly)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0"
+                        @onclick="() => Model.CompleteDataOnly = false" disabled="@Disabled">
+                    Données complètes ×
+                </button>
+            }
+
+            @if (Model.FreshDataOnly)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0"
+                        @onclick="() => Model.FreshDataOnly = false" disabled="@Disabled">
+                    Données fraîches ×
+                </button>
+            }
+
+            @if (Model.RequireCoefficient)
+            {
+                <button type="button" class="btn btn-outline-secondary btn-sm py-0"
+                        @onclick="() => Model.RequireCoefficient = false" disabled="@Disabled">
+                    Coefficient connu ×
+                </button>
+            }
+        </div>
+    }
+
+    @if (_advancedVisible)
+    {
+        <div class="border rounded p-3 mb-3">
+            <div class="row g-3">
+                <div class="col-12 col-lg-7">
+                    <div class="fw-semibold mb-2">Runes / caractéristiques</div>
+
+                    <div class="d-flex gap-2 align-items-end flex-wrap mb-2">
+                        <div style="min-width:260px; flex:1">
+                            <label class="form-label small mb-1">Ajouter une rune</label>
+                            <InputSelect TValue="long?"
+                                         @bind-Value="_runeToAdd"
+                                         class="form-select form-select-sm"
+                                         disabled="@Disabled">
+                                <option value="">Choisir une rune...</option>
+                                @foreach (Rune rune in AvailableRunes.OrderBy(r => r.Name))
+                                {
+                                    <option value="@rune.DofusDbId">@rune.Name</option>
+                                }
+                            </InputSelect>
+                        </div>
+
+                        <button type="button"
+                                class="btn btn-outline-primary btn-sm"
+                                @onclick="AddRuneFilter"
+                                disabled="@(Disabled || _runeToAdd is null)">
+                            Ajouter
+                        </button>
+
+                        <div style="min-width:170px">
+                            <label class="form-label small mb-1">Correspondance</label>
+                            <InputSelect TValue="RuneFilterMatchMode"
+                                         @bind-Value="Model.RuneMatchMode"
+                                         class="form-select form-select-sm"
+                                         disabled="@Disabled">
+                                <option value="@RuneFilterMatchMode.Any">Au moins une</option>
+                                <option value="@RuneFilterMatchMode.All">Toutes</option>
+                            </InputSelect>
+                        </div>
+                    </div>
+
+                    @if (Model.RuneFilters.Count == 0)
+                    {
+                        <div class="text-secondary small">
+                            Aucune rune sélectionnée.
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-column gap-2">
+                            @foreach (RuneFilterCriterion criterion in Model.RuneFilters.ToArray())
+                            {
+                                Rune? rune = AvailableRunes.FirstOrDefault(
+                                    candidate => candidate.DofusDbId == criterion.DofusDbId);
+
+                                <div class="d-flex align-items-center gap-2 border rounded px-2 py-1">
+                                    @if (rune is not null)
+                                    {
+                                        <ItemIcon Item="rune"
+                                                  Background="IconBackground.Slot"
+                                                  Size="Size.Tiny" />
+                                    }
+
+                                    <span class="flex-grow-1 small fw-semibold text-decoration-underline"
+                                          role="button"
+                                          title="Cliquer pour copier le nom de la rune"
+                                          @onclick="() => CopyTextAsync(criterion.RuneName)">
+                                        @criterion.RuneName
+                                    </span>
+
+                                    <button type="button"
+                                            class="btn btn-outline-danger btn-sm"
+                                            title="Retirer"
+                                            @onclick="() => RemoveRuneFilter(criterion)"
+                                            disabled="@Disabled">
+                                        ×
+                                    </button>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+
+                <div class="col-12 col-lg-5">
+                    <div class="fw-semibold mb-2">Rentabilité</div>
+
+                    <label class="form-label small mb-1">Source économique</label>
+                    <InputSelect TValue="ProfitabilityFilterMode"
+                                 @bind-Value="Model.ProfitabilityMode"
+                                 class="form-select form-select-sm mb-2"
+                                 disabled="@Disabled">
+                        <option value="@ProfitabilityFilterMode.Best">Meilleur achat / craft</option>
+                        <option value="@ProfitabilityFilterMode.Purchase">Achat uniquement</option>
+                        <option value="@ProfitabilityFilterMode.Craft">Craft uniquement</option>
+                    </InputSelect>
+
+                    <div class="row g-2 mb-2">
+                        <div class="col-6">
+                            <label class="form-label small mb-1">ROI min.</label>
+                            <div class="input-group input-group-sm">
+                                <InputNumber @bind-Value="Model.MinimumRoiPercent"
+                                             class="form-control"
+                                             placeholder="—"
+                                             disabled="@Disabled" />
+                                <span class="input-group-text">%</span>
+                            </div>
+                        </div>
+
+                        <div class="col-6">
+                            <label class="form-label small mb-1">Bénéfice min.</label>
+                            <div class="input-group input-group-sm">
+                                <InputNumber @bind-Value="Model.MinimumBenefit"
+                                             class="form-control"
+                                             placeholder="—"
+                                             disabled="@Disabled" />
+                                <span class="input-group-text">K</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-check form-switch">
+                        <InputCheckbox @bind-Value="Model.CompleteDataOnly"
+                                       class="form-check-input"
+                                       disabled="@Disabled" />
+                        <label class="form-check-label small">Données complètes uniquement</label>
+                    </div>
+
+                    <div class="form-check form-switch">
+                        <InputCheckbox @bind-Value="Model.FreshDataOnly"
+                                       class="form-check-input"
+                                       disabled="@Disabled" />
+                        <label class="form-check-label small">Données fraîches uniquement</label>
+                    </div>
+
+                    <div class="form-check form-switch">
+                        <InputCheckbox @bind-Value="Model.RequireCoefficient"
+                                       class="form-check-input"
+                                       disabled="@Disabled" />
+                        <label class="form-check-label small">Coefficient disponible</label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="d-flex justify-content-end mt-3">
+                <button type="button"
+                        class="btn btn-outline-secondary btn-sm"
+                        @onclick="ResetAdvanced"
+                        disabled="@Disabled">
+                    Réinitialiser les filtres avancés
+                </button>
+            </div>
+        </div>
+    }
 </div>
 
 @code {
@@ -138,6 +367,110 @@
     [Parameter]
     public bool Disabled { get; set; }
 
+    [Parameter]
+    public IReadOnlyCollection<Rune> AvailableRunes { get; set; } =
+        Array.Empty<Rune>();
+
+    private bool _advancedVisible;
+    private long? _runeToAdd;
+
+    private static Task CopyTextAsync(
+        string? value)
+    {
+        if (string.IsNullOrWhiteSpace(
+            value))
+        {
+            return Task.CompletedTask;
+        }
+
+        return Microsoft.Maui.ApplicationModel.DataTransfer
+            .Clipboard
+            .Default
+            .SetTextAsync(
+                value.Trim()
+            );
+    }
+
+    private void ToggleAdvanced()
+    {
+        _advancedVisible = !_advancedVisible;
+    }
+
+    private void AddRuneFilter()
+    {
+        if (_runeToAdd is not long runeId)
+        {
+            return;
+        }
+
+        Rune? rune =
+            AvailableRunes.FirstOrDefault(
+                candidate =>
+                    candidate.DofusDbId == runeId
+            );
+
+        if (rune is null ||
+            Model.RuneFilters.Any(
+                criterion =>
+                    criterion.DofusDbId == runeId
+            ))
+        {
+            _runeToAdd = null;
+            return;
+        }
+
+        Model.RuneFilters.Add(
+            new RuneFilterCriterion
+            {
+                DofusDbId = rune.DofusDbId,
+                Characteristic = rune.Characteristic,
+                RuneName = rune.Name
+            }
+        );
+
+        _runeToAdd = null;
+    }
+
+    private void RemoveRuneFilter(
+        RuneFilterCriterion criterion)
+    {
+        Model.RuneFilters.Remove(criterion);
+    }
+
+    private bool HasAdvancedFilters()
+    {
+        return Model.RuneFilters.Count > 0 ||
+            Model.MinimumRoiPercent is not null ||
+            Model.MinimumBenefit is not null ||
+            Model.CompleteDataOnly ||
+            Model.FreshDataOnly ||
+            Model.RequireCoefficient ||
+            Model.ProfitabilityMode !=
+                ProfitabilityFilterMode.Best;
+    }
+
+    private void ClearMinimumRoi()
+    {
+        Model.MinimumRoiPercent = null;
+    }
+
+    private void ClearMinimumBenefit()
+    {
+        Model.MinimumBenefit = null;
+    }
+
+    private void ResetAdvanced()
+    {
+        Model.RuneFilters.Clear();
+        Model.RuneMatchMode = RuneFilterMatchMode.Any;
+        Model.ProfitabilityMode = ProfitabilityFilterMode.Best;
+        Model.MinimumRoiPercent = null;
+        Model.MinimumBenefit = null;
+        Model.CompleteDataOnly = false;
+        Model.FreshDataOnly = false;
+        Model.RequireCoefficient = false;
+    }
+
     void ResetEquipments()
     {
         Model.EquipmentType.Amulet = false;
@@ -146,6 +479,7 @@
         Model.EquipmentType.Boots = false;
         Model.EquipmentType.Hat = false;
         Model.EquipmentType.Cloak = false;
+        Model.EquipmentType.Shield = false;
         Model.EquipmentType.Trophy = false;
     }
 

@@ -1,10 +1,55 @@
-﻿namespace BestCrush.Models;
+using BestCrush.Domain.Models;
+
+namespace BestCrush.Models;
+
+public enum RuneFilterMatchMode
+{
+    Any,
+    All
+}
+
+public enum ProfitabilityFilterMode
+{
+    Best,
+    Purchase,
+    Craft
+}
+
+public sealed class RuneFilterCriterion
+{
+    public long DofusDbId { get; set; }
+    public Characteristic Characteristic { get; set; }
+    public string RuneName { get; set; } = string.Empty;
+}
 
 public class SearchItemsModel
 {
+    public string? SearchText { get; set; }
     public int? LevelMin { get; set; }
     public int? LevelMax { get; set; }
     public EquipmentTypesFilter EquipmentType { get; set; } = new();
+
+    public RuneFilterMatchMode RuneMatchMode { get; set; } =
+        RuneFilterMatchMode.Any;
+
+    public List<RuneFilterCriterion> RuneFilters { get; set; } = [];
+
+    public ProfitabilityFilterMode ProfitabilityMode { get; set; } =
+        ProfitabilityFilterMode.Best;
+
+    public double? MinimumRoiPercent { get; set; }
+    public double? MinimumBenefit { get; set; }
+    public bool CompleteDataOnly { get; set; }
+    public bool FreshDataOnly { get; set; }
+    public bool RequireCoefficient { get; set; }
+}
+
+public sealed class SearchFilterPreset
+{
+    public Guid Id { get; set; } = Guid.NewGuid();
+    public string Name { get; set; } = string.Empty;
+    public SearchItemsModel Filters { get; set; } = new();
+    public SortOrder SortOrder { get; set; } = SortOrder.BestBenefit;
 }
 
 public class EquipmentTypesFilter
