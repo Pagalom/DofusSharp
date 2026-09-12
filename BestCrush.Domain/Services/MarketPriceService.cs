@@ -6,6 +6,10 @@ namespace BestCrush.Domain.Services;
 public class MarketPriceService(BestCrushDbContext context,
     IDataPriorityProvider dataPriorityProvider)
 {
+    private static readonly TimeSpan
+        IdenticalPriceConfirmationInterval =
+            TimeSpan.FromHours(6);
+
     public async Task<MarketPriceObservation> AddObservationAsync(
         MarketObjectType objectType,
         long dofusDbId,
@@ -31,6 +35,31 @@ public class MarketPriceService(BestCrushDbContext context,
             );
         }
 
+        DateTime observedAtUtc =
+            DateTime.UtcNow;
+
+        MarketPriceObservation? latest =
+            await context.MarketPriceObservations
+                .AsNoTracking()
+                .Where(observation =>
+                    observation.ObjectType == objectType &&
+                    observation.DofusDbId == dofusDbId &&
+                    observation.ServerName == serverName &&
+                    observation.Quantity == quantity &&
+                    observation.Source == source)
+                .OrderByDescending(observation =>
+                    observation.ObservedAtUtc)
+                .FirstOrDefaultAsync(cancellationToken);
+
+        if (latest is not null &&
+            !latest.IsCleared &&
+            latest.Price == price &&
+            observedAtUtc - latest.ObservedAtUtc <
+                IdenticalPriceConfirmationInterval)
+        {
+            return latest;
+        }
+
         MarketPriceObservation observation = new()
         {
             ObjectType = objectType,
@@ -40,7 +69,7 @@ public class MarketPriceService(BestCrushDbContext context,
             Quantity = quantity,
             Source = source,
             IsCleared = false,
-            ObservedAtUtc = DateTime.UtcNow
+            ObservedAtUtc = observedAtUtc
         };
 
         context.MarketPriceObservations.Add(observation);
@@ -320,6 +349,82 @@ public class MarketPriceService(BestCrushDbContext context,
                 result => result.Key,
                 result => result.Observation!
             );
+    }
+
+    public async Task<IReadOnlyList<MarketPriceObservation>>
+        GetHistoryAsync(
+            MarketObjectType objectType,
+            long dofusDbId,
+            string serverName,
+            DateTime? fromUtc = null,
+            DateTime? toUtc = null,
+            MarketPriceSource? source = null,
+            int? quantity = null,
+            CancellationToken cancellationToken = default)
+    {
+        if (fromUtc.HasValue &&
+            toUtc.HasValue &&
+            fromUtc.Value > toUtc.Value)
+        {
+            throw new ArgumentException(
+                "fromUtc must be earlier than or equal to toUtc."
+            );
+        }
+
+        IQueryable<MarketPriceObservation> query =
+            context.MarketPriceObservations
+                .AsNoTracking()
+                .Where(observation =>
+                    observation.ObjectType == objectType &&
+                    observation.DofusDbId == dofusDbId &&
+                    observation.ServerName == serverName &&
+                    !observation.IsCleared &&
+                    observation.Price > 0);
+
+        if (fromUtc.HasValue)
+        {
+            query = query.Where(observation =>
+                observation.ObservedAtUtc >=
+                    fromUtc.Value);
+        }
+
+        if (toUtc.HasValue)
+        {
+            query = query.Where(observation =>
+                observation.ObservedAtUtc <=
+                    toUtc.Value);
+        }
+
+        if (source.HasValue)
+        {
+            query = query.Where(observation =>
+                observation.Source ==
+                    source.Value);
+        }
+
+        if (quantity.HasValue)
+        {
+            if (quantity.Value <= 0)
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(quantity),
+                    "Quantity must be greater than zero."
+                );
+            }
+
+            query = query.Where(observation =>
+                observation.Quantity ==
+                    quantity.Value);
+        }
+
+        return await query
+            .OrderBy(observation =>
+                observation.ObservedAtUtc)
+            .ThenBy(observation =>
+                observation.Quantity)
+            .ThenBy(observation =>
+                observation.Source)
+            .ToListAsync(cancellationToken);
     }
 
     public MarketValueResult? CalculateValue(

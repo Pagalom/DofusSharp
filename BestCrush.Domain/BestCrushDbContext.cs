@@ -85,5 +85,16 @@ public class BestCrushDbContext : DbContext
             p.Quantity,
             p.ObservedAtUtc
         });
+
+        modelBuilder.Entity<MarketPriceObservation>()
+        .HasIndex(p => new
+        {
+            p.ObjectType,
+            p.DofusDbId,
+            p.ServerName,
+            p.Quantity,
+            p.Source,
+            p.ObservedAtUtc
+        });
     }
 }
