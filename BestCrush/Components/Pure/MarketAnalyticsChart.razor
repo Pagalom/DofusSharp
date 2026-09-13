@@ -1,0 +1,366 @@
+@using System.Globalization
+@using BestCrush.Domain.Models
+
+<div class="card market-analytics-chart-card">
+    <div class="card-body">
+        @if (VisibleSeries.Count == 0)
+        {
+            <div class="text-center text-secondary py-5">
+                Aucune donnée à afficher pour les séries sélectionnées.
+            </div>
+        }
+        else
+        {
+            <div class="market-analytics-chart-wrap">
+                <svg viewBox="0 0 @ChartWidth @ChartHeight"
+                     class="market-analytics-chart"
+                     role="img"
+                     aria-label="Graphique d'évolution des prix">
+
+                    @for (int index = 0; index <= 4; index++)
+                    {
+                        double y = PlotTop +
+                            index * PlotHeight / 4.0;
+                        double value = MaxValue -
+                            index * (MaxValue - MinValue) / 4.0;
+
+                        <line x1="@PlotLeft"
+                              y1="@y"
+                              x2="@(PlotLeft + PlotWidth)"
+                              y2="@y"
+                              stroke="var(--bs-border-color)"
+                              stroke-width="1" />
+
+                        <foreignObject x="0"
+                                       y="@(y - 8)"
+                                       width="@(PlotLeft - 10)"
+                                       height="18">
+                            <div class="market-analytics-axis-label text-end"
+                                 style="line-height:18px;">
+                                @FormatAxisValue(value)
+                            </div>
+                        </foreignObject>
+                    }
+
+                    <line x1="@PlotLeft"
+                          y1="@(PlotTop + PlotHeight)"
+                          x2="@(PlotLeft + PlotWidth)"
+                          y2="@(PlotTop + PlotHeight)"
+                          stroke="var(--bs-secondary-color)"
+                          stroke-width="1.5" />
+
+                    @for (int index = 0; index <= 4; index++)
+                    {
+                        double x = PlotLeft +
+                            index * PlotWidth / 4.0;
+                        DateTime timestamp =
+                            MinTimeUtc +
+                            TimeSpan.FromTicks(
+                                (long)(
+                                    (MaxTimeUtc - MinTimeUtc)
+                                        .Ticks *
+                                    index /
+                                    4.0));
+
+                        <foreignObject x="@(x - 60)"
+                                       y="@(PlotTop + PlotHeight + 10)"
+                                       width="120"
+                                       height="20">
+                            <div class="market-analytics-axis-label text-center"
+                                 style="line-height:20px;">
+                                @FormatDate(timestamp)
+                            </div>
+                        </foreignObject>
+                    }
+
+                    @for (int seriesIndex = 0;
+                        seriesIndex < VisibleSeries.Count;
+                        seriesIndex++)
+                    {
+                        MarketAnalyticsSeriesResult series =
+                            VisibleSeries[seriesIndex];
+                        string color = SeriesColor(seriesIndex);
+
+                        <polyline points="@PolylinePoints(series)"
+                                  fill="none"
+                                  stroke="@color"
+                                  stroke-width="3"
+                                  stroke-linejoin="round"
+                                  stroke-linecap="round" />
+
+                        @foreach (MarketAnalyticsPoint point in series.Points)
+                        {
+                            <circle cx="@X(point.TimestampUtc)"
+                                    cy="@Y(point.Value)"
+                                    r="4"
+                                    fill="@color">
+                                <title>
+                                    @series.Label
+                                    @FormatDateTime(point.TimestampUtc)
+                                    @FormatPointValue(series, point.Value)
+                                    (@point.ObservationCount observation(s))
+                                </title>
+                            </circle>
+                        }
+                    }
+                </svg>
+            </div>
+
+            <div class="d-flex flex-column gap-2 mt-3">
+                @for (int index = 0;
+                    index < VisibleSeries.Count;
+                    index++)
+                {
+                    MarketAnalyticsSeriesResult series =
+                        VisibleSeries[index];
+                    MarketAnalyticsPoint latest =
+                        series.Points[^1];
+
+                    <div class="d-flex flex-wrap align-items-center gap-2 small">
+                        <span class="market-analytics-swatch"
+                              style="background:@SeriesColor(index)"></span>
+
+                        <button type="button"
+                                class="btn btn-link btn-sm p-0 text-start text-decoration-none"
+                                title="Cliquer pour copier le nom de la série"
+                                @onclick="() => CopyAsync(series.Label)">
+                            @series.Label
+                        </button>
+
+                        <span class="text-secondary">—</span>
+
+                        <button type="button"
+                                class="btn btn-link btn-sm p-0 text-decoration-none fw-semibold"
+                                title="Cliquer pour copier la dernière valeur"
+                                @onclick="() => CopyNumberAsync(latest.Value)">
+                            @FormatPointValue(series, latest.Value)
+                        </button>
+
+                        <span class="text-secondary">
+                            (@series.Points.Count points)
+                        </span>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .market-analytics-chart-wrap {
+        width: 100%;
+        overflow-x: auto;
+    }
+
+    .market-analytics-chart {
+        display: block;
+        width: 100%;
+        min-width: 760px;
+        height: auto;
+    }
+
+    .market-analytics-axis-label {
+        fill: var(--bs-secondary-color);
+        font-size: 12px;
+    }
+
+    .market-analytics-swatch {
+        width: 14px;
+        height: 4px;
+        border-radius: 999px;
+        display: inline-block;
+        flex: 0 0 auto;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public IReadOnlyList<MarketAnalyticsSeriesResult> Series { get; set; } = [];
+
+    private const double ChartWidth = 1100;
+    private const double ChartHeight = 470;
+    private const double PlotLeft = 100;
+    private const double PlotTop = 30;
+    private const double PlotWidth = 960;
+    private const double PlotHeight = 380;
+
+    private static readonly string[] Palette =
+    [
+        "#0d6efd",
+        "#dc3545",
+        "#198754",
+        "#fd7e14",
+        "#6f42c1",
+        "#20c997",
+        "#d63384",
+        "#6c757d",
+        "#ffc107",
+        "#0dcaf0"
+    ];
+
+    private IReadOnlyList<MarketAnalyticsSeriesResult>
+        VisibleSeries =>
+            Series
+                .Where(series =>
+                    series.Points.Count > 0)
+                .ToArray();
+
+    private IEnumerable<MarketAnalyticsPoint>
+        AllPoints =>
+            VisibleSeries.SelectMany(series =>
+                series.Points);
+
+    private DateTime MinTimeUtc =>
+        AllPoints.Min(point => point.TimestampUtc);
+
+    private DateTime MaxTimeUtc
+    {
+        get
+        {
+            DateTime min = MinTimeUtc;
+            DateTime max =
+                AllPoints.Max(point =>
+                    point.TimestampUtc);
+
+            return max <= min
+                ? min.AddHours(1)
+                : max;
+        }
+    }
+
+    private double MinValue
+    {
+        get
+        {
+            double min =
+                AllPoints.Min(point => point.Value);
+            double max =
+                AllPoints.Max(point => point.Value);
+
+            if (Math.Abs(max - min) < 0.000001)
+            {
+                return min == 0
+                    ? -1
+                    : min * 0.95;
+            }
+
+            return min;
+        }
+    }
+
+    private double MaxValue
+    {
+        get
+        {
+            double min =
+                AllPoints.Min(point => point.Value);
+            double max =
+                AllPoints.Max(point => point.Value);
+
+            if (Math.Abs(max - min) < 0.000001)
+            {
+                return max == 0
+                    ? 1
+                    : max * 1.05;
+            }
+
+            return max;
+        }
+    }
+
+    private double X(DateTime timestampUtc)
+    {
+        double totalTicks =
+            (MaxTimeUtc - MinTimeUtc).Ticks;
+
+        double elapsedTicks =
+            (timestampUtc - MinTimeUtc).Ticks;
+
+        return PlotLeft +
+            elapsedTicks /
+            totalTicks *
+            PlotWidth;
+    }
+
+    private double Y(double value)
+    {
+        double range =
+            MaxValue - MinValue;
+
+        return PlotTop + PlotHeight -
+            (value - MinValue) /
+            range *
+            PlotHeight;
+    }
+
+    private string PolylinePoints(
+        MarketAnalyticsSeriesResult series)
+    {
+        return string.Join(
+            " ",
+            series.Points.Select(point =>
+                $"{X(point.TimestampUtc).ToString("0.##", CultureInfo.InvariantCulture)}," +
+                $"{Y(point.Value).ToString("0.##", CultureInfo.InvariantCulture)}")
+        );
+    }
+
+    private static string SeriesColor(int index) =>
+        Palette[index % Palette.Length];
+
+    private bool AllVisibleSeriesAreBase100 =>
+        VisibleSeries.Count > 0 &&
+        VisibleSeries.All(series =>
+            series.Transformation ==
+                MarketAnalyticsTransformation.Base100);
+
+    private string FormatAxisValue(double value)
+    {
+        if (AllVisibleSeriesAreBase100)
+        {
+            return value.ToString("0.#");
+        }
+
+        return value switch
+        {
+            >= 1_000_000 =>
+                $"{value / 1_000_000:0.##} M",
+            >= 1_000 =>
+                $"{value / 1_000:0.##} k",
+            _ => value.ToString("0.##")
+        };
+    }
+
+    private static string FormatPointValue(
+        MarketAnalyticsSeriesResult series,
+        double value)
+    {
+        return series.Transformation ==
+            MarketAnalyticsTransformation.Base100
+                ? value.ToString("0.##")
+                : $"{value:N0} K";
+    }
+
+    private static string FormatDate(DateTime utc) =>
+        utc.ToLocalTime().ToString("dd/MM HH:mm");
+
+    private static string FormatDateTime(DateTime utc) =>
+        utc.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+
+    private static Task CopyAsync(string value)
+    {
+        return Microsoft.Maui.ApplicationModel.DataTransfer
+            .Clipboard
+            .Default
+            .SetTextAsync(value);
+    }
+
+    private static Task CopyNumberAsync(double value)
+    {
+        return CopyAsync(
+            value.ToString(
+                "0.########",
+                CultureInfo.InvariantCulture
+            )
+        );
+    }
+}
