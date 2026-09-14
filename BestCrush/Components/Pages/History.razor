@@ -3,6 +3,8 @@
 @inject HistoryService HistoryService
 @inject ItemsService ItemsService
 @inject RunesService RunesService
+@inject MarketAnalyticsService MarketAnalyticsService
+@inject BestCrush.Services.MarketAnalyticsPresetService MarketAnalyticsPresetService
 
 @using BestCrush.Components.Pure
 @using BestCrush.Domain.Models
@@ -53,126 +55,371 @@
                 @onclick="() => SelectTabAsync(HistoryTab.Crushes)">
             Concassages
         </button>
+        <button type="button"
+                class="@TabClass(HistoryTab.Analytics)"
+                @onclick="() => SelectTabAsync(HistoryTab.Analytics)">
+            Analyses
+        </button>
     </div>
 
-    <div class="card mb-3">
-        <div class="card-body">
-            <div class="row g-2 align-items-end">
-                <div class="col-12 col-lg">
-                    <label class="form-label small text-secondary mb-1">Recherche</label>
-                    <input class="form-control"
-                           placeholder="Nom d'objet ou de rune..."
-                           @bind="_searchText" />
+    @if (_tab != HistoryTab.Analytics)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-lg">
+                        <label class="form-label small text-secondary mb-1">Recherche</label>
+                        <input class="form-control"
+                               placeholder="Nom d'objet ou de rune..."
+                               @bind="_searchText" />
+                    </div>
+
+                    @if (_tab != HistoryTab.Crushes)
+                    {
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Niveau min.</label>
+                            <input type="number"
+                                   min="0"
+                                   max="200"
+                                   class="form-control"
+                                   @bind="_levelMin" />
+                        </div>
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Niveau max.</label>
+                            <input type="number"
+                                   min="0"
+                                   max="200"
+                                   class="form-control"
+                                   @bind="_levelMax" />
+                        </div>
+                    }
+
+                    @if (_tab == HistoryTab.Items)
+                    {
+                        <div class="col-12 col-md-6 col-lg-3">
+                            <label class="form-label small text-secondary mb-1">Type d'équipement</label>
+                            <select class="form-select"
+                                    value="@(_equipmentType?.ToString() ?? string.Empty)"
+                                    @onchange="OnEquipmentTypeChanged">
+                                <option value="">Tous les types</option>
+                                @foreach (EquipmentType type in Enum.GetValues<EquipmentType>())
+                                {
+                                    <option value="@type">@type.ToDisplayName()</option>
+                                }
+                            </select>
+                        </div>
+                    }
+
+                    <div class="col-auto">
+                        <button type="button"
+                                class="btn btn-primary"
+                                disabled="@_loading"
+                                @onclick="ApplyFiltersAsync">
+                            Filtrer
+                        </button>
+                    </div>
+                    <div class="col-auto">
+                        <button type="button"
+                                class="btn btn-outline-secondary"
+                                disabled="@_loading"
+                                @onclick="ResetFiltersAsync">
+                            Réinitialiser
+                        </button>
+                    </div>
                 </div>
 
-                @if (_tab != HistoryTab.Crushes)
+                @if (_tab == HistoryTab.Items || _tab == HistoryTab.Crushes)
                 {
-                    <div class="col-6 col-md-3 col-lg-2">
-                        <label class="form-label small text-secondary mb-1">Niveau min.</label>
-                        <input type="number"
-                               min="0"
-                               max="200"
-                               class="form-control"
-                               @bind="_levelMin" />
-                    </div>
-                    <div class="col-6 col-md-3 col-lg-2">
-                        <label class="form-label small text-secondary mb-1">Niveau max.</label>
-                        <input type="number"
-                               min="0"
-                               max="200"
-                               class="form-control"
-                               @bind="_levelMax" />
+                    <div class="history-secondary-filter mt-3 pt-3 border-top">
+                        <div class="small text-secondary mb-2">
+                            @(_tab == HistoryTab.Items ? "Rune obtenable" : "Rune obtenue")
+                        </div>
+
+                        <div class="position-relative history-rune-filter-wrap">
+                            <button type="button"
+                                    class="btn btn-outline-secondary history-rune-filter-button"
+                                    @onclick="ToggleRunePicker">
+                                @if (SelectedFilterRune is Rune selectedRune)
+                                {
+                                    <span class="d-flex align-items-center gap-2">
+                                        <ItemIcon Item="selectedRune"
+                                                  Background="IconBackground.Slot"
+                                                  Size="Size.Tiny" />
+                                        <span>@selectedRune.Name</span>
+                                    </span>
+                                }
+                                else
+                                {
+                                    <span>Toutes les runes</span>
+                                }
+                            </button>
+
+                            @if (_runePickerOpen)
+                            {
+                                <div class="history-rune-picker shadow">
+                                    <button type="button"
+                                            class="history-rune-option"
+                                            @onclick="() => SelectRuneFilterAsync(null)">
+                                        <span class="history-empty-icon"></span>
+                                        <span>Toutes les runes</span>
+                                    </button>
+
+                                    @foreach (Rune rune in _runes)
+                                    {
+                                        <button type="button"
+                                                class="history-rune-option"
+                                                @onclick="() => SelectRuneFilterAsync(rune.DofusDbId)">
+                                            <ItemIcon Item="rune"
+                                                      Background="IconBackground.Slot"
+                                                      Size="Size.Tiny" />
+                                            <span>@rune.Name</span>
+                                        </button>
+                                    }
+                                </div>
+                            }
+                        </div>
                     </div>
                 }
+            </div>
+        </div>
 
-                @if (_tab == HistoryTab.Items)
-                {
-                    <div class="col-12 col-md-6 col-lg-3">
-                        <label class="form-label small text-secondary mb-1">Type d'équipement</label>
+    }
+    else
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <div class="row g-2 align-items-end">
+                    <div class="col-12 col-xl-3">
+                        <label class="form-label small text-secondary mb-1">Analyse enregistrée</label>
                         <select class="form-select"
-                                value="@(_equipmentType?.ToString() ?? string.Empty)"
-                                @onchange="OnEquipmentTypeChanged">
-                            <option value="">Tous les types</option>
-                            @foreach (EquipmentType type in Enum.GetValues<EquipmentType>())
+                                value="@(_selectedAnalyticsPresetId?.ToString() ?? string.Empty)"
+                                @onchange="OnAnalyticsPresetChangedAsync">
+                            <option value="">Nouvelle analyse</option>
+                            @foreach (MarketAnalyticsPreset preset in _analyticsPresets)
                             {
-                                <option value="@type">@type.ToDisplayName()</option>
+                                <option value="@preset.Id">@preset.Name</option>
                             }
                         </select>
                     </div>
+
+                    <div class="col-12 col-xl-3">
+                        <label class="form-label small text-secondary mb-1">Nom</label>
+                        <input class="form-control"
+                               placeholder="Ex. Analyse Sagesse"
+                               @bind="_analyticsName"
+                               @bind:event="oninput" />
+                    </div>
+
+                    <div class="col-12 col-md-4 col-xl-2">
+                        <label class="form-label small text-secondary mb-1">Période</label>
+                        <select class="form-select"
+                                value="@_analyticsPeriod"
+                                @onchange="OnAnalyticsPeriodChangedAsync">
+                            <option value="@MarketAnalyticsPeriod.Hours24">24 h</option>
+                            <option value="@MarketAnalyticsPeriod.Days7">7 jours</option>
+                            <option value="@MarketAnalyticsPeriod.Days30">30 jours</option>
+                            <option value="@MarketAnalyticsPeriod.All">Tout</option>
+                        </select>
+                    </div>
+
+                    <div class="col-12 col-xl">
+                        <div class="d-flex flex-wrap gap-2">
+                            <button type="button"
+                                    class="btn btn-outline-secondary"
+                                    disabled="@_loading"
+                                    @onclick="NewAnalyticsAsync">
+                                Nouveau
+                            </button>
+                            <button type="button"
+                                    class="btn btn-primary"
+                                    disabled="@_loading"
+                                    title="Crée l'analyse si elle est nouvelle, sinon met à jour le preset sélectionné. Le nom peut être modifié avant l'enregistrement."
+                                    @onclick="() => SaveAnalyticsPresetAsync(false)">
+                                Enregistrer
+                            </button>
+                            <button type="button"
+                                    class="btn btn-outline-primary"
+                                    disabled="@_loading"
+                                    @onclick="() => SaveAnalyticsPresetAsync(true)">
+                                Enregistrer sous
+                            </button>
+                            <button type="button"
+                                    class="btn btn-outline-danger"
+                                    disabled="@(_loading || _selectedAnalyticsPresetId is null)"
+                                    @onclick="DeleteAnalyticsPresetAsync">
+                                Supprimer
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                @if (_selectedAnalyticsPresetId is not null && AnalyticsPresetIsModified)
+                {
+                    <div class="mt-2">
+                        <span class="badge text-bg-warning">Analyse modifiée</span>
+                    </div>
                 }
 
-                <div class="col-auto">
-                    <button type="button"
-                            class="btn btn-primary"
-                            disabled="@_loading"
-                            @onclick="ApplyFiltersAsync">
-                        Filtrer
-                    </button>
+                <div class="small text-secondary mt-2">
+                    Les analyses enregistrées sont globales : elles peuvent être réappliquées à l'identique sur le serveur sélectionné avec les données du moment.
                 </div>
-                <div class="col-auto">
-                    <button type="button"
-                            class="btn btn-outline-secondary"
-                            disabled="@_loading"
-                            @onclick="ResetFiltersAsync">
-                        Réinitialiser
-                    </button>
+            </div>
+        </div>
+
+        <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+            <div>
+                <h5 class="mb-0">Séries</h5>
+                <div class="small text-secondary">
+                    Un même élément peut être ajouté plusieurs fois avec des calculs différents.
                 </div>
             </div>
 
-            @if (_tab == HistoryTab.Items || _tab == HistoryTab.Crushes)
-            {
-                <div class="history-secondary-filter mt-3 pt-3 border-top">
-                    <div class="small text-secondary mb-2">
-                        @(_tab == HistoryTab.Items ? "Rune obtenable" : "Rune obtenue")
-                    </div>
-
-                    <div class="position-relative history-rune-filter-wrap">
-                        <button type="button"
-                                class="btn btn-outline-secondary history-rune-filter-button"
-                                @onclick="ToggleRunePicker">
-                            @if (SelectedFilterRune is Rune selectedRune)
-                            {
-                                <span class="d-flex align-items-center gap-2">
-                                    <ItemIcon Item="selectedRune"
-                                              Background="IconBackground.Slot"
-                                              Size="Size.Tiny" />
-                                    <span>@selectedRune.Name</span>
-                                </span>
-                            }
-                            else
-                            {
-                                <span>Toutes les runes</span>
-                            }
-                        </button>
-
-                        @if (_runePickerOpen)
-                        {
-                            <div class="history-rune-picker shadow">
-                                <button type="button"
-                                        class="history-rune-option"
-                                        @onclick="() => SelectRuneFilterAsync(null)">
-                                    <span class="history-empty-icon"></span>
-                                    <span>Toutes les runes</span>
-                                </button>
-
-                                @foreach (Rune rune in _runes)
-                                {
-                                    <button type="button"
-                                            class="history-rune-option"
-                                            @onclick="() => SelectRuneFilterAsync(rune.DofusDbId)">
-                                        <ItemIcon Item="rune"
-                                                  Background="IconBackground.Slot"
-                                                  Size="Size.Tiny" />
-                                        <span>@rune.Name</span>
-                                    </button>
-                                }
-                            </div>
-                        }
-                    </div>
-                </div>
-            }
+            <button type="button"
+                    class="btn btn-primary"
+                    disabled="@(_loading || _analyticsDraft is not null)"
+                    @onclick="BeginAddAnalyticsSeries">
+                + Ajouter une série
+            </button>
         </div>
-    </div>
+
+        @if (_analyticsDraft is MarketAnalyticsSeriesDefinition draft)
+        {
+            <div class="card mb-3">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                        <h6 class="mb-0">
+                            @(_editingAnalyticsSeriesId is null
+                                ? "Ajouter une série"
+                                : "Modifier la série")
+                        </h6>
+                        <button type="button"
+                                class="btn-close"
+                                aria-label="Annuler"
+                                @onclick="CancelAnalyticsSeriesDraft"></button>
+                    </div>
+
+                    <div class="row g-2 align-items-end">
+                        <div class="col-6 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Type</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.ObjectType"
+                                    @onchange="OnAnalyticsDraftObjectTypeChanged">
+                                <option value="@MarketObjectType.Rune">Rune</option>
+                                <option value="@MarketObjectType.Resource">Ressource</option>
+                                <option value="@MarketObjectType.Equipment">Équipement</option>
+                            </select>
+                        </div>
+
+                        <div class="col-12 col-lg-4">
+                            <label class="form-label small text-secondary mb-1">Élément</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.DofusDbId"
+                                    @onchange="OnAnalyticsDraftItemChanged">
+                                @foreach (AnalyticsCatalogItem item in GetAnalyticsCatalogItems(draft.ObjectType))
+                                {
+                                    <option value="@item.DofusDbId">@item.Name</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Lots</label>
+                            <select class="form-select form-select-sm"
+                                    value="@(draft.LotQuantity?.ToString() ?? string.Empty)"
+                                    @onchange="OnAnalyticsDraftLotChanged">
+                                <option value="">Tous</option>
+                                <option value="1">x1</option>
+                                @if (draft.ObjectType != MarketObjectType.Equipment)
+                                {
+                                    <option value="10">x10</option>
+                                    <option value="100">x100</option>
+                                    <option value="1000">x1000</option>
+                                }
+                            </select>
+                        </div>
+
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Valeur</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.ValueMode"
+                                    @onchange="OnAnalyticsDraftValueModeChanged">
+                                <option value="@MarketAnalyticsValueMode.UnitPrice">Prix unitaire</option>
+                                <option value="@MarketAnalyticsValueMode.LotPrice"
+                                        disabled="@(draft.LotQuantity is null)">
+                                    Prix du lot
+                                </option>
+                            </select>
+                        </div>
+
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Agrégation</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.Aggregation"
+                                    @onchange="OnAnalyticsDraftAggregationChanged">
+                                <option value="@MarketAnalyticsAggregation.Median">Médiane</option>
+                                <option value="@MarketAnalyticsAggregation.Mean">Moyenne</option>
+                                <option value="@MarketAnalyticsAggregation.FirstQuartile">1er quartile (Q1)</option>
+                                <option value="@MarketAnalyticsAggregation.ThirdQuartile">3e quartile (Q3)</option>
+                            </select>
+                        </div>
+
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Source</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.SourceMode"
+                                    @onchange="OnAnalyticsDraftSourceChanged">
+                                <option value="@MarketAnalyticsSourceMode.InGameAutomatic">Jeu</option>
+                                <option value="@MarketAnalyticsSourceMode.Manual">Manuel</option>
+                                <option value="@MarketAnalyticsSourceMode.All">Toutes</option>
+                            </select>
+                        </div>
+
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Transformation</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.Transformation"
+                                    @onchange="OnAnalyticsDraftTransformationChanged">
+                                <option value="@MarketAnalyticsTransformation.Raw">Valeur brute</option>
+                                <option value="@MarketAnalyticsTransformation.Base100">Base 100</option>
+                            </select>
+                        </div>
+
+                        <div class="col-auto ms-lg-auto">
+                            <div class="d-flex gap-2">
+                                <button type="button"
+                                        class="btn btn-outline-secondary btn-sm"
+                                        @onclick="CancelAnalyticsSeriesDraft">
+                                    Annuler
+                                </button>
+                                <button type="button"
+                                        class="btn btn-primary btn-sm"
+                                        disabled="@_loading"
+                                        @onclick="CommitAnalyticsSeriesDraftAsync">
+                                    @(_editingAnalyticsSeriesId is null
+                                        ? "Ajouter la série"
+                                        : "Enregistrer les modifications")
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    @if (draft.LotQuantity is null)
+                    {
+                        <div class="small text-secondary mt-2">
+                            Tous les lots sont comparés après conversion en prix unitaire.
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (_analyticsSeries.Count == 0 && _analyticsDraft is null)
+        {
+            <div class="alert alert-secondary">
+                Ajoute une série pour commencer l'analyse.
+            </div>
+        }
+    }
 
     @if (!string.IsNullOrWhiteSpace(_errorMessage))
     {
@@ -189,7 +436,17 @@
     }
     else
     {
-        @if (_tab == HistoryTab.Resources || _tab == HistoryTab.Runes)
+        @if (_tab == HistoryTab.Analytics)
+        {
+            <MarketAnalyticsChart Definitions="_analyticsSeries"
+                                  Series="_analyticsResults"
+                                  Resources="_resources"
+                                  Equipments="_equipments"
+                                  Runes="_runesById"
+                                  EditRequested="BeginEditAnalyticsSeries"
+                                  RemoveRequested="RemoveAnalyticsSeriesAsync" />
+        }
+        else if (_tab == HistoryTab.Resources || _tab == HistoryTab.Runes)
         {
                 IReadOnlyList<MarketHistoryRow> rows =
                     _marketHistory?.Rows ?? [];
@@ -678,10 +935,20 @@
     private Dictionary<long, Rune> _runesById = [];
     private List<Rune> _runes = [];
 
+    private List<MarketAnalyticsPreset> _analyticsPresets = [];
+    private Guid? _selectedAnalyticsPresetId;
+    private string _analyticsName = "Nouvelle analyse";
+    private MarketAnalyticsPeriod _analyticsPeriod = MarketAnalyticsPeriod.Days7;
+    private List<MarketAnalyticsSeriesDefinition> _analyticsSeries = [];
+    private IReadOnlyList<MarketAnalyticsSeriesResult> _analyticsResults = [];
+    private MarketAnalyticsSeriesDefinition? _analyticsDraft;
+    private Guid? _editingAnalyticsSeriesId;
+
     private HashSet<Guid> _expandedSessions = [];
 
     protected override async Task OnInitializedAsync()
     {
+        LoadAnalyticsPresets();
         await LoadCatalogsAsync();
         await LoadCurrentAsync();
     }
@@ -761,6 +1028,10 @@
                         _sortDirection,
                         _take
                     );
+                    break;
+
+                case HistoryTab.Analytics:
+                    await BuildAnalyticsResultsAsync();
                     break;
             }
         }
@@ -967,6 +1238,544 @@
             : _runesById.GetValueOrDefault(row.DofusDbId);
     }
 
+    private void LoadAnalyticsPresets()
+    {
+        _analyticsPresets =
+            MarketAnalyticsPresetService
+                .GetAll()
+                .ToList();
+    }
+
+    private async Task BuildAnalyticsResultsAsync()
+    {
+        List<MarketAnalyticsSeriesResult> results = [];
+
+        foreach (
+            MarketAnalyticsSeriesDefinition series
+            in _analyticsSeries)
+        {
+            if (series.DofusDbId <= 0)
+            {
+                continue;
+            }
+
+            MarketAnalyticsSeriesResult result =
+                await MarketAnalyticsService
+                    .BuildSeriesAsync(
+                        series,
+                        ServerName,
+                        _analyticsPeriod
+                    );
+
+            results.Add(result);
+        }
+
+        _analyticsResults = results;
+    }
+
+    private async Task RefreshAnalyticsAsync()
+    {
+        _loading = true;
+        _errorMessage = null;
+
+        try
+        {
+            await BuildAnalyticsResultsAsync();
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = ex.Message;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task NewAnalyticsAsync()
+    {
+        _selectedAnalyticsPresetId = null;
+        _analyticsName = "Nouvelle analyse";
+        _analyticsPeriod = MarketAnalyticsPeriod.Days7;
+        _analyticsSeries = [];
+        _analyticsResults = [];
+        _analyticsDraft = null;
+        _editingAnalyticsSeriesId = null;
+        _errorMessage = null;
+
+        return Task.CompletedTask;
+    }
+
+    private async Task OnAnalyticsPresetChangedAsync(
+        ChangeEventArgs args)
+    {
+        string? value = args.Value?.ToString();
+
+        if (!Guid.TryParse(value, out Guid presetId))
+        {
+            await NewAnalyticsAsync();
+            return;
+        }
+
+        MarketAnalyticsPreset? preset =
+            _analyticsPresets.FirstOrDefault(
+                candidate =>
+                    candidate.Id == presetId
+            );
+
+        if (preset is null)
+        {
+            return;
+        }
+
+        _selectedAnalyticsPresetId = preset.Id;
+        _analyticsName = preset.Name;
+        _analyticsPeriod = preset.Period;
+        _analyticsSeries = preset.Series
+            .Select(
+                BestCrush.Services
+                    .MarketAnalyticsPresetService
+                    .Clone)
+            .ToList();
+        _analyticsDraft = null;
+        _editingAnalyticsSeriesId = null;
+
+        await RefreshAnalyticsAsync();
+    }
+
+    private Task SaveAnalyticsPresetAsync(
+        bool saveAs)
+    {
+        string name =
+            _analyticsName.Trim();
+
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            _errorMessage =
+                "Donne un nom à l'analyse avant de l'enregistrer.";
+            return Task.CompletedTask;
+        }
+
+        Guid id =
+            saveAs ||
+            _selectedAnalyticsPresetId is null
+                ? Guid.NewGuid()
+                : _selectedAnalyticsPresetId.Value;
+
+        MarketAnalyticsPreset preset = new()
+        {
+            Id = id,
+            Name = name,
+            Period = _analyticsPeriod,
+            Series = _analyticsSeries
+                .Select(
+                    BestCrush.Services
+                        .MarketAnalyticsPresetService
+                        .Clone)
+                .ToList()
+        };
+
+        MarketAnalyticsPresetService.Save(preset);
+        LoadAnalyticsPresets();
+
+        _selectedAnalyticsPresetId = id;
+        _analyticsName = name;
+        _errorMessage = null;
+
+        return Task.CompletedTask;
+    }
+
+    private Task DeleteAnalyticsPresetAsync()
+    {
+        if (_selectedAnalyticsPresetId is not Guid presetId)
+        {
+            return Task.CompletedTask;
+        }
+
+        MarketAnalyticsPresetService.Delete(presetId);
+        LoadAnalyticsPresets();
+
+        _selectedAnalyticsPresetId = null;
+        _analyticsName = "Nouvelle analyse";
+
+        return Task.CompletedTask;
+    }
+
+    private bool AnalyticsPresetIsModified
+    {
+        get
+        {
+            if (_selectedAnalyticsPresetId is not Guid presetId)
+            {
+                return false;
+            }
+
+            MarketAnalyticsPreset? saved =
+                _analyticsPresets.FirstOrDefault(
+                    preset =>
+                        preset.Id == presetId
+                );
+
+            if (saved is null ||
+                !string.Equals(
+                    saved.Name,
+                    _analyticsName.Trim(),
+                    StringComparison.Ordinal) ||
+                saved.Period != _analyticsPeriod ||
+                saved.Series.Count != _analyticsSeries.Count)
+            {
+                return true;
+            }
+
+            for (int index = 0;
+                index < saved.Series.Count;
+                index++)
+            {
+                if (!AnalyticsSeriesEqual(
+                    saved.Series[index],
+                    _analyticsSeries[index]))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    private static bool AnalyticsSeriesEqual(
+        MarketAnalyticsSeriesDefinition left,
+        MarketAnalyticsSeriesDefinition right)
+    {
+        return
+            left.Id == right.Id &&
+            left.ObjectType == right.ObjectType &&
+            left.DofusDbId == right.DofusDbId &&
+            string.Equals(
+                left.ItemName,
+                right.ItemName,
+                StringComparison.Ordinal) &&
+            left.LotQuantity == right.LotQuantity &&
+            left.ValueMode == right.ValueMode &&
+            left.Aggregation == right.Aggregation &&
+            left.SourceMode == right.SourceMode &&
+            left.Transformation == right.Transformation;
+    }
+
+    private void BeginAddAnalyticsSeries()
+    {
+        MarketAnalyticsSeriesDefinition? draft =
+            CreateDefaultAnalyticsSeries();
+
+        if (draft is null)
+        {
+            _errorMessage =
+                "Aucun élément n'est disponible pour créer une série.";
+            return;
+        }
+
+        _editingAnalyticsSeriesId = null;
+        _analyticsDraft = draft;
+        _errorMessage = null;
+    }
+
+    private MarketAnalyticsSeriesDefinition?
+        CreateDefaultAnalyticsSeries()
+    {
+        foreach (MarketObjectType objectType in new[]
+        {
+            MarketObjectType.Rune,
+            MarketObjectType.Resource,
+            MarketObjectType.Equipment
+        })
+        {
+            AnalyticsCatalogItem? first =
+                GetAnalyticsCatalogItems(objectType)
+                    .FirstOrDefault();
+
+            if (first is not null)
+            {
+                return new MarketAnalyticsSeriesDefinition
+                {
+                    ObjectType = objectType,
+                    DofusDbId = first.DofusDbId,
+                    ItemName = first.Name,
+                    LotQuantity =
+                        objectType == MarketObjectType.Equipment
+                            ? 1
+                            : null
+                };
+            }
+        }
+
+        return null;
+    }
+
+    private void BeginEditAnalyticsSeries(Guid seriesId)
+    {
+        MarketAnalyticsSeriesDefinition? series =
+            _analyticsSeries.FirstOrDefault(candidate =>
+                candidate.Id == seriesId);
+
+        if (series is null)
+        {
+            return;
+        }
+
+        _editingAnalyticsSeriesId = seriesId;
+        MarketAnalyticsSeriesDefinition draft =
+            BestCrush.Services
+                .MarketAnalyticsPresetService
+                .Clone(series);
+
+        if (draft.LotQuantity is null)
+        {
+            draft.ValueMode =
+                MarketAnalyticsValueMode.UnitPrice;
+        }
+
+        _analyticsDraft = draft;
+        _errorMessage = null;
+    }
+
+    private void CancelAnalyticsSeriesDraft()
+    {
+        _analyticsDraft = null;
+        _editingAnalyticsSeriesId = null;
+    }
+
+    private async Task CommitAnalyticsSeriesDraftAsync()
+    {
+        if (_analyticsDraft is null)
+        {
+            return;
+        }
+
+        MarketAnalyticsSeriesDefinition committed =
+            BestCrush.Services
+                .MarketAnalyticsPresetService
+                .Clone(_analyticsDraft);
+
+        if (committed.LotQuantity is null)
+        {
+            committed.ValueMode =
+                MarketAnalyticsValueMode.UnitPrice;
+        }
+
+        if (_editingAnalyticsSeriesId is Guid seriesId)
+        {
+            int index = _analyticsSeries.FindIndex(candidate =>
+                candidate.Id == seriesId);
+
+            if (index >= 0)
+            {
+                committed.Id = seriesId;
+                _analyticsSeries[index] = committed;
+            }
+        }
+        else
+        {
+            _analyticsSeries.Add(committed);
+        }
+
+        _analyticsDraft = null;
+        _editingAnalyticsSeriesId = null;
+
+        await RefreshAnalyticsAsync();
+    }
+
+    private async Task RemoveAnalyticsSeriesAsync(
+        Guid seriesId)
+    {
+        _analyticsSeries.RemoveAll(
+            series =>
+                series.Id == seriesId);
+
+        if (_editingAnalyticsSeriesId == seriesId)
+        {
+            CancelAnalyticsSeriesDraft();
+        }
+
+        await RefreshAnalyticsAsync();
+    }
+
+    private async Task OnAnalyticsPeriodChangedAsync(
+        ChangeEventArgs args)
+    {
+        if (Enum.TryParse(
+            args.Value?.ToString(),
+            out MarketAnalyticsPeriod period))
+        {
+            _analyticsPeriod = period;
+            await RefreshAnalyticsAsync();
+        }
+    }
+
+    private void OnAnalyticsDraftObjectTypeChanged(
+        ChangeEventArgs args)
+    {
+        if (_analyticsDraft is null ||
+            !Enum.TryParse(
+            args.Value?.ToString(),
+            out MarketObjectType objectType))
+        {
+            return;
+        }
+
+        AnalyticsCatalogItem? first =
+            GetAnalyticsCatalogItems(objectType)
+                .FirstOrDefault();
+
+        if (first is null)
+        {
+            return;
+        }
+
+        _analyticsDraft.ObjectType = objectType;
+        _analyticsDraft.DofusDbId = first.DofusDbId;
+        _analyticsDraft.ItemName = first.Name;
+        _analyticsDraft.LotQuantity =
+            objectType == MarketObjectType.Equipment
+                ? 1
+                : null;
+        _analyticsDraft.ValueMode =
+            MarketAnalyticsValueMode.UnitPrice;
+    }
+
+    private void OnAnalyticsDraftItemChanged(
+        ChangeEventArgs args)
+    {
+        if (_analyticsDraft is null ||
+            !long.TryParse(
+            args.Value?.ToString(),
+            out long dofusDbId))
+        {
+            return;
+        }
+
+        AnalyticsCatalogItem? item =
+            GetAnalyticsCatalogItems(
+                _analyticsDraft.ObjectType)
+                .FirstOrDefault(candidate =>
+                    candidate.DofusDbId == dofusDbId);
+
+        if (item is null)
+        {
+            return;
+        }
+
+        _analyticsDraft.DofusDbId = item.DofusDbId;
+        _analyticsDraft.ItemName = item.Name;
+    }
+
+    private void OnAnalyticsDraftLotChanged(
+        ChangeEventArgs args)
+    {
+        if (_analyticsDraft is null)
+        {
+            return;
+        }
+
+        string? value = args.Value?.ToString();
+
+        _analyticsDraft.LotQuantity =
+            int.TryParse(value, out int quantity) &&
+            quantity > 0
+                ? quantity
+                : null;
+
+        if (_analyticsDraft.LotQuantity is null)
+        {
+            _analyticsDraft.ValueMode =
+                MarketAnalyticsValueMode.UnitPrice;
+        }
+    }
+
+    private void OnAnalyticsDraftValueModeChanged(
+        ChangeEventArgs args)
+    {
+        if (_analyticsDraft is not null &&
+            Enum.TryParse(
+            args.Value?.ToString(),
+            out MarketAnalyticsValueMode value))
+        {
+            _analyticsDraft.ValueMode =
+                _analyticsDraft.LotQuantity is null
+                    ? MarketAnalyticsValueMode.UnitPrice
+                    : value;
+        }
+    }
+
+    private void OnAnalyticsDraftAggregationChanged(
+        ChangeEventArgs args)
+    {
+        if (_analyticsDraft is not null &&
+            Enum.TryParse(
+            args.Value?.ToString(),
+            out MarketAnalyticsAggregation value))
+        {
+            _analyticsDraft.Aggregation = value;
+        }
+    }
+
+    private void OnAnalyticsDraftSourceChanged(
+        ChangeEventArgs args)
+    {
+        if (_analyticsDraft is not null &&
+            Enum.TryParse(
+            args.Value?.ToString(),
+            out MarketAnalyticsSourceMode value))
+        {
+            _analyticsDraft.SourceMode = value;
+        }
+    }
+
+    private void OnAnalyticsDraftTransformationChanged(
+        ChangeEventArgs args)
+    {
+        if (_analyticsDraft is not null &&
+            Enum.TryParse(
+            args.Value?.ToString(),
+            out MarketAnalyticsTransformation value))
+        {
+            _analyticsDraft.Transformation = value;
+        }
+    }
+
+    private IEnumerable<AnalyticsCatalogItem>
+        GetAnalyticsCatalogItems(
+            MarketObjectType objectType)
+    {
+        IEnumerable<AnalyticsCatalogItem> items =
+            objectType switch
+            {
+                MarketObjectType.Resource =>
+                    _resources.Values.Select(item =>
+                        new AnalyticsCatalogItem(
+                            item.DofusDbId,
+                            item.Name)),
+
+                MarketObjectType.Equipment =>
+                    _equipments.Values.Select(item =>
+                        new AnalyticsCatalogItem(
+                            item.DofusDbId,
+                            item.Name)),
+
+                _ =>
+                    _runes.Select(item =>
+                        new AnalyticsCatalogItem(
+                            item.DofusDbId,
+                            item.Name))
+            };
+
+        return items.OrderBy(item => item.Name);
+    }
+
+    private sealed record AnalyticsCatalogItem(
+        long DofusDbId,
+        string Name
+    );
+
     private void ToggleSession(Guid sessionId)
     {
         if (!_expandedSessions.Add(sessionId))
@@ -1037,6 +1846,7 @@
         Resources,
         Items,
         Runes,
-        Crushes
+        Crushes,
+        Analytics
     }
 }
