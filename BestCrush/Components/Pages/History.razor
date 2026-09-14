@@ -276,120 +276,147 @@
 
             <button type="button"
                     class="btn btn-primary"
-                    disabled="@_loading"
-                    @onclick="AddAnalyticsSeriesAsync">
+                    disabled="@(_loading || _analyticsDraft is not null)"
+                    @onclick="BeginAddAnalyticsSeries">
                 + Ajouter une série
             </button>
         </div>
 
-        @if (_analyticsSeries.Count == 0)
+        @if (_analyticsDraft is MarketAnalyticsSeriesDefinition draft)
         {
-            <div class="alert alert-secondary">
-                Ajoute une série pour commencer l'analyse.
-            </div>
-        }
-        else
-        {
-            <div class="d-flex flex-column gap-2 mb-3">
-                @foreach (MarketAnalyticsSeriesDefinition series in _analyticsSeries)
-                {
-                    <div class="card" @key="series.Id">
-                        <div class="card-body py-3">
-                            <div class="row g-2 align-items-end">
-                                <div class="col-6 col-lg-2">
-                                    <label class="form-label small text-secondary mb-1">Type</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@series.ObjectType"
-                                            @onchange="args => OnAnalyticsObjectTypeChangedAsync(series, args)">
-                                        <option value="@MarketObjectType.Rune">Rune</option>
-                                        <option value="@MarketObjectType.Resource">Ressource</option>
-                                        <option value="@MarketObjectType.Equipment">Équipement</option>
-                                    </select>
-                                </div>
+            <div class="card mb-3">
+                <div class="card-body py-3">
+                    <div class="d-flex justify-content-between align-items-center gap-2 mb-3">
+                        <h6 class="mb-0">
+                            @(_editingAnalyticsSeriesId is null
+                                ? "Ajouter une série"
+                                : "Modifier la série")
+                        </h6>
+                        <button type="button"
+                                class="btn-close"
+                                aria-label="Annuler"
+                                @onclick="CancelAnalyticsSeriesDraft"></button>
+                    </div>
 
-                                <div class="col-12 col-lg-4">
-                                    <label class="form-label small text-secondary mb-1">Élément</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@series.DofusDbId"
-                                            @onchange="args => OnAnalyticsItemChangedAsync(series, args)">
-                                        @foreach (AnalyticsCatalogItem item in GetAnalyticsCatalogItems(series.ObjectType))
-                                        {
-                                            <option value="@item.DofusDbId">@item.Name</option>
-                                        }
-                                    </select>
-                                </div>
+                    <div class="row g-2 align-items-end">
+                        <div class="col-6 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Type</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.ObjectType"
+                                    @onchange="OnAnalyticsDraftObjectTypeChanged">
+                                <option value="@MarketObjectType.Rune">Rune</option>
+                                <option value="@MarketObjectType.Resource">Ressource</option>
+                                <option value="@MarketObjectType.Equipment">Équipement</option>
+                            </select>
+                        </div>
 
-                                <div class="col-6 col-md-3 col-lg-2">
-                                    <label class="form-label small text-secondary mb-1">Lots</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@(series.LotQuantity?.ToString() ?? string.Empty)"
-                                            @onchange="args => OnAnalyticsLotChangedAsync(series, args)">
-                                        <option value="">Tous</option>
-                                        <option value="1">x1</option>
-                                        @if (series.ObjectType != MarketObjectType.Equipment)
-                                        {
-                                            <option value="10">x10</option>
-                                            <option value="100">x100</option>
-                                            <option value="1000">x1000</option>
-                                        }
-                                    </select>
-                                </div>
+                        <div class="col-12 col-lg-4">
+                            <label class="form-label small text-secondary mb-1">Élément</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.DofusDbId"
+                                    @onchange="OnAnalyticsDraftItemChanged">
+                                @foreach (AnalyticsCatalogItem item in GetAnalyticsCatalogItems(draft.ObjectType))
+                                {
+                                    <option value="@item.DofusDbId">@item.Name</option>
+                                }
+                            </select>
+                        </div>
 
-                                <div class="col-6 col-md-3 col-lg-2">
-                                    <label class="form-label small text-secondary mb-1">Valeur</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@series.ValueMode"
-                                            @onchange="args => OnAnalyticsValueModeChangedAsync(series, args)">
-                                        <option value="@MarketAnalyticsValueMode.UnitPrice">Prix unitaire</option>
-                                        <option value="@MarketAnalyticsValueMode.LotPrice">Prix du lot</option>
-                                    </select>
-                                </div>
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Lots</label>
+                            <select class="form-select form-select-sm"
+                                    value="@(draft.LotQuantity?.ToString() ?? string.Empty)"
+                                    @onchange="OnAnalyticsDraftLotChanged">
+                                <option value="">Tous</option>
+                                <option value="1">x1</option>
+                                @if (draft.ObjectType != MarketObjectType.Equipment)
+                                {
+                                    <option value="10">x10</option>
+                                    <option value="100">x100</option>
+                                    <option value="1000">x1000</option>
+                                }
+                            </select>
+                        </div>
 
-                                <div class="col-6 col-md-3 col-lg-2">
-                                    <label class="form-label small text-secondary mb-1">Agrégation</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@series.Aggregation"
-                                            @onchange="args => OnAnalyticsAggregationChangedAsync(series, args)">
-                                        <option value="@MarketAnalyticsAggregation.Median">Médiane</option>
-                                        <option value="@MarketAnalyticsAggregation.Mean">Moyenne</option>
-                                        <option value="@MarketAnalyticsAggregation.FirstQuartile">1er quartile (Q1)</option>
-                                        <option value="@MarketAnalyticsAggregation.ThirdQuartile">3e quartile (Q3)</option>
-                                    </select>
-                                </div>
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Valeur</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.ValueMode"
+                                    @onchange="OnAnalyticsDraftValueModeChanged">
+                                <option value="@MarketAnalyticsValueMode.UnitPrice">Prix unitaire</option>
+                                <option value="@MarketAnalyticsValueMode.LotPrice"
+                                        disabled="@(draft.LotQuantity is null)">
+                                    Prix du lot
+                                </option>
+                            </select>
+                        </div>
 
-                                <div class="col-6 col-md-3 col-lg-2">
-                                    <label class="form-label small text-secondary mb-1">Source</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@series.SourceMode"
-                                            @onchange="args => OnAnalyticsSourceChangedAsync(series, args)">
-                                        <option value="@MarketAnalyticsSourceMode.InGameAutomatic">Jeu</option>
-                                        <option value="@MarketAnalyticsSourceMode.Manual">Manuel</option>
-                                        <option value="@MarketAnalyticsSourceMode.All">Toutes</option>
-                                    </select>
-                                </div>
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Agrégation</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.Aggregation"
+                                    @onchange="OnAnalyticsDraftAggregationChanged">
+                                <option value="@MarketAnalyticsAggregation.Median">Médiane</option>
+                                <option value="@MarketAnalyticsAggregation.Mean">Moyenne</option>
+                                <option value="@MarketAnalyticsAggregation.FirstQuartile">1er quartile (Q1)</option>
+                                <option value="@MarketAnalyticsAggregation.ThirdQuartile">3e quartile (Q3)</option>
+                            </select>
+                        </div>
 
-                                <div class="col-6 col-md-3 col-lg-2">
-                                    <label class="form-label small text-secondary mb-1">Transformation</label>
-                                    <select class="form-select form-select-sm"
-                                            value="@series.Transformation"
-                                            @onchange="args => OnAnalyticsTransformationChangedAsync(series, args)">
-                                        <option value="@MarketAnalyticsTransformation.Raw">Valeur brute</option>
-                                        <option value="@MarketAnalyticsTransformation.Base100">Base 100</option>
-                                    </select>
-                                </div>
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Source</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.SourceMode"
+                                    @onchange="OnAnalyticsDraftSourceChanged">
+                                <option value="@MarketAnalyticsSourceMode.InGameAutomatic">Jeu</option>
+                                <option value="@MarketAnalyticsSourceMode.Manual">Manuel</option>
+                                <option value="@MarketAnalyticsSourceMode.All">Toutes</option>
+                            </select>
+                        </div>
 
-                                <div class="col-auto ms-lg-auto">
-                                    <button type="button"
-                                            class="btn btn-outline-danger btn-sm"
-                                            disabled="@_loading"
-                                            @onclick="() => RemoveAnalyticsSeriesAsync(series.Id)">
-                                        Supprimer
-                                    </button>
-                                </div>
+                        <div class="col-6 col-md-3 col-lg-2">
+                            <label class="form-label small text-secondary mb-1">Transformation</label>
+                            <select class="form-select form-select-sm"
+                                    value="@draft.Transformation"
+                                    @onchange="OnAnalyticsDraftTransformationChanged">
+                                <option value="@MarketAnalyticsTransformation.Raw">Valeur brute</option>
+                                <option value="@MarketAnalyticsTransformation.Base100">Base 100</option>
+                            </select>
+                        </div>
+
+                        <div class="col-auto ms-lg-auto">
+                            <div class="d-flex gap-2">
+                                <button type="button"
+                                        class="btn btn-outline-secondary btn-sm"
+                                        @onclick="CancelAnalyticsSeriesDraft">
+                                    Annuler
+                                </button>
+                                <button type="button"
+                                        class="btn btn-primary btn-sm"
+                                        disabled="@_loading"
+                                        @onclick="CommitAnalyticsSeriesDraftAsync">
+                                    @(_editingAnalyticsSeriesId is null
+                                        ? "Ajouter la série"
+                                        : "Enregistrer les modifications")
+                                </button>
                             </div>
                         </div>
                     </div>
-                }
+
+                    @if (draft.LotQuantity is null)
+                    {
+                        <div class="small text-secondary mt-2">
+                            Tous les lots sont comparés après conversion en prix unitaire.
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+
+        @if (_analyticsSeries.Count == 0 && _analyticsDraft is null)
+        {
+            <div class="alert alert-secondary">
+                Ajoute une série pour commencer l'analyse.
             </div>
         }
     }
@@ -411,7 +438,13 @@
     {
         @if (_tab == HistoryTab.Analytics)
         {
-            <MarketAnalyticsChart Series="_analyticsResults" />
+            <MarketAnalyticsChart Definitions="_analyticsSeries"
+                                  Series="_analyticsResults"
+                                  Resources="_resources"
+                                  Equipments="_equipments"
+                                  Runes="_runesById"
+                                  EditRequested="BeginEditAnalyticsSeries"
+                                  RemoveRequested="RemoveAnalyticsSeriesAsync" />
         }
         else if (_tab == HistoryTab.Resources || _tab == HistoryTab.Runes)
         {
@@ -908,6 +941,8 @@
     private MarketAnalyticsPeriod _analyticsPeriod = MarketAnalyticsPeriod.Days7;
     private List<MarketAnalyticsSeriesDefinition> _analyticsSeries = [];
     private IReadOnlyList<MarketAnalyticsSeriesResult> _analyticsResults = [];
+    private MarketAnalyticsSeriesDefinition? _analyticsDraft;
+    private Guid? _editingAnalyticsSeriesId;
 
     private HashSet<Guid> _expandedSessions = [];
 
@@ -1264,6 +1299,8 @@
         _analyticsPeriod = MarketAnalyticsPeriod.Days7;
         _analyticsSeries = [];
         _analyticsResults = [];
+        _analyticsDraft = null;
+        _editingAnalyticsSeriesId = null;
         _errorMessage = null;
 
         return Task.CompletedTask;
@@ -1300,6 +1337,8 @@
                     .MarketAnalyticsPresetService
                     .Clone)
             .ToList();
+        _analyticsDraft = null;
+        _editingAnalyticsSeriesId = null;
 
         await RefreshAnalyticsAsync();
     }
@@ -1423,47 +1462,124 @@
             left.Transformation == right.Transformation;
     }
 
-    private async Task AddAnalyticsSeriesAsync()
+    private void BeginAddAnalyticsSeries()
     {
-        AnalyticsCatalogItem? first =
-            GetAnalyticsCatalogItems(
-                MarketObjectType.Rune)
-                .FirstOrDefault();
+        MarketAnalyticsSeriesDefinition? draft =
+            CreateDefaultAnalyticsSeries();
 
-        MarketObjectType objectType =
-            MarketObjectType.Rune;
-
-        if (first is null)
-        {
-            objectType = MarketObjectType.Resource;
-            first = GetAnalyticsCatalogItems(
-                objectType)
-                .FirstOrDefault();
-        }
-
-        if (first is null)
-        {
-            objectType = MarketObjectType.Equipment;
-            first = GetAnalyticsCatalogItems(
-                objectType)
-                .FirstOrDefault();
-        }
-
-        if (first is null)
+        if (draft is null)
         {
             _errorMessage =
                 "Aucun élément n'est disponible pour créer une série.";
             return;
         }
 
-        _analyticsSeries.Add(
-            new MarketAnalyticsSeriesDefinition
+        _editingAnalyticsSeriesId = null;
+        _analyticsDraft = draft;
+        _errorMessage = null;
+    }
+
+    private MarketAnalyticsSeriesDefinition?
+        CreateDefaultAnalyticsSeries()
+    {
+        foreach (MarketObjectType objectType in new[]
+        {
+            MarketObjectType.Rune,
+            MarketObjectType.Resource,
+            MarketObjectType.Equipment
+        })
+        {
+            AnalyticsCatalogItem? first =
+                GetAnalyticsCatalogItems(objectType)
+                    .FirstOrDefault();
+
+            if (first is not null)
             {
-                ObjectType = objectType,
-                DofusDbId = first.DofusDbId,
-                ItemName = first.Name
+                return new MarketAnalyticsSeriesDefinition
+                {
+                    ObjectType = objectType,
+                    DofusDbId = first.DofusDbId,
+                    ItemName = first.Name,
+                    LotQuantity =
+                        objectType == MarketObjectType.Equipment
+                            ? 1
+                            : null
+                };
             }
-        );
+        }
+
+        return null;
+    }
+
+    private void BeginEditAnalyticsSeries(Guid seriesId)
+    {
+        MarketAnalyticsSeriesDefinition? series =
+            _analyticsSeries.FirstOrDefault(candidate =>
+                candidate.Id == seriesId);
+
+        if (series is null)
+        {
+            return;
+        }
+
+        _editingAnalyticsSeriesId = seriesId;
+        MarketAnalyticsSeriesDefinition draft =
+            BestCrush.Services
+                .MarketAnalyticsPresetService
+                .Clone(series);
+
+        if (draft.LotQuantity is null)
+        {
+            draft.ValueMode =
+                MarketAnalyticsValueMode.UnitPrice;
+        }
+
+        _analyticsDraft = draft;
+        _errorMessage = null;
+    }
+
+    private void CancelAnalyticsSeriesDraft()
+    {
+        _analyticsDraft = null;
+        _editingAnalyticsSeriesId = null;
+    }
+
+    private async Task CommitAnalyticsSeriesDraftAsync()
+    {
+        if (_analyticsDraft is null)
+        {
+            return;
+        }
+
+        MarketAnalyticsSeriesDefinition committed =
+            BestCrush.Services
+                .MarketAnalyticsPresetService
+                .Clone(_analyticsDraft);
+
+        if (committed.LotQuantity is null)
+        {
+            committed.ValueMode =
+                MarketAnalyticsValueMode.UnitPrice;
+        }
+
+        if (_editingAnalyticsSeriesId is Guid seriesId)
+        {
+            int index = _analyticsSeries.FindIndex(candidate =>
+                candidate.Id == seriesId);
+
+            if (index >= 0)
+            {
+                committed.Id = seriesId;
+                _analyticsSeries[index] = committed;
+            }
+        }
+        else
+        {
+            _analyticsSeries.Add(committed);
+        }
+
+        _analyticsDraft = null;
+        _editingAnalyticsSeriesId = null;
 
         await RefreshAnalyticsAsync();
     }
@@ -1474,6 +1590,11 @@
         _analyticsSeries.RemoveAll(
             series =>
                 series.Id == seriesId);
+
+        if (_editingAnalyticsSeriesId == seriesId)
+        {
+            CancelAnalyticsSeriesDraft();
+        }
 
         await RefreshAnalyticsAsync();
     }
@@ -1490,11 +1611,11 @@
         }
     }
 
-    private async Task OnAnalyticsObjectTypeChangedAsync(
-        MarketAnalyticsSeriesDefinition series,
+    private void OnAnalyticsDraftObjectTypeChanged(
         ChangeEventArgs args)
     {
-        if (!Enum.TryParse(
+        if (_analyticsDraft is null ||
+            !Enum.TryParse(
             args.Value?.ToString(),
             out MarketObjectType objectType))
         {
@@ -1510,22 +1631,22 @@
             return;
         }
 
-        series.ObjectType = objectType;
-        series.DofusDbId = first.DofusDbId;
-        series.ItemName = first.Name;
-        series.LotQuantity =
+        _analyticsDraft.ObjectType = objectType;
+        _analyticsDraft.DofusDbId = first.DofusDbId;
+        _analyticsDraft.ItemName = first.Name;
+        _analyticsDraft.LotQuantity =
             objectType == MarketObjectType.Equipment
                 ? 1
                 : null;
-
-        await RefreshAnalyticsAsync();
+        _analyticsDraft.ValueMode =
+            MarketAnalyticsValueMode.UnitPrice;
     }
 
-    private async Task OnAnalyticsItemChangedAsync(
-        MarketAnalyticsSeriesDefinition series,
+    private void OnAnalyticsDraftItemChanged(
         ChangeEventArgs args)
     {
-        if (!long.TryParse(
+        if (_analyticsDraft is null ||
+            !long.TryParse(
             args.Value?.ToString(),
             out long dofusDbId))
         {
@@ -1534,7 +1655,7 @@
 
         AnalyticsCatalogItem? item =
             GetAnalyticsCatalogItems(
-                series.ObjectType)
+                _analyticsDraft.ObjectType)
                 .FirstOrDefault(candidate =>
                     candidate.DofusDbId == dofusDbId);
 
@@ -1543,76 +1664,81 @@
             return;
         }
 
-        series.DofusDbId = item.DofusDbId;
-        series.ItemName = item.Name;
-
-        await RefreshAnalyticsAsync();
+        _analyticsDraft.DofusDbId = item.DofusDbId;
+        _analyticsDraft.ItemName = item.Name;
     }
 
-    private async Task OnAnalyticsLotChangedAsync(
-        MarketAnalyticsSeriesDefinition series,
+    private void OnAnalyticsDraftLotChanged(
         ChangeEventArgs args)
     {
+        if (_analyticsDraft is null)
+        {
+            return;
+        }
+
         string? value = args.Value?.ToString();
 
-        series.LotQuantity =
+        _analyticsDraft.LotQuantity =
             int.TryParse(value, out int quantity) &&
             quantity > 0
                 ? quantity
                 : null;
 
-        await RefreshAnalyticsAsync();
+        if (_analyticsDraft.LotQuantity is null)
+        {
+            _analyticsDraft.ValueMode =
+                MarketAnalyticsValueMode.UnitPrice;
+        }
     }
 
-    private async Task OnAnalyticsValueModeChangedAsync(
-        MarketAnalyticsSeriesDefinition series,
+    private void OnAnalyticsDraftValueModeChanged(
         ChangeEventArgs args)
     {
-        if (Enum.TryParse(
+        if (_analyticsDraft is not null &&
+            Enum.TryParse(
             args.Value?.ToString(),
             out MarketAnalyticsValueMode value))
         {
-            series.ValueMode = value;
-            await RefreshAnalyticsAsync();
+            _analyticsDraft.ValueMode =
+                _analyticsDraft.LotQuantity is null
+                    ? MarketAnalyticsValueMode.UnitPrice
+                    : value;
         }
     }
 
-    private async Task OnAnalyticsAggregationChangedAsync(
-        MarketAnalyticsSeriesDefinition series,
+    private void OnAnalyticsDraftAggregationChanged(
         ChangeEventArgs args)
     {
-        if (Enum.TryParse(
+        if (_analyticsDraft is not null &&
+            Enum.TryParse(
             args.Value?.ToString(),
             out MarketAnalyticsAggregation value))
         {
-            series.Aggregation = value;
-            await RefreshAnalyticsAsync();
+            _analyticsDraft.Aggregation = value;
         }
     }
 
-    private async Task OnAnalyticsSourceChangedAsync(
-        MarketAnalyticsSeriesDefinition series,
+    private void OnAnalyticsDraftSourceChanged(
         ChangeEventArgs args)
     {
-        if (Enum.TryParse(
+        if (_analyticsDraft is not null &&
+            Enum.TryParse(
             args.Value?.ToString(),
             out MarketAnalyticsSourceMode value))
         {
-            series.SourceMode = value;
-            await RefreshAnalyticsAsync();
+            _analyticsDraft.SourceMode = value;
         }
     }
 
-    private async Task OnAnalyticsTransformationChangedAsync(
-        MarketAnalyticsSeriesDefinition series,
+    private void OnAnalyticsDraftTransformationChanged(
         ChangeEventArgs args)
     {
-        if (Enum.TryParse(
+        if (_analyticsDraft is not null &&
+            Enum.TryParse(
             args.Value?.ToString(),
             out MarketAnalyticsTransformation value))
         {
-            series.Transformation = value;
-            await RefreshAnalyticsAsync();
+            _analyticsDraft.Transformation = value;
         }
     }
 

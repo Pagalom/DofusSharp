@@ -55,7 +55,7 @@ public sealed class MarketAnalyticsSeriesDefinition
         MarketAnalyticsSourceMode.InGameAutomatic;
 
     public MarketAnalyticsTransformation Transformation { get; set; } =
-        MarketAnalyticsTransformation.Raw;
+        MarketAnalyticsTransformation.Base100;
 }
 
 public sealed class MarketAnalyticsPreset
@@ -70,6 +70,7 @@ public sealed class MarketAnalyticsPreset
 public sealed record MarketAnalyticsPoint(
     DateTime TimestampUtc,
     double Value,
+    double RawValue,
     int ObservationCount
 );
 

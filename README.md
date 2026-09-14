@@ -123,6 +123,76 @@ Les couleurs de l'overlay permettent d'identifier rapidement l'état des informa
 
 ---
 
+## Décote et seuils de rentabilité
+
+Une décote configurable, fixée à **5 % par défaut**, peut être appliquée à la valeur théorique des runes afin d'obtenir une estimation plus prudente.
+
+BestCrush calcule également :
+
+- le prix maximum acceptable pour l'achat d'un équipement ;
+- le coût maximal acceptable de son craft ;
+- le coefficient minimum nécessaire ;
+- le bénéfice et le rendement selon le ROI cible configuré.
+
+Les valeurs d'une session de concassage sont figées avec la décote utilisée au moment de la session.
+
+---
+
+## Recherche et filtres avancés
+
+La page principale permet notamment de filtrer les équipements selon :
+
+- leur nom, leur niveau et leur type ;
+- les runes qu'ils peuvent produire ;
+- la présence de toutes les runes sélectionnées ou d'au moins une ;
+- un ROI minimum ;
+- un bénéfice minimum ;
+- la rentabilité à l'achat, au craft ou selon le meilleur scénario ;
+- la complétude et la fraîcheur des données ;
+- la disponibilité d'un coefficient.
+
+Les configurations de recherche peuvent être enregistrées sous forme de presets.
+
+---
+
+## Historique et analyses de marché
+
+BestCrush conserve l'historique temporel des prix des runes, ressources et équipements pour chaque serveur.
+
+La page **Historique** comprend les vues :
+
+- Ressources ;
+- Items ;
+- Runes ;
+- Concassages ;
+- Analyses.
+
+L'onglet **Analyses** permet de créer plusieurs séries simultanément, y compris plusieurs variantes du même élément.
+
+Chaque série peut définir :
+
+- le type d'objet et l'élément ;
+- la taille de lot ;
+- le prix unitaire ou le prix du lot ;
+- la médiane, la moyenne, le premier quartile ou le troisième quartile ;
+- les données capturées en jeu, manuelles ou toutes sources ;
+- une valeur brute ou une transformation en Base 100.
+
+Lorsque plusieurs tailles de lots sont regroupées, les prix sont toujours convertis en prix unitaire avant l'agrégation.
+
+La **Base 100 est utilisée par défaut** afin de comparer facilement les évolutions relatives d'éléments ayant des prix très différents.
+
+Les analyses proposent également :
+
+- des périodes de 24 heures, 7 jours, 30 jours ou tout l'historique ;
+- des presets réutilisables sur le serveur actuellement sélectionné ;
+- des cartes interactives avec les véritables icônes Dofus ;
+- une couleur stable pour chaque série ;
+- la mise en évidence d'une carte et de sa courbe ;
+- des tooltips affichant la date, l'indice et la valeur réelle ;
+- la copie des noms et des valeurs pertinentes.
+
+---
 # Captures en jeu
 
 BestCrush fonctionne comme une application externe.
@@ -435,7 +505,7 @@ Exemple :
 ```powershell
 Compress-Archive `
   -Path .\publish\BestCrush\* `
-  -DestinationPath .\BestCrush-v0.1.6-win-x64.zip `
+  -DestinationPath .\BestCrush-v0.1.7-win-x64.zip `
   -Force
 ```
 
@@ -568,28 +638,31 @@ L'utilisateur reste responsable de l'utilisation qu'il fait du logiciel et du re
 
 ## Feuille de route
 
-BestCrush évolue encore rapidement. La feuille de route est organisée par étapes plutôt que par dates fixes afin de conserver un ordre de développement clair.
+BestCrush évolue par étapes afin de conserver un ordre de développement clair.
 
 | Étape | État | Objectif |
 |---|---|---|
-| **0 — Base v0.1.6** | ✅ Terminé | Prix et valeurs copiables dans les overlays, détails de valorisation des runes, date/source du coefficient, meilleure visibilité des coefficients sur les objets incomplets, tri par nom/coefficient, prise en charge des équipements comme ingrédients de recette et ergonomie harmonisée des overlays. |
-| **1 — Historique global** | ✅ Terminé | Historique par serveur avec les sous-onglets **Ressources**, **Items**, **Runes** et **Concassages**. Conservation datée des observations et persistance des sessions de concassage avec leur valorisation au moment du concassage. |
-| **2 — Fiabilisation des valeurs de concassage** | 🟡 À vérifier | Comparer précisément la valorisation des runes de concassage avec les calculs Excel et corriger si nécessaire la sélection des prix et des lots. |
-| **3 — Seuil de rentabilité du coefficient** | ⬜ À faire | Calculer, avec les prix actuels de l'équipement, des ressources et des runes, jusqu'à quel coefficient le concassage reste rentable. |
-| **4 — Recherche et analyse avancées** | ⬜ À faire | Ajouter davantage de tris et filtres : coefficient ou multiplicateur pertinent, caractéristiques combinées (par exemple Ré Eau + Do Feu), et autres critères utiles à l'analyse des équipements. |
-| **5 — Historique et analytics marché avancés** | ⬜ À faire | Exploiter les historiques pour graphiques, tendances, comparaisons, ratios et analyses entre runes, ressources, équipements et caractéristiques. |
-| **6 — Personnalisation** | ⬜ À faire | Rendre les raccourcis clavier/souris configurables et poursuivre les raffinements d'ergonomie. |
+| **0 — Base v0.1.6** | ✅ Terminé | Prix et valeurs copiables, overlays harmonisés, valorisation détaillée des runes et prise en charge des équipements comme ingrédients. |
+| **1 — Historique global** | ✅ Terminé | Historique par serveur des ressources, items, runes, coefficients et sessions de concassage. |
+| **2 — Rentabilité dynamique** | ✅ Terminé | Décote configurable, prix maximum acceptable, coefficient minimum nécessaire et calculs selon le ROI cible. |
+| **3 — Recherche avancée** | ✅ Terminé | Filtres économiques, filtres multi-runes, contrôle de la fraîcheur des données, tris et presets. |
+| **4 — Analytics marché V1 — v0.1.7** | ✅ Terminé | Séries multiples, Base 100, agrégations, périodes, presets, cartes interactives et tooltips. |
+| **5 — Analytics marché V2** | ⬜ À faire | Groupes d'items, ratios, comparaisons avancées, corrélations et décalages temporels. |
+| **6 — Personnalisation** | ⬜ À faire | Raccourcis configurables et raffinements supplémentaires de l'ergonomie. |
 
-### Points déjà clôturés dans cette passe
+### Nouveautés clôturées dans la v0.1.7
 
-- copie individuelle des noms, prix, valeurs et quantités utiles ;
-- copie Excel simple/double-clic du détail de valorisation des runes ;
-- date du coefficient et distinction visuelle des coefficients DoFocus ;
-- coefficients visibles et pris en compte dans les tris des objets incomplets ;
-- mise en avant et copie de la quantité de runes dans le résultat de concassage.
-- historique global par serveur pour les ressources, items, runes et concassages ;
-- persistance des sessions de concassage avec leurs prix, lots, sources et dates ;
-- harmonisation des bordures, zones de redimensionnement et zones de déplacement des overlays.
+- décote configurable de la valeur théorique du concassage ;
+- seuils dynamiques de rentabilité pour l'achat et le craft ;
+- coefficient minimum nécessaire selon le ROI cible ;
+- recherche avancée et presets de filtres ;
+- conservation temporelle des observations de marché ;
+- regroupement des observations proches et limitation des doublons ;
+- analyses simultanées de runes, ressources et équipements ;
+- transformation en Base 100 utilisée par défaut ;
+- cartes interactives avec icônes Dofus et couleurs de séries ;
+- mise en évidence de la carte et de la courbe sélectionnées ;
+- tooltips affichant l'indice et la valeur réelle ;
+- presets d'analyses réutilisables entre les serveurs.
 
 Les retours de test sont particulièrement utiles à ce stade.
-

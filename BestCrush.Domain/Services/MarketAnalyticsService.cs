@@ -66,6 +66,7 @@ public sealed class MarketAnalyticsService(
                 {
                     double[] values = group
                         .Select(observation =>
+                            definition.LotQuantity is null ||
                             definition.ValueMode ==
                                 MarketAnalyticsValueMode.UnitPrice
                                     ? (double)observation.Price /
@@ -74,14 +75,17 @@ public sealed class MarketAnalyticsService(
                         .OrderBy(value => value)
                         .ToArray();
 
+                    double rawValue = Aggregate(
+                        values,
+                        definition.Aggregation
+                    );
+
                     return new MarketAnalyticsPoint(
                         group.Key +
                             TimeSpan.FromTicks(
                                 bucketSize.Ticks / 2),
-                        Aggregate(
-                            values,
-                            definition.Aggregation
-                        ),
+                        rawValue,
+                        rawValue,
                         values.Length
                     );
                 })
@@ -272,6 +276,7 @@ public sealed class MarketAnalyticsService(
                 : "tous lots";
 
         string value =
+            definition.LotQuantity is null ||
             definition.ValueMode ==
                 MarketAnalyticsValueMode.UnitPrice
                     ? "prix unitaire"
