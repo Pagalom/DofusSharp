@@ -114,7 +114,6 @@ private bool _hasF7VisibilitySnapshot;
     private const int WmMouseHWheel = 0x020E;
 
     private const int VkF7 = 0x76;
-    private const int VkF9 = 0x78;
 
     private IntPtr _keyboardHook = IntPtr.Zero;
     private IntPtr _mouseHook = IntPtr.Zero;
@@ -123,7 +122,6 @@ private bool _hasF7VisibilitySnapshot;
     private LowLevelMouseProc? _mouseProc;
 
     private bool _f7Pressed;
-    private bool _f9Pressed;
     private bool _middleButtonPressed;
 #endif
 
@@ -1811,26 +1809,6 @@ private bool _hasF7VisibilitySnapshot;
                 }
             }
 
-            if (virtualKeyCode == VkF9)
-            {
-                if (wParam ==
-                        (IntPtr)WmKeyDown &&
-                    !_f9Pressed)
-                {
-                    _f9Pressed = true;
-
-                    MainThread
-                        .BeginInvokeOnMainThread(
-                            ToggleCrushOverlayVisibility
-                        );
-                }
-                else if (
-                    wParam ==
-                    (IntPtr)WmKeyUp)
-                {
-                    _f9Pressed = false;
-                }
-            }
         }
 
         return CallNextHookEx(
