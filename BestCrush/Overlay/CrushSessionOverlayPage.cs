@@ -247,51 +247,137 @@ public sealed class CrushSessionOverlayPage
                     : null
         );
 
-        VerticalStackLayout content =
+        ScrollView runeScroll =
             new()
             {
-                Spacing = 10,
+                Content =
+                    _runes,
+
+                VerticalScrollBarVisibility =
+                    ScrollBarVisibility.Default,
+
+                VerticalOptions =
+                    LayoutOptions.Fill,
+
+                HorizontalOptions =
+                    LayoutOptions.Fill
+            };
+
+        Grid content =
+            new()
+            {
+                RowDefinitions =
+                {
+                    new RowDefinition(
+                        GridLength.Auto
+                    ),
+                    new RowDefinition(
+                        GridLength.Auto
+                    ),
+                    new RowDefinition(
+                        GridLength.Auto
+                    ),
+                    new RowDefinition(
+                        GridLength.Auto
+                    ),
+                    new RowDefinition(
+                        GridLength.Star
+                    ),
+                    new RowDefinition(
+                        GridLength.Auto
+                    ),
+                    new RowDefinition(
+                        GridLength.Auto
+                    ),
+                    new RowDefinition(
+                        GridLength.Auto
+                    ),
+                    new RowDefinition(
+                        GridLength.Auto
+                    )
+                },
+
+                RowSpacing = 10,
 
                 Margin =
                     new Thickness(14),
 
-                Children =
-                {
-                    header,
+                VerticalOptions =
+                    LayoutOptions.Fill,
 
-                    _status,
-
-                    _scannedCells,
-
-                    new BoxView
-                    {
-                        HeightRequest = 1,
-
-                        BackgroundColor =
-                            Color.FromArgb(
-                                "#555A60"
-                            )
-                    },
-
-                    _runes,
-
-                    new BoxView
-                    {
-                        HeightRequest = 1,
-
-                        BackgroundColor =
-                            Color.FromArgb(
-                                "#555A60"
-                            )
-                    },
-
-                    _total,
-
-                    _discountedTotal,
-
-                    _copyFeedback
-                }
+                HorizontalOptions =
+                    LayoutOptions.Fill
             };
+
+        content.Add(
+            header,
+            0,
+            0
+        );
+
+        content.Add(
+            _status,
+            0,
+            1
+        );
+
+        content.Add(
+            _scannedCells,
+            0,
+            2
+        );
+
+        content.Add(
+            new BoxView
+            {
+                HeightRequest = 1,
+
+                BackgroundColor =
+                    Color.FromArgb(
+                        "#555A60"
+                    )
+            },
+            0,
+            3
+        );
+
+        content.Add(
+            runeScroll,
+            0,
+            4
+        );
+
+        content.Add(
+            new BoxView
+            {
+                HeightRequest = 1,
+
+                BackgroundColor =
+                    Color.FromArgb(
+                        "#555A60"
+                    )
+            },
+            0,
+            5
+        );
+
+        content.Add(
+            _total,
+            0,
+            6
+        );
+
+        content.Add(
+            _discountedTotal,
+            0,
+            7
+        );
+
+        content.Add(
+            _copyFeedback,
+            0,
+            8
+        );
 
         Grid resizeContainer =
             CreateResizeContainer(
