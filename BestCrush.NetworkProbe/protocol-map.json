@@ -9,7 +9,6 @@
     "log",
     "iut",
     "irl",
-    "isf",
     "keb",
     "kcw",
     "kau",
@@ -25,5 +24,8 @@
   "smithmagic_aux": "kar",
   "market_listing_request": "kcr",
   "market_listing_created": "kda",
-  "purchase_receipt": "kbd"
+  "purchase_receipt": "kbd",
+  "inventory_quantity": "isf",
+  "craft_prepare": "kah",
+  "craft_inventory_change": "iuq"
 }
