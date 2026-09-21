@@ -38,6 +38,30 @@ public class ItemsService(BestCrushDbContext context, IDofusDbClientsFactory dof
             .OrderBy(equipment => equipment.Name)
             .ToArrayAsync(cancellationToken);
     }
+    public async Task<Equipment?>
+        GetEquipmentAsync(
+            long dofusDbId,
+            CancellationToken cancellationToken = default)
+    {
+        return await context.Equipments
+            .Include(equipment =>
+                equipment.Characteristics)
+            .Include(equipment =>
+                equipment.Recipe)
+                .ThenInclude(entry =>
+                    entry.Resource)
+            .Include(equipment =>
+                equipment.EquipmentRecipe)
+                .ThenInclude(entry =>
+                    entry.IngredientEquipment)
+            .AsNoTracking()
+            .SingleOrDefaultAsync(
+                equipment =>
+                    equipment.DofusDbId ==
+                    dofusDbId,
+                cancellationToken);
+    }
+
     public async Task<IReadOnlyCollection<Resource>>
         GetResourcesAsync(
             CancellationToken cancellationToken = default)
