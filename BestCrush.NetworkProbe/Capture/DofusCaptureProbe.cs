@@ -328,7 +328,14 @@ internal sealed class DofusCaptureProbe : IDisposable
                 }
 
                 _inventoryQuantities.Remove(removed.ItemUid);
-                _itemDetails.Remove(removed.ItemUid);
+
+                // Keep the last known item detail as lifecycle history.
+                // irz is emitted before events such as kci, whose payload only
+                // carries the destroyed UID. Removing the detail here would
+                // make the following crush result lose its ItemId/stats.
+                // Current inventory ownership is tracked separately by
+                // _inventoryQuantities.
+
             }
         }
 
