@@ -12,8 +12,7 @@
     "keb",
     "kcw",
     "kau",
-    "kef",
-    "irz"
+    "kef"
   ],
   "purchase_request": "kei",
   "purchase_offer": "kef",
@@ -27,5 +26,6 @@
   "purchase_receipt": "kbd",
   "inventory_quantity": "isf",
   "craft_prepare": "kah",
-  "craft_inventory_change": "iuq"
+  "inventory_remove": "irz",
+  "craft_output": "iuq"
 }
