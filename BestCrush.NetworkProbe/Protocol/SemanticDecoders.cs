@@ -231,9 +231,11 @@ internal static class SemanticDecoders
             values.RemoveAt(0);
         }
 
+        List<ulong> nonZero = values.Where(v => v > 0).ToList();
         if (values.Count >= 2 &&
+            nonZero.Count >= 2 &&
             values[0] > values[^1] &&
-            values.Where(v => v > 0).SequenceEqual(values.Where(v => v > 0).OrderByDescending(v => v)))
+            nonZero.SequenceEqual(nonZero.OrderByDescending(v => v)))
         {
             values.Reverse();
         }
@@ -312,14 +314,45 @@ internal static class ConsoleRenderer
         else
         {
             int n = 1;
-            foreach (MarketOffer offer in market.Offers)
+            foreach (MarketOffer offer in market.Offers
+                         .OrderBy(o => EffectiveUnitPrice(o.Ladder)))
             {
-                string prices = string.Join(", ", offer.Ladder.Select(v => $"{v:N0} K"));
+                List<string> parts = new();
+                ulong[] quantities = [1, 10, 100, 1000];
+
+                for (int i = 0; i < Math.Min(offer.Ladder.Count, quantities.Length); i++)
+                {
+                    ulong price = offer.Ladder[i];
+                    if (price > 0)
+                        parts.Add($"x{quantities[i]} {price:N0} K");
+                }
+
+                string prices = parts.Count > 0
+                    ? string.Join(" | ", parts)
+                    : "(aucun prix)";
                 Console.WriteLine($"  #{n++,2}  {prices}");
             }
         }
 
         Console.WriteLine();
+    }
+
+    private static decimal EffectiveUnitPrice(IReadOnlyList<ulong> ladder)
+    {
+        ulong[] quantities = [1, 10, 100, 1000];
+        decimal best = decimal.MaxValue;
+
+        for (int i = 0; i < Math.Min(ladder.Count, quantities.Length); i++)
+        {
+            if (ladder[i] == 0)
+                continue;
+
+            decimal unit = ladder[i] / (decimal)quantities[i];
+            if (unit < best)
+                best = unit;
+        }
+
+        return best;
     }
 
     public static void WriteCrush(CrushObservation crush)
