@@ -108,6 +108,19 @@ internal sealed class DofusCaptureProbe : IDisposable
             }
         }
 
+
+        if (_map.ItemDetail is not null &&
+            string.Equals(key, _map.ItemDetail, StringComparison.Ordinal))
+        {
+            ConsoleRenderer.WriteProtoDebug("ITEM_DETAIL?", any.Body);
+        }
+
+        if (_map.CrushSlotPut is not null &&
+            string.Equals(key, _map.CrushSlotPut, StringComparison.Ordinal))
+        {
+            ConsoleRenderer.WriteProtoDebug("CRUSH_SLOT?", any.Body);
+        }
+
         if (_map.CrushResult is not null &&
             string.Equals(key, _map.CrushResult, StringComparison.Ordinal))
         {
