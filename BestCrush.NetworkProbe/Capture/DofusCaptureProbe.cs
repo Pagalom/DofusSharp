@@ -102,7 +102,10 @@ internal sealed class DofusCaptureProbe : IDisposable
             if (market is not null)
                 ConsoleRenderer.WriteMarket(market);
             else
+            {
                 Console.WriteLine($"[MARKET?] {key} reçu mais structure non reconnue ({any.Body.Length} octets).");
+                ConsoleRenderer.WriteProtoDebug("MARKET", any.Body);
+            }
         }
 
         if (_map.CrushResult is not null &&
@@ -112,7 +115,10 @@ internal sealed class DofusCaptureProbe : IDisposable
             if (crush is not null)
                 ConsoleRenderer.WriteCrush(crush);
             else
+            {
                 Console.WriteLine($"[CRUSH?] {key} reçu mais structure non reconnue ({any.Body.Length} octets).");
+                ConsoleRenderer.WriteProtoDebug("CRUSH", any.Body);
+            }
         }
     }
 
