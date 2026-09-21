@@ -298,8 +298,9 @@ public sealed class OverlayPage : ContentPage
         {
             Content = detailsContainer,
             VerticalScrollBarVisibility =
-                ScrollBarVisibility.Never,
-            VerticalOptions = LayoutOptions.Start
+                ScrollBarVisibility.Default,
+            VerticalOptions = LayoutOptions.Fill,
+            HorizontalOptions = LayoutOptions.Fill
         };
 
         _footer = new Label
@@ -317,12 +318,13 @@ public sealed class OverlayPage : ContentPage
                 new RowDefinition(GridLength.Auto),
                 new RowDefinition(GridLength.Auto),
                 new RowDefinition(GridLength.Auto),
-                new RowDefinition(GridLength.Auto),
+                new RowDefinition(GridLength.Star),
                 new RowDefinition(GridLength.Auto)
             },
             RowSpacing = 8,
 
-            VerticalOptions = LayoutOptions.Start,
+            VerticalOptions = LayoutOptions.Fill,
+            HorizontalOptions = LayoutOptions.Fill,
 
             Margin = new Thickness(14)
         };
