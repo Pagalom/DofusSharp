@@ -682,6 +682,36 @@
                                 </div>
                             }
 
+                            @if (_equipmentPrices.TryGetValue(
+                                (item.DofusDbId, 1),
+                                out MarketPriceObservation? equipmentPrice) &&
+                                !equipmentPrice.IsCleared)
+                            {
+                                DataFreshness equipmentPriceFreshness =
+                                    DataFreshnessEvaluator.Evaluate(
+                                        equipmentPrice.ObservedAtUtc
+                                    );
+
+                                <div class="border rounded px-3 py-2 mt-2">
+                                    <div class="d-flex justify-content-between align-items-center gap-3">
+                                        <span class="small text-secondary">
+                                            Prix achat
+                                        </span>
+
+                                        <div class="text-end">
+                                            <strong>
+                                                @($"{equipmentPrice.Price:N0} K")
+                                            </strong>
+
+                                            <div class="small @FreshnessCssClass(equipmentPriceFreshness)">
+                                                @MarketSourceLabel(equipmentPrice.Source)
+                                                • @FreshnessLabel(equipmentPriceFreshness)
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+
                             @if (_craftCostsByItem.TryGetValue(
                                 item.DofusDbId,
                                 out CraftCostResult? craftCost))
@@ -858,6 +888,60 @@
         LoadSessionState(
             useSuppliedModel: firstLoad
         );
+    }
+
+    private static string MarketSourceLabel(
+        MarketPriceSource source)
+    {
+        return source switch
+        {
+            MarketPriceSource.Manual =>
+                "Manuel",
+
+            MarketPriceSource.InGameAutomatic =>
+                "Jeu",
+
+            _ =>
+                source.ToString()
+        };
+    }
+
+    private static string FreshnessLabel(
+        DataFreshness freshness)
+    {
+        return freshness switch
+        {
+            DataFreshness.Fresh =>
+                "frais",
+
+            DataFreshness.Aging =>
+                "à rafraîchir",
+
+            DataFreshness.Stale =>
+                "ancien",
+
+            _ =>
+                freshness.ToString()
+        };
+    }
+
+    private static string FreshnessCssClass(
+        DataFreshness freshness)
+    {
+        return freshness switch
+        {
+            DataFreshness.Fresh =>
+                "text-success",
+
+            DataFreshness.Aging =>
+                "text-warning",
+
+            DataFreshness.Stale =>
+                "text-danger",
+
+            _ =>
+                "text-secondary"
+        };
     }
 
     private static Task CopyTextAsync(
