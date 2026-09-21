@@ -32,12 +32,24 @@ public sealed record CrushSessionRuneLine(
     IReadOnlyList<CrushSessionRuneLotLine> Lots
 );
 
+public sealed record NetworkCrushRuneResult(
+    long DofusDbId,
+    int Quantity
+);
+
+public sealed record NetworkCrushResultLine(
+    long EquipmentDofusDbId,
+    double CoefficientPercent,
+    IReadOnlyList<NetworkCrushRuneResult> Runes
+);
+
 public sealed record CrushSessionSnapshot(
     bool IsRunning,
     int ScannedCells,
     int IdleCaptures,
     int? LastCursorX,
     int? LastCursorY,
+    int NetworkCrushCount,
     IReadOnlyList<CrushSessionRuneLine> Runes,
     double? TotalValue,
     double DiscountPercent,
@@ -123,6 +135,9 @@ public sealed class CrushSessionService(
 
     private int
         _pendingProcessingCount;
+
+    private int
+        _networkCrushCount;
 
     // Les captures sont produites rapidement par
     // la surveillance souris puis traitées derrière.
@@ -613,6 +628,9 @@ public sealed class CrushSessionService(
             _pendingProcessingCount =
                 0;
 
+            _networkCrushCount =
+                0;
+
             _sessionEquipments
                 .Clear();
 
@@ -958,6 +976,7 @@ public sealed class CrushSessionService(
                 _idleCaptureCount,
                 _lastCursorX,
                 _lastCursorY,
+                _networkCrushCount,
                 runeLines,
                 totalValue,
                 _sessionDiscountPercent,
@@ -1574,6 +1593,231 @@ public sealed class CrushSessionService(
         }
 
         PublishSnapshot();
+    }
+
+    public async Task ApplyNetworkCrushAsync(
+        IReadOnlyList<NetworkCrushResultLine> lines,
+        DateTime observedAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (lines.Count == 0)
+        {
+            return;
+        }
+
+        string? serverName =
+            currentServerState.ServerName;
+
+        if (string.IsNullOrWhiteSpace(
+            serverName))
+        {
+            return;
+        }
+
+        using IServiceScope scope =
+            serviceScopeFactory.CreateScope();
+
+        RunesService runesService =
+            scope.ServiceProvider
+                .GetRequiredService<RunesService>();
+
+        ItemsService itemsService =
+            scope.ServiceProvider
+                .GetRequiredService<ItemsService>();
+
+        MarketPriceService marketPriceService =
+            scope.ServiceProvider
+                .GetRequiredService<MarketPriceService>();
+
+        IReadOnlyCollection<Rune> runeCatalog =
+            await runesService
+                .GetLocalRunesAsync(
+                    cancellationToken);
+
+        Dictionary<long, Rune> runesById =
+            runeCatalog.ToDictionary(
+                rune => rune.DofusDbId);
+
+        Dictionary<long, Equipment?> equipments =
+            [];
+
+        foreach (
+            long equipmentId in lines
+                .Select(line =>
+                    line.EquipmentDofusDbId)
+                .Where(id =>
+                    id > 0)
+                .Distinct())
+        {
+            equipments[equipmentId] =
+                await itemsService
+                    .GetEquipmentAsync(
+                        equipmentId,
+                        cancellationToken);
+        }
+
+        IReadOnlyDictionary<
+            (long DofusDbId, int Quantity),
+            MarketPriceObservation>
+            observations =
+                await marketPriceService
+                    .GetLatestObservationsForServerAsync(
+                        MarketObjectType.Rune,
+                        serverName,
+                        cancellationToken);
+
+        CrushHistorySessionWriteModel?
+            history = null;
+
+        lock (_stateLock)
+        {
+            // The Dofus result window represents one crushing
+            // transaction. Mirror that behavior: each kci replaces
+            // the previous result instead of accumulating forever.
+            _sessionId++;
+
+            _isRunning = false;
+            _errorMessage = null;
+
+            _scannedRuneCells.Clear();
+            _runes.Clear();
+            _sessionEquipments.Clear();
+
+            _idleCaptureCount = 0;
+            _lastCursorX = null;
+            _lastCursorY = null;
+
+            _networkCrushCount =
+                lines.Count;
+
+            _sessionStartedAtUtc =
+                observedAtUtc;
+
+            _sessionServerName =
+                serverName;
+
+            _sessionDiscountPercent =
+                Math.Clamp(
+                    settingsProvider
+                        .CrushValueDiscountPercent,
+                    0.0,
+                    100.0);
+
+            _historySaveRequested =
+                false;
+            _historySaveStarted =
+                false;
+            _historySaved =
+                false;
+            _activeCaptureCount =
+                0;
+            _pendingProcessingCount =
+                0;
+
+            int rowIndex = 0;
+
+            foreach (
+                NetworkCrushResultLine line
+                in lines)
+            {
+                rowIndex++;
+
+                if (line.EquipmentDofusDbId > 0)
+                {
+                    string equipmentName =
+                        equipments.TryGetValue(
+                                line.EquipmentDofusDbId,
+                                out Equipment? equipment) &&
+                            equipment is not null
+                            ? equipment.Name
+                            : $"Item #{line.EquipmentDofusDbId}";
+
+                    _sessionEquipments[
+                        line.EquipmentDofusDbId] =
+                            new CrushCoefficientScanResult(
+                                line.EquipmentDofusDbId,
+                                equipmentName,
+                                line.CoefficientPercent,
+                                rowIndex);
+                }
+
+                foreach (
+                    NetworkCrushRuneResult runeResult
+                    in line.Runes)
+                {
+                    if (runeResult.DofusDbId <= 0 ||
+                        runeResult.Quantity <= 0)
+                    {
+                        continue;
+                    }
+
+                    if (!_runes.TryGetValue(
+                            runeResult.DofusDbId,
+                            out AccumulatedRune?
+                                accumulatedRune))
+                    {
+                        string runeName =
+                            runesById.TryGetValue(
+                                    runeResult.DofusDbId,
+                                    out Rune? rune)
+                                ? rune.Name
+                                : $"Rune #{runeResult.DofusDbId}";
+
+                        accumulatedRune =
+                            new AccumulatedRune
+                            {
+                                Name =
+                                    runeName
+                            };
+
+                        _runes[
+                            runeResult.DofusDbId] =
+                                accumulatedRune;
+                    }
+
+                    accumulatedRune.Quantity =
+                        checked(
+                            accumulatedRune.Quantity +
+                            runeResult.Quantity);
+                }
+            }
+
+            foreach (
+                KeyValuePair<long, AccumulatedRune>
+                    rune in _runes)
+            {
+                MarketValueResult? value =
+                    marketPriceService
+                        .CalculateValue(
+                            rune.Key,
+                            rune.Value.Quantity,
+                            observations);
+
+                rune.Value.Value =
+                    value?.Value;
+
+                rune.Value.Lots =
+                    value is null
+                        ? []
+                        : BuildRuneLotBreakdown(
+                            rune.Key,
+                            rune.Value.Quantity,
+                            observations);
+            }
+
+            // Each passive kci is already a complete and final result,
+            // so it can be written to crushing history immediately.
+            _historySaveRequested =
+                true;
+
+            history =
+                TryPrepareHistorySaveLocked(
+                    _sessionId);
+        }
+
+        PublishSnapshot();
+        ScheduleHistorySave(
+            history);
     }
 
     private void OnMarketDataChanged(
