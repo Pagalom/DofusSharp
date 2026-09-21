@@ -3,5 +3,21 @@
   "price_list": "jzn",
   "crush_result": "kci",
   "item_detail": "kdb",
-  "crush_slot_put": "kec"
+  "workshop_slot_put": "kec",
+  "diagnostic_messages": [
+    "kei",
+    "kef",
+    "itt",
+    "isa",
+    "log",
+    "kbd",
+    "jze",
+    "kcs",
+    "kbu",
+    "iut",
+    "irl",
+    "isf",
+    "keb",
+    "kcw"
+  ]
 }
