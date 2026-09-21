@@ -86,6 +86,25 @@
         <PackageReference Include="Vortice.DXGI" Version="3.8.3" />
     </ItemGroup>
 
+    <ItemGroup Condition="$([MSBuild]::GetTargetPlatformIdentifier('$(TargetFramework)')) == 'windows'">
+      <PackageReference Include="SharpPcap" Version="6.3.1" />
+      <PackageReference Include="PacketDotNet" Version="1.4.8" />
+
+      <Compile Include="..\BestCrush.NetworkProbe\Capture\TcpReassembler.cs"
+               Link="Network\TcpReassembler.cs" />
+      <Compile Include="..\BestCrush.NetworkProbe\Protocol\ProtoWire.cs"
+               Link="Network\ProtoWire.cs" />
+      <Compile Include="..\BestCrush.NetworkProbe\Protocol\AnkamaFrameDecoder.cs"
+               Link="Network\AnkamaFrameDecoder.cs" />
+      <Compile Include="..\BestCrush.NetworkProbe\Protocol\SemanticDecoders.cs"
+               Link="Network\SemanticDecoders.cs" />
+
+      <None Include="..\BestCrush.NetworkProbe\protocol-map.json"
+            Link="protocol-map.json">
+        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      </None>
+    </ItemGroup>
+
     <ItemGroup>
       <ProjectReference Include="..\BestCrush.Domain\BestCrush.Domain.csproj" />
       <ProjectReference Include="..\DofusSharp.Dofocus.ApiClients\DofusSharp.Dofocus.ApiClients.csproj" />
