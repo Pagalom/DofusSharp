@@ -19,6 +19,7 @@ public sealed class OverlayService(
     IServiceScopeFactory serviceScopeFactory,
     CurrentServerState currentServerState,
     FocusedEquipmentState focusedEquipmentState,
+    LastNetworkEquipmentState lastNetworkEquipmentState,
     CrushSessionService crushSessionService,
     MarketDataChangeNotifier marketDataChangeNotifier,
     MarketCaptureOverlayService marketCaptureOverlayService,
@@ -28,13 +29,13 @@ public sealed class OverlayService(
     private Window? _overlayWindow;
     private OverlayPage? _overlayPage;
 
-    // Le clic molette reste le seul usage OCR du produit :
+    // F8 est le seul usage OCR du produit :
     // il capture l'infobulle actuellement survolée afin de
-    // définir le focus équipement. Les prix, coefficients,
-    // crafts, FM et concassages viennent du réseau.
-    private readonly Channel<MiddleClickReadWorkItem>
-        _middleClickReadQueue =
-            Channel.CreateUnbounded<MiddleClickReadWorkItem>(
+    // définir le focus équipement. Le clic molette, lui,
+    // reprend le dernier équipement identifié par le réseau.
+    private readonly Channel<TooltipReadWorkItem>
+        _tooltipReadQueue =
+            Channel.CreateUnbounded<TooltipReadWorkItem>(
                 new UnboundedChannelOptions
                 {
                     SingleReader = true,
@@ -44,12 +45,12 @@ public sealed class OverlayService(
             );
 
     private readonly CancellationTokenSource
-        _middleClickReadCancellation = new();
+        _tooltipReadCancellation = new();
 
     private readonly object
-        _middleClickReadWorkerLock = new();
+        _tooltipReadWorkerLock = new();
 
-    private Task? _middleClickReadWorkerTask;
+    private Task? _tooltipReadWorkerTask;
 
     
     // Les changements de marché peuvent déclencher plusieurs
@@ -114,6 +115,7 @@ private bool _hasF7VisibilitySnapshot;
     private const int WmMouseHWheel = 0x020E;
 
     private const int VkF7 = 0x76;
+    private const int VkF8 = 0x77;
 
     private IntPtr _keyboardHook = IntPtr.Zero;
     private IntPtr _mouseHook = IntPtr.Zero;
@@ -122,6 +124,7 @@ private bool _hasF7VisibilitySnapshot;
     private LowLevelMouseProc? _mouseProc;
 
     private bool _f7Pressed;
+    private bool _f8Pressed;
     private bool _middleButtonPressed;
 #endif
 
@@ -286,6 +289,9 @@ private bool _hasF7VisibilitySnapshot;
                 crushSessionService.Hide();
             }
 
+            overlayControlBarService
+                .RefreshState();
+
             return;
         }
 
@@ -310,10 +316,13 @@ private bool _hasF7VisibilitySnapshot;
         }
 
         ClearF7VisibilitySnapshot();
+
+        overlayControlBarService
+            .RefreshState();
 #endif
     }
 
-    public void RequestRead()
+    public void RequestTooltipRead()
     {
         if (!currentServerState.HasSelectedServer)
         {
@@ -347,30 +356,30 @@ private bool _hasF7VisibilitySnapshot;
                     )
         );
 
-        EnsureMiddleClickReadWorker();
+        EnsureTooltipReadWorker();
 
-        // La capture démarre immédiatement au moment
-        // du clic. Elle n'attend jamais que l'OCR ou
-        // le calcul du clic précédent soit terminé.
+        // La capture démarre immédiatement à l'appui sur F8.
+        // Elle n'attend jamais que l'OCR ou le calcul
+        // de la demande précédente soit terminé.
         Task<DofusCaptureResult> captureTask =
             Task.Run(
                 async () =>
                     await dofusCaptureService
                         .CaptureAsync(
                             dofusWindow,
-                            _middleClickReadCancellation
+                            _tooltipReadCancellation
                                 .Token
                         )
                         .ConfigureAwait(false),
-                _middleClickReadCancellation.Token
+                _tooltipReadCancellation.Token
             );
 
-        MiddleClickReadWorkItem workItem =
+        TooltipReadWorkItem workItem =
             new(
                 captureTask
             );
 
-        if (!_middleClickReadQueue
+        if (!_tooltipReadQueue
             .Writer
             .TryWrite(
                 workItem
@@ -385,39 +394,39 @@ private bool _hasF7VisibilitySnapshot;
         }
     }
 
-    private void EnsureMiddleClickReadWorker()
+    private void EnsureTooltipReadWorker()
     {
-        if (_middleClickReadWorkerTask is not null)
+        if (_tooltipReadWorkerTask is not null)
         {
             return;
         }
 
-        lock (_middleClickReadWorkerLock)
+        lock (_tooltipReadWorkerLock)
         {
-            if (_middleClickReadWorkerTask is not null)
+            if (_tooltipReadWorkerTask is not null)
             {
                 return;
             }
 
-            _middleClickReadWorkerTask =
+            _tooltipReadWorkerTask =
                 Task.Run(
                     () =>
-                        ProcessMiddleClickReadQueueAsync(
-                            _middleClickReadCancellation
+                        ProcessTooltipReadQueueAsync(
+                            _tooltipReadCancellation
                                 .Token
                         )
                 );
         }
     }
 
-    private async Task ProcessMiddleClickReadQueueAsync(
+    private async Task ProcessTooltipReadQueueAsync(
         CancellationToken cancellationToken)
     {
         try
         {
             await foreach (
-                MiddleClickReadWorkItem workItem
-                in _middleClickReadQueue
+                TooltipReadWorkItem workItem
+                in _tooltipReadQueue
                     .Reader
                     .ReadAllAsync(
                         cancellationToken
@@ -429,10 +438,10 @@ private bool _hasF7VisibilitySnapshot;
 
                 try
                 {
-                    // Les captures ont déjà commencé en
-                    // parallèle. Elles sont cependant analysées
-                    // dans l'ordre des clics afin de conserver
-                    // un focus et des écritures BDD déterministes.
+                    // Les captures ont déjà commencé en parallèle.
+                    // Elles sont cependant analysées dans l'ordre
+                    // des demandes F8 afin de conserver un focus
+                    // déterministe.
                     capture =
                         await workItem
                             .CaptureTask
@@ -578,17 +587,10 @@ private bool _hasF7VisibilitySnapshot;
         Equipment equipment =
             candidate.Recognition.Equipment;
 
-        focusedEquipmentState.SetEquipment(
+        await FocusEquipmentAsync(
             equipment
-        );
-
-        await RefreshFocusedProfitabilityAsync()
-            .ConfigureAwait(false);
-
-        await MainThread
-            .InvokeOnMainThreadAsync(
-                Show
-            );
+        )
+        .ConfigureAwait(false);
 
         PostUi(
             () =>
@@ -1054,9 +1056,52 @@ private bool _hasF7VisibilitySnapshot;
         _ = RefreshFocusedProfitabilityAsync();
     }
 
+    private async Task FocusLastNetworkEquipmentAsync()
+    {
+        string? serverName =
+            currentServerState.ServerName;
+
+        LastNetworkEquipmentSnapshot? snapshot =
+            lastNetworkEquipmentState
+                .GetForServer(
+                    serverName
+                );
+
+        if (snapshot is null)
+        {
+            return;
+        }
+
+        using IServiceScope scope =
+            serviceScopeFactory.CreateScope();
+
+        ItemsService itemsService =
+            scope.ServiceProvider
+                .GetRequiredService<ItemsService>();
+
+        Equipment? equipment =
+            await itemsService
+                .GetEquipmentAsync(
+                    snapshot.DofusDbId
+                )
+                .ConfigureAwait(false);
+
+        if (equipment is null)
+        {
+            return;
+        }
+
+        await FocusEquipmentAsync(
+            equipment
+        )
+        .ConfigureAwait(false);
+    }
+
     public async Task FocusEquipmentAsync(
         Equipment equipment)
     {
+        ClearF7VisibilitySnapshot();
+
         focusedEquipmentState.SetEquipment(
             equipment
         );
@@ -1515,10 +1560,10 @@ private bool _hasF7VisibilitySnapshot;
 
         try
         {
-            _middleClickReadCancellation
+            _tooltipReadCancellation
                 .Cancel();
 
-            _middleClickReadQueue
+            _tooltipReadQueue
                 .Writer
                 .TryComplete();
         }
@@ -1809,6 +1854,27 @@ private bool _hasF7VisibilitySnapshot;
                 }
             }
 
+            if (virtualKeyCode == VkF8)
+            {
+                if (wParam ==
+                        (IntPtr)WmKeyDown &&
+                    !_f8Pressed)
+                {
+                    _f8Pressed = true;
+
+                    MainThread
+                        .BeginInvokeOnMainThread(
+                            RequestTooltipRead
+                        );
+                }
+                else if (
+                    wParam ==
+                    (IntPtr)WmKeyUp)
+                {
+                    _f8Pressed = false;
+                }
+            }
+
         }
 
         return CallNextHookEx(
@@ -1839,9 +1905,7 @@ private bool _hasF7VisibilitySnapshot;
 
         bool isRelevantMessage =
             message == WmMButtonDown ||
-            message == WmMButtonUp ||
-            message == WmMouseWheel ||
-            message == WmMouseHWheel;
+            message == WmMButtonUp;
 
         if (!isRelevantMessage)
         {
@@ -1915,33 +1979,12 @@ private bool _hasF7VisibilitySnapshot;
         {
             _middleButtonPressed = true;
 
-            // Le hook souris doit rendre la main à Windows
-            // immédiatement. Le déclenchement de la capture
-            // est donc lui aussi envoyé sur le pool de threads.
+            // Aucun screenshot/OCR ici : le clic molette
+            // reprend uniquement le dernier équipement dont
+            // l'identité a été confirmée par le trafic réseau.
             _ = Task.Run(
-                async () =>
-                {
-                    await Task.Delay(
-                        35
-                    )
-                    .ConfigureAwait(false);
-
-                    RequestRead();
-                }
+                FocusLastNetworkEquipmentAsync
             );
-        }
-        else if (
-            (
-                message == WmMouseWheel ||
-                message == WmMouseHWheel
-            ) &&
-            crushSessionService.IsRunning)
-        {
-            MainThread
-                .BeginInvokeOnMainThread(
-                    crushSessionService
-                        .InvalidateForScroll
-                );
         }
 
         return CallNextHookEx(
@@ -2148,7 +2191,7 @@ private bool _hasF7VisibilitySnapshot;
         );
 #endif
 
-    private sealed record MiddleClickReadWorkItem(
+    private sealed record TooltipReadWorkItem(
         Task<DofusCaptureResult> CaptureTask
     );
 }
