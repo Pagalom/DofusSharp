@@ -1,5 +1,7 @@
 {
   "clientBuild": "3.6.11.15",
   "price_list": "jzn",
-  "crush_result": "kci"
+  "crush_result": "kci",
+  "item_detail": "kdb",
+  "crush_slot_put": "kec"
 }
