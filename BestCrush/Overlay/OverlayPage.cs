@@ -3199,7 +3199,7 @@ public sealed class OverlayPage : ContentPage
     public void ShowReadCancelled()
     {
         _readStatus.Text =
-            "Clic molette — Dofus non détecté, lecture annulée";
+            "F8 — Dofus non détecté, lecture annulée";
 
         _readStatus.TextColor =
             Colors.Orange;
