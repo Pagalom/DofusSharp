@@ -545,20 +545,9 @@ public sealed class OverlayPage : ContentPage
         MakeCopyable(
             _item,
             () =>
-            {
-                string? focusedName =
-                    _currentProfitability?
-                        .Equipment
-                        .Name;
-
-                return string.Equals(
-                    _item.Text,
-                    focusedName,
-                    StringComparison.Ordinal
-                )
-                    ? focusedName
-                    : null;
-            }
+                _currentProfitability?
+                    .Equipment
+                    .Name
         );
 
         MakeCopyable(
@@ -1047,7 +1036,7 @@ public sealed class OverlayPage : ContentPage
         ShowProfitabilityDetails();
 
         _item.Text =
-            result.Equipment.Name;
+            $"{result.Equipment.Name}  -  Nv.{result.Equipment.Level}";
 
         EquipmentProfitabilityScenario? scenario =
             result.BestByBenefit;
