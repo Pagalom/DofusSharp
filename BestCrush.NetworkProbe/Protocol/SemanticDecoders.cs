@@ -130,7 +130,7 @@ internal sealed record MarketListingRequestObservation(
     ulong Price);
 
 internal sealed record MarketListingCreatedObservation(
-    ulong ServerOfferId,
+    ulong MarketListingUid,
     ulong ItemId,
     ulong Quantity,
     ulong Price,
@@ -469,7 +469,7 @@ internal static class SemanticDecoders
         if (listing is null)
             return null;
 
-        ulong serverOfferId = listing.FirstOrDefault(f =>
+        ulong marketListingUid = listing.FirstOrDefault(f =>
             f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
         ulong itemId = listing.FirstOrDefault(f =>
             f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
@@ -478,11 +478,11 @@ internal static class SemanticDecoders
         ulong price = root.FirstOrDefault(f =>
             f.Number == 5 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
 
-        if (serverOfferId == 0 || itemId == 0 || quantity == 0 || price == 0)
+        if (marketListingUid == 0 || itemId == 0 || quantity == 0 || price == 0)
             return null;
 
         return new MarketListingCreatedObservation(
-            serverOfferId,
+            marketListingUid,
             itemId,
             quantity,
             price,
@@ -849,7 +849,7 @@ internal static class ConsoleRenderer
         Console.WriteLine();
         Console.WriteLine(
             $"[LISTING] ItemId={created.ItemId} UID={request.ItemUid} x{request.Quantity} " +
-            $"price={request.Price:N0} K serverListing={created.ServerOfferId}");
+            $"price={request.Price:N0} K marketListingUid={created.MarketListingUid}");
 
         IReadOnlyList<ItemStatObservation> stats =
             created.Stats.Count > 0
@@ -857,6 +857,25 @@ internal static class ConsoleRenderer
                 : knownItem?.Stats ?? Array.Empty<ItemStatObservation>();
 
         Console.WriteLine($"  Stats : {FormatStats(stats)}");
+        Console.WriteLine();
+    }
+
+    public static void WriteMarketListingReturn(
+        ulong marketListingUid,
+        MarketListingRequestObservation original,
+        MarketListingCreatedObservation created,
+        ItemDetailObservation returnedItem)
+    {
+        Console.WriteLine();
+        Console.WriteLine(
+            $"[LISTING-RETURN] marketListingUid={marketListingUid} " +
+            $"ItemId={returnedItem.ItemId} oldUID={original.ItemUid} newUID={returnedItem.ItemUid} " +
+            $"price={original.Price:N0} K");
+
+        Console.WriteLine(
+            $"  UID : {(original.ItemUid == returnedItem.ItemUid ? "conservé" : "remplacé")}");
+
+        Console.WriteLine($"  Stats : {FormatStats(returnedItem.Stats)}");
         Console.WriteLine();
     }
 
