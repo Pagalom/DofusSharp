@@ -583,6 +583,12 @@
                                     </button>
                                 </th>
                                 <th class="text-end">
+                                    <button class="@SortButtonClass(HistorySortColumn.Quantity)"
+                                            @onclick="() => SortByAsync(HistorySortColumn.Quantity)">
+                                        Lot @SortIndicator(HistorySortColumn.Quantity)
+                                    </button>
+                                </th>
+                                <th class="text-end">
                                     <button class="@SortButtonClass(HistorySortColumn.Value)"
                                             @onclick="() => SortByAsync(HistorySortColumn.Value)">
                                         Valeur @SortIndicator(HistorySortColumn.Value)
@@ -601,7 +607,7 @@
                             @if (rows.Count == 0)
                             {
                                 <tr>
-                                    <td colspan="8" class="text-center text-secondary py-4">
+                                    <td colspan="9" class="text-center text-secondary py-4">
                                         Aucune observation ne correspond aux filtres.
                                     </td>
                                 </tr>
@@ -626,6 +632,9 @@
                                         <td class="text-end">@row.Level</td>
                                         <td>@row.Type.ToDisplayName()</td>
                                         <td>@FormatDataKind(row.DataKind)</td>
+                                        <td class="text-end text-nowrap">
+                                            @(row.Quantity is int quantity ? $"x{quantity}" : "—")
+                                        </td>
                                         <td class="text-end text-nowrap">@FormatItemValue(row)</td>
                                         <td>@FormatItemSource(row)</td>
                                         <td>
