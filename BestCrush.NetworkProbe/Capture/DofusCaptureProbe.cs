@@ -226,7 +226,7 @@ internal sealed class DofusCaptureProbe : IDisposable
 
                 Console.WriteLine(
                     $"[FM-BATCH] seq={batch.Sequence} x{batch.Quantity} " +
-                    $"runeUID={(runeUid == 0 ? "?" : runeUid)}");
+                    $"runeUID={(runeUid == 0 ? "?" : runeUid.ToString())}");
             }
         }
 
