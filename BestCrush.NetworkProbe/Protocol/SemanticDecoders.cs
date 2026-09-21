@@ -106,6 +106,7 @@ internal sealed record PurchaseOfferObservation(
     IReadOnlyList<ItemStatObservation> Stats);
 internal sealed record SmithmagicRequestObservation(ulong RuneUid, ulong Quantity);
 internal sealed record SmithmagicBatchRequestObservation(ulong Quantity, ulong Sequence);
+internal sealed record SmithmagicStackObservation(ItemDetailObservation Stack);
 internal sealed record SmithmagicResultObservation(int ResultCode, ItemDetailObservation Item);
 
 internal sealed record RuneDrop(ulong RuneItemId, ulong Quantity);
@@ -421,6 +422,30 @@ internal static class SemanticDecoders
             : null;
     }
 
+    public static SmithmagicStackObservation? TryDecodeSmithmagicStack(byte[] body)
+    {
+        List<ProtoField>? root = ProtoWire.ReadFields(body);
+        ProtoField? envelopeField = root?.FirstOrDefault(f =>
+            f.Number == 3 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is not null);
+
+        if (envelopeField?.Bytes is null)
+            return null;
+
+        List<ProtoField>? envelope = ProtoWire.ReadFields(envelopeField.Bytes);
+        ProtoField? itemField = envelope?.FirstOrDefault(f =>
+            f.Number == 5 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is not null);
+
+        if (itemField?.Bytes is null)
+            return null;
+
+        ItemDetailObservation? item = TryDecodeItemObject(itemField.Bytes);
+        return item is null ? null : new SmithmagicStackObservation(item);
+    }
+
     public static SmithmagicResultObservation? TryDecodeSmithmagicResult(byte[] body)
     {
         List<ProtoField>? root = ProtoWire.ReadFields(body);
@@ -711,6 +736,13 @@ internal static class ConsoleRenderer
             $"price={request.Price:N0} K listing={request.ListingId}");
         Console.WriteLine($"  Stats : {FormatStats(item.Stats)}");
         Console.WriteLine();
+    }
+
+    public static void WriteSmithmagicStack(SmithmagicStackObservation stack)
+    {
+        Console.WriteLine(
+            $"[FM-RUNE-STACK] UID={stack.Stack.ItemUid} ItemId={stack.Stack.ItemId} " +
+            $"restant={stack.Stack.Quantity}");
     }
 
     public static void WriteSmithmagic(
