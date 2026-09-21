@@ -16,6 +16,7 @@ internal sealed class DofusCaptureProbe : IDisposable
 
     private PurchaseRequestObservation? _pendingPurchaseRequest;
     private PurchaseOfferObservation? _pendingPurchaseOffer;
+    private ItemDetailObservation? _pendingPurchasedItem;
     private SmithmagicRequestObservation? _pendingSmithmagicRequest;
     private SmithmagicRequestObservation? _activeBatchSmithmagicRequest;
     private MarketListingRequestObservation? _pendingMarketListing;
@@ -188,19 +189,38 @@ internal sealed class DofusCaptureProbe : IDisposable
             {
                 _itemDetails[item.ItemUid] = item;
 
-                if (_pendingPurchaseRequest is not null &&
-                    _pendingPurchaseOffer is not null &&
-                    _pendingPurchaseRequest.ListingId == _pendingPurchaseOffer.ListingId &&
-                    _pendingPurchaseOffer.ItemId == item.ItemId)
+                if (_pendingPurchaseRequest is not null)
                 {
-                    ConsoleRenderer.WritePurchase(
-                        _pendingPurchaseRequest,
-                        _pendingPurchaseOffer,
-                        item);
+                    bool offerMatches =
+                        _pendingPurchaseOffer is null ||
+                        (_pendingPurchaseRequest.OfferId == _pendingPurchaseOffer.OfferId &&
+                         _pendingPurchaseOffer.ItemId == item.ItemId);
 
-                    _pendingPurchaseRequest = null;
-                    _pendingPurchaseOffer = null;
+                    if (offerMatches)
+                        _pendingPurchasedItem = item;
                 }
+            }
+        }
+
+        if (_map.PurchaseReceipt is not null &&
+            string.Equals(key, _map.PurchaseReceipt, StringComparison.Ordinal))
+        {
+            PurchaseReceiptObservation? receipt =
+                SemanticDecoders.TryDecodePurchaseReceipt(any.Body);
+
+            if (receipt is not null &&
+                _pendingPurchaseRequest is not null &&
+                _pendingPurchasedItem is not null &&
+                receipt.OfferId == _pendingPurchaseRequest.OfferId)
+            {
+                ConsoleRenderer.WritePurchase(
+                    _pendingPurchaseRequest,
+                    _pendingPurchasedItem,
+                    receipt);
+
+                _pendingPurchaseRequest = null;
+                _pendingPurchaseOffer = null;
+                _pendingPurchasedItem = null;
             }
         }
 
