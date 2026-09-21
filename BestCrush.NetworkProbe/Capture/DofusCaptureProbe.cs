@@ -126,17 +126,22 @@ internal sealed class DofusCaptureProbe : IDisposable
             }
         }
 
-        if (_map.CrushSlotPut is not null &&
-            string.Equals(key, _map.CrushSlotPut, StringComparison.Ordinal))
+        if (_map.WorkshopSlotPut is not null &&
+            string.Equals(key, _map.WorkshopSlotPut, StringComparison.Ordinal))
         {
-            CrushSlotObservation? slot = SemanticDecoders.TryDecodeCrushSlot(any.Body);
+            WorkshopSlotObservation? slot = SemanticDecoders.TryDecodeWorkshopSlot(any.Body);
             if (slot is not null)
-                ConsoleRenderer.WriteCrushSlot(slot);
+                ConsoleRenderer.WriteWorkshopSlot(slot);
             else
             {
-                Console.WriteLine($"[BREAKER?] {key} reçu mais structure non reconnue ({any.Body.Length} octets).");
-                ConsoleRenderer.WriteProtoDebug("CRUSH_SLOT", any.Body);
+                Console.WriteLine($"[WORKSHOP?] {key} reçu mais structure non reconnue ({any.Body.Length} octets).");
+                ConsoleRenderer.WriteProtoDebug("WORKSHOP_SLOT", any.Body);
             }
+        }
+
+        if (_map.DiagnosticMessages.Contains(key))
+        {
+            ConsoleRenderer.WriteProtoDebug($"DIAG {key}", any.Body);
         }
 
         if (_map.CrushResult is not null &&
