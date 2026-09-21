@@ -60,6 +60,7 @@ public static class MauiProgram
             builder.Services.AddSingleton<BestCrush.Services.MarketDataChangeNotifier>();
             builder.Services.AddSingleton<BestCrush.Services.DofusWindowService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusCaptureService>();
+            builder.Services.AddSingleton<BestCrush.Services.DofusNetworkCaptureService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusImageRegionService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusPanelDetectionService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusCrushRowDetectionService>();
