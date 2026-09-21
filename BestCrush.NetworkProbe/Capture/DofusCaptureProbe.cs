@@ -244,17 +244,41 @@ internal sealed class DofusCaptureProbe : IDisposable
             InventoryQuantityObservation? quantity =
                 SemanticDecoders.TryDecodeInventoryQuantity(any.Body);
 
-            if (quantity is not null &&
-                _itemDetails.TryGetValue(quantity.ItemUid, out ItemDetailObservation? existingItem))
+            if (quantity is not null)
             {
-                ItemDetailObservation updatedItem =
-                    existingItem with { Quantity = quantity.NewQuantity };
+                ItemDetailObservation? updatedItem = null;
 
-                _itemDetails[quantity.ItemUid] = updatedItem;
+                if (_itemDetails.TryGetValue(quantity.ItemUid, out ItemDetailObservation? existingItem))
+                {
+                    updatedItem = existingItem with { Quantity = quantity.NewQuantity };
+                }
+                else if (_pendingPurchaseOffer is not null)
+                {
+                    updatedItem = new ItemDetailObservation(
+                        quantity.ItemUid,
+                        _pendingPurchaseOffer.ItemId,
+                        quantity.NewQuantity,
+                        _pendingPurchaseOffer.Stats);
+                }
 
-                if (_pendingPurchaseRequest is not null)
-                    _pendingPurchasedItem = updatedItem;
+                if (updatedItem is not null)
+                {
+                    _itemDetails[quantity.ItemUid] = updatedItem;
+
+                    if (_pendingPurchaseRequest is not null)
+                        _pendingPurchasedItem = updatedItem;
+                }
             }
+        }
+
+        if (_map.InventoryRemove is not null &&
+            string.Equals(key, _map.InventoryRemove, StringComparison.Ordinal))
+        {
+            InventoryRemoveObservation? removed =
+                SemanticDecoders.TryDecodeInventoryRemove(any.Body);
+
+            if (removed is not null)
+                _itemDetails.Remove(removed.ItemUid);
         }
 
         if (_map.PurchaseReceipt is not null &&
@@ -350,11 +374,24 @@ internal sealed class DofusCaptureProbe : IDisposable
             }
         }
 
-        if (_map.CraftInventoryChange is not null &&
-            string.Equals(key, _map.CraftInventoryChange, StringComparison.Ordinal) &&
+        if (_map.CraftOutput is not null &&
+            string.Equals(key, _map.CraftOutput, StringComparison.Ordinal) &&
             _activeCraftRequest is not null)
         {
-            ConsoleRenderer.WriteProtoDebug("CRAFT_INVENTORY_CHANGE", any.Body);
+            ItemDetailObservation? output =
+                SemanticDecoders.TryDecodeCraftOutput(any.Body);
+
+            if (output is not null)
+            {
+                _itemDetails[output.ItemUid] = output;
+                Console.WriteLine(
+                    $"[CRAFT-OUTPUT] ItemId={output.ItemId} UID={output.ItemUid} x{output.Quantity} | " +
+                    $"stats: {(output.Stats.Count == 0 ? "(aucune stat)" : string.Join(", ", output.Stats.Select(x => $"{x.EffectId}={x.Value}")))}");
+            }
+            else
+            {
+                ConsoleRenderer.WriteProtoDebug("CRAFT_OUTPUT", any.Body);
+            }
         }
 
         if (_map.SmithmagicResult is not null &&
