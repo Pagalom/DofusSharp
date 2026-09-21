@@ -142,19 +142,83 @@ public sealed class MarketCaptureOverlayPage : ContentPage
                     : _objectName.Text
         );
 
-        VerticalStackLayout content = new()
-        {
-            Spacing = 9,
-            Margin = new Thickness(14),
-            Children =
+        ScrollView detailsScroll =
+            new()
             {
-                header,
-                _status,
-                _objectName,
-                _details,
-                _footer
-            }
-        };
+                Content =
+                    _details,
+
+                VerticalScrollBarVisibility =
+                    ScrollBarVisibility.Default,
+
+                VerticalOptions =
+                    LayoutOptions.Fill,
+
+                HorizontalOptions =
+                    LayoutOptions.Fill
+            };
+
+        Grid content =
+            new()
+            {
+                RowDefinitions =
+                {
+                    new RowDefinition(
+                        GridLength.Auto
+                    ),
+                    new RowDefinition(
+                        GridLength.Auto
+                    ),
+                    new RowDefinition(
+                        GridLength.Auto
+                    ),
+                    new RowDefinition(
+                        GridLength.Star
+                    ),
+                    new RowDefinition(
+                        GridLength.Auto
+                    )
+                },
+
+                RowSpacing = 9,
+                Margin = new Thickness(14),
+
+                VerticalOptions =
+                    LayoutOptions.Fill,
+
+                HorizontalOptions =
+                    LayoutOptions.Fill
+            };
+
+        content.Add(
+            header,
+            0,
+            0
+        );
+
+        content.Add(
+            _status,
+            0,
+            1
+        );
+
+        content.Add(
+            _objectName,
+            0,
+            2
+        );
+
+        content.Add(
+            detailsScroll,
+            0,
+            3
+        );
+
+        content.Add(
+            _footer,
+            0,
+            4
+        );
 
         Grid resizeContainer =
             CreateResizeContainer(
