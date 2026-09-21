@@ -13,10 +13,9 @@
     "isf",
     "keb",
     "kcw",
-    "kcr",
-    "kda",
     "kau",
-    "kef"
+    "kef",
+    "irz"
   ],
   "purchase_request": "kei",
   "purchase_offer": "kef",
@@ -24,5 +23,7 @@
   "smithmagic_request": "jze",
   "smithmagic_result": "kbu",
   "smithmagic_batch_request": "kcs",
-  "smithmagic_aux": "kar"
+  "smithmagic_aux": "kar",
+  "market_listing_request": "kcr",
+  "market_listing_created": "kda"
 }
