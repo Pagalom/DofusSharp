@@ -5,19 +5,19 @@
   "item_detail": "kdb",
   "workshop_slot_put": "kec",
   "diagnostic_messages": [
-    "kei",
-    "kef",
     "itt",
-    "isa",
     "log",
     "kbd",
-    "jze",
     "kcs",
-    "kbu",
     "iut",
     "irl",
     "isf",
     "keb",
     "kcw"
-  ]
+  ],
+  "purchase_request": "kei",
+  "purchase_offer": "kef",
+  "inventory_add": "isa",
+  "smithmagic_request": "jze",
+  "smithmagic_result": "kbu"
 }
