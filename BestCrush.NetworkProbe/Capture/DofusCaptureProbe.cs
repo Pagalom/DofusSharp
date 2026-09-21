@@ -11,6 +11,7 @@ internal sealed class DofusCaptureProbe : IDisposable
     private readonly ProtocolMap _map;
     private readonly bool _showAllMessages;
     private readonly Dictionary<FlowDirection, TcpReassembler> _streams = new();
+    private readonly Dictionary<ulong, ItemDetailObservation> _itemDetails = new();
 
     public DofusCaptureProbe(ICaptureDevice device, int port, ProtocolMap map, bool showAllMessages)
     {
@@ -112,13 +113,30 @@ internal sealed class DofusCaptureProbe : IDisposable
         if (_map.ItemDetail is not null &&
             string.Equals(key, _map.ItemDetail, StringComparison.Ordinal))
         {
-            ConsoleRenderer.WriteProtoDebug("ITEM_DETAIL?", any.Body);
+            ItemDetailObservation? item = SemanticDecoders.TryDecodeItemDetail(any.Body);
+            if (item is not null)
+            {
+                _itemDetails[item.ItemUid] = item;
+                ConsoleRenderer.WriteItemDetail(item);
+            }
+            else
+            {
+                Console.WriteLine($"[ITEM?] {key} reçu mais structure non reconnue ({any.Body.Length} octets).");
+                ConsoleRenderer.WriteProtoDebug("ITEM_DETAIL", any.Body);
+            }
         }
 
         if (_map.CrushSlotPut is not null &&
             string.Equals(key, _map.CrushSlotPut, StringComparison.Ordinal))
         {
-            ConsoleRenderer.WriteProtoDebug("CRUSH_SLOT?", any.Body);
+            CrushSlotObservation? slot = SemanticDecoders.TryDecodeCrushSlot(any.Body);
+            if (slot is not null)
+                ConsoleRenderer.WriteCrushSlot(slot);
+            else
+            {
+                Console.WriteLine($"[BREAKER?] {key} reçu mais structure non reconnue ({any.Body.Length} octets).");
+                ConsoleRenderer.WriteProtoDebug("CRUSH_SLOT", any.Body);
+            }
         }
 
         if (_map.CrushResult is not null &&
@@ -126,7 +144,7 @@ internal sealed class DofusCaptureProbe : IDisposable
         {
             CrushObservation? crush = SemanticDecoders.TryDecodeCrush(any.Body);
             if (crush is not null)
-                ConsoleRenderer.WriteCrush(crush);
+                ConsoleRenderer.WriteCrush(crush, _itemDetails);
             else
             {
                 Console.WriteLine($"[CRUSH?] {key} reçu mais structure non reconnue ({any.Body.Length} octets).");
