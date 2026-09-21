@@ -274,7 +274,11 @@ internal sealed class DofusCaptureProbe : IDisposable
 
                 if (craftIngredient is not null)
                 {
-                    string beforeText = hadBeforeQuantity ? beforeQuantity.ToString() : "?";
+                    ulong inferredBefore = quantity.NewQuantity + craftIngredient.Quantity;
+                    string beforeText = hadBeforeQuantity
+                        ? beforeQuantity.ToString()
+                        : $"{inferredBefore} (inféré)";
+
                     Console.WriteLine(
                         $"[CRAFT-CONSUME] ItemId={craftIngredient.ItemId} UID={quantity.ItemUid} " +
                         $"used={craftIngredient.Quantity} inventory={beforeText}->{quantity.NewQuantity}");
