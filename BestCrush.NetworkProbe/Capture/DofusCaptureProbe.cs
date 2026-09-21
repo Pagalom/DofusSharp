@@ -281,6 +281,28 @@ internal sealed class DofusCaptureProbe : IDisposable
         }
     }
 
+    private ulong ResolveWorkshopRuneUid()
+    {
+        if (_lastWorkshopAddedUid is ulong last &&
+            (!_activeSmithmagicTargetUid.HasValue || last != _activeSmithmagicTargetUid.Value))
+        {
+            return last;
+        }
+
+        foreach (ulong uid in _workshopQuantities.Keys.Reverse())
+        {
+            if (_activeSmithmagicTargetUid.HasValue &&
+                uid == _activeSmithmagicTargetUid.Value)
+            {
+                continue;
+            }
+
+            return uid;
+        }
+
+        return 0;
+    }
+
     public void Dispose()
     {
         _device.OnPacketArrival -= OnPacketArrival;
