@@ -6,12 +6,17 @@ namespace BestCrush;
 public partial class App : Application
 {
     private readonly OverlayService _overlayService;
+    private readonly DofusNetworkCaptureService
+        _networkCaptureService;
 
-    public App(OverlayService overlayService)
+    public App(
+        OverlayService overlayService,
+        DofusNetworkCaptureService networkCaptureService)
     {
         InitializeComponent();
 
         _overlayService = overlayService;
+        _networkCaptureService = networkCaptureService;
     }
 
     protected override Window CreateWindow(
@@ -25,6 +30,8 @@ public partial class App : Application
 
         mainWindow.Created += (_, _) =>
         {
+            _networkCaptureService.Start();
+
             MainThread.BeginInvokeOnMainThread(
                 _overlayService.Initialize
             );
@@ -32,6 +39,7 @@ public partial class App : Application
 
         mainWindow.Destroying += (_, _) =>
         {
+            _networkCaptureService.Stop();
             _overlayService.Shutdown();
         };
 
