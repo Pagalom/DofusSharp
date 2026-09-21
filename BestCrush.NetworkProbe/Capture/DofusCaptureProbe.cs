@@ -13,6 +13,10 @@ internal sealed class DofusCaptureProbe : IDisposable
     private readonly Dictionary<FlowDirection, TcpReassembler> _streams = new();
     private readonly Dictionary<ulong, ItemDetailObservation> _itemDetails = new();
 
+    private PurchaseRequestObservation? _pendingPurchaseRequest;
+    private PurchaseOfferObservation? _pendingPurchaseOffer;
+    private SmithmagicRequestObservation? _pendingSmithmagicRequest;
+
     public DofusCaptureProbe(ICaptureDevice device, int port, ProtocolMap map, bool showAllMessages)
     {
         _device = device;
@@ -136,6 +140,84 @@ internal sealed class DofusCaptureProbe : IDisposable
             {
                 Console.WriteLine($"[WORKSHOP?] {key} reçu mais structure non reconnue ({any.Body.Length} octets).");
                 ConsoleRenderer.WriteProtoDebug("WORKSHOP_SLOT", any.Body);
+            }
+        }
+
+        if (_map.PurchaseRequest is not null &&
+            string.Equals(key, _map.PurchaseRequest, StringComparison.Ordinal))
+        {
+            PurchaseRequestObservation? purchase = SemanticDecoders.TryDecodePurchaseRequest(any.Body);
+            if (purchase is not null)
+            {
+                _pendingPurchaseRequest = purchase;
+                _pendingPurchaseOffer = null;
+            }
+        }
+
+        if (_map.PurchaseOffer is not null &&
+            string.Equals(key, _map.PurchaseOffer, StringComparison.Ordinal))
+        {
+            PurchaseOfferObservation? offer = SemanticDecoders.TryDecodePurchaseOffer(any.Body);
+            if (offer is not null)
+                _pendingPurchaseOffer = offer;
+        }
+
+        if (_map.InventoryAdd is not null &&
+            string.Equals(key, _map.InventoryAdd, StringComparison.Ordinal))
+        {
+            ItemDetailObservation? item = SemanticDecoders.TryDecodeInventoryAdd(any.Body);
+            if (item is not null)
+            {
+                _itemDetails[item.ItemUid] = item;
+
+                if (_pendingPurchaseRequest is not null &&
+                    _pendingPurchaseOffer is not null &&
+                    _pendingPurchaseRequest.ListingId == _pendingPurchaseOffer.ListingId &&
+                    _pendingPurchaseOffer.ItemId == item.ItemId)
+                {
+                    ConsoleRenderer.WritePurchase(
+                        _pendingPurchaseRequest,
+                        _pendingPurchaseOffer,
+                        item);
+
+                    _pendingPurchaseRequest = null;
+                    _pendingPurchaseOffer = null;
+                }
+            }
+        }
+
+        if (_map.SmithmagicRequest is not null &&
+            string.Equals(key, _map.SmithmagicRequest, StringComparison.Ordinal))
+        {
+            SmithmagicRequestObservation? request =
+                SemanticDecoders.TryDecodeSmithmagicRequest(any.Body);
+
+            if (request is not null)
+                _pendingSmithmagicRequest = request;
+        }
+
+        if (_map.SmithmagicResult is not null &&
+            string.Equals(key, _map.SmithmagicResult, StringComparison.Ordinal))
+        {
+            SmithmagicResultObservation? result =
+                SemanticDecoders.TryDecodeSmithmagicResult(any.Body);
+
+            if (result is not null)
+            {
+                _itemDetails.TryGetValue(result.Item.ItemUid, out ItemDetailObservation? before);
+
+                ItemDetailObservation? rune = null;
+                if (_pendingSmithmagicRequest is not null)
+                    _itemDetails.TryGetValue(_pendingSmithmagicRequest.RuneUid, out rune);
+
+                ConsoleRenderer.WriteSmithmagic(
+                    _pendingSmithmagicRequest,
+                    rune,
+                    before,
+                    result);
+
+                _itemDetails[result.Item.ItemUid] = result.Item;
+                _pendingSmithmagicRequest = null;
             }
         }
 
