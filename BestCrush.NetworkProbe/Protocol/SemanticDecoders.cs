@@ -2,12 +2,17 @@ using System.Text.Json;
 
 namespace BestCrush.NetworkProbe.Protocol;
 
-internal sealed record ProtocolMap(string ClientBuild, string? PriceList, string? CrushResult)
+internal sealed record ProtocolMap(
+    string ClientBuild,
+    string? PriceList,
+    string? CrushResult,
+    string? ItemDetail,
+    string? CrushSlotPut)
 {
     public static ProtocolMap Load(string path)
     {
         if (!File.Exists(path))
-            return new ProtocolMap("3.6.11.15", "jzn", "kci");
+            return new ProtocolMap("3.6.11.15", "jzn", "kci", "kdb", "kec");
 
         using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
         JsonElement root = doc.RootElement;
@@ -18,8 +23,10 @@ internal sealed record ProtocolMap(string ClientBuild, string? PriceList, string
 
         string? price = root.TryGetProperty("price_list", out JsonElement p) ? p.GetString() : null;
         string? crush = root.TryGetProperty("crush_result", out JsonElement c) ? c.GetString() : null;
+        string? itemDetail = root.TryGetProperty("item_detail", out JsonElement d) ? d.GetString() : null;
+        string? crushSlotPut = root.TryGetProperty("crush_slot_put", out JsonElement e) ? e.GetString() : null;
 
-        return new ProtocolMap(build, price, crush);
+        return new ProtocolMap(build, price, crush, itemDetail, crushSlotPut);
     }
 }
 
