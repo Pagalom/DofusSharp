@@ -41,6 +41,15 @@ internal static class SemanticDecoders
         if (root is null)
             return null;
 
+        MarketObservation? structured = TryDecodeStructuredMarket(root);
+        if (structured is not null)
+            return structured;
+
+        return TryDecodeCompactMarket(root);
+    }
+
+    private static MarketObservation? TryDecodeStructuredMarket(List<ProtoField> root)
+    {
         ulong itemId = root.FirstOrDefault(f => f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
         List<MarketOffer> offers = new();
 
@@ -62,7 +71,7 @@ internal static class SemanticDecoders
                 f.Bytes is not null);
 
             List<ulong> ladder = ladderField?.Bytes is not null
-                ? ProtoWire.ReadPackedVarints(ladderField.Bytes) ?? new List<ulong>()
+                ? CleanLadder(ProtoWire.ReadPackedVarints(ladderField.Bytes) ?? new List<ulong>())
                 : new List<ulong>();
 
             ulong resolvedItemId = inlineItemId != 0 ? inlineItemId : itemId;
@@ -76,6 +85,97 @@ internal static class SemanticDecoders
         return itemId != 0 && offers.Count > 0
             ? new MarketObservation(itemId, offers)
             : null;
+    }
+
+    private static MarketObservation? TryDecodeCompactMarket(List<ProtoField> root)
+    {
+        ulong itemId = 0;
+        List<List<ulong>> ladders = new();
+        CollectCompactMarket(root, 0, ref itemId, ladders);
+
+        List<List<ulong>> valid = ladders
+            .Select(CleanLadder)
+            .Where(x => x.Count > 0 && x.Any(v => v > 10))
+            .ToList();
+
+        if (itemId == 0 || valid.Count == 0)
+            return null;
+
+        List<MarketOffer> offers = valid
+            .Select((ladder, index) => new MarketOffer((ulong)index, itemId, ladder))
+            .ToList();
+
+        return new MarketObservation(itemId, offers);
+    }
+
+    private static void CollectCompactMarket(
+        IReadOnlyList<ProtoField> fields,
+        int depth,
+        ref ulong itemId,
+        List<List<ulong>> ladders)
+    {
+        foreach (ProtoField field in fields)
+        {
+            if (field.WireType == ProtoWireType.Varint)
+            {
+                if (depth <= 1 &&
+                    field.Number is 1 or 2 or 5 &&
+                    field.Varint is >= 10 and <= 100_000 &&
+                    itemId == 0)
+                {
+                    itemId = field.Varint;
+                }
+
+                continue;
+            }
+
+            if (field.WireType != ProtoWireType.LengthDelimited || field.Bytes is null || field.Bytes.Length == 0)
+                continue;
+
+            List<ProtoField>? nested = ProtoWire.ReadFields(field.Bytes);
+            if (nested is not null && nested.Count > 0 && depth < 3)
+            {
+                CollectCompactMarket(nested, depth + 1, ref itemId, ladders);
+                continue;
+            }
+
+            List<ulong>? packed = ProtoWire.ReadPackedVarints(field.Bytes);
+            if (packed is null || packed.Count == 0 || packed.Count > 16)
+                continue;
+
+            if (packed.Any(v => v > 10))
+                ladders.Add(packed);
+        }
+    }
+
+    private static List<ulong> CleanLadder(IReadOnlyList<ulong> source)
+    {
+        List<ulong> values = source.ToList();
+        if (values.Count == 0)
+            return values;
+
+        if (values.Count > 1 &&
+            values[0] is >= 1 and <= 10 &&
+            values.Count == checked((int)values[0] + 1))
+        {
+            values.RemoveAt(0);
+        }
+        else if (values.Count == 5 &&
+                 values[0] <= 20 &&
+                 values[1] > 0 &&
+                 values[2] >= values[1])
+        {
+            values.RemoveAt(0);
+        }
+
+        if (values.Count >= 2 &&
+            values[0] > values[^1] &&
+            values.Where(v => v > 0).SequenceEqual(values.Where(v => v > 0).OrderByDescending(v => v)))
+        {
+            values.Reverse();
+        }
+
+        return values;
     }
 
     public static CrushObservation? TryDecodeCrush(byte[] body)
@@ -148,7 +248,7 @@ internal static class ConsoleRenderer
             foreach (MarketOffer offer in market.Offers)
             {
                 string prices = string.Join(", ", offer.Ladder.Select(v => $"{v:N0} K"));
-                Console.WriteLine($"  #{n++,2} listing={offer.ListingId}  {prices}");
+                Console.WriteLine($"  #{n++,2}  {prices}");
             }
         }
 
@@ -176,5 +276,59 @@ internal static class ConsoleRenderer
         }
 
         Console.WriteLine();
+    }
+
+    public static void WriteProtoDebug(string label, byte[] body)
+    {
+        Console.WriteLine($"[{label} DEBUG] hex={Convert.ToHexString(body)}");
+        WriteProtoFields(body, 0);
+    }
+
+    private static void WriteProtoFields(byte[] bytes, int depth)
+    {
+        if (depth > 4)
+            return;
+
+        List<ProtoField>? fields = ProtoWire.ReadFields(bytes);
+        if (fields is null)
+        {
+            Console.WriteLine($"{new string(' ', depth * 2)}(protobuf illisible)");
+            return;
+        }
+
+        string indent = new string(' ', depth * 2);
+
+        foreach (ProtoField field in fields)
+        {
+            switch (field.WireType)
+            {
+                case ProtoWireType.Varint:
+                    Console.WriteLine($"{indent}f{field.Number} varint={field.Varint}");
+                    break;
+
+                case ProtoWireType.Fixed32:
+                    Console.WriteLine($"{indent}f{field.Number} f32/raw=0x{field.Fixed32:X8} float={ProtoWire.ToFloat(field.Fixed32):G9}");
+                    break;
+
+                case ProtoWireType.Fixed64:
+                    Console.WriteLine($"{indent}f{field.Number} fixed64=0x{field.Fixed64:X16}");
+                    break;
+
+                case ProtoWireType.LengthDelimited when field.Bytes is not null:
+                    List<ProtoField>? nested = ProtoWire.ReadFields(field.Bytes);
+                    if (nested is not null && nested.Count > 0)
+                    {
+                        Console.WriteLine($"{indent}f{field.Number} message[{field.Bytes.Length}]");
+                        WriteProtoFields(field.Bytes, depth + 1);
+                    }
+                    else
+                    {
+                        List<ulong>? packed = ProtoWire.ReadPackedVarints(field.Bytes);
+                        string values = packed is null ? "?" : string.Join(", ", packed);
+                        Console.WriteLine($"{indent}f{field.Number} bytes[{field.Bytes.Length}] packed=[{values}]");
+                    }
+                    break;
+            }
+        }
     }
 }
