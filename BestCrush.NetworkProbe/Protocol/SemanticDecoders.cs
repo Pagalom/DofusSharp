@@ -7,12 +7,23 @@ internal sealed record ProtocolMap(
     string? PriceList,
     string? CrushResult,
     string? ItemDetail,
-    string? CrushSlotPut)
+    string? WorkshopSlotPut,
+    IReadOnlySet<string> DiagnosticMessages)
 {
     public static ProtocolMap Load(string path)
     {
         if (!File.Exists(path))
-            return new ProtocolMap("3.6.11.15", "jzn", "kci", "kdb", "kec");
+            return new ProtocolMap(
+                "3.6.11.15",
+                "jzn",
+                "kci",
+                "kdb",
+                "kec",
+                new HashSet<string>(StringComparer.Ordinal)
+                {
+                    "kei","kef","itt","isa","log","kbd",
+                    "jze","kcs","kbu","iut","irl","isf","keb","kcw"
+                });
 
         using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
         JsonElement root = doc.RootElement;
@@ -24,9 +35,23 @@ internal sealed record ProtocolMap(
         string? price = root.TryGetProperty("price_list", out JsonElement p) ? p.GetString() : null;
         string? crush = root.TryGetProperty("crush_result", out JsonElement c) ? c.GetString() : null;
         string? itemDetail = root.TryGetProperty("item_detail", out JsonElement d) ? d.GetString() : null;
-        string? crushSlotPut = root.TryGetProperty("crush_slot_put", out JsonElement e) ? e.GetString() : null;
+        string? workshopSlotPut = root.TryGetProperty("workshop_slot_put", out JsonElement e)
+            ? e.GetString()
+            : root.TryGetProperty("crush_slot_put", out JsonElement legacy) ? legacy.GetString() : null;
 
-        return new ProtocolMap(build, price, crush, itemDetail, crushSlotPut);
+        HashSet<string> diagnostics = new(StringComparer.Ordinal);
+        if (root.TryGetProperty("diagnostic_messages", out JsonElement dm) &&
+            dm.ValueKind == JsonValueKind.Array)
+        {
+            foreach (JsonElement entry in dm.EnumerateArray())
+            {
+                string? value = entry.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                    diagnostics.Add(value);
+            }
+        }
+
+        return new ProtocolMap(build, price, crush, itemDetail, workshopSlotPut, diagnostics);
     }
 }
 
@@ -39,7 +64,7 @@ internal sealed record ItemDetailObservation(
     ulong ItemId,
     ulong Quantity,
     IReadOnlyList<ItemStatObservation> Stats);
-internal sealed record CrushSlotObservation(long Delta, ulong ItemUid);
+internal sealed record WorkshopSlotObservation(long Delta, ulong ItemUid);
 
 internal sealed record RuneDrop(ulong RuneItemId, ulong Quantity);
 internal sealed record CrushLineObservation(
@@ -328,7 +353,7 @@ internal static class SemanticDecoders
         return new ItemDetailObservation(uid, itemId, quantity, stats);
     }
 
-    public static CrushSlotObservation? TryDecodeCrushSlot(byte[] body)
+    public static WorkshopSlotObservation? TryDecodeWorkshopSlot(byte[] body)
     {
         List<ProtoField>? fields = ProtoWire.ReadFields(body);
         if (fields is null)
@@ -349,7 +374,7 @@ internal static class SemanticDecoders
             ? 1
             : unchecked((long)deltaField.Varint);
 
-        return new CrushSlotObservation(delta, uid);
+        return new WorkshopSlotObservation(delta, uid);
     }
 
     public static CrushObservation? TryDecodeCrush(byte[] body)
@@ -507,10 +532,10 @@ internal static class ConsoleRenderer
             $"[ITEM] UID={item.ItemUid} -> ItemId={item.ItemId} x{item.Quantity} | stats: {stats}");
     }
 
-    public static void WriteCrushSlot(CrushSlotObservation slot)
+    public static void WriteWorkshopSlot(WorkshopSlotObservation slot)
     {
         string action = slot.Delta >= 0 ? "ajout" : "retrait";
-        Console.WriteLine($"[BREAKER] {action} UID={slot.ItemUid} delta={slot.Delta}");
+        Console.WriteLine($"[WORKSHOP] {action} UID={slot.ItemUid} delta={slot.Delta}");
     }
 
     public static void WriteCrush(
