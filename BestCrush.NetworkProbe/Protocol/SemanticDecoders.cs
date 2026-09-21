@@ -33,6 +33,14 @@ internal sealed record ProtocolMap(
 internal sealed record MarketOffer(ulong ListingId, ulong ItemId, IReadOnlyList<ulong> Ladder);
 internal sealed record MarketObservation(ulong ItemId, IReadOnlyList<MarketOffer> Offers);
 
+internal sealed record ItemStatObservation(ulong EffectId, long Value);
+internal sealed record ItemDetailObservation(
+    ulong ItemUid,
+    ulong ItemId,
+    ulong Quantity,
+    IReadOnlyList<ItemStatObservation> Stats);
+internal sealed record CrushSlotObservation(long Delta, ulong ItemUid);
+
 internal sealed record RuneDrop(ulong RuneItemId, ulong Quantity);
 internal sealed record CrushLineObservation(
     ulong ItemUid,
@@ -251,6 +259,99 @@ internal static class SemanticDecoders
         return values;
     }
 
+    public static ItemDetailObservation? TryDecodeItemDetail(byte[] body)
+    {
+        List<ProtoField>? root = ProtoWire.ReadFields(body);
+        ProtoField? envelopeField = root?.FirstOrDefault(f =>
+            f.Number == 2 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is not null);
+
+        if (envelopeField?.Bytes is null)
+            return null;
+
+        List<ProtoField>? envelope = ProtoWire.ReadFields(envelopeField.Bytes);
+        ProtoField? itemField = envelope?.FirstOrDefault(f =>
+            f.Number == 5 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is not null);
+
+        if (itemField?.Bytes is null)
+            return null;
+
+        List<ProtoField>? item = ProtoWire.ReadFields(itemField.Bytes);
+        if (item is null)
+            return null;
+
+        ulong uid = item.FirstOrDefault(f =>
+            f.Number == 1 &&
+            f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        ulong quantity = item.FirstOrDefault(f =>
+            f.Number == 2 &&
+            f.WireType == ProtoWireType.Varint)?.Varint ?? 1;
+
+        ulong itemId = item.FirstOrDefault(f =>
+            f.Number == 5 &&
+            f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        if (uid == 0 || itemId == 0)
+            return null;
+
+        List<ItemStatObservation> stats = new();
+
+        foreach (ProtoField statField in item.Where(f =>
+                     f.Number == 3 &&
+                     f.WireType == ProtoWireType.LengthDelimited &&
+                     f.Bytes is not null))
+        {
+            List<ProtoField>? stat = ProtoWire.ReadFields(statField.Bytes!);
+            if (stat is null)
+                continue;
+
+            ulong effectId = stat.FirstOrDefault(f =>
+                f.Number == 1 &&
+                f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+            ProtoField? valueField = stat.FirstOrDefault(f =>
+                f.Number == 10 &&
+                f.WireType == ProtoWireType.Varint);
+
+            if (effectId == 0 || valueField is null)
+                continue;
+
+            stats.Add(new ItemStatObservation(
+                effectId,
+                unchecked((long)valueField.Varint)));
+        }
+
+        return new ItemDetailObservation(uid, itemId, quantity, stats);
+    }
+
+    public static CrushSlotObservation? TryDecodeCrushSlot(byte[] body)
+    {
+        List<ProtoField>? fields = ProtoWire.ReadFields(body);
+        if (fields is null)
+            return null;
+
+        ProtoField? deltaField = fields.FirstOrDefault(f =>
+            f.Number == 1 &&
+            f.WireType == ProtoWireType.Varint);
+
+        ulong uid = fields.FirstOrDefault(f =>
+            f.Number == 2 &&
+            f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        if (uid == 0)
+            return null;
+
+        long delta = deltaField is null
+            ? 1
+            : unchecked((long)deltaField.Varint);
+
+        return new CrushSlotObservation(delta, uid);
+    }
+
     public static CrushObservation? TryDecodeCrush(byte[] body)
     {
         List<ProtoField>? outer = ProtoWire.ReadFields(body);
@@ -396,7 +497,25 @@ internal static class ConsoleRenderer
         return best;
     }
 
-    public static void WriteCrush(CrushObservation crush)
+    public static void WriteItemDetail(ItemDetailObservation item)
+    {
+        string stats = item.Stats.Count == 0
+            ? "(aucune stat)"
+            : string.Join(", ", item.Stats.Select(x => $"{x.EffectId}={x.Value}"));
+
+        Console.WriteLine(
+            $"[ITEM] UID={item.ItemUid} -> ItemId={item.ItemId} x{item.Quantity} | stats: {stats}");
+    }
+
+    public static void WriteCrushSlot(CrushSlotObservation slot)
+    {
+        string action = slot.Delta >= 0 ? "ajout" : "retrait";
+        Console.WriteLine($"[BREAKER] {action} UID={slot.ItemUid} delta={slot.Delta}");
+    }
+
+    public static void WriteCrush(
+        CrushObservation crush,
+        IReadOnlyDictionary<ulong, ItemDetailObservation>? itemDetails = null)
     {
         Console.WriteLine();
         Console.WriteLine($"[CRUSH] {crush.Lines.Count} objet(s) détruit(s)");
@@ -414,8 +533,13 @@ internal static class ConsoleRenderer
                 ? $" | f4={secondary:F5}%"
                 : string.Empty;
 
+            string itemText = itemDetails is not null &&
+                              itemDetails.TryGetValue(line.ItemUid, out ItemDetailObservation? item)
+                ? $"ItemId={item.ItemId} x{item.Quantity}"
+                : "ItemId=?";
+
             Console.WriteLine(
-                $"  #{index++,2} UID={line.ItemUid}  coef={line.CoefficientPercent:F5}%{second}  -> {runeText}");
+                $"  #{index++,2} {itemText} UID={line.ItemUid}  coef={line.CoefficientPercent:F5}%{second}  -> {runeText}");
 
             foreach (RuneDrop rune in line.Runes)
             {
@@ -431,6 +555,26 @@ internal static class ConsoleRenderer
             float avg = crush.Lines.Average(x => x.CoefficientPercent);
 
             Console.WriteLine($"  Coefficient : min {min:F5}% | moy {avg:F5}% | max {max:F5}%");
+        }
+
+        if (itemDetails is not null)
+        {
+            Dictionary<ulong, ulong> itemTotals = new();
+            foreach (CrushLineObservation line in crush.Lines)
+            {
+                if (!itemDetails.TryGetValue(line.ItemUid, out ItemDetailObservation? item))
+                    continue;
+
+                itemTotals.TryGetValue(item.ItemId, out ulong current);
+                itemTotals[item.ItemId] = current + item.Quantity;
+            }
+
+            if (itemTotals.Count > 0)
+            {
+                Console.WriteLine("  Objets détruits :");
+                foreach ((ulong itemId, ulong quantity) in itemTotals.OrderBy(x => x.Key))
+                    Console.WriteLine($"    ItemId={itemId} x{quantity}");
+            }
         }
 
         Console.WriteLine("  Totaux runes :");
