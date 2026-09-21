@@ -494,6 +494,7 @@ public sealed class DofusNetworkCaptureService(
 
                 await PersistMarketAsync(
                     market,
+                    message.ObservedAtUtc,
                     cancellationToken);
             }
 
@@ -528,6 +529,7 @@ public sealed class DofusNetworkCaptureService(
 
                 await PersistCrushAsync(
                     crush,
+                    message.ObservedAtUtc,
                     cancellationToken);
             }
         }
@@ -535,6 +537,7 @@ public sealed class DofusNetworkCaptureService(
 
     private async Task PersistMarketAsync(
         MarketObservation market,
+        DateTime observedAtUtc,
         CancellationToken cancellationToken)
     {
         string? serverName =
@@ -565,7 +568,7 @@ public sealed class DofusNetworkCaptureService(
             lastNetworkEquipmentState.Set(
                 checked((long)market.ItemId),
                 serverName,
-                DateTime.UtcNow);
+                observedAtUtc);
         }
 
         // Even an empty jzn is useful for focus: it identifies
@@ -636,6 +639,7 @@ public sealed class DofusNetworkCaptureService(
 
     private async Task PersistCrushAsync(
         CrushObservation crush,
+        DateTime observedAtUtc,
         CancellationToken cancellationToken)
     {
         string? serverName =
@@ -679,7 +683,7 @@ public sealed class DofusNetworkCaptureService(
 
                 await RememberLastEquipmentAsync(
                     item.ItemId,
-                    DateTime.UtcNow,
+                    observedAtUtc,
                     cancellationToken);
 
                 if (coefficientService is null ||
