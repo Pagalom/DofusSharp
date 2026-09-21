@@ -69,6 +69,7 @@ public sealed class CrushSessionService(
     IServiceScopeFactory serviceScopeFactory,
     CurrentServerState currentServerState,
     MarketDataChangeNotifier marketDataChangeNotifier,
+    OverlayControlBarService overlayControlBarService,
     OverlayLayoutSettingsService
         overlayLayoutSettingsService,
     IBestCrushSettingsProvider settingsProvider)
@@ -334,6 +335,9 @@ public sealed class CrushSessionService(
 #endif
 
         PublishSnapshot();
+
+        overlayControlBarService
+            .RefreshState();
     }
 
     public void Hide()
@@ -352,6 +356,9 @@ public sealed class CrushSessionService(
             SwHide
         );
 #endif
+
+        overlayControlBarService
+            .RefreshState();
     }
 
     public bool ContainsScreenPoint(
@@ -1818,6 +1825,14 @@ public sealed class CrushSessionService(
         PublishSnapshot();
         ScheduleHistorySave(
             history);
+
+        // A passive kci is an explicit crushing result:
+        // surface it immediately even if the user had hidden
+        // the overlay previously.
+        await MainThread
+            .InvokeOnMainThreadAsync(
+                Show
+            );
     }
 
     private void OnMarketDataChanged(
