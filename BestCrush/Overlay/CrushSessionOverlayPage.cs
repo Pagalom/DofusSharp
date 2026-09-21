@@ -523,30 +523,19 @@ public sealed class CrushSessionOverlayPage
         else
         {
             _status.Text =
-                snapshot.IsRunning
-                    ? "● Acquisition active — survolez les runes"
-                    : "○ Acquisition arrêtée";
+                snapshot.NetworkCrushCount > 0
+                    ? "● Résultat reçu par le réseau"
+                    : "● Capture réseau passive — en attente";
 
             _status.TextColor =
-                snapshot.IsRunning
-                    ? Colors.LightGreen
-                    : Colors.Orange;
+                Colors.LightGreen;
         }
 
-        string cursorText =
-            snapshot.LastCursorX is int x &&
-            snapshot.LastCursorY is int y
-                ? $"\nDernière capture : X={x}, Y={y}"
-                : "";
-
         _scannedCells.Text =
-            $"Cases scannées : " +
-            $"{snapshot.ScannedCells}\n" +
-
-            $"Captures sur arrêt souris : " +
-            $"{snapshot.IdleCaptures}" +
-
-            cursorText;
+            snapshot.NetworkCrushCount > 0
+                ? $"Objets détruits : {snapshot.NetworkCrushCount}\n" +
+                  $"Types de runes : {snapshot.Runes.Count}"
+                : "En attente d'un résultat de concassage.";
 
         _runes.Children.Clear();
 
