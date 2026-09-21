@@ -43,6 +43,9 @@ public sealed class DofusNetworkCaptureService(
     private readonly Dictionary<ulong, ItemDetailObservation> _itemDetails = [];
     private readonly Dictionary<long, MarketObjectType?> _marketObjectTypes = [];
 
+    private PurchaseRequestObservation? _pendingPurchaseRequest;
+    private DateTime _pendingPurchaseRequestAtUtc;
+
     private readonly Channel<DofusWireMessage> _messages =
         Channel.CreateUnbounded<DofusWireMessage>(
             new UnboundedChannelOptions
@@ -449,6 +452,116 @@ public sealed class DofusNetworkCaptureService(
             return;
         }
 
+        if (map.PurchaseRequest is not null &&
+            string.Equals(
+                message.Key,
+                map.PurchaseRequest,
+                StringComparison.Ordinal))
+        {
+            PurchaseRequestObservation? purchase =
+                SemanticDecoders.TryDecodePurchaseRequest(
+                    message.Body);
+
+            if (purchase is not null)
+            {
+                _pendingPurchaseRequest =
+                    purchase;
+
+                _pendingPurchaseRequestAtUtc =
+                    message.ObservedAtUtc;
+
+                await WriteEventDebugAsync(
+                    message.ObservedAtUtc,
+                    $"[PURCHASE-REQUEST] offer={purchase.OfferId} x{purchase.Quantity} price={purchase.Price} K",
+                    cancellationToken);
+            }
+
+            return;
+        }
+
+        if (map.PurchaseOffer is not null &&
+            string.Equals(
+                message.Key,
+                map.PurchaseOffer,
+                StringComparison.Ordinal))
+        {
+            PurchaseOfferObservation? offer =
+                SemanticDecoders.TryDecodePurchaseOffer(
+                    message.Body);
+
+            bool matchesRecentPurchase =
+                offer is not null &&
+                _pendingPurchaseRequest is not null &&
+                offer.OfferId ==
+                    _pendingPurchaseRequest.OfferId &&
+                message.ObservedAtUtc -
+                    _pendingPurchaseRequestAtUtc <=
+                        TimeSpan.FromSeconds(5);
+
+            if (offer is not null &&
+                matchesRecentPurchase)
+            {
+                await WriteEventDebugAsync(
+                    message.ObservedAtUtc,
+                    $"[MARKET-REFRESH] source=kef ItemId={offer.ItemId} ladder=[{string.Join(", ", offer.Ladder)}]",
+                    cancellationToken);
+
+                if (offer.Ladder.Count > 0)
+                {
+                    MarketObservation refreshedMarket =
+                        new(
+                            offer.ItemId,
+                            [
+                                new MarketOffer(
+                                    offer.OfferId,
+                                    offer.ItemId,
+                                    offer.Ladder)
+                            ]
+                        );
+
+                    // For stackable objects (resources/runes), kef is the
+                    // exact refreshed x1/x10/x100/x1000 ladder shown by Dofus
+                    // immediately after the purchase. Equipment offers carry
+                    // per-instance information, so jzn remains authoritative
+                    // for their market-wide minimum.
+                    await PersistMarketAsync(
+                        refreshedMarket,
+                        message.ObservedAtUtc,
+                        cancellationToken,
+                        allowEquipmentPriceRefresh: false);
+                }
+            }
+
+            return;
+        }
+
+        if (map.PurchaseReceipt is not null &&
+            string.Equals(
+                message.Key,
+                map.PurchaseReceipt,
+                StringComparison.Ordinal))
+        {
+            PurchaseReceiptObservation? receipt =
+                SemanticDecoders.TryDecodePurchaseReceipt(
+                    message.Body);
+
+            if (receipt is not null &&
+                _pendingPurchaseRequest is not null &&
+                receipt.OfferId ==
+                    _pendingPurchaseRequest.OfferId)
+            {
+                await WriteEventDebugAsync(
+                    message.ObservedAtUtc,
+                    $"[PURCHASE-CONFIRMED] offer={receipt.OfferId} x{_pendingPurchaseRequest.Quantity} price={_pendingPurchaseRequest.Price} K",
+                    cancellationToken);
+
+                _pendingPurchaseRequest = null;
+                _pendingPurchaseRequestAtUtc = default;
+            }
+
+            return;
+        }
+
         if (map.MarketListingCreated is not null &&
             string.Equals(
                 message.Key,
@@ -538,7 +651,8 @@ public sealed class DofusNetworkCaptureService(
     private async Task PersistMarketAsync(
         MarketObservation market,
         DateTime observedAtUtc,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool allowEquipmentPriceRefresh = true)
     {
         string? serverName =
             currentServerState.ServerName;
@@ -569,6 +683,11 @@ public sealed class DofusNetworkCaptureService(
                 checked((long)market.ItemId),
                 serverName,
                 observedAtUtc);
+
+            if (!allowEquipmentPriceRefresh)
+            {
+                return;
+            }
         }
 
         // Even an empty jzn is useful for focus: it identifies
