@@ -15,6 +15,8 @@ internal sealed record ProtocolMap(
     string? SmithmagicBatchRequest,
     string? SmithmagicResult,
     string? SmithmagicAux,
+    string? MarketListingRequest,
+    string? MarketListingCreated,
     IReadOnlySet<string> DiagnosticMessages)
 {
     public static ProtocolMap Load(string path)
@@ -33,9 +35,11 @@ internal sealed record ProtocolMap(
                 "kcs",
                 "kbu",
                 "kar",
+                "kcr",
+                "kda",
                 new HashSet<string>(StringComparer.Ordinal)
                 {
-                    "itt","log","kbd","iut","irl","isf","keb","kcw"
+                    "itt","log","kbd","iut","irl","isf","keb","kcw","kau","kef","irz"
                 });
 
         using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
@@ -58,6 +62,8 @@ internal sealed record ProtocolMap(
         string? smithmagicBatchRequest = root.TryGetProperty("smithmagic_batch_request", out JsonElement sbr) ? sbr.GetString() : null;
         string? smithmagicResult = root.TryGetProperty("smithmagic_result", out JsonElement sx) ? sx.GetString() : null;
         string? smithmagicAux = root.TryGetProperty("smithmagic_aux", out JsonElement sa) ? sa.GetString() : null;
+        string? marketListingRequest = root.TryGetProperty("market_listing_request", out JsonElement mlr) ? mlr.GetString() : null;
+        string? marketListingCreated = root.TryGetProperty("market_listing_created", out JsonElement mlc) ? mlc.GetString() : null;
 
         HashSet<string> diagnostics = new(StringComparer.Ordinal);
         if (root.TryGetProperty("diagnostic_messages", out JsonElement dm) &&
@@ -84,6 +90,8 @@ internal sealed record ProtocolMap(
             smithmagicBatchRequest,
             smithmagicResult,
             smithmagicAux,
+            marketListingRequest,
+            marketListingCreated,
             diagnostics);
     }
 }
@@ -108,6 +116,18 @@ internal sealed record SmithmagicRequestObservation(ulong RuneUid, ulong Quantit
 internal sealed record SmithmagicBatchRequestObservation(ulong Quantity, ulong Sequence);
 internal sealed record SmithmagicStackObservation(ItemDetailObservation Stack);
 internal sealed record SmithmagicResultObservation(int ResultCode, ItemDetailObservation Item);
+
+internal sealed record MarketListingRequestObservation(
+    ulong ItemUid,
+    ulong Quantity,
+    ulong Price);
+
+internal sealed record MarketListingCreatedObservation(
+    ulong ServerListingId,
+    ulong ItemId,
+    ulong Quantity,
+    ulong Price,
+    IReadOnlyList<ItemStatObservation> Stats);
 
 internal sealed record RuneDrop(ulong RuneItemId, ulong Quantity);
 internal sealed record CrushLineObservation(
@@ -389,6 +409,62 @@ internal static class SemanticDecoders
 
     public static ItemDetailObservation? TryDecodeInventoryAdd(byte[] body)
         => TryDecodeItemDetail(body);
+
+    public static MarketListingRequestObservation? TryDecodeMarketListingRequest(byte[] body)
+    {
+        List<ProtoField>? fields = ProtoWire.ReadFields(body);
+        if (fields is null)
+            return null;
+
+        ulong quantity = fields.FirstOrDefault(f =>
+            f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+        ulong price = fields.FirstOrDefault(f =>
+            f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+        ulong itemUid = fields.FirstOrDefault(f =>
+            f.Number == 3 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        return itemUid > 0 && quantity > 0 && price > 0
+            ? new MarketListingRequestObservation(itemUid, quantity, price)
+            : null;
+    }
+
+    public static MarketListingCreatedObservation? TryDecodeMarketListingCreated(byte[] body)
+    {
+        List<ProtoField>? root = ProtoWire.ReadFields(body);
+        if (root is null)
+            return null;
+
+        ProtoField? listingField = root.FirstOrDefault(f =>
+            f.Number == 3 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is not null);
+
+        if (listingField?.Bytes is null)
+            return null;
+
+        List<ProtoField>? listing = ProtoWire.ReadFields(listingField.Bytes);
+        if (listing is null)
+            return null;
+
+        ulong serverListingId = listing.FirstOrDefault(f =>
+            f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+        ulong itemId = listing.FirstOrDefault(f =>
+            f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+        ulong quantity = listing.FirstOrDefault(f =>
+            f.Number == 3 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+        ulong price = root.FirstOrDefault(f =>
+            f.Number == 5 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        if (serverListingId == 0 || itemId == 0 || quantity == 0 || price == 0)
+            return null;
+
+        return new MarketListingCreatedObservation(
+            serverListingId,
+            itemId,
+            quantity,
+            price,
+            DecodeStats(listing, 5));
+    }
 
     public static SmithmagicRequestObservation? TryDecodeSmithmagicRequest(byte[] body)
     {
@@ -735,6 +811,25 @@ internal static class ConsoleRenderer
             $"[PURCHASE] ItemId={item.ItemId} UID={item.ItemUid} x{item.Quantity} " +
             $"price={request.Price:N0} K listing={request.ListingId}");
         Console.WriteLine($"  Stats : {FormatStats(item.Stats)}");
+        Console.WriteLine();
+    }
+
+    public static void WriteMarketListing(
+        MarketListingRequestObservation request,
+        MarketListingCreatedObservation created,
+        ItemDetailObservation? knownItem)
+    {
+        Console.WriteLine();
+        Console.WriteLine(
+            $"[LISTING] ItemId={created.ItemId} UID={request.ItemUid} x{request.Quantity} " +
+            $"price={request.Price:N0} K serverListing={created.ServerListingId}");
+
+        IReadOnlyList<ItemStatObservation> stats =
+            created.Stats.Count > 0
+                ? created.Stats
+                : knownItem?.Stats ?? Array.Empty<ItemStatObservation>();
+
+        Console.WriteLine($"  Stats : {FormatStats(stats)}");
         Console.WriteLine();
     }
 
