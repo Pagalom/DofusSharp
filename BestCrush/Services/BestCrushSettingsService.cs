@@ -111,6 +111,20 @@ public sealed class BestCrushSettingsService
             );
     }
 
+    // Nouveau nom fonctionnel du DevTool.
+    // On conserve la préférence historique afin de ne pas
+    // casser les réglages existants : "keep" est simplement
+    // l'inverse de l'ancien "remove screenshots".
+    public bool DevTool_KeepDebugArtifacts
+    {
+        get =>
+            !DevTool_RemoveScreenshotsByDefault;
+
+        set =>
+            DevTool_RemoveScreenshotsByDefault =
+                !value;
+    }
+
     public CrushYieldEstimationMode CrushYieldEstimationMode
     {
         get
