@@ -14,6 +14,7 @@ internal sealed class DofusCaptureProbe : IDisposable
     private readonly Dictionary<ulong, ItemDetailObservation> _itemDetails = new();
     private readonly Dictionary<ulong, long> _workshopQuantities = new();
     private readonly Dictionary<ulong, (MarketListingRequestObservation Request, MarketListingCreatedObservation Created)> _marketListings = new();
+    private readonly List<ItemDetailObservation> _craftIngredientSnapshots = new();
 
     private PurchaseRequestObservation? _pendingPurchaseRequest;
     private PurchaseOfferObservation? _pendingPurchaseOffer;
@@ -22,6 +23,8 @@ internal sealed class DofusCaptureProbe : IDisposable
     private SmithmagicRequestObservation? _activeBatchSmithmagicRequest;
     private MarketListingRequestObservation? _pendingMarketListing;
     private ulong? _pendingMarketWithdrawalUid;
+    private CraftRequestObservation? _activeCraftRequest;
+    private bool _collectCraftIngredients;
     private ulong? _lastWorkshopAddedUid;
     private ulong? _activeSmithmagicTargetUid;
 
@@ -129,6 +132,16 @@ internal sealed class DofusCaptureProbe : IDisposable
             if (item is not null)
             {
                 _itemDetails[item.ItemUid] = item;
+
+                if (_collectCraftIngredients)
+                {
+                    int existingIndex = _craftIngredientSnapshots.FindIndex(x => x.ItemUid == item.ItemUid);
+                    if (existingIndex >= 0)
+                        _craftIngredientSnapshots[existingIndex] = item;
+                    else
+                        _craftIngredientSnapshots.Add(item);
+                }
+
                 ConsoleRenderer.WriteItemDetail(item);
             }
             else
@@ -225,6 +238,25 @@ internal sealed class DofusCaptureProbe : IDisposable
             }
         }
 
+        if (_map.InventoryQuantity is not null &&
+            string.Equals(key, _map.InventoryQuantity, StringComparison.Ordinal))
+        {
+            InventoryQuantityObservation? quantity =
+                SemanticDecoders.TryDecodeInventoryQuantity(any.Body);
+
+            if (quantity is not null &&
+                _itemDetails.TryGetValue(quantity.ItemUid, out ItemDetailObservation? existingItem))
+            {
+                ItemDetailObservation updatedItem =
+                    existingItem with { Quantity = quantity.NewQuantity };
+
+                _itemDetails[quantity.ItemUid] = updatedItem;
+
+                if (_pendingPurchaseRequest is not null)
+                    _pendingPurchasedItem = updatedItem;
+            }
+        }
+
         if (_map.PurchaseReceipt is not null &&
             string.Equals(key, _map.PurchaseReceipt, StringComparison.Ordinal))
         {
@@ -247,6 +279,14 @@ internal sealed class DofusCaptureProbe : IDisposable
             }
         }
 
+        if (_map.CraftPrepare is not null &&
+            string.Equals(key, _map.CraftPrepare, StringComparison.Ordinal))
+        {
+            _craftIngredientSnapshots.Clear();
+            _collectCraftIngredients = true;
+            _activeCraftRequest = null;
+        }
+
         if (_map.SmithmagicRequest is not null &&
             string.Equals(key, _map.SmithmagicRequest, StringComparison.Ordinal))
         {
@@ -265,17 +305,30 @@ internal sealed class DofusCaptureProbe : IDisposable
 
             if (batch is not null)
             {
-                ulong runeUid = ResolveWorkshopRuneUid();
-                if (runeUid != 0)
+                if (_collectCraftIngredients && _craftIngredientSnapshots.Count > 0)
                 {
-                    _activeBatchSmithmagicRequest =
-                        new SmithmagicRequestObservation(runeUid, batch.Quantity);
-                    _pendingSmithmagicRequest = _activeBatchSmithmagicRequest;
-                }
+                    _activeCraftRequest = new CraftRequestObservation(
+                        batch.Quantity,
+                        batch.Sequence,
+                        _craftIngredientSnapshots.ToArray());
 
-                Console.WriteLine(
-                    $"[FM-BATCH] seq={batch.Sequence} x{batch.Quantity} " +
-                    $"runeUID={(runeUid == 0 ? "?" : runeUid.ToString())}");
+                    _collectCraftIngredients = false;
+                    ConsoleRenderer.WriteCraftRequest(_activeCraftRequest);
+                }
+                else
+                {
+                    ulong runeUid = ResolveWorkshopRuneUid();
+                    if (runeUid != 0)
+                    {
+                        _activeBatchSmithmagicRequest =
+                            new SmithmagicRequestObservation(runeUid, batch.Quantity);
+                        _pendingSmithmagicRequest = _activeBatchSmithmagicRequest;
+                    }
+
+                    Console.WriteLine(
+                        $"[FM-BATCH] seq={batch.Sequence} x{batch.Quantity} " +
+                        $"runeUID={(runeUid == 0 ? "?" : runeUid.ToString())}");
+                }
             }
         }
 
@@ -297,6 +350,13 @@ internal sealed class DofusCaptureProbe : IDisposable
             }
         }
 
+        if (_map.CraftInventoryChange is not null &&
+            string.Equals(key, _map.CraftInventoryChange, StringComparison.Ordinal) &&
+            _activeCraftRequest is not null)
+        {
+            ConsoleRenderer.WriteProtoDebug("CRAFT_INVENTORY_CHANGE", any.Body);
+        }
+
         if (_map.SmithmagicResult is not null &&
             string.Equals(key, _map.SmithmagicResult, StringComparison.Ordinal))
         {
@@ -305,32 +365,42 @@ internal sealed class DofusCaptureProbe : IDisposable
 
             if (result is not null)
             {
-                _itemDetails.TryGetValue(result.Item.ItemUid, out ItemDetailObservation? before);
-
-                SmithmagicRequestObservation? effectiveRequest =
-                    _pendingSmithmagicRequest ?? _activeBatchSmithmagicRequest;
-
-                ItemDetailObservation? rune = null;
-                if (effectiveRequest is not null)
-                    _itemDetails.TryGetValue(effectiveRequest.RuneUid, out rune);
-
-                ConsoleRenderer.WriteSmithmagic(
-                    effectiveRequest,
-                    rune,
-                    before,
-                    result);
-
-                _itemDetails[result.Item.ItemUid] = result.Item;
-                _activeSmithmagicTargetUid = result.Item.ItemUid;
-
-                if (_pendingSmithmagicRequest is not null &&
-                    !ReferenceEquals(_pendingSmithmagicRequest, _activeBatchSmithmagicRequest))
+                if (_activeCraftRequest is not null)
                 {
-                    _pendingSmithmagicRequest = null;
+                    ConsoleRenderer.WriteCraftResult(_activeCraftRequest, result);
+                    _itemDetails[result.Item.ItemUid] = result.Item;
+                    _activeCraftRequest = null;
+                    _craftIngredientSnapshots.Clear();
                 }
-                else if (_activeBatchSmithmagicRequest is null)
+                else
                 {
-                    _pendingSmithmagicRequest = null;
+                    _itemDetails.TryGetValue(result.Item.ItemUid, out ItemDetailObservation? before);
+
+                    SmithmagicRequestObservation? effectiveRequest =
+                        _pendingSmithmagicRequest ?? _activeBatchSmithmagicRequest;
+
+                    ItemDetailObservation? rune = null;
+                    if (effectiveRequest is not null)
+                        _itemDetails.TryGetValue(effectiveRequest.RuneUid, out rune);
+
+                    ConsoleRenderer.WriteSmithmagic(
+                        effectiveRequest,
+                        rune,
+                        before,
+                        result);
+
+                    _itemDetails[result.Item.ItemUid] = result.Item;
+                    _activeSmithmagicTargetUid = result.Item.ItemUid;
+
+                    if (_pendingSmithmagicRequest is not null &&
+                        !ReferenceEquals(_pendingSmithmagicRequest, _activeBatchSmithmagicRequest))
+                    {
+                        _pendingSmithmagicRequest = null;
+                    }
+                    else if (_activeBatchSmithmagicRequest is null)
+                    {
+                        _pendingSmithmagicRequest = null;
+                    }
                 }
             }
         }
