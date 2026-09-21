@@ -56,6 +56,7 @@ public sealed class ItemHistoryRow
     public required int Level { get; init; }
     public required EquipmentType Type { get; init; }
     public required ItemHistoryDataKind DataKind { get; init; }
+    public int? Quantity { get; init; }
     public required double Value { get; init; }
     public MarketPriceSource? MarketSource { get; init; }
     public CoefficientSource? CoefficientSource { get; init; }
@@ -526,6 +527,7 @@ public sealed class HistoryService(
                 Level = equipment.Level,
                 Type = equipment.Type,
                 DataKind = ItemHistoryDataKind.Price,
+                Quantity = observation.Quantity,
                 Value = (double)observation.Price,
                 MarketSource = observation.Source,
                 CoefficientSource = null,
@@ -558,6 +560,7 @@ public sealed class HistoryService(
                 Level = equipment.Level,
                 Type = equipment.Type,
                 DataKind = ItemHistoryDataKind.Coefficient,
+                Quantity = null,
                 Value = observation.CoefficientPercent,
                 MarketSource = null,
                 CoefficientSource = observation.Source,
