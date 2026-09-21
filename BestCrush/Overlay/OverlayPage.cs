@@ -154,8 +154,8 @@ public sealed class OverlayPage : ContentPage
         _details = new Label
         {
             Text =
-                "Clic molette sur un équipement en HDV ou sur un concassage " +
-                "pour sélectionner l'équipement à analyser.",
+                "Clic molette : dernier équipement lu sur le réseau. " +
+                "F8 : équipement sous l'infobulle.",
             TextColor = Colors.White,
             FontSize = 14,
             VerticalOptions = LayoutOptions.Start
@@ -1902,16 +1902,184 @@ public sealed class OverlayPage : ContentPage
         EquipmentProfitabilityResult? result =
             _currentProfitability;
 
-        EquipmentProfitabilityScenario? best =
-            _currentScenario;
-
-        if (result is null ||
-            best is null)
+        if (result is null)
         {
             return;
         }
 
+        EquipmentProfitabilityScenario? best =
+            _currentScenario;
+
         _hoverTooltipContent.Children.Clear();
+
+        if (best is null)
+        {
+            foreach (Rune rune in result.PotentialRunes)
+            {
+                Grid row =
+                    new()
+                    {
+                        ColumnDefinitions =
+                        {
+                            new ColumnDefinition(
+                                GridLength.Star
+                            ),
+                            new ColumnDefinition(
+                                GridLength.Auto
+                            )
+                        },
+
+                        ColumnSpacing = 10
+                    };
+
+                bool hasUnitValue =
+                    result.PotentialRuneUnitValues
+                        .TryGetValue(
+                            rune,
+                            out MarketValueResult unitValue
+                        );
+
+                HorizontalStackLayout left =
+                    new()
+                    {
+                        Spacing = 0
+                    };
+
+                Label runeNameLabel =
+                    new()
+                    {
+                        Text = rune.Name,
+                        FontSize = 12,
+                        TextColor =
+                            hasUnitValue
+                                ? (
+                                    unitValue.Freshness
+                                        is DataFreshness freshness
+                                            ? GetFreshnessColor(
+                                                freshness
+                                            )
+                                            : Colors.White
+                                )
+                                : Colors.Red
+                    };
+
+                Label unitPriceLabel =
+                    new()
+                    {
+                        Text =
+                            hasUnitValue
+                                ? $" ({unitValue.Value:N0} K/u)"
+                                : " (Prix manquant)",
+                        FontSize = 12,
+                        TextColor =
+                            hasUnitValue
+                                ? Colors.White
+                                : Colors.Red
+                    };
+
+                string runeName =
+                    rune.Name;
+
+                MakeCopyable(
+                    runeNameLabel,
+                    () => runeName
+                );
+
+                if (hasUnitValue)
+                {
+                    double unitPrice =
+                        unitValue.Value;
+
+                    MakeCopyable(
+                        unitPriceLabel,
+                        () =>
+                            FormatClipboardNumber(
+                                unitPrice
+                            )
+                    );
+                }
+
+                left.Children.Add(
+                    runeNameLabel
+                );
+
+                left.Children.Add(
+                    unitPriceLabel
+                );
+
+                Label right =
+                    new()
+                    {
+                        Text = "Coef. requis",
+                        TextColor = Colors.Gray,
+                        FontSize = 12,
+                        HorizontalTextAlignment =
+                            TextAlignment.End
+                    };
+
+                row.Add(
+                    left,
+                    0,
+                    0
+                );
+
+                row.Add(
+                    right,
+                    1,
+                    0
+                );
+
+                _hoverTooltipContent
+                    .Children
+                    .Add(row);
+            }
+
+            if (result.PotentialRunes.Count == 0)
+            {
+                _hoverTooltipContent.Children.Add(
+                    new Label
+                    {
+                        Text =
+                            "Aucune rune calculable pour cet équipement.",
+                        TextColor = Colors.Gray,
+                        FontSize = 12
+                    }
+                );
+            }
+
+            _hoverTooltipContent.Children.Add(
+                new BoxView
+                {
+                    HeightRequest = 1,
+                    BackgroundColor =
+                        Color.FromArgb("#555A60"),
+                    Margin =
+                        new Thickness(
+                            0,
+                            3
+                        )
+                }
+            );
+
+            _hoverTooltipContent.Children.Add(
+                new Label
+                {
+                    Text =
+                        result.Coefficient is null
+                            ? "TOTAL : coefficient requis"
+                            : "TOTAL : données insuffisantes",
+                    TextColor = Colors.Red,
+                    FontSize = 12,
+                    FontAttributes =
+                        FontAttributes.Bold
+                }
+            );
+
+            _hoverTooltip.IsVisible =
+                true;
+
+            return;
+        }
 
         HashSet<string> displayedRunes =
         new(
@@ -1999,7 +2167,7 @@ public sealed class OverlayPage : ContentPage
             else
             {
                 unitPriceText =
-                    " (À scanner)";
+                    " (Prix manquant)";
             }
 
             HorizontalStackLayout left =
@@ -2091,7 +2259,7 @@ public sealed class OverlayPage : ContentPage
             else
             {
                 right.Text =
-                    "À scanner";
+                    "Indisponible";
 
                 right.TextColor =
                     Colors.Red;
@@ -2171,7 +2339,7 @@ public sealed class OverlayPage : ContentPage
             Label missingLabel =
                 new()
                 {
-                    Text = " (À scanner)",
+                    Text = " (Prix manquant)",
                     TextColor = Colors.Red,
                     FontSize = 12
                 };
@@ -2195,7 +2363,7 @@ public sealed class OverlayPage : ContentPage
             Label right =
                 new()
                 {
-                    Text = "À scanner",
+                    Text = "Indisponible",
                     TextColor = Colors.Red,
                     FontSize = 12,
                     HorizontalTextAlignment =
@@ -2282,7 +2450,7 @@ public sealed class OverlayPage : ContentPage
         if (noFocus is null)
         {
             totalValue.Text =
-                "À scanner";
+                "Indisponible";
 
             totalValue.TextColor =
                 Colors.Red;
@@ -2514,7 +2682,7 @@ public sealed class OverlayPage : ContentPage
 
                     Text =
                         resource.Purchase is null
-                            ? "À scanner"
+                            ? "Indisponible"
                             : $"{resource.Purchase.TotalCost:N0} K"
                 };
 
@@ -2874,7 +3042,7 @@ public sealed class OverlayPage : ContentPage
             "Serveur non sélectionné";
 
         _details.Text =
-            "Les captures Clic molette sont désactivées tant qu'un serveur " +
+            "Les captures F8 sont désactivées tant qu'un serveur " +
             "n'a pas été sélectionné dans BestCrush.";
 
         _footer.Text =
@@ -2918,7 +3086,7 @@ public sealed class OverlayPage : ContentPage
         DofusWindowInfo window)
     {
         _readStatus.Text =
-            $"Clic molette — capture de Dofus ({window.Width}×{window.Height})...";
+            $"F8 — capture de Dofus ({window.Width}×{window.Height})...";
 
         _readStatus.TextColor =
             Colors.LightBlue;
@@ -2947,7 +3115,7 @@ public sealed class OverlayPage : ContentPage
     public void ShowPanelNotDetected()
     {
         _readStatus.Text =
-            "Clic molette — aucun panneau reconnu";
+            "F8 — aucune infobulle reconnue";
 
         _readStatus.TextColor =
             Colors.Orange;
