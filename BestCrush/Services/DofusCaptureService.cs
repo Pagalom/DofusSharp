@@ -128,7 +128,7 @@ public sealed class DofusCaptureService(
                 );
 
                 string captureId =
-                    $"middle-click-{DateTime.Now:yyyyMMdd-HHmmss-fff}-" +
+                    $"f8-tooltip-{DateTime.Now:yyyyMMdd-HHmmss-fff}-" +
                     $"{Guid.NewGuid():N}";
 
                 string directory =
