@@ -10,6 +10,7 @@ internal sealed record ProtocolMap(
     string? WorkshopSlotPut,
     string? PurchaseRequest,
     string? PurchaseOffer,
+    string? PurchaseReceipt,
     string? InventoryAdd,
     string? SmithmagicRequest,
     string? SmithmagicBatchRequest,
@@ -30,6 +31,7 @@ internal sealed record ProtocolMap(
                 "kec",
                 "kei",
                 "kef",
+                "kbd",
                 "isa",
                 "jze",
                 "kcs",
@@ -57,6 +59,7 @@ internal sealed record ProtocolMap(
             : root.TryGetProperty("crush_slot_put", out JsonElement legacy) ? legacy.GetString() : null;
         string? purchaseRequest = root.TryGetProperty("purchase_request", out JsonElement pr) ? pr.GetString() : null;
         string? purchaseOffer = root.TryGetProperty("purchase_offer", out JsonElement po) ? po.GetString() : null;
+        string? purchaseReceipt = root.TryGetProperty("purchase_receipt", out JsonElement rc) ? rc.GetString() : null;
         string? inventoryAdd = root.TryGetProperty("inventory_add", out JsonElement ia) ? ia.GetString() : null;
         string? smithmagicRequest = root.TryGetProperty("smithmagic_request", out JsonElement sr) ? sr.GetString() : null;
         string? smithmagicBatchRequest = root.TryGetProperty("smithmagic_batch_request", out JsonElement sbr) ? sbr.GetString() : null;
@@ -85,6 +88,7 @@ internal sealed record ProtocolMap(
             workshopSlotPut,
             purchaseRequest,
             purchaseOffer,
+            purchaseReceipt,
             inventoryAdd,
             smithmagicRequest,
             smithmagicBatchRequest,
@@ -96,7 +100,7 @@ internal sealed record ProtocolMap(
     }
 }
 
-internal sealed record MarketOffer(ulong ListingId, ulong ItemId, IReadOnlyList<ulong> Ladder);
+internal sealed record MarketOffer(ulong OfferId, ulong ItemId, IReadOnlyList<ulong> Ladder);
 internal sealed record MarketObservation(ulong ItemId, IReadOnlyList<MarketOffer> Offers);
 
 internal sealed record ItemStatObservation(ulong EffectId, long Value);
@@ -107,11 +111,14 @@ internal sealed record ItemDetailObservation(
     IReadOnlyList<ItemStatObservation> Stats);
 internal sealed record WorkshopSlotObservation(long Delta, ulong ItemUid);
 
-internal sealed record PurchaseRequestObservation(ulong Price, ulong Quantity, ulong ListingId);
+internal sealed record PurchaseRequestObservation(ulong Price, ulong Quantity, ulong OfferId);
 internal sealed record PurchaseOfferObservation(
     ulong ItemId,
-    ulong ListingId,
+    ulong OfferId,
     IReadOnlyList<ItemStatObservation> Stats);
+internal sealed record PurchaseReceiptObservation(
+    ulong Quantity,
+    ulong OfferId);
 internal sealed record SmithmagicRequestObservation(ulong RuneUid, ulong Quantity);
 internal sealed record SmithmagicBatchRequestObservation(ulong Quantity, ulong Sequence);
 internal sealed record SmithmagicStackObservation(ItemDetailObservation Stack);
@@ -123,7 +130,7 @@ internal sealed record MarketListingRequestObservation(
     ulong Price);
 
 internal sealed record MarketListingCreatedObservation(
-    ulong ServerListingId,
+    ulong ServerOfferId,
     ulong ItemId,
     ulong Quantity,
     ulong Price,
@@ -187,7 +194,7 @@ internal static class SemanticDecoders
                 f.Number == 2 &&
                 f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
 
-            ulong listingId = offer.FirstOrDefault(f =>
+            ulong offerId = offer.FirstOrDefault(f =>
                 f.Number == 5 &&
                 f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
 
@@ -206,7 +213,7 @@ internal static class SemanticDecoders
             List<ulong> ladder = CleanLadder(rawLadder);
             ulong resolvedItemId = inlineItemId != 0 ? inlineItemId : itemId;
 
-            offers.Add(new MarketOffer(listingId, resolvedItemId, ladder));
+            offers.Add(new MarketOffer(offerId, resolvedItemId, ladder));
         }
 
         // A jzn carrying only f1/f3 means the item is known but currently has
@@ -229,7 +236,7 @@ internal static class SemanticDecoders
             if (offer is null)
                 continue;
 
-            ulong listingId = offer.FirstOrDefault(f => f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+            ulong offerId = offer.FirstOrDefault(f => f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
             ulong inlineItemId = offer.FirstOrDefault(f => f.Number == 5 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
 
             ProtoField? ladderField = offer.FirstOrDefault(f =>
@@ -243,7 +250,7 @@ internal static class SemanticDecoders
 
             ulong resolvedItemId = inlineItemId != 0 ? inlineItemId : itemId;
             if (resolvedItemId != 0 && ladder.Count > 0)
-                offers.Add(new MarketOffer(listingId, resolvedItemId, ladder));
+                offers.Add(new MarketOffer(offerId, resolvedItemId, ladder));
         }
 
         if (itemId == 0 && offers.Count > 0)
@@ -379,11 +386,11 @@ internal static class SemanticDecoders
             f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
         ulong quantity = fields.FirstOrDefault(f =>
             f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
-        ulong listingId = fields.FirstOrDefault(f =>
+        ulong offerId = fields.FirstOrDefault(f =>
             f.Number == 5 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
 
-        return price > 0 && quantity > 0 && listingId > 0
-            ? new PurchaseRequestObservation(price, quantity, listingId)
+        return price > 0 && quantity > 0 && offerId > 0
+            ? new PurchaseRequestObservation(price, quantity, offerId)
             : null;
     }
 
@@ -395,16 +402,32 @@ internal static class SemanticDecoders
 
         ulong itemId = fields.FirstOrDefault(f =>
             f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
-        ulong listingId = fields.FirstOrDefault(f =>
+        ulong offerId = fields.FirstOrDefault(f =>
             f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
 
-        if (itemId == 0 || listingId == 0)
+        if (itemId == 0 || offerId == 0)
             return null;
 
         return new PurchaseOfferObservation(
             itemId,
-            listingId,
+            offerId,
             DecodeStats(fields, 5));
+    }
+
+    public static PurchaseReceiptObservation? TryDecodePurchaseReceipt(byte[] body)
+    {
+        List<ProtoField>? fields = ProtoWire.ReadFields(body);
+        if (fields is null)
+            return null;
+
+        ulong quantity = fields.FirstOrDefault(f =>
+            f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+        ulong offerId = fields.FirstOrDefault(f =>
+            f.Number == 3 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        return quantity > 0 && offerId > 0
+            ? new PurchaseReceiptObservation(quantity, offerId)
+            : null;
     }
 
     public static ItemDetailObservation? TryDecodeInventoryAdd(byte[] body)
@@ -446,7 +469,7 @@ internal static class SemanticDecoders
         if (listing is null)
             return null;
 
-        ulong serverListingId = listing.FirstOrDefault(f =>
+        ulong serverOfferId = listing.FirstOrDefault(f =>
             f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
         ulong itemId = listing.FirstOrDefault(f =>
             f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
@@ -455,11 +478,11 @@ internal static class SemanticDecoders
         ulong price = root.FirstOrDefault(f =>
             f.Number == 5 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
 
-        if (serverListingId == 0 || itemId == 0 || quantity == 0 || price == 0)
+        if (serverOfferId == 0 || itemId == 0 || quantity == 0 || price == 0)
             return null;
 
         return new MarketListingCreatedObservation(
-            serverListingId,
+            serverOfferId,
             itemId,
             quantity,
             price,
@@ -803,16 +826,20 @@ internal static class ConsoleRenderer
 
     public static void WritePurchase(
         PurchaseRequestObservation request,
-        PurchaseOfferObservation offer,
-        ItemDetailObservation item)
+        ItemDetailObservation item,
+        PurchaseReceiptObservation? receipt = null)
     {
+        ulong offerId = receipt?.OfferId ?? request.OfferId;
+        ulong quantity = receipt?.Quantity ?? item.Quantity;
+
         Console.WriteLine();
         Console.WriteLine(
-            $"[PURCHASE] ItemId={item.ItemId} UID={item.ItemUid} x{item.Quantity} " +
-            $"price={request.Price:N0} K listing={request.ListingId}");
+            $"[PURCHASE] ItemId={item.ItemId} UID={item.ItemUid} x{quantity} " +
+            $"price={request.Price:N0} K offer={offerId}");
         Console.WriteLine($"  Stats : {FormatStats(item.Stats)}");
         Console.WriteLine();
     }
+
 
     public static void WriteMarketListing(
         MarketListingRequestObservation request,
@@ -822,7 +849,7 @@ internal static class ConsoleRenderer
         Console.WriteLine();
         Console.WriteLine(
             $"[LISTING] ItemId={created.ItemId} UID={request.ItemUid} x{request.Quantity} " +
-            $"price={request.Price:N0} K serverListing={created.ServerListingId}");
+            $"price={request.Price:N0} K serverListing={created.ServerOfferId}");
 
         IReadOnlyList<ItemStatObservation> stats =
             created.Stats.Count > 0
