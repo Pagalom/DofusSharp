@@ -121,14 +121,14 @@ public sealed class DofusCaptureService(
                 );
 
                 string capturesDirectory =
-                    GetCapturesDirectory();
+                    GetTooltipCapturesDirectory();
 
                 Directory.CreateDirectory(
                     capturesDirectory
                 );
 
                 string captureId =
-                    $"{DateTime.Now:yyyyMMdd-HHmmss-fff}-" +
+                    $"middle-click-{DateTime.Now:yyyyMMdd-HHmmss-fff}-" +
                     $"{Guid.NewGuid():N}";
 
                 string directory =
@@ -221,7 +221,7 @@ public sealed class DofusCaptureService(
     }
 
     private static string
-        GetCapturesDirectory()
+        GetTooltipCapturesDirectory()
     {
         return Path.Combine(
             Environment.GetFolderPath(
@@ -230,7 +230,8 @@ public sealed class DofusCaptureService(
                     .LocalApplicationData
             ),
             "BestCrush",
-            "DebugCaptures"
+            "DebugCaptures",
+            "Tooltip"
         );
     }
 
@@ -259,7 +260,7 @@ public sealed class DofusCaptureService(
 
             string fullCapturesDirectory =
                 Path.GetFullPath(
-                    GetCapturesDirectory()
+                    GetTooltipCapturesDirectory()
                 );
 
             DirectoryInfo? parentDirectory =
