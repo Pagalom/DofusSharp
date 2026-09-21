@@ -257,24 +257,26 @@
                         <h6 class="mb-3">Développement</h6>
 
                         <div class="text-muted small mb-3">
-                            Permet de conserver temporairement les captures
-                            et les crops OCR pour analyser les détections.
+                            Conserve les artefacts nécessaires pour diagnostiquer
+                            la capture passive et le clic molette.
                         </div>
 
                         <div class="form-check form-switch">
                             <input class="form-check-input"
                                    type="checkbox"
-                                   id="devtool-remove-screenshots"
-                                   @bind="BestCrushSettings.DevTool_RemoveScreenshotsByDefault" />
+                                   id="devtool-keep-debug-artifacts"
+                                   @bind="BestCrushSettings.DevTool_KeepDebugArtifacts" />
                             <label class="form-check-label"
-                                   for="devtool-remove-screenshots">
-                                DevTool_RemoveScreenshotsByDefault
+                                   for="devtool-keep-debug-artifacts">
+                                Conserver les artefacts de debug
                             </label>
                         </div>
 
                         <div class="text-muted small mt-2">
-                            Activé : les captures sont supprimées après traitement.
-                            Désactivé : les captures et crops de debug sont conservés.
+                            Désactivé : les captures temporaires du clic molette
+                            sont supprimées et aucune trace réseau détaillée n'est écrite.
+                            Activé : les fichiers sont conservés dans
+                            %LOCALAPPDATA%\BestCrush\DebugCaptures.
                         </div>
                     </div>
                 </div>
