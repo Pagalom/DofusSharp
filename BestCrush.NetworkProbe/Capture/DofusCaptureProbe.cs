@@ -18,6 +18,7 @@ internal sealed class DofusCaptureProbe : IDisposable
     private PurchaseOfferObservation? _pendingPurchaseOffer;
     private SmithmagicRequestObservation? _pendingSmithmagicRequest;
     private SmithmagicRequestObservation? _activeBatchSmithmagicRequest;
+    private MarketListingRequestObservation? _pendingMarketListing;
     private ulong? _lastWorkshopAddedUid;
     private ulong? _activeSmithmagicTargetUid;
 
@@ -288,6 +289,37 @@ internal sealed class DofusCaptureProbe : IDisposable
                 {
                     _pendingSmithmagicRequest = null;
                 }
+            }
+        }
+
+        if (_map.MarketListingRequest is not null &&
+            string.Equals(key, _map.MarketListingRequest, StringComparison.Ordinal))
+        {
+            MarketListingRequestObservation? listing =
+                SemanticDecoders.TryDecodeMarketListingRequest(any.Body);
+
+            if (listing is not null)
+                _pendingMarketListing = listing;
+        }
+
+        if (_map.MarketListingCreated is not null &&
+            string.Equals(key, _map.MarketListingCreated, StringComparison.Ordinal))
+        {
+            MarketListingCreatedObservation? created =
+                SemanticDecoders.TryDecodeMarketListingCreated(any.Body);
+
+            if (created is not null && _pendingMarketListing is not null)
+            {
+                _itemDetails.TryGetValue(
+                    _pendingMarketListing.ItemUid,
+                    out ItemDetailObservation? knownItem);
+
+                ConsoleRenderer.WriteMarketListing(
+                    _pendingMarketListing,
+                    created,
+                    knownItem);
+
+                _pendingMarketListing = null;
             }
         }
 
