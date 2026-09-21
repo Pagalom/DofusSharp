@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Threading.Channels;
 using BestCrush.Domain;
 using BestCrush.Domain.Models;
@@ -55,6 +56,10 @@ public sealed class DofusNetworkCaptureService(
     private ProtocolMap? _map;
     private Task? _worker;
     private bool _started;
+
+    private string? _debugSessionDirectory;
+    private string? _wireDebugPath;
+    private string? _eventsDebugPath;
 #endif
 
     public void Start()
@@ -262,8 +267,14 @@ public sealed class DofusNetworkCaptureService(
                         if (any is null)
                             continue;
 
+                        string direction =
+                            tcp.SourcePort == DofusPort
+                                ? "S→C"
+                                : "C→S";
+
                         _messages.Writer.TryWrite(
                             new DofusWireMessage(
+                                direction,
                                 any.Key,
                                 any.Body,
                                 DateTime.UtcNow));
@@ -319,6 +330,10 @@ public sealed class DofusNetworkCaptureService(
         DofusWireMessage message,
         CancellationToken cancellationToken)
     {
+        await WriteWireDebugAsync(
+            message,
+            cancellationToken);
+
         ProtocolMap? map = _map;
         if (map is null)
             return;
@@ -334,7 +349,14 @@ public sealed class DofusNetworkCaptureService(
                     message.Body);
 
             if (item is not null)
+            {
                 _itemDetails[item.ItemUid] = item;
+
+                await WriteEventDebugAsync(
+                    message.ObservedAtUtc,
+                    $"[ITEM] UID={item.ItemUid} ItemId={item.ItemId} x{item.Quantity} | {FormatStats(item.Stats)}",
+                    cancellationToken);
+            }
 
             return;
         }
@@ -350,7 +372,14 @@ public sealed class DofusNetworkCaptureService(
                     message.Body);
 
             if (item is not null)
+            {
                 _itemDetails[item.ItemUid] = item;
+
+                await WriteEventDebugAsync(
+                    message.ObservedAtUtc,
+                    $"[INVENTORY-ADD] UID={item.ItemUid} ItemId={item.ItemId} x{item.Quantity} | {FormatStats(item.Stats)}",
+                    cancellationToken);
+            }
 
             return;
         }
@@ -366,7 +395,14 @@ public sealed class DofusNetworkCaptureService(
                     message.Body);
 
             if (item is not null)
+            {
                 _itemDetails[item.ItemUid] = item;
+
+                await WriteEventDebugAsync(
+                    message.ObservedAtUtc,
+                    $"[CRAFT-OUTPUT] UID={item.ItemUid} ItemId={item.ItemId} x{item.Quantity} | {FormatStats(item.Stats)}",
+                    cancellationToken);
+            }
 
             return;
         }
@@ -382,8 +418,15 @@ public sealed class DofusNetworkCaptureService(
                     message.Body);
 
             if (result is not null)
+            {
                 _itemDetails[result.Item.ItemUid] =
                     result.Item;
+
+                await WriteEventDebugAsync(
+                    message.ObservedAtUtc,
+                    $"[WORKSHOP-RESULT] code={result.ResultCode} UID={result.Item.ItemUid} ItemId={result.Item.ItemId} | {FormatStats(result.Item.Stats)}",
+                    cancellationToken);
+            }
 
             return;
         }
@@ -400,6 +443,11 @@ public sealed class DofusNetworkCaptureService(
 
             if (market is not null)
             {
+                await WriteEventDebugAsync(
+                    message.ObservedAtUtc,
+                    FormatMarketDebug(market),
+                    cancellationToken);
+
                 await PersistMarketAsync(
                     market,
                     cancellationToken);
@@ -420,6 +468,20 @@ public sealed class DofusNetworkCaptureService(
 
             if (crush is not null)
             {
+                foreach (CrushLineObservation line in crush.Lines)
+                {
+                    _itemDetails.TryGetValue(
+                        line.ItemUid,
+                        out ItemDetailObservation? knownItem);
+
+                    await WriteEventDebugAsync(
+                        message.ObservedAtUtc,
+                        FormatCrushDebug(
+                            line,
+                            knownItem),
+                        cancellationToken);
+                }
+
                 await PersistCrushAsync(
                     crush,
                     cancellationToken);
@@ -567,6 +629,210 @@ public sealed class DofusNetworkCaptureService(
         }
     }
 
+    private async Task WriteWireDebugAsync(
+        DofusWireMessage message,
+        CancellationToken cancellationToken)
+    {
+        if (!settings.DevTool_KeepDebugArtifacts)
+        {
+            return;
+        }
+
+        EnsureDebugSessionDirectory();
+
+        if (_wireDebugPath is null)
+        {
+            return;
+        }
+
+        string json =
+            JsonSerializer.Serialize(
+                new
+                {
+                    utc =
+                        message.ObservedAtUtc,
+                    direction =
+                        message.Direction,
+                    key =
+                        message.Key,
+                    bodyLength =
+                        message.Body.Length,
+                    bodyBase64 =
+                        Convert.ToBase64String(
+                            message.Body)
+                }
+            );
+
+        await File.AppendAllTextAsync(
+            _wireDebugPath,
+            json + Environment.NewLine,
+            cancellationToken);
+    }
+
+    private async Task WriteEventDebugAsync(
+        DateTime observedAtUtc,
+        string text,
+        CancellationToken cancellationToken)
+    {
+        if (!settings.DevTool_KeepDebugArtifacts)
+        {
+            return;
+        }
+
+        EnsureDebugSessionDirectory();
+
+        if (_eventsDebugPath is null)
+        {
+            return;
+        }
+
+        await File.AppendAllTextAsync(
+            _eventsDebugPath,
+            $"[{observedAtUtc:O}] {text}" +
+            Environment.NewLine,
+            cancellationToken);
+    }
+
+    private void EnsureDebugSessionDirectory()
+    {
+        if (_debugSessionDirectory is not null)
+        {
+            return;
+        }
+
+        string root =
+            Path.Combine(
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData),
+                "BestCrush",
+                "DebugCaptures",
+                "Network");
+
+        Directory.CreateDirectory(root);
+
+        string sessionName =
+            $"session-{DateTime.Now:yyyyMMdd-HHmmss}-" +
+            $"{Guid.NewGuid():N}";
+
+        _debugSessionDirectory =
+            Path.Combine(
+                root,
+                sessionName);
+
+        Directory.CreateDirectory(
+            _debugSessionDirectory);
+
+        _wireDebugPath =
+            Path.Combine(
+                _debugSessionDirectory,
+                "wire.jsonl");
+
+        _eventsDebugPath =
+            Path.Combine(
+                _debugSessionDirectory,
+                "events.log");
+
+        string metadataPath =
+            Path.Combine(
+                _debugSessionDirectory,
+                "session.txt");
+
+        File.WriteAllText(
+            metadataPath,
+            string.Join(
+                Environment.NewLine,
+                [
+                    "BESTCRUSH NETWORK DEBUG",
+                    $"CreatedLocal: {DateTime.Now:O}",
+                    $"ClientBuild: {_map?.ClientBuild ?? "unknown"}",
+                    $"TCP port: {DofusPort}",
+                    $"Server: {currentServerState.ServerName ?? "(not selected)"}",
+                    "",
+                    "wire.jsonl = exact decoded Ankama Any bodies (Base64), one message per line.",
+                    "events.log = human-readable semantic events decoded by BestCrush."
+                ]
+            )
+        );
+    }
+
+    private static string FormatStats(
+        IReadOnlyList<ItemStatObservation> stats)
+    {
+        return stats.Count == 0
+            ? "stats=(none)"
+            : "stats=" +
+              string.Join(
+                  ", ",
+                  stats.Select(
+                      stat =>
+                          $"{stat.EffectId}={stat.Value}"));
+    }
+
+    private static string FormatMarketDebug(
+        MarketObservation market)
+    {
+        int[] quantities =
+            [1, 10, 100, 1000];
+
+        List<string> prices = [];
+
+        for (
+            int index = 0;
+            index < quantities.Length;
+            index++)
+        {
+            ulong[] candidates =
+                market.Offers
+                    .Where(
+                        offer =>
+                            offer.Ladder.Count > index &&
+                            offer.Ladder[index] > 0)
+                    .Select(
+                        offer =>
+                            offer.Ladder[index])
+                    .ToArray();
+
+            if (candidates.Length == 0)
+            {
+                continue;
+            }
+
+            prices.Add(
+                $"x{quantities[index]}={candidates.Min()} K");
+        }
+
+        return
+            $"[MARKET] ItemId={market.ItemId} offers={market.Offers.Count}" +
+            (
+                prices.Count == 0
+                    ? " | no-price"
+                    : " | " +
+                      string.Join(
+                          " | ",
+                          prices)
+            );
+    }
+
+    private static string FormatCrushDebug(
+        CrushLineObservation line,
+        ItemDetailObservation? item)
+    {
+        string runes =
+            line.Runes.Count == 0
+                ? "(none)"
+                : string.Join(
+                    ", ",
+                    line.Runes.Select(
+                        rune =>
+                            $"{rune.RuneItemId}x{rune.Quantity}"));
+
+        return
+            $"[CRUSH] UID={line.ItemUid} " +
+            $"ItemId={(item?.ItemId.ToString() ?? "?")} " +
+            $"coefficient={line.CoefficientPercent:0.#####}% " +
+            $"runes={runes}";
+    }
+
     private bool IsMarketCaptureEnabled(
         MarketObjectType objectType)
     {
@@ -652,6 +918,7 @@ public sealed class DofusNetworkCaptureService(
         int DestinationPort);
 
     private sealed record DofusWireMessage(
+        string Direction,
         string Key,
         byte[] Body,
         DateTime ObservedAtUtc);
