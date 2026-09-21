@@ -7,7 +7,6 @@
   "diagnostic_messages": [
     "itt",
     "log",
-    "kbd",
     "iut",
     "irl",
     "isf",
@@ -25,5 +24,6 @@
   "smithmagic_batch_request": "kcs",
   "smithmagic_aux": "kar",
   "market_listing_request": "kcr",
-  "market_listing_created": "kda"
+  "market_listing_created": "kda",
+  "purchase_receipt": "kbd"
 }
