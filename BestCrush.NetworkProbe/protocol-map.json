@@ -8,7 +8,6 @@
     "itt",
     "log",
     "kbd",
-    "kcs",
     "iut",
     "irl",
     "isf",
@@ -19,5 +18,7 @@
   "purchase_offer": "kef",
   "inventory_add": "isa",
   "smithmagic_request": "jze",
-  "smithmagic_result": "kbu"
+  "smithmagic_result": "kbu",
+  "smithmagic_batch_request": "kcs",
+  "smithmagic_aux": "kar"
 }
