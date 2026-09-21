@@ -17,6 +17,7 @@ internal sealed class DofusCaptureProbe : IDisposable
     private PurchaseRequestObservation? _pendingPurchaseRequest;
     private PurchaseOfferObservation? _pendingPurchaseOffer;
     private SmithmagicRequestObservation? _pendingSmithmagicRequest;
+    private SmithmagicRequestObservation? _activeBatchSmithmagicRequest;
     private ulong? _lastWorkshopAddedUid;
     private ulong? _activeSmithmagicTargetUid;
 
@@ -222,7 +223,11 @@ internal sealed class DofusCaptureProbe : IDisposable
             {
                 ulong runeUid = ResolveWorkshopRuneUid();
                 if (runeUid != 0)
-                    _pendingSmithmagicRequest = new SmithmagicRequestObservation(runeUid, batch.Quantity);
+                {
+                    _activeBatchSmithmagicRequest =
+                        new SmithmagicRequestObservation(runeUid, batch.Quantity);
+                    _pendingSmithmagicRequest = _activeBatchSmithmagicRequest;
+                }
 
                 Console.WriteLine(
                     $"[FM-BATCH] seq={batch.Sequence} x{batch.Quantity} " +
@@ -233,7 +238,19 @@ internal sealed class DofusCaptureProbe : IDisposable
         if (_map.SmithmagicAux is not null &&
             string.Equals(key, _map.SmithmagicAux, StringComparison.Ordinal))
         {
-            ConsoleRenderer.WriteProtoDebug($"FM_AUX {key}", any.Body);
+            SmithmagicStackObservation? stack =
+                SemanticDecoders.TryDecodeSmithmagicStack(any.Body);
+
+            if (stack is not null)
+            {
+                _itemDetails[stack.Stack.ItemUid] = stack.Stack;
+                _workshopQuantities[stack.Stack.ItemUid] = checked((long)stack.Stack.Quantity);
+                ConsoleRenderer.WriteSmithmagicStack(stack);
+            }
+            else
+            {
+                ConsoleRenderer.WriteProtoDebug($"FM_AUX {key}", any.Body);
+            }
         }
 
         if (_map.SmithmagicResult is not null &&
@@ -246,19 +263,31 @@ internal sealed class DofusCaptureProbe : IDisposable
             {
                 _itemDetails.TryGetValue(result.Item.ItemUid, out ItemDetailObservation? before);
 
+                SmithmagicRequestObservation? effectiveRequest =
+                    _pendingSmithmagicRequest ?? _activeBatchSmithmagicRequest;
+
                 ItemDetailObservation? rune = null;
-                if (_pendingSmithmagicRequest is not null)
-                    _itemDetails.TryGetValue(_pendingSmithmagicRequest.RuneUid, out rune);
+                if (effectiveRequest is not null)
+                    _itemDetails.TryGetValue(effectiveRequest.RuneUid, out rune);
 
                 ConsoleRenderer.WriteSmithmagic(
-                    _pendingSmithmagicRequest,
+                    effectiveRequest,
                     rune,
                     before,
                     result);
 
                 _itemDetails[result.Item.ItemUid] = result.Item;
                 _activeSmithmagicTargetUid = result.Item.ItemUid;
-                _pendingSmithmagicRequest = null;
+
+                if (_pendingSmithmagicRequest is not null &&
+                    !ReferenceEquals(_pendingSmithmagicRequest, _activeBatchSmithmagicRequest))
+                {
+                    _pendingSmithmagicRequest = null;
+                }
+                else if (_activeBatchSmithmagicRequest is null)
+                {
+                    _pendingSmithmagicRequest = null;
+                }
             }
         }
 
