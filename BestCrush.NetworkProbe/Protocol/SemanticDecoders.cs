@@ -27,11 +27,12 @@ internal sealed record MarketOffer(ulong ListingId, ulong ItemId, IReadOnlyList<
 internal sealed record MarketObservation(ulong ItemId, IReadOnlyList<MarketOffer> Offers);
 
 internal sealed record RuneDrop(ulong RuneItemId, ulong Quantity);
-internal sealed record CrushObservation(
+internal sealed record CrushLineObservation(
     ulong ItemUid,
     float CoefficientPercent,
     float? SecondaryPercent,
     IReadOnlyList<RuneDrop> Runes);
+internal sealed record CrushObservation(IReadOnlyList<CrushLineObservation> Lines);
 
 internal static class SemanticDecoders
 {
@@ -246,52 +247,85 @@ internal static class SemanticDecoders
     public static CrushObservation? TryDecodeCrush(byte[] body)
     {
         List<ProtoField>? outer = ProtoWire.ReadFields(body);
-        ProtoField? bodyField = outer?.FirstOrDefault(f =>
-            f.Number == 1 &&
-            f.WireType == ProtoWireType.LengthDelimited &&
-            f.Bytes is not null);
-
-        if (bodyField?.Bytes is null)
+        if (outer is null)
             return null;
 
-        List<ProtoField>? inner = ProtoWire.ReadFields(bodyField.Bytes);
-        if (inner is null)
-            return null;
+        List<CrushLineObservation> lines = new();
 
-        ulong uid = inner.FirstOrDefault(f => f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
-
-        List<RuneDrop> runes = new();
-        foreach (ProtoField runeField in inner.Where(f =>
-                     f.Number == 3 &&
+        // Dofus 3.6.11.15 / kci observed on wire:
+        // root f1 = repeated result row, one per destroyed item instance
+        // row f1 = repeated rune result
+        //   rune f1 = rune item id
+        //   rune f3 = quantity obtained
+        // row f2 = coefficient/yield as float32 fraction
+        // row f3 = destroyed item instance UID
+        // row f4 = second float32, extremely close to f2; purpose unknown
+        foreach (ProtoField rowField in outer.Where(f =>
+                     f.Number == 1 &&
                      f.WireType == ProtoWireType.LengthDelimited &&
                      f.Bytes is not null))
         {
-            List<ProtoField>? rune = ProtoWire.ReadFields(runeField.Bytes!);
-            if (rune is null)
+            List<ProtoField>? row = ProtoWire.ReadFields(rowField.Bytes!);
+            if (row is null)
                 continue;
 
-            ulong runeId = rune.FirstOrDefault(f => f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
-            ulong count = rune.FirstOrDefault(f => f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+            ulong uid = row.FirstOrDefault(f =>
+                f.Number == 3 &&
+                f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
 
-            if (runeId != 0)
-                runes.Add(new RuneDrop(runeId, count));
+            ProtoField? yieldField = row.FirstOrDefault(f =>
+                f.Number == 2 &&
+                f.WireType == ProtoWireType.Fixed32);
+
+            if (uid == 0 || yieldField is null)
+                continue;
+
+            float yieldFraction = ProtoWire.ToFloat(yieldField.Fixed32);
+            if (!float.IsFinite(yieldFraction) || yieldFraction < 0 || yieldFraction > 10)
+                continue;
+
+            ProtoField? secondaryField = row.FirstOrDefault(f =>
+                f.Number == 4 &&
+                f.WireType == ProtoWireType.Fixed32);
+
+            float? secondary = secondaryField is null
+                ? null
+                : ProtoWire.ToFloat(secondaryField.Fixed32) * 100f;
+
+            List<RuneDrop> runes = new();
+            foreach (ProtoField runeField in row.Where(f =>
+                         f.Number == 1 &&
+                         f.WireType == ProtoWireType.LengthDelimited &&
+                         f.Bytes is not null))
+            {
+                List<ProtoField>? rune = ProtoWire.ReadFields(runeField.Bytes!);
+                if (rune is null)
+                    continue;
+
+                ulong runeId = rune.FirstOrDefault(f =>
+                    f.Number == 1 &&
+                    f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+                ulong count = rune.FirstOrDefault(f =>
+                    f.Number == 3 &&
+                    f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+                if (runeId != 0)
+                    runes.Add(new RuneDrop(runeId, count));
+            }
+
+            lines.Add(new CrushLineObservation(
+                uid,
+                yieldFraction * 100f,
+                secondary,
+                runes));
         }
 
-        ProtoField? yieldField = inner.FirstOrDefault(f => f.Number == 4 && f.WireType == ProtoWireType.Fixed32);
-        if (yieldField is null)
-            return null;
-
-        float yieldFraction = ProtoWire.ToFloat(yieldField.Fixed32);
-        if (!float.IsFinite(yieldFraction) || yieldFraction < 0 || yieldFraction > 10)
-            return null;
-
-        ProtoField? secondaryField = inner.FirstOrDefault(f => f.Number == 5 && f.WireType == ProtoWireType.Fixed32);
-        float? secondary = secondaryField is null ? null : ProtoWire.ToFloat(secondaryField.Fixed32) * 100f;
-
-        return uid != 0
-            ? new CrushObservation(uid, yieldFraction * 100f, secondary, runes)
+        return lines.Count > 0
+            ? new CrushObservation(lines)
             : null;
     }
+
 }
 
 internal static class ConsoleRenderer
@@ -358,21 +392,49 @@ internal static class ConsoleRenderer
     public static void WriteCrush(CrushObservation crush)
     {
         Console.WriteLine();
-        Console.WriteLine($"[CRUSH] UID={crush.ItemUid}");
-        Console.WriteLine($"  Coefficient : {crush.CoefficientPercent:F5} %");
+        Console.WriteLine($"[CRUSH] {crush.Lines.Count} objet(s) détruit(s)");
 
-        if (crush.SecondaryPercent is float secondary)
-            Console.WriteLine($"  Second f32  : {secondary:F5} %");
+        Dictionary<ulong, ulong> totals = new();
+        int index = 1;
 
-        Console.WriteLine("  Runes :");
-        if (crush.Runes.Count == 0)
+        foreach (CrushLineObservation line in crush.Lines)
+        {
+            string runeText = line.Runes.Count == 0
+                ? "(aucune rune)"
+                : string.Join(", ", line.Runes.Select(r => $"{r.RuneItemId} x{r.Quantity}"));
+
+            string second = line.SecondaryPercent is float secondary
+                ? $" | f4={secondary:F5}%"
+                : string.Empty;
+
+            Console.WriteLine(
+                $"  #{index++,2} UID={line.ItemUid}  coef={line.CoefficientPercent:F5}%{second}  -> {runeText}");
+
+            foreach (RuneDrop rune in line.Runes)
+            {
+                totals.TryGetValue(rune.RuneItemId, out ulong current);
+                totals[rune.RuneItemId] = current + rune.Quantity;
+            }
+        }
+
+        if (crush.Lines.Count > 0)
+        {
+            float min = crush.Lines.Min(x => x.CoefficientPercent);
+            float max = crush.Lines.Max(x => x.CoefficientPercent);
+            float avg = crush.Lines.Average(x => x.CoefficientPercent);
+
+            Console.WriteLine($"  Coefficient : min {min:F5}% | moy {avg:F5}% | max {max:F5}%");
+        }
+
+        Console.WriteLine("  Totaux runes :");
+        if (totals.Count == 0)
         {
             Console.WriteLine("    (aucune)");
         }
         else
         {
-            foreach (RuneDrop rune in crush.Runes)
-                Console.WriteLine($"    {rune.RuneItemId} x{rune.Quantity}");
+            foreach ((ulong runeId, ulong quantity) in totals.OrderBy(x => x.Key))
+                Console.WriteLine($"    {runeId} x{quantity}");
         }
 
         Console.WriteLine();
