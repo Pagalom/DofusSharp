@@ -120,26 +120,6 @@ public sealed class EquipmentProfitabilityService(
             );
         }
 
-        if (coefficient is null ||
-            (
-                itemCost is null &&
-                craftCost.TotalCost is null
-            ))
-        {
-            return new EquipmentProfitabilityResult(
-                equipment,
-                coefficient,
-                itemCost,
-                craftCost,
-                [],
-                missingData
-            );
-        }
-
-        double coefficientMultiplier =
-            coefficient.CoefficientPercent /
-            100;
-
         Dictionary<Characteristic, double>
             estimatedLines =
                 equipment.Characteristics
@@ -159,6 +139,72 @@ public sealed class EquipmentProfitabilityService(
                                     characteristic.To
                                 ) / 2.0
                     );
+
+        IReadOnlyList<Rune> potentialRunes =
+            crushService
+                .GetCrushResult(
+                    estimatedLines,
+                    equipment.Level,
+                    coefficient: 1.0
+                )
+                .Keys
+                .OrderBy(rune =>
+                    rune.Name)
+                .ToArray();
+
+        Dictionary<Rune, MarketValueResult>
+            potentialRuneUnitValues = [];
+
+        foreach (Rune rune in potentialRunes)
+        {
+            MarketValueResult? unitValue =
+                marketPriceService
+                    .CalculateValue(
+                        rune.DofusDbId,
+                        1,
+                        context.RunePrices
+                    );
+
+            if (unitValue is MarketValueResult value)
+            {
+                potentialRuneUnitValues[rune] =
+                    value;
+            }
+            else
+            {
+                missingData.Add(
+                    $"Prix de rune manquant : " +
+                    rune.Name
+                );
+            }
+        }
+
+        if (coefficient is null ||
+            (
+                itemCost is null &&
+                craftCost.TotalCost is null
+            ))
+        {
+            return new EquipmentProfitabilityResult(
+                equipment,
+                coefficient,
+                itemCost,
+                craftCost,
+                [],
+                missingData
+            )
+            {
+                PotentialRunes =
+                    potentialRunes,
+
+                PotentialRuneUnitValues =
+                    potentialRuneUnitValues
+            };
+        }
+
+        double coefficientMultiplier =
+            coefficient.CoefficientPercent /
+            100;
 
         List<EquipmentProfitabilityScenario>
             scenarios = [];
@@ -255,7 +301,14 @@ public sealed class EquipmentProfitabilityService(
             craftCost,
             scenarios,
             missingData
-        );
+        )
+        {
+            PotentialRunes =
+                potentialRunes,
+
+            PotentialRuneUnitValues =
+                potentialRuneUnitValues
+        };
     }
 
     public async Task<EquipmentProfitabilityResult>
