@@ -133,6 +133,7 @@ internal sealed record PurchaseRequestObservation(ulong Price, ulong Quantity, u
 internal sealed record PurchaseOfferObservation(
     ulong ItemId,
     ulong OfferId,
+    IReadOnlyList<ulong> Ladder,
     IReadOnlyList<ItemStatObservation> Stats);
 internal sealed record PurchaseReceiptObservation(
     ulong Quantity,
@@ -428,12 +429,27 @@ internal static class SemanticDecoders
         ulong offerId = fields.FirstOrDefault(f =>
             f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
 
+        ProtoField? ladderField = fields.FirstOrDefault(f =>
+            f.Number == 4 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is not null);
+
+        IReadOnlyList<ulong> ladder =
+            ladderField?.Bytes is null
+                ? []
+                : CleanLadder(
+                    ProtoWire.ReadPackedVarints(
+                        ladderField.Bytes
+                    )
+                    ?? []);
+
         if (itemId == 0 || offerId == 0)
             return null;
 
         return new PurchaseOfferObservation(
             itemId,
             offerId,
+            ladder,
             DecodeStats(fields, 5));
     }
 
