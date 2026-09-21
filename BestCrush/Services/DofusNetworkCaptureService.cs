@@ -21,11 +21,12 @@ namespace BestCrush.Services;
 ///
 /// Network packets are the source of truth for market prices and crush
 /// coefficients. Visual OCR is intentionally not used here; it is reserved
-/// for the middle-click tooltip focus path in OverlayService.
+/// for the explicit F8 tooltip-focus path in OverlayService.
 /// </summary>
 public sealed class DofusNetworkCaptureService(
     IServiceScopeFactory serviceScopeFactory,
     CurrentServerState currentServerState,
+    LastNetworkEquipmentState lastNetworkEquipmentState,
     BestCrushSettingsService settings,
     MarketDataChangeNotifier marketDataChangeNotifier,
     ILogger<DofusNetworkCaptureService> logger)
@@ -351,6 +352,10 @@ public sealed class DofusNetworkCaptureService(
             if (item is not null)
             {
                 _itemDetails[item.ItemUid] = item;
+                await RememberLastEquipmentAsync(
+                    item.ItemId,
+                    message.ObservedAtUtc,
+                    cancellationToken);
 
                 await WriteEventDebugAsync(
                     message.ObservedAtUtc,
@@ -374,6 +379,10 @@ public sealed class DofusNetworkCaptureService(
             if (item is not null)
             {
                 _itemDetails[item.ItemUid] = item;
+                await RememberLastEquipmentAsync(
+                    item.ItemId,
+                    message.ObservedAtUtc,
+                    cancellationToken);
 
                 await WriteEventDebugAsync(
                     message.ObservedAtUtc,
@@ -397,6 +406,10 @@ public sealed class DofusNetworkCaptureService(
             if (item is not null)
             {
                 _itemDetails[item.ItemUid] = item;
+                await RememberLastEquipmentAsync(
+                    item.ItemId,
+                    message.ObservedAtUtc,
+                    cancellationToken);
 
                 await WriteEventDebugAsync(
                     message.ObservedAtUtc,
@@ -422,9 +435,40 @@ public sealed class DofusNetworkCaptureService(
                 _itemDetails[result.Item.ItemUid] =
                     result.Item;
 
+                await RememberLastEquipmentAsync(
+                    result.Item.ItemId,
+                    message.ObservedAtUtc,
+                    cancellationToken);
+
                 await WriteEventDebugAsync(
                     message.ObservedAtUtc,
                     $"[WORKSHOP-RESULT] code={result.ResultCode} UID={result.Item.ItemUid} ItemId={result.Item.ItemId} | {FormatStats(result.Item.Stats)}",
+                    cancellationToken);
+            }
+
+            return;
+        }
+
+        if (map.MarketListingCreated is not null &&
+            string.Equals(
+                message.Key,
+                map.MarketListingCreated,
+                StringComparison.Ordinal))
+        {
+            MarketListingCreatedObservation? listing =
+                SemanticDecoders.TryDecodeMarketListingCreated(
+                    message.Body);
+
+            if (listing is not null)
+            {
+                await RememberLastEquipmentAsync(
+                    listing.ItemId,
+                    message.ObservedAtUtc,
+                    cancellationToken);
+
+                await WriteEventDebugAsync(
+                    message.ObservedAtUtc,
+                    $"[LISTING] MarketUid={listing.MarketListingUid} ItemId={listing.ItemId} x{listing.Quantity} price={listing.Price} K",
                     cancellationToken);
             }
 
@@ -497,8 +541,7 @@ public sealed class DofusNetworkCaptureService(
             currentServerState.ServerName;
 
         if (string.IsNullOrWhiteSpace(serverName) ||
-            market.ItemId == 0 ||
-            market.Offers.Count == 0)
+            market.ItemId == 0)
         {
             return;
         }
@@ -516,7 +559,20 @@ public sealed class DofusNetworkCaptureService(
                 context,
                 cancellationToken);
 
-        if (objectType is null ||
+        if (objectType ==
+            MarketObjectType.Equipment)
+        {
+            lastNetworkEquipmentState.Set(
+                checked((long)market.ItemId),
+                serverName,
+                DateTime.UtcNow);
+        }
+
+        // Even an empty jzn is useful for focus: it identifies
+        // the equipment currently consulted in the market.
+        // Price persistence obviously requires an actual ladder.
+        if (market.Offers.Count == 0 ||
+            objectType is null ||
             !IsMarketCaptureEnabled(
                 objectType.Value))
         {
@@ -529,10 +585,8 @@ public sealed class DofusNetworkCaptureService(
 
         int[] quantities = [1, 10, 100, 1000];
         int maximumLadderLength =
-            market.Offers.Count == 0
-                ? 0
-                : market.Offers.Max(
-                    offer => offer.Ladder.Count);
+            market.Offers.Max(
+                offer => offer.Ladder.Count);
 
         for (
             int index = 0;
@@ -587,46 +641,134 @@ public sealed class DofusNetworkCaptureService(
         string? serverName =
             currentServerState.ServerName;
 
-        if (string.IsNullOrWhiteSpace(serverName) ||
-            !settings.CoefficientCaptureEnabled)
+        if (string.IsNullOrWhiteSpace(serverName))
         {
             return;
         }
 
-        using IServiceScope scope =
-            serviceScopeFactory.CreateScope();
+        CoefficientService? coefficientService =
+            null;
 
-        CoefficientService coefficientService =
-            scope.ServiceProvider
-                .GetRequiredService<CoefficientService>();
+        IServiceScope? scope =
+            null;
 
-        foreach (CrushLineObservation line in crush.Lines)
+        if (settings.CoefficientCaptureEnabled)
         {
-            if (!_itemDetails.TryGetValue(
-                    line.ItemUid,
-                    out ItemDetailObservation? item) ||
-                item.ItemId == 0 ||
-                line.CoefficientPercent <= 0)
-            {
-                logger.LogDebug(
-                    "Concassage UID {Uid} reçu sans ItemId connu.",
-                    line.ItemUid);
-                continue;
-            }
+            scope =
+                serviceScopeFactory.CreateScope();
 
-            await coefficientService
-                .AddObservationAsync(
-                    checked((long)item.ItemId),
-                    serverName,
-                    line.CoefficientPercent,
-                    CoefficientSource.InGameAutomatic,
+            coefficientService =
+                scope.ServiceProvider
+                    .GetRequiredService<CoefficientService>();
+        }
+
+        try
+        {
+            foreach (CrushLineObservation line in crush.Lines)
+            {
+                if (!_itemDetails.TryGetValue(
+                        line.ItemUid,
+                        out ItemDetailObservation? item) ||
+                    item.ItemId == 0)
+                {
+                    logger.LogDebug(
+                        "Concassage UID {Uid} reçu sans ItemId connu.",
+                        line.ItemUid);
+                    continue;
+                }
+
+                await RememberLastEquipmentAsync(
+                    item.ItemId,
+                    DateTime.UtcNow,
                     cancellationToken);
 
-            marketDataChangeNotifier.Notify(
-                MarketObjectType.Equipment,
-                checked((long)item.ItemId),
-                serverName);
+                if (coefficientService is null ||
+                    line.CoefficientPercent <= 0)
+                {
+                    continue;
+                }
+
+                await coefficientService
+                    .AddObservationAsync(
+                        checked((long)item.ItemId),
+                        serverName,
+                        line.CoefficientPercent,
+                        CoefficientSource.InGameAutomatic,
+                        cancellationToken);
+
+                marketDataChangeNotifier.Notify(
+                    MarketObjectType.Equipment,
+                    checked((long)item.ItemId),
+                    serverName);
+            }
         }
+        finally
+        {
+            scope?.Dispose();
+        }
+    }
+
+    private async Task RememberLastEquipmentAsync(
+        ulong itemId,
+        DateTime observedAtUtc,
+        CancellationToken cancellationToken)
+    {
+        if (itemId == 0)
+        {
+            return;
+        }
+
+        string? serverName =
+            currentServerState.ServerName;
+
+        if (string.IsNullOrWhiteSpace(
+            serverName))
+        {
+            return;
+        }
+
+        long dofusDbId =
+            checked((long)itemId);
+
+        MarketObjectType? objectType;
+
+        if (_marketObjectTypes.TryGetValue(
+            dofusDbId,
+            out MarketObjectType? cachedType))
+        {
+            objectType = cachedType;
+        }
+        else
+        {
+            using IServiceScope scope =
+                serviceScopeFactory.CreateScope();
+
+            BestCrushDbContext context =
+                scope.ServiceProvider
+                    .GetRequiredService<BestCrushDbContext>();
+
+            objectType =
+                await ResolveMarketObjectTypeAsync(
+                    dofusDbId,
+                    context,
+                    cancellationToken);
+        }
+
+        if (objectType !=
+            MarketObjectType.Equipment)
+        {
+            return;
+        }
+
+        lastNetworkEquipmentState.Set(
+            dofusDbId,
+            serverName,
+            observedAtUtc);
+
+        await WriteEventDebugAsync(
+            observedAtUtc,
+            $"[LAST-EQUIPMENT] ItemId={dofusDbId}",
+            cancellationToken);
     }
 
     private async Task WriteWireDebugAsync(
