@@ -1,4 +1,3 @@
-using System.Net;
 using BestCrush.NetworkProbe.Protocol;
 using PacketDotNet;
 using SharpPcap;
@@ -39,8 +38,6 @@ internal sealed class DofusCaptureProbe : IDisposable
         {
             // Prototype : l'arrêt doit rester best-effort.
         }
-
-        _device.Close();
     }
 
     private void OnPacketArrival(object sender, PacketCapture capture)
