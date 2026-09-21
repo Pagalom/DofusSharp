@@ -8,6 +8,11 @@ internal sealed record ProtocolMap(
     string? CrushResult,
     string? ItemDetail,
     string? WorkshopSlotPut,
+    string? PurchaseRequest,
+    string? PurchaseOffer,
+    string? InventoryAdd,
+    string? SmithmagicRequest,
+    string? SmithmagicResult,
     IReadOnlySet<string> DiagnosticMessages)
 {
     public static ProtocolMap Load(string path)
@@ -19,10 +24,14 @@ internal sealed record ProtocolMap(
                 "kci",
                 "kdb",
                 "kec",
+                "kei",
+                "kef",
+                "isa",
+                "jze",
+                "kbu",
                 new HashSet<string>(StringComparer.Ordinal)
                 {
-                    "kei","kef","itt","isa","log","kbd",
-                    "jze","kcs","kbu","iut","irl","isf","keb","kcw"
+                    "itt","log","kbd","kcs","iut","irl","isf","keb","kcw"
                 });
 
         using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
@@ -38,6 +47,11 @@ internal sealed record ProtocolMap(
         string? workshopSlotPut = root.TryGetProperty("workshop_slot_put", out JsonElement e)
             ? e.GetString()
             : root.TryGetProperty("crush_slot_put", out JsonElement legacy) ? legacy.GetString() : null;
+        string? purchaseRequest = root.TryGetProperty("purchase_request", out JsonElement pr) ? pr.GetString() : null;
+        string? purchaseOffer = root.TryGetProperty("purchase_offer", out JsonElement po) ? po.GetString() : null;
+        string? inventoryAdd = root.TryGetProperty("inventory_add", out JsonElement ia) ? ia.GetString() : null;
+        string? smithmagicRequest = root.TryGetProperty("smithmagic_request", out JsonElement sr) ? sr.GetString() : null;
+        string? smithmagicResult = root.TryGetProperty("smithmagic_result", out JsonElement sx) ? sx.GetString() : null;
 
         HashSet<string> diagnostics = new(StringComparer.Ordinal);
         if (root.TryGetProperty("diagnostic_messages", out JsonElement dm) &&
@@ -51,7 +65,18 @@ internal sealed record ProtocolMap(
             }
         }
 
-        return new ProtocolMap(build, price, crush, itemDetail, workshopSlotPut, diagnostics);
+        return new ProtocolMap(
+            build,
+            price,
+            crush,
+            itemDetail,
+            workshopSlotPut,
+            purchaseRequest,
+            purchaseOffer,
+            inventoryAdd,
+            smithmagicRequest,
+            smithmagicResult,
+            diagnostics);
     }
 }
 
@@ -65,6 +90,14 @@ internal sealed record ItemDetailObservation(
     ulong Quantity,
     IReadOnlyList<ItemStatObservation> Stats);
 internal sealed record WorkshopSlotObservation(long Delta, ulong ItemUid);
+
+internal sealed record PurchaseRequestObservation(ulong Price, ulong Quantity, ulong ListingId);
+internal sealed record PurchaseOfferObservation(
+    ulong ItemId,
+    ulong ListingId,
+    IReadOnlyList<ItemStatObservation> Stats);
+internal sealed record SmithmagicRequestObservation(ulong RuneUid, ulong Quantity);
+internal sealed record SmithmagicResultObservation(int ResultCode, ItemDetailObservation Item);
 
 internal sealed record RuneDrop(ulong RuneItemId, ulong Quantity);
 internal sealed record CrushLineObservation(
@@ -301,10 +334,103 @@ internal static class SemanticDecoders
             f.WireType == ProtoWireType.LengthDelimited &&
             f.Bytes is not null);
 
+        return itemField?.Bytes is null
+            ? null
+            : TryDecodeItemObject(itemField.Bytes);
+    }
+
+    public static PurchaseRequestObservation? TryDecodePurchaseRequest(byte[] body)
+    {
+        List<ProtoField>? fields = ProtoWire.ReadFields(body);
+        if (fields is null)
+            return null;
+
+        ulong price = fields.FirstOrDefault(f =>
+            f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+        ulong quantity = fields.FirstOrDefault(f =>
+            f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+        ulong listingId = fields.FirstOrDefault(f =>
+            f.Number == 5 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        return price > 0 && quantity > 0 && listingId > 0
+            ? new PurchaseRequestObservation(price, quantity, listingId)
+            : null;
+    }
+
+    public static PurchaseOfferObservation? TryDecodePurchaseOffer(byte[] body)
+    {
+        List<ProtoField>? fields = ProtoWire.ReadFields(body);
+        if (fields is null)
+            return null;
+
+        ulong itemId = fields.FirstOrDefault(f =>
+            f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+        ulong listingId = fields.FirstOrDefault(f =>
+            f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        if (itemId == 0 || listingId == 0)
+            return null;
+
+        return new PurchaseOfferObservation(
+            itemId,
+            listingId,
+            DecodeStats(fields, 5));
+    }
+
+    public static ItemDetailObservation? TryDecodeInventoryAdd(byte[] body)
+        => TryDecodeItemDetail(body);
+
+    public static SmithmagicRequestObservation? TryDecodeSmithmagicRequest(byte[] body)
+    {
+        List<ProtoField>? fields = ProtoWire.ReadFields(body);
+        if (fields is null)
+            return null;
+
+        ulong runeUid = fields.FirstOrDefault(f =>
+            f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+        ulong quantity = fields.FirstOrDefault(f =>
+            f.Number == 3 && f.WireType == ProtoWireType.Varint)?.Varint ?? 1;
+
+        return runeUid > 0
+            ? new SmithmagicRequestObservation(runeUid, quantity)
+            : null;
+    }
+
+    public static SmithmagicResultObservation? TryDecodeSmithmagicResult(byte[] body)
+    {
+        List<ProtoField>? root = ProtoWire.ReadFields(body);
+        if (root is null)
+            return null;
+
+        int resultCode = checked((int)(root.FirstOrDefault(f =>
+            f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0));
+
+        ProtoField? resultField = root.FirstOrDefault(f =>
+            f.Number == 3 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is not null);
+
+        if (resultField?.Bytes is null)
+            return null;
+
+        List<ProtoField>? result = ProtoWire.ReadFields(resultField.Bytes);
+        ProtoField? itemField = result?.FirstOrDefault(f =>
+            f.Number == 2 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is not null);
+
         if (itemField?.Bytes is null)
             return null;
 
-        List<ProtoField>? item = ProtoWire.ReadFields(itemField.Bytes);
+        ItemDetailObservation? item = TryDecodeItemObject(itemField.Bytes);
+        return item is null
+            ? null
+            : new SmithmagicResultObservation(resultCode, item);
+    }
+
+    private static ItemDetailObservation? TryDecodeItemObject(byte[] itemBytes)
+    {
+        List<ProtoField>? item = ProtoWire.ReadFields(itemBytes);
         if (item is null)
             return null;
 
@@ -323,10 +449,21 @@ internal static class SemanticDecoders
         if (uid == 0 || itemId == 0)
             return null;
 
+        return new ItemDetailObservation(
+            uid,
+            itemId,
+            quantity,
+            DecodeStats(item, 3));
+    }
+
+    private static IReadOnlyList<ItemStatObservation> DecodeStats(
+        IReadOnlyList<ProtoField> fields,
+        int fieldNumber)
+    {
         List<ItemStatObservation> stats = new();
 
-        foreach (ProtoField statField in item.Where(f =>
-                     f.Number == 3 &&
+        foreach (ProtoField statField in fields.Where(f =>
+                     f.Number == fieldNumber &&
                      f.WireType == ProtoWireType.LengthDelimited &&
                      f.Bytes is not null))
         {
@@ -350,7 +487,7 @@ internal static class SemanticDecoders
                 unchecked((long)valueField.Varint)));
         }
 
-        return new ItemDetailObservation(uid, itemId, quantity, stats);
+        return stats;
     }
 
     public static WorkshopSlotObservation? TryDecodeWorkshopSlot(byte[] body)
@@ -536,6 +673,81 @@ internal static class ConsoleRenderer
     {
         string action = slot.Delta >= 0 ? "ajout" : "retrait";
         Console.WriteLine($"[WORKSHOP] {action} UID={slot.ItemUid} delta={slot.Delta}");
+    }
+
+    public static void WritePurchase(
+        PurchaseRequestObservation request,
+        PurchaseOfferObservation offer,
+        ItemDetailObservation item)
+    {
+        Console.WriteLine();
+        Console.WriteLine(
+            $"[PURCHASE] ItemId={item.ItemId} UID={item.ItemUid} x{item.Quantity} " +
+            $"price={request.Price:N0} K listing={request.ListingId}");
+        Console.WriteLine($"  Stats : {FormatStats(item.Stats)}");
+        Console.WriteLine();
+    }
+
+    public static void WriteSmithmagic(
+        SmithmagicRequestObservation? request,
+        ItemDetailObservation? rune,
+        ItemDetailObservation? before,
+        SmithmagicResultObservation result)
+    {
+        Console.WriteLine();
+
+        string runeText = rune is not null
+            ? $"ItemId={rune.ItemId} UID={rune.ItemUid}"
+            : request is not null
+                ? $"UID={request.RuneUid}"
+                : "?";
+
+        ulong quantity = request?.Quantity ?? 1;
+
+        Console.WriteLine(
+            $"[FM] Target ItemId={result.Item.ItemId} UID={result.Item.ItemUid} | " +
+            $"Rune {runeText} x{quantity} | resultCode={result.ResultCode}");
+
+        Console.WriteLine($"  Avant : {(before is null ? "?" : FormatStats(before.Stats))}");
+        Console.WriteLine($"  Après : {FormatStats(result.Item.Stats)}");
+
+        if (before is not null)
+        {
+            List<string> deltas = BuildStatDeltas(before.Stats, result.Item.Stats);
+            Console.WriteLine(
+                $"  Delta : {(deltas.Count == 0 ? "aucun changement" : string.Join(", ", deltas))}");
+        }
+
+        Console.WriteLine();
+    }
+
+    private static string FormatStats(IReadOnlyList<ItemStatObservation> stats)
+        => stats.Count == 0
+            ? "(aucune stat)"
+            : string.Join(", ", stats
+                .OrderBy(x => x.EffectId)
+                .Select(x => $"{x.EffectId}={x.Value}"));
+
+    private static List<string> BuildStatDeltas(
+        IReadOnlyList<ItemStatObservation> before,
+        IReadOnlyList<ItemStatObservation> after)
+    {
+        Dictionary<ulong, long> b = before.ToDictionary(x => x.EffectId, x => x.Value);
+        Dictionary<ulong, long> a = after.ToDictionary(x => x.EffectId, x => x.Value);
+
+        return b.Keys
+            .Union(a.Keys)
+            .OrderBy(x => x)
+            .Select(effectId =>
+            {
+                b.TryGetValue(effectId, out long oldValue);
+                a.TryGetValue(effectId, out long newValue);
+                long delta = newValue - oldValue;
+                return (effectId, oldValue, newValue, delta);
+            })
+            .Where(x => x.delta != 0)
+            .Select(x => $"{x.effectId}: {x.oldValue}->{x.newValue} ({x.delta:+#;-#;0})")
+            .ToList();
     }
 
     public static void WriteCrush(
