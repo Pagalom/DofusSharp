@@ -301,7 +301,7 @@ internal static class ConsoleRenderer
 
         if (market.Offers.Count == 0)
         {
-            Console.WriteLine("  Aucune offre / aucun prix transmis.");
+            Console.WriteLine("  Message sans offre/prix (métadonnée ou état intermédiaire).");
         }
         else if (market.Offers.Count == 1 && market.Offers[0].Ladder.Count <= 4)
         {
