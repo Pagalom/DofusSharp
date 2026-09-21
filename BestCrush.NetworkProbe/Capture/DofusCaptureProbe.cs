@@ -12,10 +12,13 @@ internal sealed class DofusCaptureProbe : IDisposable
     private readonly bool _showAllMessages;
     private readonly Dictionary<FlowDirection, TcpReassembler> _streams = new();
     private readonly Dictionary<ulong, ItemDetailObservation> _itemDetails = new();
+    private readonly Dictionary<ulong, long> _workshopQuantities = new();
 
     private PurchaseRequestObservation? _pendingPurchaseRequest;
     private PurchaseOfferObservation? _pendingPurchaseOffer;
     private SmithmagicRequestObservation? _pendingSmithmagicRequest;
+    private ulong? _lastWorkshopAddedUid;
+    private ulong? _activeSmithmagicTargetUid;
 
     public DofusCaptureProbe(ICaptureDevice device, int port, ProtocolMap map, bool showAllMessages)
     {
@@ -135,7 +138,20 @@ internal sealed class DofusCaptureProbe : IDisposable
         {
             WorkshopSlotObservation? slot = SemanticDecoders.TryDecodeWorkshopSlot(any.Body);
             if (slot is not null)
+            {
                 ConsoleRenderer.WriteWorkshopSlot(slot);
+
+                _workshopQuantities.TryGetValue(slot.ItemUid, out long current);
+                long next = current + slot.Delta;
+
+                if (next <= 0)
+                    _workshopQuantities.Remove(slot.ItemUid);
+                else
+                    _workshopQuantities[slot.ItemUid] = next;
+
+                if (slot.Delta > 0)
+                    _lastWorkshopAddedUid = slot.ItemUid;
+            }
             else
             {
                 Console.WriteLine($"[WORKSHOP?] {key} reçu mais structure non reconnue ({any.Body.Length} octets).");
@@ -196,6 +212,30 @@ internal sealed class DofusCaptureProbe : IDisposable
                 _pendingSmithmagicRequest = request;
         }
 
+        if (_map.SmithmagicBatchRequest is not null &&
+            string.Equals(key, _map.SmithmagicBatchRequest, StringComparison.Ordinal))
+        {
+            SmithmagicBatchRequestObservation? batch =
+                SemanticDecoders.TryDecodeSmithmagicBatchRequest(any.Body);
+
+            if (batch is not null)
+            {
+                ulong runeUid = ResolveWorkshopRuneUid();
+                if (runeUid != 0)
+                    _pendingSmithmagicRequest = new SmithmagicRequestObservation(runeUid, batch.Quantity);
+
+                Console.WriteLine(
+                    $"[FM-BATCH] seq={batch.Sequence} x{batch.Quantity} " +
+                    $"runeUID={(runeUid == 0 ? "?" : runeUid)}");
+            }
+        }
+
+        if (_map.SmithmagicAux is not null &&
+            string.Equals(key, _map.SmithmagicAux, StringComparison.Ordinal))
+        {
+            ConsoleRenderer.WriteProtoDebug($"FM_AUX {key}", any.Body);
+        }
+
         if (_map.SmithmagicResult is not null &&
             string.Equals(key, _map.SmithmagicResult, StringComparison.Ordinal))
         {
@@ -217,6 +257,7 @@ internal sealed class DofusCaptureProbe : IDisposable
                     result);
 
                 _itemDetails[result.Item.ItemUid] = result.Item;
+                _activeSmithmagicTargetUid = result.Item.ItemUid;
                 _pendingSmithmagicRequest = null;
             }
         }
