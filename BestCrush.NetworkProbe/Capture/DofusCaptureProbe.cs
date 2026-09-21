@@ -13,6 +13,7 @@ internal sealed class DofusCaptureProbe : IDisposable
     private readonly Dictionary<FlowDirection, TcpReassembler> _streams = new();
     private readonly Dictionary<ulong, ItemDetailObservation> _itemDetails = new();
     private readonly Dictionary<ulong, long> _workshopQuantities = new();
+    private readonly Dictionary<ulong, (MarketListingRequestObservation Request, MarketListingCreatedObservation Created)> _marketListings = new();
 
     private PurchaseRequestObservation? _pendingPurchaseRequest;
     private PurchaseOfferObservation? _pendingPurchaseOffer;
@@ -20,6 +21,7 @@ internal sealed class DofusCaptureProbe : IDisposable
     private SmithmagicRequestObservation? _pendingSmithmagicRequest;
     private SmithmagicRequestObservation? _activeBatchSmithmagicRequest;
     private MarketListingRequestObservation? _pendingMarketListing;
+    private ulong? _pendingMarketWithdrawalUid;
     private ulong? _lastWorkshopAddedUid;
     private ulong? _activeSmithmagicTargetUid;
 
@@ -142,18 +144,26 @@ internal sealed class DofusCaptureProbe : IDisposable
             WorkshopSlotObservation? slot = SemanticDecoders.TryDecodeWorkshopSlot(any.Body);
             if (slot is not null)
             {
-                ConsoleRenderer.WriteWorkshopSlot(slot);
-
-                _workshopQuantities.TryGetValue(slot.ItemUid, out long current);
-                long next = current + slot.Delta;
-
-                if (next <= 0)
-                    _workshopQuantities.Remove(slot.ItemUid);
+                if (slot.Delta < 0 && _marketListings.ContainsKey(slot.ItemUid))
+                {
+                    _pendingMarketWithdrawalUid = slot.ItemUid;
+                    Console.WriteLine($"[LISTING-REMOVE] marketListingUid={slot.ItemUid}");
+                }
                 else
-                    _workshopQuantities[slot.ItemUid] = next;
+                {
+                    ConsoleRenderer.WriteWorkshopSlot(slot);
 
-                if (slot.Delta > 0)
-                    _lastWorkshopAddedUid = slot.ItemUid;
+                    _workshopQuantities.TryGetValue(slot.ItemUid, out long current);
+                    long next = current + slot.Delta;
+
+                    if (next <= 0)
+                        _workshopQuantities.Remove(slot.ItemUid);
+                    else
+                        _workshopQuantities[slot.ItemUid] = next;
+
+                    if (slot.Delta > 0)
+                        _lastWorkshopAddedUid = slot.ItemUid;
+                }
             }
             else
             {
@@ -188,6 +198,19 @@ internal sealed class DofusCaptureProbe : IDisposable
             if (item is not null)
             {
                 _itemDetails[item.ItemUid] = item;
+
+                if (_pendingMarketWithdrawalUid is ulong marketListingUid &&
+                    _marketListings.TryGetValue(marketListingUid, out var listing))
+                {
+                    ConsoleRenderer.WriteMarketListingReturn(
+                        marketListingUid,
+                        listing.Request,
+                        listing.Created,
+                        item);
+
+                    _marketListings.Remove(marketListingUid);
+                    _pendingMarketWithdrawalUid = null;
+                }
 
                 if (_pendingPurchaseRequest is not null)
                 {
@@ -338,6 +361,9 @@ internal sealed class DofusCaptureProbe : IDisposable
                     _pendingMarketListing,
                     created,
                     knownItem);
+
+                _marketListings[created.MarketListingUid] =
+                    (_pendingMarketListing, created);
 
                 _pendingMarketListing = null;
             }
