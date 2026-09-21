@@ -27,6 +27,7 @@ public sealed class DofusNetworkCaptureService(
     IServiceScopeFactory serviceScopeFactory,
     CurrentServerState currentServerState,
     LastNetworkEquipmentState lastNetworkEquipmentState,
+    CrushSessionService crushSessionService,
     BestCrushSettingsService settings,
     MarketDataChangeNotifier marketDataChangeNotifier,
     ILogger<DofusNetworkCaptureService> logger)
@@ -785,6 +786,9 @@ public sealed class DofusNetworkCaptureService(
                     .GetRequiredService<CoefficientService>();
         }
 
+        List<NetworkCrushResultLine>
+            networkResultLines = [];
+
         try
         {
             foreach (CrushLineObservation line in crush.Lines)
@@ -804,6 +808,23 @@ public sealed class DofusNetworkCaptureService(
                     item.ItemId,
                     observedAtUtc,
                     cancellationToken);
+
+                NetworkCrushRuneResult[] runes =
+                    line.Runes
+                        .Where(rune =>
+                            rune.RuneItemId > 0 &&
+                            rune.Quantity > 0)
+                        .Select(rune =>
+                            new NetworkCrushRuneResult(
+                                checked((long)rune.RuneItemId),
+                                checked((int)rune.Quantity)))
+                        .ToArray();
+
+                networkResultLines.Add(
+                    new NetworkCrushResultLine(
+                        checked((long)item.ItemId),
+                        line.CoefficientPercent,
+                        runes));
 
                 if (coefficientService is null ||
                     line.CoefficientPercent <= 0)
@@ -828,6 +849,15 @@ public sealed class DofusNetworkCaptureService(
         finally
         {
             scope?.Dispose();
+        }
+
+        if (networkResultLines.Count > 0)
+        {
+            await crushSessionService
+                .ApplyNetworkCrushAsync(
+                    networkResultLines,
+                    observedAtUtc,
+                    cancellationToken);
         }
     }
 
