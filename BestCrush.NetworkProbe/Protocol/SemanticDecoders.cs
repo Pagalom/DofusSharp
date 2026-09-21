@@ -41,11 +41,74 @@ internal static class SemanticDecoders
         if (root is null)
             return null;
 
+        MarketObservation? currentJzn = TryDecodeCurrentJzn(root);
+        if (currentJzn is not null)
+            return currentJzn;
+
         MarketObservation? structured = TryDecodeStructuredMarket(root);
         if (structured is not null)
             return structured;
 
         return TryDecodeCompactMarket(root);
+    }
+
+    // Dofus 3.6.11.15 / jzn observed on wire:
+    // root f1 = item id
+    // root f2 = repeated offer
+    // root f3 = market/category id
+    // offer f2 = item id
+    // offer f5 = listing id
+    // offer f6 = packed [x1, x10, x100, x1000] prices
+    private static MarketObservation? TryDecodeCurrentJzn(List<ProtoField> root)
+    {
+        ulong itemId = root.FirstOrDefault(f =>
+            f.Number == 1 &&
+            f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        if (itemId == 0)
+            return null;
+
+        List<MarketOffer> offers = new();
+
+        foreach (ProtoField offerField in root.Where(f =>
+                     f.Number == 2 &&
+                     f.WireType == ProtoWireType.LengthDelimited &&
+                     f.Bytes is not null))
+        {
+            List<ProtoField>? offer = ProtoWire.ReadFields(offerField.Bytes!);
+            if (offer is null)
+                continue;
+
+            ulong inlineItemId = offer.FirstOrDefault(f =>
+                f.Number == 2 &&
+                f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+            ulong listingId = offer.FirstOrDefault(f =>
+                f.Number == 5 &&
+                f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+            ProtoField? ladderField = offer.FirstOrDefault(f =>
+                f.Number == 6 &&
+                f.WireType == ProtoWireType.LengthDelimited &&
+                f.Bytes is not null);
+
+            if (ladderField?.Bytes is null)
+                continue;
+
+            List<ulong>? rawLadder = ProtoWire.ReadPackedVarints(ladderField.Bytes);
+            if (rawLadder is null || rawLadder.Count == 0)
+                continue;
+
+            List<ulong> ladder = CleanLadder(rawLadder);
+            ulong resolvedItemId = inlineItemId != 0 ? inlineItemId : itemId;
+
+            offers.Add(new MarketOffer(listingId, resolvedItemId, ladder));
+        }
+
+        // A jzn carrying only f1/f3 means the item is known but currently has
+        // no price ladder. Keep it visible in the probe instead of treating it
+        // as a decode failure.
+        return new MarketObservation(itemId, offers);
     }
 
     private static MarketObservation? TryDecodeStructuredMarket(List<ProtoField> root)
@@ -236,7 +299,11 @@ internal static class ConsoleRenderer
         Console.WriteLine();
         Console.WriteLine($"[MARKET] ItemId={market.ItemId} — {market.Offers.Count} offre(s)");
 
-        if (market.Offers.Count == 1 && market.Offers[0].Ladder.Count <= 4)
+        if (market.Offers.Count == 0)
+        {
+            Console.WriteLine("  Aucune offre / aucun prix transmis.");
+        }
+        else if (market.Offers.Count == 1 && market.Offers[0].Ladder.Count <= 4)
         {
             string[] labels = ["x1", "x10", "x100", "x1000"];
             for (int i = 0; i < market.Offers[0].Ladder.Count; i++)
