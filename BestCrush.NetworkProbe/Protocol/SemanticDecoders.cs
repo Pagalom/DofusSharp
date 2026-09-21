@@ -771,6 +771,26 @@ internal static class ConsoleRenderer
                 .OrderBy(x => x.EffectId)
                 .Select(x => $"{x.EffectId}={x.Value}"));
 
+    private static bool HasCollateralLoss(
+        IReadOnlyList<ItemStatObservation> before,
+        IReadOnlyList<ItemStatObservation> after,
+        IReadOnlySet<ulong> runeEffects)
+    {
+        Dictionary<ulong, long> b = before.ToDictionary(x => x.EffectId, x => x.Value);
+        Dictionary<ulong, long> a = after.ToDictionary(x => x.EffectId, x => x.Value);
+
+        foreach (ulong effectId in b.Keys.Union(a.Keys))
+        {
+            b.TryGetValue(effectId, out long oldValue);
+            a.TryGetValue(effectId, out long newValue);
+
+            if (newValue < oldValue && !runeEffects.Contains(effectId))
+                return true;
+        }
+
+        return false;
+    }
+
     private static List<string> BuildStatDeltas(
         IReadOnlyList<ItemStatObservation> before,
         IReadOnlyList<ItemStatObservation> after)
