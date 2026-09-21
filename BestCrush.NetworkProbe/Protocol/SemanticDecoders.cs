@@ -13,8 +13,9 @@ internal sealed record ProtocolMap(
     string? PurchaseReceipt,
     string? InventoryAdd,
     string? InventoryQuantity,
+    string? InventoryRemove,
     string? CraftPrepare,
-    string? CraftInventoryChange,
+    string? CraftOutput,
     string? SmithmagicRequest,
     string? SmithmagicBatchRequest,
     string? SmithmagicResult,
@@ -37,6 +38,7 @@ internal sealed record ProtocolMap(
                 "kbd",
                 "isa",
                 "isf",
+                "irz",
                 "kah",
                 "iuq",
                 "jze",
@@ -68,8 +70,9 @@ internal sealed record ProtocolMap(
         string? purchaseReceipt = root.TryGetProperty("purchase_receipt", out JsonElement rc) ? rc.GetString() : null;
         string? inventoryAdd = root.TryGetProperty("inventory_add", out JsonElement ia) ? ia.GetString() : null;
         string? inventoryQuantity = root.TryGetProperty("inventory_quantity", out JsonElement iq) ? iq.GetString() : null;
+        string? inventoryRemove = root.TryGetProperty("inventory_remove", out JsonElement irm) ? irm.GetString() : null;
         string? craftPrepare = root.TryGetProperty("craft_prepare", out JsonElement cp) ? cp.GetString() : null;
-        string? craftInventoryChange = root.TryGetProperty("craft_inventory_change", out JsonElement cic) ? cic.GetString() : null;
+        string? craftOutput = root.TryGetProperty("craft_output", out JsonElement co) ? co.GetString() : null;
         string? smithmagicRequest = root.TryGetProperty("smithmagic_request", out JsonElement sr) ? sr.GetString() : null;
         string? smithmagicBatchRequest = root.TryGetProperty("smithmagic_batch_request", out JsonElement sbr) ? sbr.GetString() : null;
         string? smithmagicResult = root.TryGetProperty("smithmagic_result", out JsonElement sx) ? sx.GetString() : null;
@@ -100,8 +103,9 @@ internal sealed record ProtocolMap(
             purchaseReceipt,
             inventoryAdd,
             inventoryQuantity,
+            inventoryRemove,
             craftPrepare,
-            craftInventoryChange,
+            craftOutput,
             smithmagicRequest,
             smithmagicBatchRequest,
             smithmagicResult,
@@ -123,6 +127,7 @@ internal sealed record ItemDetailObservation(
     IReadOnlyList<ItemStatObservation> Stats);
 internal sealed record WorkshopSlotObservation(long Delta, ulong ItemUid);
 internal sealed record InventoryQuantityObservation(ulong ItemUid, ulong NewQuantity);
+internal sealed record InventoryRemoveObservation(ulong ItemUid);
 
 internal sealed record PurchaseRequestObservation(ulong Price, ulong Quantity, ulong OfferId);
 internal sealed record PurchaseOfferObservation(
@@ -477,6 +482,43 @@ internal static class SemanticDecoders
         return itemUid > 0
             ? new InventoryQuantityObservation(itemUid, quantity)
             : null;
+    }
+
+    public static InventoryRemoveObservation? TryDecodeInventoryRemove(byte[] body)
+    {
+        List<ProtoField>? fields = ProtoWire.ReadFields(body);
+        if (fields is null)
+            return null;
+
+        ulong itemUid = fields.FirstOrDefault(f =>
+            f.Number == 1 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        return itemUid > 0 ? new InventoryRemoveObservation(itemUid) : null;
+    }
+
+    public static ItemDetailObservation? TryDecodeCraftOutput(byte[] body)
+    {
+        List<ProtoField>? root = ProtoWire.ReadFields(body);
+        if (root is null)
+            return null;
+
+        ProtoField? envelopeField = root.FirstOrDefault(f =>
+            f.Number == 1 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is not null);
+
+        if (envelopeField?.Bytes is null)
+            return null;
+
+        List<ProtoField>? envelope = ProtoWire.ReadFields(envelopeField.Bytes);
+        ProtoField? itemField = envelope?.FirstOrDefault(f =>
+            f.Number == 5 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is not null);
+
+        return itemField?.Bytes is null
+            ? null
+            : TryDecodeItemObject(itemField.Bytes);
     }
 
     public static MarketListingRequestObservation? TryDecodeMarketListingRequest(byte[] body)
@@ -876,7 +918,7 @@ internal static class ConsoleRenderer
         PurchaseReceiptObservation? receipt = null)
     {
         ulong offerId = receipt?.OfferId ?? request.OfferId;
-        ulong quantity = receipt?.Quantity ?? item.Quantity;
+        ulong quantity = request.Quantity;
 
         Console.WriteLine();
         Console.WriteLine(
@@ -932,8 +974,7 @@ internal static class ConsoleRenderer
             $"rawCode={result.ResultCode}");
         Console.WriteLine($"  Stats : {FormatStats(result.Item.Stats)}");
         Console.WriteLine(
-            $"  Ingrédients observés : {request.IngredientSnapshots.Count} " +
-            $"(quantités consommées à confirmer via craft_inventory_change)");
+            $"  Ingrédients : {request.IngredientSnapshots.Count} pile(s) sélectionnée(s) par la recette");
         Console.WriteLine();
     }
 
