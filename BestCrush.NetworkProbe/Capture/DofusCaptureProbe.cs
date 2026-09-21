@@ -12,6 +12,7 @@ internal sealed class DofusCaptureProbe : IDisposable
     private readonly bool _showAllMessages;
     private readonly Dictionary<FlowDirection, TcpReassembler> _streams = new();
     private readonly Dictionary<ulong, ItemDetailObservation> _itemDetails = new();
+    private readonly Dictionary<ulong, ulong> _inventoryQuantities = new();
     private readonly Dictionary<ulong, long> _workshopQuantities = new();
     private readonly Dictionary<ulong, (MarketListingRequestObservation Request, MarketListingCreatedObservation Created)> _marketListings = new();
     private readonly List<ItemDetailObservation> _craftIngredientSnapshots = new();
@@ -211,6 +212,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             if (item is not null)
             {
                 _itemDetails[item.ItemUid] = item;
+                _inventoryQuantities[item.ItemUid] = item.Quantity;
 
                 if (_pendingMarketWithdrawalUid is ulong marketListingUid &&
                     _marketListings.TryGetValue(marketListingUid, out var listing))
@@ -246,6 +248,9 @@ internal sealed class DofusCaptureProbe : IDisposable
 
             if (quantity is not null)
             {
+                _inventoryQuantities.TryGetValue(quantity.ItemUid, out ulong beforeQuantity);
+                bool hadBeforeQuantity = _inventoryQuantities.ContainsKey(quantity.ItemUid);
+
                 ItemDetailObservation? updatedItem = null;
 
                 if (_itemDetails.TryGetValue(quantity.ItemUid, out ItemDetailObservation? existingItem))
@@ -259,6 +264,27 @@ internal sealed class DofusCaptureProbe : IDisposable
                         _pendingPurchaseOffer.ItemId,
                         quantity.NewQuantity,
                         _pendingPurchaseOffer.Stats);
+                }
+
+                _inventoryQuantities[quantity.ItemUid] = quantity.NewQuantity;
+
+                ItemDetailObservation? craftIngredient =
+                    _activeCraftRequest?.IngredientSnapshots.FirstOrDefault(
+                        x => x.ItemUid == quantity.ItemUid);
+
+                if (craftIngredient is not null)
+                {
+                    string beforeText = hadBeforeQuantity ? beforeQuantity.ToString() : "?";
+                    Console.WriteLine(
+                        $"[CRAFT-CONSUME] ItemId={craftIngredient.ItemId} UID={quantity.ItemUid} " +
+                        $"used={craftIngredient.Quantity} inventory={beforeText}->{quantity.NewQuantity}");
+                }
+                else if (_pendingPurchaseRequest is not null && updatedItem is not null)
+                {
+                    string beforeText = hadBeforeQuantity ? beforeQuantity.ToString() : "?";
+                    Console.WriteLine(
+                        $"[STACK] ItemId={updatedItem.ItemId} UID={quantity.ItemUid} " +
+                        $"{beforeText}->{quantity.NewQuantity}");
                 }
 
                 if (updatedItem is not null)
@@ -278,7 +304,28 @@ internal sealed class DofusCaptureProbe : IDisposable
                 SemanticDecoders.TryDecodeInventoryRemove(any.Body);
 
             if (removed is not null)
+            {
+                _inventoryQuantities.TryGetValue(removed.ItemUid, out ulong beforeQuantity);
+                bool hadBeforeQuantity = _inventoryQuantities.ContainsKey(removed.ItemUid);
+
+                ItemDetailObservation? craftIngredient =
+                    _activeCraftRequest?.IngredientSnapshots.FirstOrDefault(
+                        x => x.ItemUid == removed.ItemUid);
+
+                if (craftIngredient is not null)
+                {
+                    string beforeText = hadBeforeQuantity
+                        ? beforeQuantity.ToString()
+                        : craftIngredient.Quantity.ToString();
+
+                    Console.WriteLine(
+                        $"[CRAFT-CONSUME] ItemId={craftIngredient.ItemId} UID={removed.ItemUid} " +
+                        $"used={craftIngredient.Quantity} inventory={beforeText}->0");
+                }
+
+                _inventoryQuantities.Remove(removed.ItemUid);
                 _itemDetails.Remove(removed.ItemUid);
+            }
         }
 
         if (_map.PurchaseReceipt is not null &&
@@ -384,6 +431,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             if (output is not null)
             {
                 _itemDetails[output.ItemUid] = output;
+                _inventoryQuantities[output.ItemUid] = output.Quantity;
                 Console.WriteLine(
                     $"[CRAFT-OUTPUT] ItemId={output.ItemId} UID={output.ItemUid} x{output.Quantity} | " +
                     $"stats: {(output.Stats.Count == 0 ? "(aucune stat)" : string.Join(", ", output.Stats.Select(x => $"{x.EffectId}={x.Value}")))}");
