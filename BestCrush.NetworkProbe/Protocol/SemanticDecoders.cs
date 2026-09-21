@@ -12,7 +12,9 @@ internal sealed record ProtocolMap(
     string? PurchaseOffer,
     string? InventoryAdd,
     string? SmithmagicRequest,
+    string? SmithmagicBatchRequest,
     string? SmithmagicResult,
+    string? SmithmagicAux,
     IReadOnlySet<string> DiagnosticMessages)
 {
     public static ProtocolMap Load(string path)
@@ -28,10 +30,12 @@ internal sealed record ProtocolMap(
                 "kef",
                 "isa",
                 "jze",
+                "kcs",
                 "kbu",
+                "kar",
                 new HashSet<string>(StringComparer.Ordinal)
                 {
-                    "itt","log","kbd","kcs","iut","irl","isf","keb","kcw"
+                    "itt","log","kbd","iut","irl","isf","keb","kcw"
                 });
 
         using JsonDocument doc = JsonDocument.Parse(File.ReadAllText(path));
@@ -51,7 +55,9 @@ internal sealed record ProtocolMap(
         string? purchaseOffer = root.TryGetProperty("purchase_offer", out JsonElement po) ? po.GetString() : null;
         string? inventoryAdd = root.TryGetProperty("inventory_add", out JsonElement ia) ? ia.GetString() : null;
         string? smithmagicRequest = root.TryGetProperty("smithmagic_request", out JsonElement sr) ? sr.GetString() : null;
+        string? smithmagicBatchRequest = root.TryGetProperty("smithmagic_batch_request", out JsonElement sbr) ? sbr.GetString() : null;
         string? smithmagicResult = root.TryGetProperty("smithmagic_result", out JsonElement sx) ? sx.GetString() : null;
+        string? smithmagicAux = root.TryGetProperty("smithmagic_aux", out JsonElement sa) ? sa.GetString() : null;
 
         HashSet<string> diagnostics = new(StringComparer.Ordinal);
         if (root.TryGetProperty("diagnostic_messages", out JsonElement dm) &&
@@ -75,7 +81,9 @@ internal sealed record ProtocolMap(
             purchaseOffer,
             inventoryAdd,
             smithmagicRequest,
+            smithmagicBatchRequest,
             smithmagicResult,
+            smithmagicAux,
             diagnostics);
     }
 }
@@ -97,6 +105,7 @@ internal sealed record PurchaseOfferObservation(
     ulong ListingId,
     IReadOnlyList<ItemStatObservation> Stats);
 internal sealed record SmithmagicRequestObservation(ulong RuneUid, ulong Quantity);
+internal sealed record SmithmagicBatchRequestObservation(ulong Quantity, ulong Sequence);
 internal sealed record SmithmagicResultObservation(int ResultCode, ItemDetailObservation Item);
 
 internal sealed record RuneDrop(ulong RuneItemId, ulong Quantity);
@@ -393,6 +402,22 @@ internal static class SemanticDecoders
 
         return runeUid > 0
             ? new SmithmagicRequestObservation(runeUid, quantity)
+            : null;
+    }
+
+    public static SmithmagicBatchRequestObservation? TryDecodeSmithmagicBatchRequest(byte[] body)
+    {
+        List<ProtoField>? fields = ProtoWire.ReadFields(body);
+        if (fields is null)
+            return null;
+
+        ulong quantity = fields.FirstOrDefault(f =>
+            f.Number == 2 && f.WireType == ProtoWireType.Varint)?.Varint ?? 1;
+        ulong sequence = fields.FirstOrDefault(f =>
+            f.Number == 3 && f.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        return quantity > 0
+            ? new SmithmagicBatchRequestObservation(quantity, sequence)
             : null;
     }
 
@@ -703,23 +728,41 @@ internal static class ConsoleRenderer
                 : "?";
 
         ulong quantity = request?.Quantity ?? 1;
+        string status = result.ResultCode switch
+        {
+            2 => "PASS",
+            1 => "FAIL",
+            _ => $"CODE-{result.ResultCode}"
+        };
+
+        List<string>? deltas = before is null
+            ? null
+            : BuildStatDeltas(before.Stats, result.Item.Stats);
+
+        HashSet<ulong> runeEffects = rune is null
+            ? new HashSet<ulong>()
+            : rune.Stats.Select(x => x.EffectId).ToHashSet();
+
+        bool collateralLoss = before is not null &&
+            HasCollateralLoss(before.Stats, result.Item.Stats, runeEffects);
 
         Console.WriteLine(
-            $"[FM] Target ItemId={result.Item.ItemId} UID={result.Item.ItemUid} | " +
-            $"Rune {runeText} x{quantity} | resultCode={result.ResultCode}");
+            $"[FM] {status} | Target ItemId={result.Item.ItemId} UID={result.Item.ItemUid} | " +
+            $"Rune {runeText} x{quantity} | rawCode={result.ResultCode}");
 
         Console.WriteLine($"  Avant : {(before is null ? "?" : FormatStats(before.Stats))}");
         Console.WriteLine($"  Après : {FormatStats(result.Item.Stats)}");
 
-        if (before is not null)
+        if (deltas is not null)
         {
-            List<string> deltas = BuildStatDeltas(before.Stats, result.Item.Stats);
             Console.WriteLine(
                 $"  Delta : {(deltas.Count == 0 ? "aucun changement" : string.Join(", ", deltas))}");
+            Console.WriteLine($"  Perte collatérale : {(collateralLoss ? "oui" : "non")}");
         }
 
         Console.WriteLine();
     }
+
 
     private static string FormatStats(IReadOnlyList<ItemStatObservation> stats)
         => stats.Count == 0
