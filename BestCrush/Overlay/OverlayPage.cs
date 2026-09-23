@@ -15,6 +15,7 @@ public sealed class OverlayPage : ContentPage
     private bool _pointerOverTooltipTarget;
     private int _tooltipHideVersion;
     private readonly VerticalStackLayout _hoverTooltipContent;
+    private readonly ScrollView _hoverTooltipScroll;
 
     private EquipmentProfitabilityResult? _currentProfitability;
     private EquipmentProfitabilityScenario? _currentScenario;
@@ -404,6 +405,17 @@ public sealed class OverlayPage : ContentPage
             Spacing = 4
         };
 
+        _hoverTooltipScroll = new ScrollView
+        {
+            Content = _hoverTooltipContent,
+            VerticalScrollBarVisibility =
+                ScrollBarVisibility.Default,
+            HorizontalScrollBarVisibility =
+                ScrollBarVisibility.Never,
+            VerticalOptions = LayoutOptions.Fill,
+            HorizontalOptions = LayoutOptions.Fill
+        };
+
         _hoverTooltip = new Border
         {
             BackgroundColor = Color.FromArgb("#111315"),
@@ -416,8 +428,9 @@ public sealed class OverlayPage : ContentPage
             VerticalOptions = LayoutOptions.Start,
             Margin = new Thickness(18, 145, 18, 0),
             MaximumWidthRequest = 305,
+            MaximumHeightRequest = 320,
             ZIndex = 1000,
-            Content = _hoverTooltipContent
+            Content = _hoverTooltipScroll
         };
 
         Grid.SetRow(_hoverTooltip, 0);
@@ -520,26 +533,22 @@ public sealed class OverlayPage : ContentPage
 
         AttachHoverTooltip(
             _coefficientLine,
-            ShowCoefficientTooltip,
-            165
+            ShowCoefficientTooltip
         );
 
         AttachHoverTooltip(
             _runeValueLine,
-            ShowRuneComparisonTooltip,
-            145
+            ShowRuneComparisonTooltip
         );
 
         AttachHoverTooltip(
             _craftLine,
-            ShowCraftDetailsTooltip,
-            215
+            ShowCraftDetailsTooltip
         );
 
         AttachHoverTooltip(
             _partialLine,
-            ShowMissingDataTooltip,
-            290
+            ShowMissingDataTooltip
         );
 
         MakeCopyable(
@@ -607,28 +616,31 @@ public sealed class OverlayPage : ContentPage
 
     private void AttachHoverTooltip(
         View target,
-        Action showTooltip,
-        double topMargin)
+        Action showTooltip)
     {
         PointerGestureRecognizer pointer =
             new();
 
         pointer.PointerEntered +=
-            (_, _) =>
+            (_, e) =>
             {
                 _pointerOverTooltipTarget = true;
 
                 CancelTooltipHide();
 
-                _hoverTooltip.Margin =
-                    new Thickness(
-                        18,
-                        topMargin,
-                        18,
-                        0
-                    );
-
                 showTooltip();
+
+                PositionHoverTooltip(
+                    e.GetPosition(this)
+                );
+
+                _ =
+                    _hoverTooltipScroll
+                        .ScrollToAsync(
+                            0,
+                            0,
+                            false
+                        );
             };
 
         pointer.PointerExited +=
@@ -644,6 +656,95 @@ public sealed class OverlayPage : ContentPage
         );
     }
 
+    private void PositionHoverTooltip(
+        Point? pointerPosition)
+    {
+        const double horizontalMargin = 18;
+        const double edgeMargin = 12;
+        const double pointerGap = 14;
+        const double preferredMaximumHeight = 320;
+        const double preferredComfortHeight = 180;
+        const double minimumHeight = 60;
+
+        double hostHeight =
+            Height > 0
+                ? Height
+                : 520;
+
+        double pointerY =
+            Math.Clamp(
+                pointerPosition?.Y ??
+                    hostHeight / 2.0,
+                edgeMargin,
+                Math.Max(
+                    edgeMargin,
+                    hostHeight - edgeMargin
+                )
+            );
+
+        double spaceBelow =
+            Math.Max(
+                0,
+                hostHeight -
+                pointerY -
+                pointerGap -
+                edgeMargin
+            );
+
+        double spaceAbove =
+            Math.Max(
+                0,
+                pointerY -
+                pointerGap -
+                edgeMargin
+            );
+
+        bool placeBelow =
+            spaceBelow >=
+                Math.Min(
+                    preferredMaximumHeight,
+                    preferredComfortHeight
+                ) ||
+            spaceBelow >=
+                spaceAbove;
+
+        double availableHeight =
+            placeBelow
+                ? spaceBelow
+                : spaceAbove;
+
+        double tooltipMaximumHeight =
+            Math.Max(
+                minimumHeight,
+                Math.Min(
+                    preferredMaximumHeight,
+                    availableHeight
+                )
+            );
+
+        double top =
+            placeBelow
+                ? pointerY +
+                    pointerGap
+                : Math.Max(
+                    edgeMargin,
+                    pointerY -
+                    pointerGap -
+                    tooltipMaximumHeight
+                );
+
+        _hoverTooltip.MaximumHeightRequest =
+            tooltipMaximumHeight;
+
+        _hoverTooltip.Margin =
+            new Thickness(
+                horizontalMargin,
+                top,
+                horizontalMargin,
+                0
+            );
+    }
+
     private void CancelTooltipHide()
     {
         _tooltipHideVersion++;
@@ -654,7 +755,7 @@ public sealed class OverlayPage : ContentPage
         int version =
             ++_tooltipHideVersion;
 
-        await Task.Delay(150);
+        await Task.Delay(250);
 
         if (version != _tooltipHideVersion)
         {
