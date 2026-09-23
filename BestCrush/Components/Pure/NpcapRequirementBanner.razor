@@ -1,0 +1,92 @@
+@implements IDisposable
+@inject BestCrush.Services.NpcapPrerequisiteService NpcapPrerequisite
+@inject BestCrush.Services.DofusNetworkCaptureService NetworkCapture
+
+@if (NpcapPrerequisite.HasChecked &&
+     !NpcapPrerequisite.IsInstalled)
+{
+    <div class="alert alert-warning d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3"
+         role="alert">
+        <div>
+            <div class="fw-semibold">
+                Npcap requis pour la capture réseau passive
+            </div>
+
+            <div class="small mt-1">
+                BestCrush n'inclut pas Npcap.
+                Installez-le depuis le site officiel, puis cliquez sur
+                « Revérifier ». Les fonctions réseau restent inactives
+                tant que Npcap n'est pas détecté.
+            </div>
+
+            <div class="small text-secondary mt-1">
+                @NpcapPrerequisite.StatusText
+            </div>
+        </div>
+
+        <div class="d-flex flex-wrap gap-2 flex-shrink-0">
+            <button type="button"
+                    class="btn btn-warning"
+                    @onclick="OpenNpcapDownloadAsync">
+                Télécharger Npcap
+            </button>
+
+            <button type="button"
+                    class="btn btn-outline-secondary"
+                    @onclick="Recheck">
+                Revérifier
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        NpcapPrerequisite.Changed +=
+            OnNpcapChanged;
+
+        if (!NpcapPrerequisite.HasChecked)
+        {
+            NpcapPrerequisite.Refresh();
+        }
+    }
+
+    private async Task OpenNpcapDownloadAsync()
+    {
+        await Microsoft.Maui.ApplicationModel
+            .Launcher
+            .Default
+            .OpenAsync(
+                new Uri(
+                    BestCrush.Services
+                        .NpcapPrerequisiteService
+                        .DownloadUrl
+                )
+            );
+    }
+
+    private void Recheck()
+    {
+        if (NpcapPrerequisite.Refresh())
+        {
+            NetworkCapture.Start();
+        }
+    }
+
+    private void OnNpcapChanged(
+        object? sender,
+        EventArgs e)
+    {
+        _ =
+            InvokeAsync(
+                StateHasChanged
+            );
+    }
+
+    public void Dispose()
+    {
+        NpcapPrerequisite.Changed -=
+            OnNpcapChanged;
+    }
+}
