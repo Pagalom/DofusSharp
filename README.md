@@ -358,7 +358,7 @@ Cela permet notamment de mettre automatiquement à jour :
 
 - les pages de prix locaux ;
 - l'overlay de rentabilité ;
-- la valorisation d'une session F9 déjà terminée.
+- la valorisation des résultats de concassage déjà affichés.
 
 Les pages de prix disposent également d'un bouton **Rafraîchir** pour forcer manuellement une relecture de la base locale.
 
