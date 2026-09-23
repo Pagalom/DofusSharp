@@ -28,6 +28,7 @@ public sealed class DofusNetworkCaptureService(
     CurrentServerState currentServerState,
     LastNetworkEquipmentState lastNetworkEquipmentState,
     CrushSessionService crushSessionService,
+    NpcapPrerequisiteService npcapPrerequisiteService,
     BestCrushSettingsService settings,
     MarketDataChangeNotifier marketDataChangeNotifier,
     ILogger<DofusNetworkCaptureService> logger)
@@ -70,60 +71,83 @@ public sealed class DofusNetworkCaptureService(
     public void Start()
     {
 #if WINDOWS
+        if (!npcapPrerequisiteService.Refresh())
+        {
+            logger.LogWarning(
+                "Capture réseau inactive : Npcap n'est pas disponible.");
+
+            return;
+        }
+
         lock (_captureLock)
         {
             if (_started)
                 return;
-
-            _started = true;
 
             string mapPath =
                 Path.Combine(
                     AppContext.BaseDirectory,
                     "protocol-map.json");
 
-            _map = ProtocolMap.Load(mapPath);
-            _worker = Task.Run(
-                () => ProcessMessagesAsync(_cancellation.Token));
+            _map =
+                ProtocolMap.Load(
+                    mapPath);
 
             CaptureDeviceList captureDevices;
 
             try
             {
-                captureDevices = CaptureDeviceList.Instance;
+                captureDevices =
+                    CaptureDeviceList.Instance;
             }
             catch (Exception ex)
             {
                 logger.LogError(
                     ex,
                     "Impossible d'initialiser Npcap/SharpPcap.");
+
                 return;
             }
 
-            foreach (ICaptureDevice device in captureDevices)
+            foreach (
+                ICaptureDevice device
+                in captureDevices)
             {
                 try
                 {
-                    device.OnPacketArrival += OnPacketArrival;
-                    device.Open(DeviceModes.Promiscuous, 1000);
-                    device.Filter = $"tcp port {DofusPort}";
+                    device.OnPacketArrival +=
+                        OnPacketArrival;
+
+                    device.Open(
+                        DeviceModes.Promiscuous,
+                        1000);
+
+                    device.Filter =
+                        $"tcp port {DofusPort}";
+
                     device.StartCapture();
-                    _devices.Add(device);
+
+                    _devices.Add(
+                        device);
 
                     logger.LogInformation(
                         "Capture réseau Dofus active sur {Device}.",
-                        device.Description ?? device.Name);
+                        device.Description ??
+                        device.Name);
                 }
                 catch (Exception ex)
                 {
                     logger.LogDebug(
                         ex,
                         "Interface ignorée pour la capture Dofus : {Device}.",
-                        device.Description ?? device.Name);
+                        device.Description ??
+                        device.Name);
 
                     try
                     {
-                        device.OnPacketArrival -= OnPacketArrival;
+                        device.OnPacketArrival -=
+                            OnPacketArrival;
+
                         device.Dispose();
                     }
                     catch
@@ -137,7 +161,17 @@ public sealed class DofusNetworkCaptureService(
             {
                 logger.LogWarning(
                     "Aucune interface réseau n'a pu être ouverte pour Dofus.");
+
+                return;
             }
+
+            _worker ??=
+                Task.Run(
+                    () =>
+                        ProcessMessagesAsync(
+                            _cancellation.Token));
+
+            _started = true;
         }
 #endif
     }
