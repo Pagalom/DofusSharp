@@ -45,7 +45,8 @@ public sealed class NpcapPrerequisiteService
         try
         {
             string systemDirectory =
-                Environment.SystemDirectory;
+                Environment.GetFolderPath(
+                    Environment.SpecialFolder.System);
 
             string npcapDirectory =
                 Path.Combine(
