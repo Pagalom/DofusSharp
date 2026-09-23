@@ -4,7 +4,7 @@
 
 **BestCrush** est développé dans un fork de [DofusSharp](https://github.com/DofusSharp/DofusSharp), un ensemble de bibliothèques et d'applications C# autour de Dofus.
 
-Cette version de BestCrush ajoute une gestion locale du marché, des captures en jeu par OCR, des overlays Windows et un suivi réel des résultats de concassage.
+Cette version de BestCrush ajoute une gestion locale du marché, une capture réseau passive des données Dofus, des overlays Windows et un suivi réel des résultats de concassage. L'OCR est désormais réservé à la lecture explicite d'une infobulle d'équipement avec `F8`.
 
 ---
 
@@ -26,7 +26,10 @@ Pour une release Windows :
 
 - Windows 10 ou Windows 11 64 bits.
 - Microsoft Edge WebView2 Runtime.
+- **Npcap**, installé séparément par l'utilisateur depuis le site officiel.
 - Dofus lancé en mode fenêtré ou dans une configuration permettant à BestCrush de détecter sa fenêtre.
+
+BestCrush **n'intègre ni ne redistribue Npcap**. Au lancement, l'application vérifie sa présence ; s'il manque, un bandeau permet d'ouvrir la page officielle de téléchargement puis de revérifier l'installation.
 
 Les releases self-contained incluent le runtime .NET et les composants Windows App SDK nécessaires.  
 WebView2 est généralement déjà installé sur les versions récentes de Windows.
@@ -193,29 +196,24 @@ Les analyses proposent également :
 - la copie des noms et des valeurs pertinentes.
 
 ---
-# Captures en jeu
+# Capture réseau passive
 
-BestCrush fonctionne comme une application externe.
+BestCrush fonctionne comme une application externe et ne s'injecte pas dans le processus Dofus.
 
-Il ne s'injecte pas dans le processus Dofus : la lecture repose sur des captures de la fenêtre du jeu, de la détection d'interface, de l'OCR et des données locales.
+Les données de marché et de concassage sont maintenant récupérées **passivement depuis le trafic réseau Dofus** grâce à Npcap/SharpPcap. Cette capture sert de source principale pour les prix locaux, les coefficients et les résultats de concassage.
 
-## Clic molette — lecture contextuelle
+L'OCR n'est plus utilisé pour scanner l'HDV ou les résultats de concassage. Il reste réservé à une action explicite : **`F8` lit l'infobulle de l'équipement actuellement survolé afin de le mettre en focus**.
 
-Par défaut, le **clic sur la molette** déclenche une lecture de la zone Dofus située sous le contexte courant.
+## Focus d'un équipement
 
-Selon l'écran détecté, BestCrush peut notamment :
+- **Clic molette** : met en focus le dernier équipement identifié de façon fiable sur le réseau, sans capture d'écran ni OCR.
+- **F8** : lit l'infobulle de l'équipement actuellement survolé et le met en focus.
 
-- sélectionner un équipement comme cible ;
-- lire un prix d'équipement en HDV ;
-- enregistrer les prix d'une rune ;
-- enregistrer les prix d'une ressource ;
-- lire un résultat de concassage et son coefficient.
-
-Une rune ou une ressource capturée **ne remplace jamais l'équipement actuellement en focus**.
+Un focus ouvre automatiquement l'overlay **Rentabilité**.
 
 ### Serveur obligatoire
 
-Aucune capture de marché n'est autorisée tant qu'un serveur n'a pas été explicitement sélectionné dans BestCrush pour la session en cours.
+Aucune donnée réseau n'est persistée tant qu'un serveur n'a pas été explicitement sélectionné dans BestCrush pour la session en cours.
 
 ---
 
@@ -293,9 +291,10 @@ Une petite barre always-on-top permet d'afficher ou masquer individuellement :
 
 | Action | Raccourci par défaut |
 |---|---|
-| Lecture contextuelle | Clic molette |
+| Focus sur le dernier équipement vu sur le réseau | Clic molette |
+| Lecture OCR de l'infobulle d'équipement | `F8` |
 | Masquer / restaurer les overlays | `F7` |
-| Démarrer / arrêter une session de concassage | `F9` |
+| Non attribué | `F9` |
 
 `F7` masque les overlays actuellement visibles.  
 Un second appui restaure uniquement ceux qui étaient visibles avant le masquage.
@@ -304,40 +303,17 @@ Un second appui restaure uniquement ceux qui étaient visibles avant le masquage
 
 ---
 
-# Session de concassage F9
+# Résultat de concassage passif
 
-`F9` démarre une session dédiée à la lecture des runes réellement obtenues.
+Lorsqu'un concassage est détecté sur le réseau, BestCrush récupère directement :
 
-## Fonctionnement
+- l'équipement concerné lorsque sa correspondance est connue ;
+- le coefficient de brisage ;
+- les identifiants et quantités exactes des runes obtenues.
 
-Après le concassage :
+L'overlay **Résultat concassage** s'ouvre automatiquement et valorise les runes avec les prix locaux du serveur sélectionné.
 
-1. Démarrer la session avec `F9`.
-2. Survoler chaque cellule de rune obtenue.
-3. Laisser brièvement la souris immobile sur la rune.
-4. BestCrush lit l'infobulle et récupère :
-   - le nom exact de la rune ;
-   - la quantité du lot.
-5. La cellule est comptée une seule fois pendant la session.
-6. Les quantités identiques sont agrégées.
-7. Leur valeur est calculée à partir des prix locaux.
-8. Le détail des lots utilisés pour cette valorisation est affiché sous chaque rune.
-
-La valeur totale est automatiquement recalculée lorsque les prix locaux des runes changent.
-
-## Important : ne pas scroller
-
-Le scroll pendant une session F9 invalide volontairement la session.
-
-BestCrush affiche alors :
-
-```text
-Ne pas scroller
-```
-
-Cette limitation évite de compter deux fois des cellules après déplacement du contenu du panneau.
-
-Pour le moment, il est donc recommandé de concasser suffisamment peu d'objets pour que toutes les lignes de résultat restent visibles simultanément.
+Il n'est plus nécessaire de démarrer une session avec `F9`, de survoler les cellules ni d'utiliser l'OCR pour lire le résultat.
 
 ---
 
@@ -414,27 +390,27 @@ La base SQLite contient les données locales nécessaires au fonctionnement de B
 
 # Reconnaissance OCR
 
-La reconnaissance repose sur plusieurs étapes :
+L'OCR est désormais limité à la **lecture explicite d'une infobulle d'équipement avec `F8`**.
 
 ```text
-Fenêtre Dofus
+Infobulle d'équipement
     ↓
-Capture
+F8
     ↓
-Détection du panneau / de l'infobulle
+Capture de la fenêtre Dofus
     ↓
-Extraction de régions
+Extraction du titre
     ↓
 OCR
     ↓
 Reconnaissance DofusDB
     ↓
-Enregistrement / calcul local
+Mise en focus
 ```
 
-La reconnaissance des équipements utilise en priorité une correspondance exacte normalisée, puis une correspondance approchée lorsque nécessaire.
+Les prix HDV, les coefficients et les résultats de concassage ne dépendent plus de cette reconnaissance visuelle.
 
-Les systèmes OCR restent sensibles à certains changements d'interface, de résolution ou de rendu du jeu.
+La reconnaissance des équipements utilise en priorité une correspondance exacte normalisée, puis une correspondance approchée lorsque nécessaire.
 
 ---
 
@@ -505,7 +481,7 @@ Exemple :
 ```powershell
 Compress-Archive `
   -Path .\publish\BestCrush\* `
-  -DestinationPath .\BestCrush-v0.1.7-win-x64.zip `
+  -DestinationPath .\BestCrush-v0.2.0-win-x64.zip `
   -Force
 ```
 
@@ -570,11 +546,11 @@ BestCrush est encore en développement actif.
 
 Les principales limitations actuelles concernent notamment :
 
-- la dépendance de l'OCR à l'apparence de l'interface Dofus ;
-- la nécessité de garder les résultats F9 visibles sans scroll ;
+- la nécessité d'installer Npcap séparément sous Windows ;
+- la dépendance du décodage réseau au protocole de la version courante de Dofus, qui peut nécessiter une adaptation après une mise à jour du jeu ;
+- la dépendance de la lecture `F8` à l'apparence de l'infobulle Dofus ;
 - certains comportements Windows liés au focus des fenêtres ;
-- les raccourcis actuellement fixes ;
-- les éventuels changements futurs de l'interface ou des API externes.
+- les raccourcis actuellement fixes.
 
 Si une lecture paraît incohérente, vérifiez les données locales avant d'utiliser le résultat pour une décision en jeu.
 
@@ -647,8 +623,24 @@ BestCrush évolue par étapes afin de conserver un ordre de développement clair
 | **2 — Rentabilité dynamique** | ✅ Terminé | Décote configurable, prix maximum acceptable, coefficient minimum nécessaire et calculs selon le ROI cible. |
 | **3 — Recherche avancée** | ✅ Terminé | Filtres économiques, filtres multi-runes, contrôle de la fraîcheur des données, tris et presets. |
 | **4 — Analytics marché V1 — v0.1.7** | ✅ Terminé | Séries multiples, Base 100, agrégations, périodes, presets, cartes interactives et tooltips. |
-| **5 — Analytics marché V2** | ⬜ À faire | Groupes d'items, ratios, comparaisons avancées, corrélations et décalages temporels. |
-| **6 — Personnalisation** | ⬜ À faire | Raccourcis configurables et raffinements supplémentaires de l'ergonomie. |
+| **5 — Capture réseau passive — v0.2.0** | ✅ Terminé | Prix HDV et concassage issus du réseau, focus réseau, OCR réservé à F8, overlays actualisés et prérequis Npcap contrôlé. |
+| **6 — Analytics marché V2** | ⬜ À faire | Groupes d'items, ratios, comparaisons avancées, corrélations et décalages temporels. |
+| **7 — Personnalisation** | ⬜ À faire | Raccourcis configurables et raffinements supplémentaires de l'ergonomie. |
+
+### Nouveautés clôturées dans la v0.2.0
+
+- capture réseau passive du trafic Dofus sur le port de jeu ;
+- prix HDV locaux alimentés depuis les paquets réseau ;
+- mise à jour immédiate des prix après achat pour les ressources et runes ;
+- résultats de concassage récupérés directement depuis le réseau ;
+- ouverture automatique de l'overlay de concassage à la réception d'un résultat ;
+- clic molette pour reprendre le dernier équipement identifié sur le réseau ;
+- `F8` réservé à la lecture OCR de l'infobulle d'équipement ;
+- `F9` libéré ;
+- overlays et bulles d'information scrollables ;
+- affichage du niveau de l'équipement dans l'overlay Rentabilité ;
+- affichage du prix d'achat dans les résultats incomplets ;
+- détection de Npcap au lancement avec accès au téléchargement officiel sans redistribution de Npcap.
 
 ### Nouveautés clôturées dans la v0.1.7
 
