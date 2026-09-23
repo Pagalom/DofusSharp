@@ -1,4 +1,4 @@
-BestCrush v0.1.7
+BestCrush v0.2.0
 ==================
 
 BestCrush est un outil compagnon pour Dofus permettant de :
@@ -11,54 +11,56 @@ BestCrush est un outil compagnon pour Dofus permettant de :
 - comparer plusieurs évolutions de marché simultanément ;
 - enregistrer des recherches et des analyses réutilisables.
 
-NOUVEAUTÉS v0.1.7
+NOUVEAUTÉS v0.2.0
 -----------------
 
-ANALYSES DE MARCHÉ
+CAPTURE RÉSEAU PASSIVE
 
-- ajout de l'onglet Analyses dans la page Historique ;
-- analyse simultanée de plusieurs runes, ressources ou équipements ;
-- possibilité d'ajouter plusieurs variantes du même élément ;
-- périodes disponibles : 24 heures, 7 jours, 30 jours ou tout l'historique ;
-- agrégations disponibles : médiane, moyenne, Q1 et Q3 ;
-- sélection des données capturées en jeu, manuelles ou toutes sources ;
-- transformation en Base 100 utilisée par défaut ;
-- valeur brute toujours disponible comme transformation alternative ;
-- conversion obligatoire en prix unitaire lorsque tous les lots sont regroupés ;
-- enregistrement et réutilisation des analyses sous forme de presets ;
-- cartes interactives avec les véritables icônes Dofus ;
-- couleur stable permettant d'associer chaque carte à sa courbe ;
-- mise en évidence de la carte et de la courbe sélectionnées ;
-- affichage d'un tooltip lors du survol des points ;
-- affichage simultané de l'indice et de la valeur réelle en Base 100 ;
-- copie des noms et des valeurs pertinentes.
+- remplacement des anciennes lectures OCR de marché par une capture réseau passive ;
+- récupération automatique des prix HDV depuis le trafic Dofus ;
+- mise à jour des prix des ressources et runes immédiatement après un achat lorsque le nouveau palier est reçu ;
+- récupération directe des résultats de concassage, coefficients, runes et quantités ;
+- conservation locale des observations et alimentation de l'historique ;
+- aucun mécanisme d'injection dans le processus Dofus.
 
-RENTABILITÉ ET RECHERCHE
+FOCUS ET RACCOURCIS
 
-- ajout d'une décote configurable sur la valeur théorique des runes ;
-- décote de 5 % appliquée par défaut ;
-- conservation de la décote utilisée dans l'historique des concassages ;
-- calcul du prix maximum acceptable à l'achat et au craft ;
-- calcul du coefficient minimum nécessaire selon le ROI cible ;
-- ajout de filtres économiques avancés ;
-- filtres multi-runes avec modes TOUTES et AU MOINS UNE ;
-- filtres de complétude, de fraîcheur et de coefficient ;
-- ajout de presets de recherche.
+- clic molette : met en focus le dernier équipement identifié de façon fiable sur le réseau ;
+- F8 : lit uniquement l'infobulle de l'équipement actuellement survolé par OCR et le met en focus ;
+- F7 : masque ou restaure les overlays visibles ;
+- F9 : désormais libre / non attribué ;
+- un focus ouvre automatiquement l'overlay Rentabilité ;
+- un concassage détecté ouvre automatiquement l'overlay Résultat concassage.
 
-HISTORIQUE DU MARCHÉ
+OVERLAYS
 
-- conservation temporelle des observations de prix ;
-- historique propre à chaque serveur ;
-- regroupement temporel des observations proches ;
-- limitation des doublons pour les prix identiques rapprochés ;
-- conservation des confirmations de prix espacées dans le temps.
+- ajout du niveau à côté du nom de l'équipement dans l'overlay Rentabilité ;
+- ajout du scroll vertical lorsque le contenu dépasse la hauteur disponible ;
+- liste des runes du résultat de concassage scrollable ;
+- détails de marché scrollables ;
+- bulles d'information de l'overlay Rentabilité repositionnées au-dessus ou en dessous de la ligne survolée afin de ne pas masquer le curseur ;
+- bulles d'information longues elles-mêmes scrollables ;
+- affichage du prix d'achat d'un équipement dans les résultats incomplets lorsque ce prix est connu.
+
+NPCAP
+
+La capture réseau passive nécessite Npcap sous Windows.
+
+BestCrush ne distribue pas Npcap.
+
+Au démarrage :
+- si Npcap est détecté, la capture réseau démarre normalement ;
+- s'il est absent ou incomplet, BestCrush reste utilisable mais les fonctions réseau sont désactivées ;
+- un bandeau permet d'ouvrir la page officielle de téléchargement Npcap ;
+- après installation, le bouton "Revérifier" permet de tenter de démarrer la capture sans redémarrer BestCrush.
 
 INSTALLATION
 ------------
 
-1. Extraire entièrement cette archive dans un dossier.
-2. Lancer BestCrush.exe.
-3. Sélectionner votre serveur dans BestCrush avant toute capture.
+1. Installer Npcap depuis le site officiel si ce n'est pas déjà fait.
+2. Extraire entièrement l'archive BestCrush dans un dossier.
+3. Lancer BestCrush.exe.
+4. Sélectionner votre serveur dans BestCrush.
 
 Ne lancez pas BestCrush.exe directement depuis l'archive ZIP.
 
@@ -67,39 +69,35 @@ PRÉREQUIS
 
 - Windows 10 ou Windows 11 64 bits
 - Microsoft Edge WebView2 Runtime
+- Npcap installé séparément par l'utilisateur
 
 Le runtime .NET et les dépendances Windows nécessaires sont inclus dans cette distribution.
+Npcap n'est pas inclus dans l'archive BestCrush.
 
 RACCOURCIS
 ----------
 
-Clic molette : lecture contextuelle
+Clic molette : focus sur le dernier équipement identifié sur le réseau
+F8           : lecture OCR de l'infobulle d'équipement
 F7           : masquer ou restaurer les overlays
-F9           : démarrer ou arrêter une session de concassage
-
-COPIE DES DONNÉES
------------------
-
-- clic sur un nom : copie le nom ;
-- clic sur un prix ou une valeur : copie uniquement la valeur numérique ;
-- clic sur un coefficient : copie sa valeur sans le symbole "%" ;
-- les détails de valorisation des runes peuvent être copiés sous forme de formules Excel.
+F9           : non attribué
 
 DONNÉES
 -------
 
 Les équipements, ressources, recettes, caractéristiques et runes proviennent de DofusDB.
 
-DoFocus est utilisé comme coefficient initial ou de repli lorsqu'aucun coefficient local actif n'est disponible.
+DoFocus peut être utilisé comme coefficient initial ou de repli lorsqu'aucun coefficient local actif n'est disponible.
 
-IMPORTANT
----------
+Les prix, coefficients et résultats de concassage récupérables en jeu sont désormais principalement alimentés par la capture réseau passive.
 
-Lors d'une session F9, ne faites pas défiler le panneau de résultats.
-Un scroll invalide volontairement la session afin d'éviter les doubles comptages.
+LIMITATIONS
+-----------
 
-BestCrush utilise de la reconnaissance visuelle et de l'OCR.
-Certaines lectures peuvent être affectées par la résolution, l'échelle d'affichage ou des modifications de l'interface Dofus.
+Le décodage réseau dépend du protocole de la version courante de Dofus.
+Une mise à jour du jeu peut nécessiter une adaptation de BestCrush.
+
+La lecture F8 repose encore sur une capture visuelle et de l'OCR ; elle peut donc être affectée par la résolution, l'échelle d'affichage ou des modifications de l'interface Dofus.
 
 PROJET
 ------
