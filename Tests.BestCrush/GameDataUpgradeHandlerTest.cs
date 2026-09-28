@@ -1,9 +1,6 @@
 ﻿using BestCrush.Domain;
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services.Upgrades;
-using DofusSharp.Dofocus.ApiClients;
-using DofusSharp.Dofocus.ApiClients.Models.Common;
-using DofusSharp.Dofocus.ApiClients.Models.Runes;
 using DofusSharp.DofusDb.ApiClients;
 using DofusSharp.DofusDb.ApiClients.Models.Characteristics;
 using DofusSharp.DofusDb.ApiClients.Models.Common;
@@ -24,13 +21,13 @@ public class GameDataUpgradeHandlerTest : IDisposable
         ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "16", "17", "18", "121", "311", "19", "20", "21", "22", "82", "114", "151", "271"];
 
     const string RuneTypeId = "78";
+    const string RuneCatalogVersion = "dofusdb-only-v2";
 
     readonly TestDatabase _testDatabase;
     readonly BestCrushDbContext _context;
     readonly Mock<IDofusDbTableClient<DofusDbCharacteristic>> _dofusDbCharacteristicsClientMock;
     readonly Mock<IDofusDbTableClient<DofusDbItem>> _dofusDbItemsClientMock;
     readonly Mock<IDofusDbTableClient<DofusDbRecipe>> _dofusDbRecipesClientMock;
-    readonly Mock<IDofocusRunesClient> _dofocusRunesClientMock;
     readonly GameDataUpgradeHandler _handler;
 
     public GameDataUpgradeHandlerTest()
@@ -46,13 +43,8 @@ public class GameDataUpgradeHandlerTest : IDisposable
         _dofusDbRecipesClientMock = CommonMocks.TableClient<DofusDbRecipe>();
         clientsFactory.Setup(f => f.Recipes()).Returns(_dofusDbRecipesClientMock.Object);
 
-        Mock<IDofocusClientFactory> dofocusClientFactory = new();
-        _dofocusRunesClientMock = new Mock<IDofocusRunesClient>();
-        _dofocusRunesClientMock.Setup(c => c.GetRunesAsync(It.IsAny<CancellationToken>())).ReturnsAsync([]);
-        dofocusClientFactory.Setup(f => f.Runes()).Returns(_dofocusRunesClientMock.Object);
-
         IDofusDbQueryProvider queryProvider = DofusDbQuery.Create(clientsFactory.Object);
-        _handler = new GameDataUpgradeHandler(_context, queryProvider, dofocusClientFactory.Object, Mock.Of<ILogger<GameDataUpgradeHandler>>());
+        _handler = new GameDataUpgradeHandler(_context, queryProvider, Mock.Of<ILogger<GameDataUpgradeHandler>>());
     }
 
     public void Dispose() => _testDatabase.Dispose();
@@ -61,6 +53,7 @@ public class GameDataUpgradeHandlerTest : IDisposable
     public async Task ShouldNotUpgrade_WhenVersionIsTheSame()
     {
         _context.Upgrades.Add(new Upgrade { Kind = UpgradeKind.DofusDb, NewVersion = "1.2.3", UpgradeDate = DateTime.Now });
+        _context.Upgrades.Add(new Upgrade { Kind = UpgradeKind.RuneCatalog, NewVersion = RuneCatalogVersion, UpgradeDate = DateTime.Now });
         await _context.SaveChangesAsync();
         _context.ChangeTracker.Clear();
 
@@ -168,7 +161,7 @@ public class GameDataUpgradeHandlerTest : IDisposable
             );
 
         _dofusDbItemsClientMock
-            .Setup(q => q.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
+            .Setup(q => q.SearchAsync(It.Is<DofusDbSearchQuery>(query => IsEquipmentQuery(query)), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new DofusDbSearchResult<DofusDbItem>
                 {
@@ -205,7 +198,7 @@ public class GameDataUpgradeHandlerTest : IDisposable
     public async Task ShouldUpdateEquipment_WhenExistsAlready()
     {
         _dofusDbItemsClientMock
-            .Setup(q => q.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
+            .Setup(q => q.SearchAsync(It.Is<DofusDbSearchQuery>(query => IsEquipmentQuery(query)), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new DofusDbSearchResult<DofusDbItem>
                 {
@@ -263,7 +256,7 @@ public class GameDataUpgradeHandlerTest : IDisposable
             );
 
         _dofusDbItemsClientMock
-            .Setup(q => q.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
+            .Setup(q => q.SearchAsync(It.Is<DofusDbSearchQuery>(query => IsEquipmentQuery(query)), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new DofusDbSearchResult<DofusDbItem>
                 {
@@ -339,7 +332,7 @@ public class GameDataUpgradeHandlerTest : IDisposable
             );
 
         _dofusDbItemsClientMock
-            .Setup(q => q.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
+            .Setup(q => q.SearchAsync(It.Is<DofusDbSearchQuery>(query => IsEquipmentQuery(query)), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new DofusDbSearchResult<DofusDbItem>
                 {
@@ -416,7 +409,7 @@ public class GameDataUpgradeHandlerTest : IDisposable
     public async Task ShouldRemoveResource_WhenEquipmentRecipeIsRemoved()
     {
         _dofusDbItemsClientMock
-            .Setup(q => q.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
+            .Setup(q => q.SearchAsync(It.Is<DofusDbSearchQuery>(query => IsEquipmentQuery(query)), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new DofusDbSearchResult<DofusDbItem>
                 {
@@ -483,7 +476,7 @@ public class GameDataUpgradeHandlerTest : IDisposable
             );
 
         _dofusDbItemsClientMock
-            .Setup(q => q.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
+            .Setup(q => q.SearchAsync(It.Is<DofusDbSearchQuery>(query => IsEquipmentQuery(query)), It.IsAny<CancellationToken>()))
             .ReturnsAsync(
                 new DofusDbSearchResult<DofusDbItem>
                 {
@@ -527,53 +520,14 @@ public class GameDataUpgradeHandlerTest : IDisposable
     [Fact]
     public async Task ShouldRegisterRune_WhenEmpty()
     {
-        _dofocusRunesClientMock
-            .Setup(c => c.GetRunesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                [
-                    new DofocusRune
-                    {
-                        Id = 123,
-                        Name = new DofocusMultiLangString { Fr = "RUNE_NAME" },
-                        CharacteristicId = 147,
-                        CharacteristicName = new DofocusMultiLangString(),
-                        Value = 0,
-                        Weight = 0,
-                        LatestPrices = []
-                    }
-                ]
-            );
-
-        _dofusDbCharacteristicsClientMock
-            .Setup(q => q.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                new DofusDbSearchResult<DofusDbCharacteristic> { Data = [new DofusDbCharacteristic { Id = 147, Keyword = "actionPoints" }], Total = 1, Limit = 1, Skip = 0 }
-            );
-
-        _dofusDbItemsClientMock
-            .Setup(q => q.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                new DofusDbSearchResult<DofusDbItem>
-                {
-                    Data =
-                    [
-                        new DofusDbItem
-                        {
-                            Id = 123,
-                            IconId = 269,
-                            Level = 159,
-                            Name = new DofusDbMultiLangString { Fr = "RUNE_NAME" }
-                        }
-
-                    ],
-                    Total = 1, Limit = 1, Skip = 0
-                }
-            );
+        SetDofusDbCharacteristics(new DofusDbCharacteristic { Id = 147, Keyword = "actionPoints" });
+        SetDofusDbRunes(CreateApRune());
 
         await _handler.UpgradeAsync(new Version(1, 2, 3));
 
         Rune[] runes = await _context.Runes.ToArrayAsync();
         Rune? rune = runes.Should().ContainSingle().Which;
+        (await _context.Equipments.AnyAsync()).Should().BeFalse();
 
         await Verify(rune);
     }
@@ -581,48 +535,8 @@ public class GameDataUpgradeHandlerTest : IDisposable
     [Fact]
     public async Task ShouldUpdateRune_WhenExistsAlready()
     {
-        _dofocusRunesClientMock
-            .Setup(c => c.GetRunesAsync(It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                [
-                    new DofocusRune
-                    {
-                        Id = 123,
-                        Name = new DofocusMultiLangString { Fr = "RUNE_NAME" },
-                        CharacteristicId = 147,
-                        CharacteristicName = new DofocusMultiLangString(),
-                        Value = 0,
-                        Weight = 0,
-                        LatestPrices = []
-                    }
-                ]
-            );
-
-        _dofusDbCharacteristicsClientMock
-            .Setup(q => q.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                new DofusDbSearchResult<DofusDbCharacteristic> { Data = [new DofusDbCharacteristic { Id = 147, Keyword = "actionPoints" }], Total = 1, Limit = 1, Skip = 0 }
-            );
-
-        _dofusDbItemsClientMock
-            .Setup(q => q.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
-            .ReturnsAsync(
-                new DofusDbSearchResult<DofusDbItem>
-                {
-                    Data =
-                    [
-                        new DofusDbItem
-                        {
-                            Id = 123,
-                            IconId = 269,
-                            Level = 159,
-                            Name = new DofusDbMultiLangString { Fr = "RUNE_NAME" }
-                        }
-
-                    ],
-                    Total = 1, Limit = 1, Skip = 0
-                }
-            );
+        SetDofusDbCharacteristics(new DofusDbCharacteristic { Id = 147, Keyword = "actionPoints" });
+        SetDofusDbRunes(CreateApRune());
 
         _context.Runes.Add(new Rune(123) { Characteristic = Characteristic.ApReduction, DofusDbIconId = 111111, Level = 2222222, Name = "OLD_NAME" });
         await _context.SaveChangesAsync();
@@ -648,4 +562,217 @@ public class GameDataUpgradeHandlerTest : IDisposable
         Rune[] runes = await _context.Runes.ToArrayAsync();
         runes.Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task ShouldRebuildOnlyRunes_WhenVersionIsTheSameAndRuneCatalogMarkerIsMissing()
+    {
+        Resource resource = new(987) { Name = "EXISTING_RESOURCE" };
+        Equipment equipment = new(1) { Name = "EXISTING_EQUIPMENT", Level = 100, Type = EquipmentType.Boots };
+        RecipeEntry recipe = new(equipment, resource, 5);
+        equipment.Recipe.Add(recipe);
+        equipment.Characteristics.Add(new ItemCharacteristicLine(equipment, Characteristic.Ap, 1, 2));
+        _context.Equipments.Add(equipment);
+        _context.Runes.Add(new Rune(999) { Characteristic = Characteristic.Ap, Name = "OLD_RUNE" });
+        _context.Upgrades.Add(new Upgrade { Kind = UpgradeKind.DofusDb, NewVersion = "1.2.3", UpgradeDate = DateTime.Now });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        SetDofusDbCharacteristics(new DofusDbCharacteristic { Id = 147, Keyword = "actionPoints" });
+        SetDofusDbRunes(CreateApRune());
+
+        await _handler.UpgradeAsync(new Version(1, 2, 3));
+
+        using BestCrushDbContext persisted = _testDatabase.CreateContext();
+        Rune rune = (await persisted.Runes.ToArrayAsync()).Should().ContainSingle().Which;
+        rune.DofusDbId.Should().Be(123);
+        rune.Characteristic.Should().Be(Characteristic.Ap);
+        Equipment preserved = await persisted.Equipments
+            .Include(item => item.Characteristics)
+            .Include(item => item.Recipe).ThenInclude(entry => entry.Resource)
+            .SingleAsync();
+        preserved.Id.Should().Be(equipment.Id);
+        preserved.Name.Should().Be("EXISTING_EQUIPMENT");
+        preserved.Level.Should().Be(100);
+        preserved.Type.Should().Be(EquipmentType.Boots);
+        ItemCharacteristicLine characteristic = preserved.Characteristics.Should().ContainSingle().Which;
+        characteristic.Characteristic.Should().Be(Characteristic.Ap);
+        characteristic.From.Should().Be(1);
+        characteristic.To.Should().Be(2);
+        RecipeEntry preservedRecipe = preserved.Recipe.Should().ContainSingle().Which;
+        preservedRecipe.Id.Should().Be(recipe.Id);
+        preservedRecipe.Count.Should().Be(5);
+        Resource preservedResource = await persisted.Resources.SingleAsync();
+        preservedResource.Id.Should().Be(resource.Id);
+        preservedResource.Name.Should().Be("EXISTING_RESOURCE");
+        preservedRecipe.Resource.Id.Should().Be(resource.Id);
+        (await persisted.Upgrades.CountAsync(upgrade => upgrade.Kind == UpgradeKind.DofusDb)).Should().Be(1);
+        Upgrade marker = await persisted.Upgrades.SingleAsync(upgrade => upgrade.Kind == UpgradeKind.RuneCatalog);
+        marker.NewVersion.Should().Be(RuneCatalogVersion);
+
+        _dofusDbItemsClientMock.Verify(client => client.SearchAsync(
+            It.Is<DofusDbSearchQuery>(query => IsEquipmentQuery(query)), It.IsAny<CancellationToken>()), Times.Never);
+        _dofusDbRecipesClientMock.Verify(client => client.SearchAsync(
+            It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task ShouldKeepSingleRuneCatalogMarker_WhenGameVersionChangesAgain()
+    {
+        Upgrade marker = new() { Kind = UpgradeKind.RuneCatalog, NewVersion = RuneCatalogVersion, UpgradeDate = DateTime.Now };
+        _context.Upgrades.Add(marker);
+        _context.Upgrades.Add(new Upgrade { Kind = UpgradeKind.DofusDb, NewVersion = "1.2.2", UpgradeDate = DateTime.Now });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        await _handler.UpgradeAsync(new Version(1, 2, 3));
+        await _handler.UpgradeAsync(new Version(1, 2, 4));
+
+        using BestCrushDbContext persisted = _testDatabase.CreateContext();
+        Upgrade preserved = await persisted.Upgrades.SingleAsync(upgrade => upgrade.Kind == UpgradeKind.RuneCatalog);
+        preserved.Id.Should().Be(marker.Id);
+        preserved.NewVersion.Should().Be(RuneCatalogVersion);
+        (await persisted.Upgrades.CountAsync(upgrade => upgrade.Kind == UpgradeKind.DofusDb)).Should().Be(3);
+    }
+
+    [Fact]
+    public async Task ShouldRegisterBasicPaAndRaRunes_FromDofusDb()
+    {
+        SetDofusDbCharacteristics(new DofusDbCharacteristic { Id = 147, Keyword = "vitality" });
+        SetDofusDbRunes(
+            new DofusDbItem { Id = 101, TypeId = 78, Name = new DofusDbMultiLangString { Fr = "Rune Vi" }, Effects = [new DofusDbItemEffect { Characteristic = 147, From = 1 }] },
+            new DofusDbItem { Id = 102, TypeId = 78, Name = new DofusDbMultiLangString { Fr = "Rune Pa Vi" }, Effects = [new DofusDbItemEffect { Characteristic = 147, From = 3 }] },
+            new DofusDbItem { Id = 103, TypeId = 78, Name = new DofusDbMultiLangString { Fr = "Rune Ra Vi" }, Effects = [new DofusDbItemEffect { Characteristic = 147, From = 10 }] });
+
+        await _handler.UpgradeAsync(new Version(1, 2, 3));
+
+        using BestCrushDbContext persisted = _testDatabase.CreateContext();
+        Rune[] runes = await persisted.Runes.OrderBy(rune => rune.DofusDbId).ToArrayAsync();
+        runes.Select(rune => rune.DofusDbId).Should().Equal(101L, 102L, 103L);
+        runes.Select(rune => rune.Name).Should().Equal("Rune Vi", "Rune Pa Vi", "Rune Ra Vi");
+        runes.Should().OnlyContain(rune => rune.Characteristic == Characteristic.Vitality);
+        (await persisted.Equipments.AnyAsync()).Should().BeFalse();
+    }
+
+    [Theory]
+    [InlineData(10057L, "HUNTING_RUNE_BY_ID")]
+    [InlineData(321L, "Rune de chasse")]
+    [InlineData(321L, "RUNE DE CHASSE")]
+    public async Task ShouldIdentifyHuntingRune_WithoutMappedCharacteristic(long id, string name)
+    {
+        SetDofusDbRunes(new DofusDbItem
+        {
+            Id = id,
+            TypeId = 78,
+            Name = new DofusDbMultiLangString { Fr = name },
+            Effects = [new DofusDbItemEffect { Characteristic = 0 }]
+        });
+
+        await _handler.UpgradeAsync(new Version(1, 2, 3));
+
+        using BestCrushDbContext persisted = _testDatabase.CreateContext();
+        Rune rune = (await persisted.Runes.ToArrayAsync()).Should().ContainSingle().Which;
+        rune.DofusDbId.Should().Be(id);
+        rune.Name.Should().Be(name);
+        rune.Characteristic.Should().Be(Characteristic.Hunting);
+    }
+
+    [Fact]
+    public async Task ShouldSkipRunes_WithoutSupportedCharacteristic()
+    {
+        SetDofusDbCharacteristics(new DofusDbCharacteristic { Id = 147, Keyword = "unsupported-statistic" });
+        SetDofusDbRunes(
+            new DofusDbItem { Id = 201, TypeId = 78, Name = new DofusDbMultiLangString { Fr = "Rune de Signature" } },
+            new DofusDbItem { Id = 202, TypeId = 78, Effects = [new DofusDbItemEffect { Characteristic = 999 }] },
+            new DofusDbItem { Id = 203, TypeId = 78, Effects = [new DofusDbItemEffect { Characteristic = 147 }] });
+
+        await _handler.UpgradeAsync(new Version(1, 2, 3));
+
+        using BestCrushDbContext persisted = _testDatabase.CreateContext();
+        (await persisted.Runes.AnyAsync()).Should().BeFalse();
+    }
+
+    [Fact]
+    public async Task ShouldPreserveObservationsAndCrushHistory_WhenRebuildingGameData()
+    {
+        DateTime observedAt = new(2026, 9, 20, 12, 0, 0, DateTimeKind.Utc);
+        MarketPriceObservation price = new()
+        {
+            ObjectType = MarketObjectType.Equipment, DofusDbId = 1, ServerName = "TEST_SERVER",
+            Price = 1200, Quantity = 1, Source = MarketPriceSource.Manual, ObservedAtUtc = observedAt
+        };
+        CoefficientObservation coefficient = new()
+        {
+            DofusDbId = 1, ServerName = "TEST_SERVER", CoefficientPercent = 371,
+            Source = CoefficientSource.InGameAutomatic, ObservedAtUtc = observedAt
+        };
+        CrushHistorySession session = new("TEST_SERVER", observedAt, observedAt.AddSeconds(1), 1000, 10, 900);
+        CrushHistoryEquipment historyEquipment = new(session, 1, 147, "EQUIPMENT_AT_CAPTURE", 371, CoefficientSource.InGameAutomatic, 2);
+        CrushHistoryRune historyRune = new(session, 123, 269, "RUNE_AT_CAPTURE", 10, 1000);
+        CrushHistoryRuneLot historyLot = new(historyRune, 1, 10, 1000, false, MarketPriceSource.Manual, observedAt);
+        session.Equipments.Add(historyEquipment);
+        session.Runes.Add(historyRune);
+        historyRune.Lots.Add(historyLot);
+        _context.Equipments.Add(new Equipment(1) { Name = "OLD_EQUIPMENT" });
+        _context.Runes.Add(new Rune(123) { Name = "OLD_RUNE", Characteristic = Characteristic.Ap });
+        _context.MarketPriceObservations.Add(price);
+        _context.CoefficientObservations.Add(coefficient);
+        _context.CrushHistorySessions.Add(session);
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+        SetDofusDbCharacteristics(new DofusDbCharacteristic { Id = 147, Keyword = "actionPoints" });
+        SetDofusDbRunes(CreateApRune());
+
+        await _handler.UpgradeAsync(new Version(1, 2, 3));
+
+        using BestCrushDbContext persisted = _testDatabase.CreateContext();
+        (await persisted.Equipments.AnyAsync()).Should().BeFalse();
+        (await persisted.Runes.SingleAsync()).Name.Should().Be("RUNE_NAME");
+        (await persisted.MarketPriceObservations.SingleAsync()).Should().BeEquivalentTo(price);
+        (await persisted.CoefficientObservations.SingleAsync()).Should().BeEquivalentTo(coefficient);
+        CrushHistorySession preserved = await persisted.CrushHistorySessions
+            .Include(item => item.Equipments)
+            .Include(item => item.Runes).ThenInclude(rune => rune.Lots)
+            .SingleAsync();
+        preserved.Should().BeEquivalentTo(session, options => options.Excluding(item => item.Equipments).Excluding(item => item.Runes));
+        preserved.Equipments.Should().ContainSingle().Which.Should().BeEquivalentTo(historyEquipment, options => options.Excluding(item => item.Session));
+        CrushHistoryRune preservedRune = preserved.Runes.Should().ContainSingle().Which;
+        preservedRune.Should().BeEquivalentTo(historyRune, options => options.Excluding(item => item.Session).Excluding(item => item.Lots));
+        preservedRune.Lots.Should().ContainSingle().Which.Should().BeEquivalentTo(historyLot, options => options.Excluding(item => item.Rune));
+    }
+
+    static DofusDbItem CreateApRune() => new()
+    {
+        Id = 123,
+        TypeId = 78,
+        IconId = 269,
+        Level = 159,
+        Name = new DofusDbMultiLangString { Fr = "RUNE_NAME" },
+        Effects = [new DofusDbItemEffect { Characteristic = 147, From = 1 }]
+    };
+
+    void SetDofusDbCharacteristics(params DofusDbCharacteristic[] characteristics)
+    {
+        _dofusDbCharacteristicsClientMock
+            .Setup(client => client.SearchAsync(It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DofusDbSearchResult<DofusDbCharacteristic>
+            {
+                Data = characteristics, Total = characteristics.Length, Limit = characteristics.Length, Skip = 0
+            });
+    }
+
+    void SetDofusDbRunes(params DofusDbItem[] runes)
+    {
+        _dofusDbItemsClientMock
+            .Setup(client => client.SearchAsync(It.Is<DofusDbSearchQuery>(query => IsRuneQuery(query)), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DofusDbSearchResult<DofusDbItem>
+            {
+                Data = runes, Total = runes.Length, Limit = runes.Length, Skip = 0
+            });
+    }
+
+    static bool IsEquipmentQuery(DofusDbSearchQuery query) =>
+        query.Predicates.OfType<DofusDbSearchPredicate.In>().Any(predicate => predicate.Field == "typeId");
+
+    static bool IsRuneQuery(DofusDbSearchQuery query) =>
+        query.Predicates.OfType<DofusDbSearchPredicate.Eq>().Any(predicate => predicate.Field == "typeId" && predicate.Value == RuneTypeId);
 }
