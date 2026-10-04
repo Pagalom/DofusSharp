@@ -34,4 +34,16 @@
       <ProjectReference Include="..\BestCrush.Domain\BestCrush.Domain.csproj" />
     </ItemGroup>
 
+    <!-- Characterize the exact existing sources without loading the MAUI app or Npcap.
+         Replace these links with a project reference when the shared network library exists. -->
+    <ItemGroup>
+      <Compile Include="..\BestCrush.NetworkProbe\Capture\TcpReassembler.cs" Link="Production\TcpReassembler.cs" />
+      <Compile Include="..\BestCrush.NetworkProbe\Protocol\ProtoWire.cs" Link="Production\ProtoWire.cs" />
+      <Compile Include="..\BestCrush.NetworkProbe\Protocol\AnkamaFrameDecoder.cs" Link="Production\AnkamaFrameDecoder.cs" />
+      <Compile Include="..\BestCrush.NetworkProbe\Protocol\SemanticDecoders.cs" Link="Production\SemanticDecoders.cs" />
+      <Compile Include="..\BestCrush\Services\LastNetworkEquipmentState.cs" Link="Production\LastNetworkEquipmentState.cs" />
+      <Compile Include="..\BestCrush\Services\MarketDataChangeNotifier.cs" Link="Production\MarketDataChangeNotifier.cs" />
+      <None Include="..\BestCrush.NetworkProbe\protocol-map.json" Link="NetworkFixtures\protocol-map.json" CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
+
 </Project>
