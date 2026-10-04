@@ -5,9 +5,16 @@ Le journal Windows A2 confirme le build de l'application et 92 tests réussis.
 
 ## Portée et exécution
 
-A3 ajoute 111 cas déclarés, soit 203 avec A1/A2. Leur compilation et leur
-exécution restent à confirmer sous Windows : `dotnet` est absent de
-l'environnement de préparation. Ces nombres ne sont pas des résultats exécutés.
+A3 ajoute 111 cas, soit 203 avec A1/A2. Checkpoint au commit `7b42061` déclaré
+validé par l'utilisateur sous Windows : build réussi avec 16 avertissements,
+111 tests réseau réussis et 203 tests réussis pour la suite complète, aucun
+échec. Ces exécutions n'ont pas été reproduites dans l'environnement de
+préparation, où `dotnet` est absent.
+
+Le [protocole manuel A4](codebase-cleanup-a4-windows-manual-validation.md)
+complète la référence des raccourcis et overlays. Il ne ferme pas les lacunes
+de routage décrites ci-dessous ; leur caractérisation reste un préalable à
+l'extraction des méthodes de traitement réseau en Phase E.
 
 `Tests.BestCrush/Tests.BestCrush.csproj` compile par liens les quatre fichiers
 protocolaires déjà partagés par l'application et le Probe, ainsi que
@@ -157,6 +164,7 @@ dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj --filter "FullyQualifiedNam
 dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj --logger "console;verbosity=normal"
 ```
 
-Nombres attendus d'après les cas déclarés : 111 ciblés, 203 pour la suite
-complète. Arrêt après A3 ; aucun A4, nettoyage OCR/F9, changement des raccourcis
-ou refactoring réseau n'est engagé.
+Nombres confirmés par le retour utilisateur du checkpoint : 111 ciblés, 203
+pour la suite complète. Le lot A3 s'est arrêté à ce checkpoint sans nettoyage
+OCR/F9, changement des raccourcis ou refactoring réseau. A4 fait ensuite l'objet
+d'un lot documentaire distinct.
