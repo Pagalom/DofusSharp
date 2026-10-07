@@ -11,7 +11,17 @@ Checkpoint A3 **déclaré validé par l'utilisateur sous Windows** : build réus
 avec 16 avertissements, 111 tests réseau et 203 tests au total, aucun échec.
 Ces exécutions n'ont pas été reproduites dans l'environnement de rédaction :
 `dotnet` y est absent, ainsi que l'environnement graphique Windows nécessaire.
-**Tous les scénarios A4 ci-dessous restent à exécuter.**
+À la publication A4, tous les scénarios ci-dessous restaient à exécuter.
+
+Retour utilisateur du 7 octobre 2026, avant B1, sur la référence `c92d1ca` :
+les scénarios critiques suivants sont **déclarés conformes sous Windows** :
+`A4-F7-01`, `A4-F7-02`, `A4-F8-01`, `A4-F8-02`, `A4-F8-03`, `A4-MID-01`,
+`A4-FOCUS-01`, `A4-FOCUS-03`, `A4-CR-01`, `A4-CR-05`, `A4-INT-01`,
+`A4-INT-02`, `A4-UI-02`, `A4-UI-05`. Ce retour autorise le lot B1 ; il ne
+valide pas les autres scénarios ni ne ferme les lacunes de routage A3.
+Ces essais n'ont pas été reproduits dans l'environnement de préparation.
+Le [checkpoint B1](codebase-cleanup-b1-obsolete-market-ocr.md) précise les cas
+à rejouer après suppression du seul bloc privé de marché OCR.
 
 Les références `[S1]` à `[S12]` renvoient au tableau des sources en fin de document.
 Les observations manuelles ne remplacent pas les tests de routage encore requis
