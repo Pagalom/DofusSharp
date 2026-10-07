@@ -10,6 +10,7 @@ internal sealed class DofusCaptureProbe : IDisposable
     private readonly int _port;
     private readonly ProtocolMap _map;
     private readonly bool _showAllMessages;
+    private readonly JsonlMessageRecorder? _recorder;
     private readonly Dictionary<FlowDirection, TcpReassembler> _streams = new();
     private readonly Dictionary<ulong, ItemDetailObservation> _itemDetails = new();
     private readonly Dictionary<ulong, ulong> _inventoryQuantities = new();
@@ -29,13 +30,23 @@ internal sealed class DofusCaptureProbe : IDisposable
     private ulong? _lastWorkshopAddedUid;
     private ulong? _activeSmithmagicTargetUid;
 
-    public DofusCaptureProbe(ICaptureDevice device, int port, ProtocolMap map, bool showAllMessages)
+    public DofusCaptureProbe(
+        ICaptureDevice device,
+        int port,
+        ProtocolMap map,
+        bool showAllMessages,
+        string? recordPath = null)
     {
         _device = device;
         _port = port;
         _map = map;
         _showAllMessages = showAllMessages;
+
+        if (!string.IsNullOrWhiteSpace(recordPath))
+            _recorder = new JsonlMessageRecorder(recordPath);
     }
+
+    public string? RecordPath => _recorder?.FilePath;
 
     public void Start()
     {
@@ -105,6 +116,8 @@ internal sealed class DofusCaptureProbe : IDisposable
         AnkamaAny? any = AnkamaFrameDecoder.FindAny(frame);
         if (any is null)
             return;
+
+        _recorder?.Write(direction, any, frame);
 
         string key = any.Key;
         string arrow = direction == FlowDirection.ServerToClient ? "S→C" : "C→S";
@@ -579,6 +592,7 @@ internal sealed class DofusCaptureProbe : IDisposable
     public void Dispose()
     {
         _device.OnPacketArrival -= OnPacketArrival;
+        _recorder?.Dispose();
         _device.Dispose();
     }
 }
