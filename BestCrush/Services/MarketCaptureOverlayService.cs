@@ -8,13 +8,6 @@ using Windows.Graphics;
 
 namespace BestCrush.Services;
 
-public sealed record MarketCapturePriceLine(
-    int Quantity,
-    long CapturedPrice,
-    long EffectivePrice,
-    bool EffectivePriceIsManual
-);
-
 public sealed class MarketCaptureOverlayService(
     OverlayLayoutSettingsService
         overlayLayoutSettingsService)
@@ -400,121 +393,6 @@ public sealed class MarketCaptureOverlayService(
                 page.ShowMultipleTooltipsDetected(count)
         );
 
-    public void ShowMarketPanelDetected(
-        DofusMarketPanelDetectionResult panel) =>
-        Update(
-            page =>
-                page.ShowMarketPanelDetected(panel)
-        );
-
-    public void ShowMarketEquipmentRead(
-        string itemName,
-        long? price) =>
-        Update(
-            page =>
-                page.ShowMarketEquipmentRead(
-                    itemName,
-                    price
-                )
-        );
-
-    public void ShowMarketEquipmentRecorded(
-        string itemName,
-        double confidence,
-        long capturedPrice,
-        long effectivePrice,
-        bool manualPricePreserved) =>
-        Update(
-            page =>
-                page.ShowMarketEquipmentRecorded(
-                    itemName,
-                    confidence,
-                    capturedPrice,
-                    effectivePrice,
-                    manualPricePreserved
-                )
-        );
-
-    public void ShowMarketEquipmentRecognitionFailed(
-        string recognizedName,
-        long detectedPrice) =>
-        Update(
-            page =>
-                page.ShowMarketEquipmentRecognitionFailed(
-                    recognizedName,
-                    detectedPrice
-                )
-        );
-
-    public void ShowAuxiliaryMarketDataRecorded(
-        string objectName,
-        string objectKind,
-        double confidence,
-        IReadOnlyList<MarketCapturePriceLine> prices,
-        string? focusedEquipmentName) =>
-        Update(
-            page =>
-                page.ShowAuxiliaryMarketDataRecorded(
-                    objectName,
-                    objectKind,
-                    confidence,
-                    prices,
-                    focusedEquipmentName
-                )
-        );
-
-    public void ShowAuxiliaryMarketReadFailed(
-        string objectName) =>
-        Update(
-            page =>
-                page.ShowAuxiliaryMarketReadFailed(
-                    objectName
-                )
-        );
-
-    public void ShowPanelNotDetected() =>
-        Update(
-            page =>
-                page.ShowPanelNotDetected()
-        );
-
-    public void ShowPanelDetected(
-        DofusPanelDetectionResult panel) =>
-        Update(
-            page =>
-                page.ShowPanelDetected(panel)
-        );
-
-    public void ShowCrushRowNotDetected() =>
-        Update(
-            page =>
-                page.ShowCrushRowNotDetected()
-        );
-
-    public void ShowLastCrushRowDetected(
-        CrushRowDetectionResult row) =>
-        Update(
-            page =>
-                page.ShowLastCrushRowDetected(row)
-        );
-
-    public void ShowCrushFieldsExtracted() =>
-        Update(
-            page =>
-                page.ShowCrushFieldsExtracted()
-        );
-
-    public void ShowCrushOcrResult(
-        string itemName,
-        double? coefficient) =>
-        Update(
-            page =>
-                page.ShowCrushOcrResult(
-                    itemName,
-                    coefficient
-                )
-        );
-
     public void ShowTooltipEquipmentFocused(
         string itemName,
         double confidence) =>
@@ -532,31 +410,6 @@ public sealed class MarketCaptureOverlayService(
             page =>
                 page.ShowEquipmentRecognitionFailed(
                     recognizedText
-                )
-        );
-
-    public void ShowServerNotSelected() =>
-        Update(
-            page =>
-                page.ShowServerNotSelected()
-        );
-
-    public void ShowRecognizedEquipment(
-        string itemName,
-        double recognitionConfidence,
-        double detectedCoefficient,
-        double appliedCoefficient,
-        bool manualCoefficientPreserved,
-        long? equipmentPrice) =>
-        Update(
-            page =>
-                page.ShowRecognizedEquipment(
-                    itemName,
-                    recognitionConfidence,
-                    detectedCoefficient,
-                    appliedCoefficient,
-                    manualCoefficientPreserved,
-                    equipmentPrice
                 )
         );
 
