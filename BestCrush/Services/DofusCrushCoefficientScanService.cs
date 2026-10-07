@@ -1,15 +1,9 @@
+using BestCrush.Models;
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace BestCrush.Services;
-
-public sealed record CrushCoefficientScanResult(
-    long DofusDbId,
-    string EquipmentName,
-    double CoefficientPercent,
-    int RowY
-);
 
 public sealed class DofusCrushCoefficientScanService(
     DofusCrushRowDetectionService rowDetectionService,
