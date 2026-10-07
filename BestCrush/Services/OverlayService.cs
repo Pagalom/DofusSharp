@@ -137,12 +137,6 @@ private bool _hasF7VisibilitySnapshot;
 
         LoadStoredLayout();
 
-        crushSessionService.CoefficientsUpdated -=
-            OnCrushSessionCoefficientsUpdated;
-
-        crushSessionService.CoefficientsUpdated +=
-            OnCrushSessionCoefficientsUpdated;
-
         marketDataChangeNotifier.Changed -=
             OnMarketDataChanged;
 
@@ -634,13 +628,6 @@ private bool _hasF7VisibilitySnapshot;
             return;
         }
 
-        _ = RefreshFocusedProfitabilityAsync();
-    }
-
-    private void OnCrushSessionCoefficientsUpdated(
-        object? sender,
-        EventArgs e)
-    {
         _ = RefreshFocusedProfitabilityAsync();
     }
 
@@ -1140,9 +1127,6 @@ private bool _hasF7VisibilitySnapshot;
 
     public void Shutdown()
     {
-        crushSessionService.CoefficientsUpdated -=
-            OnCrushSessionCoefficientsUpdated;
-
         marketDataChangeNotifier.Changed -=
             OnMarketDataChanged;
 
