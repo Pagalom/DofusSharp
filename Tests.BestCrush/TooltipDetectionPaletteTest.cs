@@ -57,7 +57,7 @@ public sealed class TooltipDetectionPaletteTest
 
     private static Mat CreateImage() =>
         new(
-            new Size(1100, 750),
+            new OpenCvSharp.Size(1100, 750),
             MatType.CV_8UC3,
             new Scalar(130, 130, 130)
         );
