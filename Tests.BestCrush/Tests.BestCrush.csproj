@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net10.0</TargetFramework>
+        <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
@@ -31,14 +31,12 @@
     </ItemGroup>
 
     <ItemGroup>
+      <ProjectReference Include="..\BestCrush\BestCrush.csproj" />
       <ProjectReference Include="..\BestCrush.Network\BestCrush.Network.csproj" />
       <ProjectReference Include="..\BestCrush.Domain\BestCrush.Domain.csproj" />
     </ItemGroup>
 
-    <!-- Application state helpers remain linked independently of the protocol library. -->
     <ItemGroup>
-      <Compile Include="..\BestCrush\Services\LastNetworkEquipmentState.cs" Link="Production\LastNetworkEquipmentState.cs" />
-      <Compile Include="..\BestCrush\Services\MarketDataChangeNotifier.cs" Link="Production\MarketDataChangeNotifier.cs" />
       <None Include="..\BestCrush.Network\protocol-map.json" Link="NetworkFixtures\protocol-map.json" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
 

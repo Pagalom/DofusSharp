@@ -23,17 +23,99 @@ namespace BestCrush.Services;
 /// coefficients. Visual OCR is intentionally not used here; it is reserved
 /// for the explicit F8 tooltip-focus path in OverlayService.
 /// </summary>
-public sealed class DofusNetworkCaptureService(
-    IServiceScopeFactory serviceScopeFactory,
-    CurrentServerState currentServerState,
-    LastNetworkEquipmentState lastNetworkEquipmentState,
-    CrushSessionService crushSessionService,
-    NpcapPrerequisiteService npcapPrerequisiteService,
-    BestCrushSettingsService settings,
-    MarketDataChangeNotifier marketDataChangeNotifier,
-    ILogger<DofusNetworkCaptureService> logger)
-    : IDisposable
+public sealed class DofusNetworkCaptureService : IDisposable
 {
+    private readonly IServiceScopeFactory serviceScopeFactory;
+    private readonly CurrentServerState currentServerState;
+    private readonly LastNetworkEquipmentState lastNetworkEquipmentState;
+    private readonly NpcapPrerequisiteService? npcapPrerequisiteService;
+    private readonly IBestCrushSettingsProvider settings;
+    private readonly MarketDataChangeNotifier marketDataChangeNotifier;
+    private readonly ILogger<DofusNetworkCaptureService> logger;
+    private readonly Func<bool> keepDebugArtifacts;
+    private readonly Func<
+        IReadOnlyList<NetworkCrushResultLine>,
+        DateTime,
+        CancellationToken,
+        Task> applyNetworkCrushAsync;
+
+    public DofusNetworkCaptureService(
+        IServiceScopeFactory serviceScopeFactory,
+        CurrentServerState currentServerState,
+        LastNetworkEquipmentState lastNetworkEquipmentState,
+        CrushSessionService crushSessionService,
+        NpcapPrerequisiteService npcapPrerequisiteService,
+        BestCrushSettingsService settings,
+        MarketDataChangeNotifier marketDataChangeNotifier,
+        ILogger<DofusNetworkCaptureService> logger)
+        : this(
+            serviceScopeFactory,
+            currentServerState,
+            lastNetworkEquipmentState,
+            npcapPrerequisiteService,
+            settings,
+            () => settings.DevTool_KeepDebugArtifacts,
+            (lines, observedAtUtc, cancellationToken) =>
+                crushSessionService.ApplyNetworkCrushAsync(
+                    lines,
+                    observedAtUtc,
+                    cancellationToken),
+            marketDataChangeNotifier,
+            logger)
+    {
+    }
+
+    internal DofusNetworkCaptureService(
+        IServiceScopeFactory serviceScopeFactory,
+        CurrentServerState currentServerState,
+        LastNetworkEquipmentState lastNetworkEquipmentState,
+        IBestCrushSettingsProvider settings,
+        MarketDataChangeNotifier marketDataChangeNotifier,
+        Func<
+            IReadOnlyList<NetworkCrushResultLine>,
+            DateTime,
+            CancellationToken,
+            Task> applyNetworkCrushAsync,
+        ILogger<DofusNetworkCaptureService> logger,
+        Func<bool>? keepDebugArtifacts = null)
+        : this(
+            serviceScopeFactory,
+            currentServerState,
+            lastNetworkEquipmentState,
+            null,
+            settings,
+            keepDebugArtifacts ?? (() => false),
+            applyNetworkCrushAsync,
+            marketDataChangeNotifier,
+            logger)
+    {
+    }
+
+    private DofusNetworkCaptureService(
+        IServiceScopeFactory serviceScopeFactory,
+        CurrentServerState currentServerState,
+        LastNetworkEquipmentState lastNetworkEquipmentState,
+        NpcapPrerequisiteService? npcapPrerequisiteService,
+        IBestCrushSettingsProvider settings,
+        Func<bool> keepDebugArtifacts,
+        Func<
+            IReadOnlyList<NetworkCrushResultLine>,
+            DateTime,
+            CancellationToken,
+            Task> applyNetworkCrushAsync,
+        MarketDataChangeNotifier marketDataChangeNotifier,
+        ILogger<DofusNetworkCaptureService> logger)
+    {
+        this.serviceScopeFactory = serviceScopeFactory;
+        this.currentServerState = currentServerState;
+        this.lastNetworkEquipmentState = lastNetworkEquipmentState;
+        this.npcapPrerequisiteService = npcapPrerequisiteService;
+        this.settings = settings;
+        this.keepDebugArtifacts = keepDebugArtifacts;
+        this.applyNetworkCrushAsync = applyNetworkCrushAsync;
+        this.marketDataChangeNotifier = marketDataChangeNotifier;
+        this.logger = logger;
+    }
 #if WINDOWS
     private const int DofusPort = 5555;
 
@@ -71,7 +153,8 @@ public sealed class DofusNetworkCaptureService(
     public void Start()
     {
 #if WINDOWS
-        if (!npcapPrerequisiteService.Refresh())
+        if (npcapPrerequisiteService is null ||
+            !npcapPrerequisiteService.Refresh())
         {
             logger.LogWarning(
                 "Capture réseau inactive : Npcap n'est pas disponible.");
@@ -227,6 +310,70 @@ public sealed class DofusNetworkCaptureService(
     }
 
 #if WINDOWS
+    internal void LoadProtocolMapForReplay(
+        string path)
+    {
+        if (_worker is not null)
+        {
+            throw new InvalidOperationException(
+                "Le worker réseau est déjà démarré.");
+        }
+
+        _map =
+            ProtocolMap.Load(
+                path);
+
+        _worker =
+            Task.Run(
+                () =>
+                    ProcessMessagesAsync(
+                        _cancellation.Token));
+
+        // Le replay n'ouvre aucune interface Npcap. Il réutilise néanmoins
+        // le même cycle d'arrêt afin que Dispose annule proprement le worker.
+        _started = true;
+    }
+
+    internal async Task ReplayMessageAsync(
+        string direction,
+        string key,
+        byte[] body,
+        DateTime observedAtUtc,
+        CancellationToken cancellationToken = default)
+    {
+        if (_map is null ||
+            _worker is null)
+        {
+            throw new InvalidOperationException(
+                "Le ProtocolMap de replay doit être chargé avant l'injection.");
+        }
+
+        TaskCompletionSource<bool> completion =
+            new(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+        if (!_messages.Writer.TryWrite(
+                new DofusWireMessage(
+                    direction,
+                    key,
+                    body,
+                    observedAtUtc,
+                    completion)))
+        {
+            throw new InvalidOperationException(
+                "Le canal réseau n'accepte plus de messages.");
+        }
+
+        using CancellationTokenRegistration registration =
+            cancellationToken.Register(
+                () =>
+                    completion.TrySetCanceled(
+                        cancellationToken));
+
+        await completion.Task
+            .ConfigureAwait(false);
+    }
+
     private void OnPacketArrival(
         object sender,
         PacketCapture capture)
@@ -344,14 +491,23 @@ public sealed class DofusNetworkCaptureService(
                     await ProcessMessageAsync(
                         message,
                         cancellationToken);
+
+                    message.Completion?
+                        .TrySetResult(true);
                 }
                 catch (OperationCanceledException)
                     when (cancellationToken.IsCancellationRequested)
                 {
+                    message.Completion?
+                        .TrySetCanceled(
+                            cancellationToken);
                     return;
                 }
                 catch (Exception ex)
                 {
+                    message.Completion?
+                        .TrySetException(ex);
+
                     logger.LogWarning(
                         ex,
                         "Message réseau Dofus {Key} ignoré.",
@@ -887,11 +1043,10 @@ public sealed class DofusNetworkCaptureService(
 
         if (networkResultLines.Count > 0)
         {
-            await crushSessionService
-                .ApplyNetworkCrushAsync(
-                    networkResultLines,
-                    observedAtUtc,
-                    cancellationToken);
+            await applyNetworkCrushAsync(
+                networkResultLines,
+                observedAtUtc,
+                cancellationToken);
         }
     }
 
@@ -962,7 +1117,7 @@ public sealed class DofusNetworkCaptureService(
         DofusWireMessage message,
         CancellationToken cancellationToken)
     {
-        if (!settings.DevTool_KeepDebugArtifacts)
+        if (!keepDebugArtifacts())
         {
             return;
         }
@@ -1003,7 +1158,7 @@ public sealed class DofusNetworkCaptureService(
         string text,
         CancellationToken cancellationToken)
     {
-        if (!settings.DevTool_KeepDebugArtifacts)
+        if (!keepDebugArtifacts())
         {
             return;
         }
@@ -1250,7 +1405,8 @@ public sealed class DofusNetworkCaptureService(
         string Direction,
         string Key,
         byte[] Body,
-        DateTime ObservedAtUtc);
+        DateTime ObservedAtUtc,
+        TaskCompletionSource<bool>? Completion = null);
 #endif
 
     public void Dispose()
