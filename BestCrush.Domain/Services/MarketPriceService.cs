@@ -78,32 +78,6 @@ public class MarketPriceService(BestCrushDbContext context,
         return observation;
     }
 
-    public async Task ClearManualAsync(
-        MarketObjectType objectType,
-        long dofusDbId,
-        string serverName,
-        int quantity,
-        CancellationToken cancellationToken = default)
-    {
-        MarketPriceObservation observation = new()
-        {
-            ObjectType = objectType,
-            DofusDbId = dofusDbId,
-            ServerName = serverName,
-            Price = 0,
-            Quantity = quantity,
-            Source = MarketPriceSource.Manual,
-            IsCleared = true,
-            ObservedAtUtc = DateTime.UtcNow
-        };
-
-        context.MarketPriceObservations.Add(observation);
-
-        await context.SaveChangesAsync(
-            cancellationToken
-        );
-    }
-
     public async Task ClearLocalAsync(
         MarketObjectType objectType,
         long dofusDbId,
@@ -265,61 +239,6 @@ public class MarketPriceService(BestCrushDbContext context,
         );
     }
 
-    public async Task<Dictionary<int, MarketPriceObservation>>
-        GetLatestObservationsAsync(
-            MarketObjectType objectType,
-            long dofusDbId,
-            string serverName,
-            CancellationToken cancellationToken = default)
-    {
-        List<MarketPriceObservation> observations =
-            await context.MarketPriceObservations
-                .AsNoTracking()
-                .Where(p =>
-                    p.ObjectType == objectType &&
-                    p.DofusDbId == dofusDbId &&
-                    p.ServerName == serverName)
-                .OrderByDescending(p => p.ObservedAtUtc)
-                .ToListAsync(cancellationToken);
-
-        return observations
-            .GroupBy(p => p.Quantity)
-            .Select(group => new
-            {
-                Quantity = group.Key,
-                Observation =
-                    ResolveEffectiveObservation(group)
-            })
-            .Where(result =>
-                result.Observation is not null)
-            .ToDictionary(
-                result => result.Quantity,
-                result => result.Observation!
-            );
-    }
-    public async Task<double?> GetLatestUnitPriceAsync(
-        MarketObjectType objectType,
-        long dofusDbId,
-        string serverName,
-        int quantity,
-        CancellationToken cancellationToken = default)
-    {
-        MarketPriceObservation? observation =
-            await GetLatestObservationAsync(
-                objectType,
-                dofusDbId,
-                serverName,
-                quantity,
-                cancellationToken
-            );
-
-        if (observation is null)
-        {
-            return null;
-        }
-
-        return (double)observation.Price / observation.Quantity;
-    }
     public async Task<IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation>>
         GetLatestObservationsForServerAsync(
             MarketObjectType objectType,

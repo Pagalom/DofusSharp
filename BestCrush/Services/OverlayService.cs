@@ -111,8 +111,6 @@ private bool _hasF7VisibilitySnapshot;
 
     private const int WmMButtonDown = 0x0207;
     private const int WmMButtonUp = 0x0208;
-    private const int WmMouseWheel = 0x020A;
-    private const int WmMouseHWheel = 0x020E;
 
     private const int VkF7 = 0x76;
     private const int VkF8 = 0x77;

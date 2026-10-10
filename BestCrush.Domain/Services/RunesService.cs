@@ -6,13 +6,6 @@ namespace BestCrush.Domain.Services;
 public class RunesService(
     BestCrushDbContext context)
 {
-    public Task ClearCachesAsync()
-    {
-        // Le catalogue des runes est désormais entièrement local.
-        // Il n'existe plus de cache DoFocus à invalider.
-        return Task.CompletedTask;
-    }
-
     public async Task<IReadOnlyCollection<Rune>>
         GetLocalRunesAsync(
             CancellationToken cancellationToken = default)

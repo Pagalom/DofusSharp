@@ -14,14 +14,6 @@ public static class AsyncProgressExtensions
     ) =>
         progress.Derive(p => new ProgressMessage(messageFactory is null ? p.Message : messageFactory(p), fromPercent + (toPercent - fromPercent) * (p.Percent / 100)));
 
-    public static ProgressSync<ProgressMessage> DeriveStep(
-        this ProgressSync<ProgressMessage> progress,
-        int step,
-        int totalSteps,
-        Func<ProgressMessage, string>? messageFactory = null
-    ) =>
-        progress.DeriveSubtask(100.0 * step / totalSteps, 100.0 * (step + 1) / totalSteps, messageFactory);
-
     public static ProgressSync<DofusDbTableClientExtensions.MultiSearchQueryProgress> ToMultiSearchProgress(this ProgressSync<ProgressMessage> progress, string message) =>
         new(p =>
             {

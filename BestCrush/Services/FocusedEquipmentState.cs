@@ -6,9 +6,6 @@ public sealed class FocusedEquipmentState
 {
     public Equipment? Equipment { get; private set; }
 
-    public bool HasEquipment =>
-        Equipment is not null;
-
     public void SetEquipment(
         Equipment equipment)
     {

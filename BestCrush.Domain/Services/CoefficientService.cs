@@ -37,28 +37,6 @@ IDataPriorityProvider dataPriorityProvider)
         return observation;
     }
 
-    public async Task ClearManualAsync(
-        long dofusDbId,
-        string serverName,
-        CancellationToken cancellationToken = default)
-    {
-        CoefficientObservation observation = new()
-        {
-            DofusDbId = dofusDbId,
-            ServerName = serverName,
-            CoefficientPercent = 0,
-            Source = CoefficientSource.Manual,
-            IsCleared = true,
-            ObservedAtUtc = DateTime.UtcNow
-        };
-
-        context.CoefficientObservations.Add(observation);
-
-        await context.SaveChangesAsync(
-            cancellationToken
-        );
-    }
-
     public async Task ClearLocalAsync(
         long dofusDbId,
         string serverName,

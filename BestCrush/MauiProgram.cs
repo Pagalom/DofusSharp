@@ -50,7 +50,6 @@ public static class MauiProgram
             builder.Services.AddSingleton(new ImageCache(Path.Combine(dataDirectory, "Cache", "images")));
             builder.Services.AddSingleton<ServersService>();
             builder.Services.AddSingleton<RunesService>();
-            builder.Services.AddSingleton<CharacteristicsService>();
             builder.Services.AddSingleton<CrushService>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayLayoutSettingsService>();
             builder.Services.AddSingleton<BestCrush.Services.MarketCaptureOverlayService>();

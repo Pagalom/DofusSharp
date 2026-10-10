@@ -232,64 +232,6 @@ public static class CharacteristicExtensions
             _ => throw new ArgumentOutOfRangeException(nameof(characteristic), characteristic, null)
         };
 
-    public static string ToDofusDbKeyword(this Characteristic characteristic) =>
-        characteristic switch
-        {
-            Characteristic.DamageFlatAll => "allDamageBonus",
-            Characteristic.DamageFlatNeutral => "neutralDamageBonus",
-            Characteristic.DamageFlatEarth => "earthDamageBonus",
-            Characteristic.DamageFlatFire => "fireDamageBonus",
-            Characteristic.DamageFlatWater => "waterDamageBonus",
-            Characteristic.DamageFlatAir => "airDamageBonus",
-            Characteristic.DamageFlatCritical => "criticalDamageBonus",
-            Characteristic.DamageFlatPushback => "pushDamageBonus",
-            Characteristic.DamageFlatTrap => "trapDamageBonus",
-            Characteristic.DamagePercentTrap => "trapDamageBonusPercent",
-            Characteristic.DamagePercentSpell => "dealtDamageMultiplierSpells",
-            Characteristic.DamagePercentWeapon => "dealtDamageMultiplierWeapon",
-            Characteristic.DamagePercentDisance => "dealtDamageMultiplierDistance",
-            Characteristic.DamagePercentMelee => "dealtDamageMultiplierMelee",
-            Characteristic.ResistanceFlatNeutral => "neutralElementReduction",
-            Characteristic.ResistanceFlatEarth => "earthElementReduction",
-            Characteristic.ResistanceFlatFire => "fireElementReduction",
-            Characteristic.ResistanceFlatWater => "waterElementReduction",
-            Characteristic.ResistanceFlatAir => "airElementReduction",
-            Characteristic.ResistanceFlatCritical => "criticalDamageReduction",
-            Characteristic.ResistanceFlatPushback => "pushDamageReduction",
-            Characteristic.ResistancePercentNeutral => "neutralElementResistPercent",
-            Characteristic.ResistancePercentEarth => "earthElementResistPercent",
-            Characteristic.ResistancePercentFire => "fireElementResistPercent",
-            Characteristic.ResistancePercentWater => "waterElementResistPercent",
-            Characteristic.ResistancePercentAir => "airElementResistPercent",
-            Characteristic.ResistancePercentDistance => "receivedDamageMultiplierDistance",
-            Characteristic.ResistancePercentMelee => "receivedDamageMultiplierMelee",
-            Characteristic.Ap => "actionPoints",
-            Characteristic.Mp => "movementPoints",
-            Characteristic.Range => "range",
-            Characteristic.Summons => "maxSummonedCreaturesBoost",
-            Characteristic.Critical => "criticalHit",
-            Characteristic.Power => "damagePercent",
-            Characteristic.Pods => "weight",
-            Characteristic.Healing => "healBonus",
-            Characteristic.Strength => "strength",
-            Characteristic.Intelligence => "intelligence",
-            Characteristic.Chance => "chance",
-            Characteristic.Agility => "agility",
-            Characteristic.Wisdom => "wisdom",
-            Characteristic.Vitality => "vitality",
-            Characteristic.Initiative => "initiative",
-            Characteristic.Prospecting => "magicFind",
-            Characteristic.Hunting => "hunter",
-            Characteristic.Dodge => "tackleEvade",
-            Characteristic.Lock => "tackleBlock",
-            Characteristic.ApDodge => "DodgeApLostProbability",
-            Characteristic.MpDodge => "DodgeMpLostProbability",
-            Characteristic.ApReduction => "apReduction",
-            Characteristic.MpReduction => "mpReduction",
-            Characteristic.DamageReflection => "reflectDamage",
-            _ => throw new ArgumentOutOfRangeException(nameof(characteristic), characteristic, null)
-        };
-
     public static Characteristic? CharacteristicFromDofusDbKeyword(string keyword) =>
         keyword.ToLowerInvariant() switch
         {

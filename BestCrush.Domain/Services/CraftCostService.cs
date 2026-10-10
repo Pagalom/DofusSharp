@@ -5,58 +5,6 @@ namespace BestCrush.Domain.Services;
 public sealed class CraftCostService(
     MarketPriceService marketPriceService)
 {
-    public async Task<CraftCostResult>
-        CalculateAsync(
-            Equipment equipment,
-            string serverName,
-            CancellationToken cancellationToken = default)
-    {
-        IReadOnlyDictionary<
-            (long DofusDbId, int Quantity),
-            MarketPriceObservation>
-            resourceObservations =
-                await marketPriceService
-                    .GetLatestObservationsForServerAsync(
-                        MarketObjectType.Resource,
-                        serverName,
-                        cancellationToken
-                    );
-
-        IReadOnlyDictionary<
-            (long DofusDbId, int Quantity),
-            MarketPriceObservation>
-            equipmentObservations =
-                await marketPriceService
-                    .GetLatestObservationsForServerAsync(
-                        MarketObjectType.Equipment,
-                        serverName,
-                        cancellationToken
-                    );
-
-        return Calculate(
-            equipment,
-            resourceObservations,
-            equipmentObservations
-        );
-    }
-
-    // Conservé pour les appelants/tests existants composés
-    // uniquement de ressources.
-    public CraftCostResult Calculate(
-        Equipment equipment,
-        IReadOnlyDictionary<
-            (long DofusDbId, int Quantity),
-            MarketPriceObservation> resourceObservations)
-    {
-        return Calculate(
-            equipment,
-            resourceObservations,
-            new Dictionary<
-                (long DofusDbId, int Quantity),
-                MarketPriceObservation>()
-        );
-    }
-
     public CraftCostResult Calculate(
         Equipment equipment,
         IReadOnlyDictionary<
