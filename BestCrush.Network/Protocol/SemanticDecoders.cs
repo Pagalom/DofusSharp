@@ -25,6 +25,36 @@ public sealed record ProtocolMap(
     IReadOnlySet<string> DiagnosticMessages,
     string? MarketSelectionResponse = null)
 {
+    public ProtocolWireNormalizer WireNormalizer { get; init; } =
+        ProtocolWireNormalizer.Empty;
+
+    public byte[] NormalizeBody(string key, byte[] body) =>
+        WireNormalizer.Normalize(key, body);
+
+    private string? ResolveKey(string semantic) => semantic switch
+    {
+        "price_list" => PriceList,
+        "market_selection_response" => MarketSelectionResponse,
+        "crush_result" => CrushResult,
+        "item_detail" => ItemDetail,
+        "workshop_slot_put" => WorkshopSlotPut,
+        "purchase_request" => PurchaseRequest,
+        "purchase_offer" => PurchaseOffer,
+        "purchase_receipt" => PurchaseReceipt,
+        "inventory_add" => InventoryAdd,
+        "inventory_quantity" => InventoryQuantity,
+        "inventory_remove" => InventoryRemove,
+        "craft_prepare" => CraftPrepare,
+        "craft_output" => CraftOutput,
+        "smithmagic_request" => SmithmagicRequest,
+        "smithmagic_batch_request" => SmithmagicBatchRequest,
+        "smithmagic_result" => SmithmagicResult,
+        "smithmagic_aux" => SmithmagicAux,
+        "market_listing_request" => MarketListingRequest,
+        "market_listing_created" => MarketListingCreated,
+        _ => null
+    };
+
     public static ProtocolMap Load(string path)
     {
         if (!File.Exists(path))
@@ -94,7 +124,7 @@ public sealed record ProtocolMap(
             }
         }
 
-        return new ProtocolMap(
+        ProtocolMap map = new ProtocolMap(
             build,
             price,
             crush,
@@ -116,6 +146,13 @@ public sealed record ProtocolMap(
             marketListingCreated,
             diagnostics,
             marketSelectionResponse);
+
+        return map with
+        {
+            WireNormalizer = ProtocolWireNormalizer.Read(
+                root,
+                map.ResolveKey)
+        };
     }
 }
 

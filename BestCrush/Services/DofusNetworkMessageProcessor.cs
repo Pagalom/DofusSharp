@@ -51,6 +51,10 @@ internal sealed class DofusNetworkMessageProcessor(
             !currentServerState.IsCaptureLeaseActive(lease))
             return;
 
+        // Translate active wire fields to the canonical decoder schema.
+        // Wire debug above intentionally retains original captured bytes.
+        byte[] body = map.NormalizeBody(message.Key, message.Body);
+
         if (map.ItemDetail is not null &&
             string.Equals(
                 message.Key,
@@ -59,7 +63,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             ItemDetailObservation? item =
                 SemanticDecoders.TryDecodeItemDetail(
-                    message.Body);
+                    body);
 
             if (item is not null)
             {
@@ -87,7 +91,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             ItemDetailObservation? item =
                 SemanticDecoders.TryDecodeInventoryAdd(
-                    message.Body);
+                    body);
 
             if (item is not null)
             {
@@ -115,7 +119,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             ItemDetailObservation? item =
                 SemanticDecoders.TryDecodeCraftOutput(
-                    message.Body);
+                    body);
 
             if (item is not null)
             {
@@ -143,7 +147,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             SmithmagicResultObservation? result =
                 SemanticDecoders.TryDecodeSmithmagicResult(
-                    message.Body);
+                    body);
 
             if (result is not null)
             {
@@ -172,7 +176,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             PurchaseRequestObservation? purchase =
                 SemanticDecoders.TryDecodePurchaseRequest(
-                    message.Body);
+                    body);
 
             if (purchase is not null)
             {
@@ -199,7 +203,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             PurchaseOfferObservation? offer =
                 SemanticDecoders.TryDecodePurchaseOffer(
-                    message.Body);
+                    body);
 
             bool matchesRecentPurchase =
                 offer is not null &&
@@ -256,7 +260,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             PurchaseReceiptObservation? receipt =
                 SemanticDecoders.TryDecodePurchaseReceipt(
-                    message.Body);
+                    body);
 
             if (receipt is not null &&
                 _pendingPurchaseRequest is not null &&
@@ -283,7 +287,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             MarketListingCreatedObservation? listing =
                 SemanticDecoders.TryDecodeMarketListingCreated(
-                    message.Body);
+                    body);
 
             if (listing is not null)
             {
@@ -310,7 +314,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             ulong? itemId =
                 SemanticDecoders.TryDecodeMarketSelectionItemId(
-                    message.Body);
+                    body);
 
             if (itemId is not null)
             {
@@ -340,7 +344,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             MarketObservation? market =
                 SemanticDecoders.TryDecodeMarket(
-                    message.Body);
+                    body);
 
             if (market is not null)
             {
@@ -367,7 +371,7 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             CrushObservation? crush =
                 SemanticDecoders.TryDecodeCrush(
-                    message.Body);
+                    body);
 
             if (crush is not null)
             {

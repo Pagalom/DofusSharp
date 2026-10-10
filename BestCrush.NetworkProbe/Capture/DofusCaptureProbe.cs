@@ -109,6 +109,8 @@ internal sealed class DofusCaptureProbe : IDisposable
             return;
 
         string key = any.Key;
+        // The shared map normalizes wire field tags for every semantic probe.
+        byte[] body = _map.NormalizeBody(key, any.Body);
         string arrow = direction == FlowDirection.ServerToClient ? "S→C" : "C→S";
 
         if (_showAllMessages)
@@ -117,7 +119,7 @@ internal sealed class DofusCaptureProbe : IDisposable
         if (_map.PriceList is not null &&
             string.Equals(key, _map.PriceList, StringComparison.Ordinal))
         {
-            MarketObservation? market = SemanticDecoders.TryDecodeMarket(any.Body);
+            MarketObservation? market = SemanticDecoders.TryDecodeMarket(body);
             if (market is not null)
                 ConsoleRenderer.WriteMarket(market);
             else
@@ -131,7 +133,7 @@ internal sealed class DofusCaptureProbe : IDisposable
         if (_map.ItemDetail is not null &&
             string.Equals(key, _map.ItemDetail, StringComparison.Ordinal))
         {
-            ItemDetailObservation? item = SemanticDecoders.TryDecodeItemDetail(any.Body);
+            ItemDetailObservation? item = SemanticDecoders.TryDecodeItemDetail(body);
             if (item is not null)
             {
                 _itemDetails[item.ItemUid] = item;
@@ -157,7 +159,7 @@ internal sealed class DofusCaptureProbe : IDisposable
         if (_map.WorkshopSlotPut is not null &&
             string.Equals(key, _map.WorkshopSlotPut, StringComparison.Ordinal))
         {
-            WorkshopSlotObservation? slot = SemanticDecoders.TryDecodeWorkshopSlot(any.Body);
+            WorkshopSlotObservation? slot = SemanticDecoders.TryDecodeWorkshopSlot(body);
             if (slot is not null)
             {
                 if (slot.Delta < 0 && _marketListings.ContainsKey(slot.ItemUid))
@@ -191,7 +193,7 @@ internal sealed class DofusCaptureProbe : IDisposable
         if (_map.PurchaseRequest is not null &&
             string.Equals(key, _map.PurchaseRequest, StringComparison.Ordinal))
         {
-            PurchaseRequestObservation? purchase = SemanticDecoders.TryDecodePurchaseRequest(any.Body);
+            PurchaseRequestObservation? purchase = SemanticDecoders.TryDecodePurchaseRequest(body);
             if (purchase is not null)
             {
                 _pendingPurchaseRequest = purchase;
@@ -202,7 +204,7 @@ internal sealed class DofusCaptureProbe : IDisposable
         if (_map.PurchaseOffer is not null &&
             string.Equals(key, _map.PurchaseOffer, StringComparison.Ordinal))
         {
-            PurchaseOfferObservation? offer = SemanticDecoders.TryDecodePurchaseOffer(any.Body);
+            PurchaseOfferObservation? offer = SemanticDecoders.TryDecodePurchaseOffer(body);
             if (offer is not null)
                 _pendingPurchaseOffer = offer;
         }
@@ -210,7 +212,7 @@ internal sealed class DofusCaptureProbe : IDisposable
         if (_map.InventoryAdd is not null &&
             string.Equals(key, _map.InventoryAdd, StringComparison.Ordinal))
         {
-            ItemDetailObservation? item = SemanticDecoders.TryDecodeInventoryAdd(any.Body);
+            ItemDetailObservation? item = SemanticDecoders.TryDecodeInventoryAdd(body);
             if (item is not null)
             {
                 _itemDetails[item.ItemUid] = item;
@@ -246,7 +248,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             string.Equals(key, _map.InventoryQuantity, StringComparison.Ordinal))
         {
             InventoryQuantityObservation? quantity =
-                SemanticDecoders.TryDecodeInventoryQuantity(any.Body);
+                SemanticDecoders.TryDecodeInventoryQuantity(body);
 
             if (quantity is not null)
             {
@@ -307,7 +309,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             string.Equals(key, _map.InventoryRemove, StringComparison.Ordinal))
         {
             InventoryRemoveObservation? removed =
-                SemanticDecoders.TryDecodeInventoryRemove(any.Body);
+                SemanticDecoders.TryDecodeInventoryRemove(body);
 
             if (removed is not null)
             {
@@ -345,7 +347,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             string.Equals(key, _map.PurchaseReceipt, StringComparison.Ordinal))
         {
             PurchaseReceiptObservation? receipt =
-                SemanticDecoders.TryDecodePurchaseReceipt(any.Body);
+                SemanticDecoders.TryDecodePurchaseReceipt(body);
 
             if (receipt is not null &&
                 _pendingPurchaseRequest is not null &&
@@ -375,7 +377,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             string.Equals(key, _map.SmithmagicRequest, StringComparison.Ordinal))
         {
             SmithmagicRequestObservation? request =
-                SemanticDecoders.TryDecodeSmithmagicRequest(any.Body);
+                SemanticDecoders.TryDecodeSmithmagicRequest(body);
 
             if (request is not null)
                 _pendingSmithmagicRequest = request;
@@ -385,7 +387,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             string.Equals(key, _map.SmithmagicBatchRequest, StringComparison.Ordinal))
         {
             SmithmagicBatchRequestObservation? batch =
-                SemanticDecoders.TryDecodeSmithmagicBatchRequest(any.Body);
+                SemanticDecoders.TryDecodeSmithmagicBatchRequest(body);
 
             if (batch is not null)
             {
@@ -420,7 +422,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             string.Equals(key, _map.SmithmagicAux, StringComparison.Ordinal))
         {
             SmithmagicStackObservation? stack =
-                SemanticDecoders.TryDecodeSmithmagicStack(any.Body);
+                SemanticDecoders.TryDecodeSmithmagicStack(body);
 
             if (stack is not null)
             {
@@ -439,7 +441,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             _activeCraftRequest is not null)
         {
             ItemDetailObservation? output =
-                SemanticDecoders.TryDecodeCraftOutput(any.Body);
+                SemanticDecoders.TryDecodeCraftOutput(body);
 
             if (output is not null)
             {
@@ -459,7 +461,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             string.Equals(key, _map.SmithmagicResult, StringComparison.Ordinal))
         {
             SmithmagicResultObservation? result =
-                SemanticDecoders.TryDecodeSmithmagicResult(any.Body);
+                SemanticDecoders.TryDecodeSmithmagicResult(body);
 
             if (result is not null)
             {
@@ -507,7 +509,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             string.Equals(key, _map.MarketListingRequest, StringComparison.Ordinal))
         {
             MarketListingRequestObservation? listing =
-                SemanticDecoders.TryDecodeMarketListingRequest(any.Body);
+                SemanticDecoders.TryDecodeMarketListingRequest(body);
 
             if (listing is not null)
                 _pendingMarketListing = listing;
@@ -517,7 +519,7 @@ internal sealed class DofusCaptureProbe : IDisposable
             string.Equals(key, _map.MarketListingCreated, StringComparison.Ordinal))
         {
             MarketListingCreatedObservation? created =
-                SemanticDecoders.TryDecodeMarketListingCreated(any.Body);
+                SemanticDecoders.TryDecodeMarketListingCreated(body);
 
             if (created is not null && _pendingMarketListing is not null)
             {
@@ -545,7 +547,7 @@ internal sealed class DofusCaptureProbe : IDisposable
         if (_map.CrushResult is not null &&
             string.Equals(key, _map.CrushResult, StringComparison.Ordinal))
         {
-            CrushObservation? crush = SemanticDecoders.TryDecodeCrush(any.Body);
+            CrushObservation? crush = SemanticDecoders.TryDecodeCrush(body);
             if (crush is not null)
                 ConsoleRenderer.WriteCrush(crush, _itemDetails);
             else
