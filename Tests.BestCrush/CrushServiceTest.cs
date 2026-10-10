@@ -15,7 +15,7 @@ public sealed class CrushServiceTest : IDisposable
     public CrushServiceTest()
     {
         _context = _database.CreateContext();
-        _service = new CrushService(_context);
+        _service = new CrushService(_database);
     }
 
     public void Dispose() => _database.Dispose();

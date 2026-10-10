@@ -1,9 +1,11 @@
 ﻿using BestCrush.Domain.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace BestCrush.Domain.Services;
 
 public class CrushService(
-    BestCrushDbContext context)
+    IDbContextFactory<BestCrushDbContext>
+        dbContextFactory)
 {
     public IReadOnlyDictionary<Rune, double>
         GetCrushResult(
@@ -13,6 +15,10 @@ public class CrushService(
             int itemLevel,
             double coefficient)
     {
+        using BestCrushDbContext context =
+            dbContextFactory
+                .CreateDbContext();
+
         Dictionary<Rune, double>
             result = new();
 
@@ -28,6 +34,7 @@ public class CrushService(
 
             Rune? rune =
                 GetBasicRune(
+                    context,
                     characteristic
                 );
 
@@ -70,8 +77,13 @@ public class CrushService(
             int itemLevel,
             double coefficient)
     {
+        using BestCrushDbContext context =
+            dbContextFactory
+                .CreateDbContext();
+
         Rune? rune =
             GetBasicRune(
+                context,
                 focus
             );
 
@@ -133,7 +145,8 @@ public class CrushService(
         };
     }
 
-    private Rune? GetBasicRune(
+    private static Rune? GetBasicRune(
+        BestCrushDbContext context,
         Characteristic characteristic)
     {
         // Le catalogue local contient désormais les variantes

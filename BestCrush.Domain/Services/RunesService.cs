@@ -4,12 +4,18 @@ using Microsoft.EntityFrameworkCore;
 namespace BestCrush.Domain.Services;
 
 public class RunesService(
-    BestCrushDbContext context)
+    IDbContextFactory<BestCrushDbContext>
+        dbContextFactory)
 {
     public async Task<IReadOnlyCollection<Rune>>
         GetLocalRunesAsync(
             CancellationToken cancellationToken = default)
     {
+        await using BestCrushDbContext context =
+            await dbContextFactory
+                .CreateDbContextAsync(
+                    cancellationToken);
+
         return await context.Runes
             .AsNoTracking()
             .OrderBy(rune => rune.Name)

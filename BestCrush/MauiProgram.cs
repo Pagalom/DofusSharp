@@ -135,7 +135,10 @@ public static class MauiProgram
             Directory.CreateDirectory(directory);
         }
 
-        builder.Services.AddDbContext<BestCrushDbContext>(options => options.UseSqlite($"Data Source={dbPath}"));
+        builder.Services.AddDbContextFactory<BestCrushDbContext>(
+            options =>
+                options.UseSqlite(
+                    $"Data Source={dbPath}"));
 
         logger.LogInformation("Databases configured at {DbPath}.", dbPath);
     }
