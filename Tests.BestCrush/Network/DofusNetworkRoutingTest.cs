@@ -18,6 +18,107 @@ public sealed class DofusNetworkRoutingTest
         new(2026, 10, 10, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
+    public async Task JzsSelectionFocusesKnownEquipmentWithoutWritingPrices()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        byte[] response = Message(
+            Bytes(1, Message(
+                Unsigned(1, 42),
+                Unsigned(3, 28116),
+                Unsigned(4, 9))),
+            Unsigned(2, 9),
+            Unsigned(3, 42));
+
+        await harness.ReplayAsync("jzs", response, ObservedAt);
+
+        harness.LastEquipment
+            .GetForServer(RoutingHarness.Server)
+            .Should().Be(
+                new LastNetworkEquipmentSnapshot(
+                    42,
+                    RoutingHarness.Server,
+                    ObservedAt));
+
+        (await harness.ReadPricesAsync(
+                MarketObjectType.Equipment, 42))
+            .Should().BeEmpty();
+
+        harness.Notifications.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task JzsEmptySelectionStillIdentifiesEquipment()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "jzs",
+            Message(Unsigned(2, 3), Unsigned(3, 43)),
+            ObservedAt);
+
+        harness.LastEquipment
+            .GetForServer(RoutingHarness.Server)
+            .Should().Be(
+                new LastNetworkEquipmentSnapshot(
+                    43,
+                    RoutingHarness.Server,
+                    ObservedAt));
+    }
+
+    [Fact]
+    public async Task JzsResourceSelectionDoesNotReplaceLastEquipment()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "jzs",
+            Message(Unsigned(2, 9), Unsigned(3, 42)),
+            ObservedAt);
+
+        await harness.ReplayAsync(
+            "jzs",
+            Message(Unsigned(2, 9), Unsigned(3, 200)),
+            ObservedAt.AddSeconds(1));
+
+        harness.LastEquipment
+            .GetForServer(RoutingHarness.Server)
+            .Should().Be(
+                new LastNetworkEquipmentSnapshot(
+                    42,
+                    RoutingHarness.Server,
+                    ObservedAt));
+    }
+
+    [Fact]
+    public async Task IncompleteJzsCannotChangeExistingEquipmentFocus()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "jzs",
+            Message(Unsigned(2, 9), Unsigned(3, 42)),
+            ObservedAt);
+
+        await harness.ReplayAsync(
+            "jzs",
+            Message(Unsigned(3, 43)),
+            ObservedAt.AddSeconds(1));
+
+        harness.LastEquipment
+            .GetForServer(RoutingHarness.Server)
+            .Should().Be(
+                new LastNetworkEquipmentSnapshot(
+                    42,
+                    RoutingHarness.Server,
+                    ObservedAt));
+    }
+
+    [Fact]
     public async Task JznPersistsMinimumPositivePerLotAndNotifiesInLotOrder()
     {
         await using RoutingHarness harness =

@@ -22,7 +22,8 @@ public sealed record ProtocolMap(
     string? SmithmagicAux,
     string? MarketListingRequest,
     string? MarketListingCreated,
-    IReadOnlySet<string> DiagnosticMessages)
+    IReadOnlySet<string> DiagnosticMessages,
+    string? MarketSelectionResponse = null)
 {
     public static ProtocolMap Load(string path)
     {
@@ -79,6 +80,7 @@ public sealed record ProtocolMap(
         string? smithmagicAux = root.TryGetProperty("smithmagic_aux", out JsonElement sa) ? sa.GetString() : null;
         string? marketListingRequest = root.TryGetProperty("market_listing_request", out JsonElement mlr) ? mlr.GetString() : null;
         string? marketListingCreated = root.TryGetProperty("market_listing_created", out JsonElement mlc) ? mlc.GetString() : null;
+        string? marketSelectionResponse = root.TryGetProperty("market_selection_response", out JsonElement ms) ? ms.GetString() : null;
 
         HashSet<string> diagnostics = new(StringComparer.Ordinal);
         if (root.TryGetProperty("diagnostic_messages", out JsonElement dm) &&
@@ -112,7 +114,8 @@ public sealed record ProtocolMap(
             smithmagicAux,
             marketListingRequest,
             marketListingCreated,
-            diagnostics);
+            diagnostics,
+            marketSelectionResponse);
     }
 }
 
@@ -170,6 +173,29 @@ public sealed record CrushObservation(IReadOnlyList<CrushLineObservation> Lines)
 
 public static class SemanticDecoders
 {
+    // Observed 2026-10-11: jzs carries the selected HDV item ID in
+    // root field 3, and the market/category value in root field 2.
+    // This decoder is intentionally for focus only: nested offer prices
+    // are NOT compatible with the older jzn x1/x10/x100/x1000 ladder.
+    public static ulong? TryDecodeMarketSelectionItemId(byte[] body)
+    {
+        List<ProtoField>? fields = ProtoWire.ReadFields(body);
+        if (fields is null)
+            return null;
+
+        ulong category = fields.FirstOrDefault(field =>
+            field.Number == 2 &&
+            field.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        ulong itemId = fields.FirstOrDefault(field =>
+            field.Number == 3 &&
+            field.WireType == ProtoWireType.Varint)?.Varint ?? 0;
+
+        return category > 0 && itemId > 0 && itemId <= (ulong)long.MaxValue
+            ? itemId
+            : null;
+    }
+
     public static MarketObservation? TryDecodeMarket(byte[] body)
     {
         List<ProtoField>? root = ProtoWire.ReadFields(body);

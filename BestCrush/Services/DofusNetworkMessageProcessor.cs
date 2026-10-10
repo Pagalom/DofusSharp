@@ -302,6 +302,36 @@ internal sealed class DofusNetworkMessageProcessor(
             return;
         }
 
+        if (map.MarketSelectionResponse is not null &&
+            string.Equals(
+                message.Key,
+                map.MarketSelectionResponse,
+                StringComparison.Ordinal))
+        {
+            ulong? itemId =
+                SemanticDecoders.TryDecodeMarketSelectionItemId(
+                    message.Body);
+
+            if (itemId is not null)
+            {
+                // A selection is not a price observation. The writer
+                // resolves the ID against the equipment table and checks
+                // that the capture lease is still authoritative.
+                await observationWriter.RememberLastEquipmentAsync(
+                    itemId.Value,
+                    message.ObservedAtUtc,
+                    lease,
+                    cancellationToken);
+
+                await debugWriter.WriteEventDebugAsync(
+                    message.ObservedAtUtc,
+                    $"[MARKET-SELECTION] ItemId={itemId.Value}",
+                    cancellationToken);
+            }
+
+            return;
+        }
+
         if (map.PriceList is not null &&
             string.Equals(
                 message.Key,

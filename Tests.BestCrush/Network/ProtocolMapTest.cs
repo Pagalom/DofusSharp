@@ -26,6 +26,7 @@ public sealed class ProtocolMapTest : IDisposable
         ProtocolMap map = ProtocolMap.Load(path);
 
         map.ClientBuild.Should().Be("3.6.11.15");
+        map.MarketSelectionResponse.Should().Be(useMissingFile ? null : "jzs");
         new[] { map.PriceList, map.CrushResult, map.ItemDetail, map.WorkshopSlotPut,
                 map.PurchaseRequest, map.PurchaseOffer, map.PurchaseReceipt,
                 map.InventoryAdd, map.InventoryQuantity, map.InventoryRemove,
@@ -50,6 +51,7 @@ public sealed class ProtocolMapTest : IDisposable
         map.ItemDetail.Should().BeNull();
         map.PurchaseRequest.Should().BeNull();
         map.PurchaseOffer.Should().BeNull();
+        map.MarketSelectionResponse.Should().BeNull();
         map.DiagnosticMessages.Should().BeEquivalentTo(new[] { "kef", "KEF" });
     }
 
