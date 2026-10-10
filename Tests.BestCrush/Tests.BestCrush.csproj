@@ -2,6 +2,13 @@
 
     <PropertyGroup>
         <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
+        <!-- BestCrush is a MAUI app project. Its Resizetizer buildTransitive
+             targets flow through the ProjectReference, but the test assembly
+             must not process/copy the app's MAUI resources a second time. -->
+        <EnableMauiImageProcessing>false</EnableMauiImageProcessing>
+        <EnableMauiSplashScreenProcessing>false</EnableMauiSplashScreenProcessing>
+        <EnableMauiFontProcessing>false</EnableMauiFontProcessing>
+        <EnableMauiAssetProcessing>false</EnableMauiAssetProcessing>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <IsPackable>false</IsPackable>
