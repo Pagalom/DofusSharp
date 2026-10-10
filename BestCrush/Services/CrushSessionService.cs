@@ -844,6 +844,7 @@ public sealed class CrushSessionService(
     public async Task ApplyNetworkCrushAsync(
         IReadOnlyList<NetworkCrushResultLine> lines,
         DateTime observedAtUtc,
+        string serverName,
         CancellationToken cancellationToken = default)
     {
         if (lines.Count == 0)
@@ -851,14 +852,8 @@ public sealed class CrushSessionService(
             return;
         }
 
-        string? serverName =
-            currentServerState.ServerName;
-
-        if (string.IsNullOrWhiteSpace(
-            serverName))
-        {
+        if (string.IsNullOrWhiteSpace(serverName))
             return;
-        }
 
         using IServiceScope scope =
             serviceScopeFactory.CreateScope();

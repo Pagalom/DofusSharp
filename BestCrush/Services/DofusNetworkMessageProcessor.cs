@@ -8,11 +8,14 @@ namespace BestCrush.Services;
 /// </summary>
 internal sealed class DofusNetworkMessageProcessor(
     NetworkObservationWriter observationWriter,
-    NetworkDebugWriter debugWriter)
+    NetworkDebugWriter debugWriter,
+    CurrentServerState currentServerState)
 {
     private readonly Dictionary<
         ulong,
         ItemDetailObservation> _itemDetails = [];
+
+    private NetworkCaptureLease? _lastLease;
 
     private PurchaseRequestObservation?
         _pendingPurchaseRequest;
@@ -25,11 +28,25 @@ internal sealed class DofusNetworkMessageProcessor(
         DofusWireMessage message,
         CancellationToken cancellationToken)
     {
+        if (_lastLease != message.CaptureLease)
+        {
+            // The UID and purchase caches cannot cross capture generations.
+            _itemDetails.Clear();
+            _pendingPurchaseRequest = null;
+            _pendingPurchaseRequestAtUtc = default;
+            _lastLease = message.CaptureLease;
+        }
+
+        if (message.CaptureLease is not { } lease ||
+            !currentServerState.IsCaptureLeaseActive(lease))
+            return;
+
         await debugWriter.WriteWireDebugAsync(
             message,
             cancellationToken);
 
-        if (map is null)
+        if (map is null ||
+            !currentServerState.IsCaptureLeaseActive(lease))
             return;
 
         if (map.ItemDetail is not null &&
@@ -48,6 +65,7 @@ internal sealed class DofusNetworkMessageProcessor(
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
+                    lease,
                     cancellationToken);
 
                 await debugWriter.WriteEventDebugAsync(
@@ -75,6 +93,7 @@ internal sealed class DofusNetworkMessageProcessor(
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
+                    lease,
                     cancellationToken);
 
                 await debugWriter.WriteEventDebugAsync(
@@ -102,6 +121,7 @@ internal sealed class DofusNetworkMessageProcessor(
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
+                    lease,
                     cancellationToken);
 
                 await debugWriter.WriteEventDebugAsync(
@@ -131,6 +151,7 @@ internal sealed class DofusNetworkMessageProcessor(
                 await observationWriter.RememberLastEquipmentAsync(
                     result.Item.ItemId,
                     message.ObservedAtUtc,
+                    lease,
                     cancellationToken);
 
                 await debugWriter.WriteEventDebugAsync(
@@ -217,6 +238,7 @@ internal sealed class DofusNetworkMessageProcessor(
                     await observationWriter.PersistMarketAsync(
                         refreshedMarket,
                         message.ObservedAtUtc,
+                        lease,
                         cancellationToken,
                         allowEquipmentPriceRefresh: false);
                 }
@@ -267,6 +289,7 @@ internal sealed class DofusNetworkMessageProcessor(
                 await observationWriter.RememberLastEquipmentAsync(
                     listing.ItemId,
                     message.ObservedAtUtc,
+                    lease,
                     cancellationToken);
 
                 await debugWriter.WriteEventDebugAsync(
@@ -298,6 +321,7 @@ internal sealed class DofusNetworkMessageProcessor(
                 await observationWriter.PersistMarketAsync(
                     market,
                     message.ObservedAtUtc,
+                    lease,
                     cancellationToken);
             }
 
@@ -334,6 +358,7 @@ internal sealed class DofusNetworkMessageProcessor(
                     crush,
                     _itemDetails,
                     message.ObservedAtUtc,
+                    lease,
                     cancellationToken);
             }
         }

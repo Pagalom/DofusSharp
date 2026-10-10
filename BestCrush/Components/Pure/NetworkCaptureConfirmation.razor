@@ -1,0 +1,59 @@
+@inject BestCrush.Services.CurrentServerState CurrentServerState
+@implements IDisposable
+
+@{
+    var status = CurrentServerState.GetCaptureStatus();
+}
+
+@if (status.ServerName is not null)
+{
+    <div class="alert @(status.IsConfirmed ? "alert-success" : "alert-warning") d-flex flex-wrap align-items-center justify-content-between gap-2 py-2"
+         role="status">
+        <div>
+            @if (status.IsConfirmed)
+            {
+                <strong>Capture réseau autorisée : @status.ServerName.</strong>
+                <span> Une seule connexion Dofus autorisée.</span>
+            }
+            else if (status.IsAmbiguous)
+            {
+                <strong>Capture réseau suspendue : plusieurs connexions Dofus détectées.</strong>
+                <span> Ferme les clients supplémentaires avant une nouvelle confirmation.</span>
+            }
+            else
+            {
+                <strong>Capture réseau suspendue.</strong>
+                <span> Confirme le serveur du client Dofus actif avant d'enregistrer automatiquement des données.</span>
+            }
+        </div>
+        @if (status.IsConfirmed)
+        {
+            <button type="button" class="btn btn-sm btn-outline-success"
+                    @onclick="CurrentServerState.SuspendCapture">Suspendre</button>
+        }
+        else
+        {
+            <button type="button" class="btn btn-sm btn-primary"
+                    @onclick="() => CurrentServerState.ConfirmCapture(status.ServerName!)">
+                Je confirme : client Dofus sur @status.ServerName (un seul client)
+            </button>
+        }
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        CurrentServerState.CaptureAuthorizationChanged += OnAuthorizationChanged;
+    }
+
+    private void OnAuthorizationChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        CurrentServerState.CaptureAuthorizationChanged -= OnAuthorizationChanged;
+    }
+}

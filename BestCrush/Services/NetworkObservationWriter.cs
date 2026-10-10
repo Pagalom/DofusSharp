@@ -22,6 +22,7 @@ internal sealed class NetworkObservationWriter(
     Func<
         IReadOnlyList<NetworkCrushResultLine>,
         DateTime,
+        string,
         CancellationToken,
         Task> applyNetworkCrushAsync,
     ILogger<DofusNetworkCaptureService> logger)
@@ -33,13 +34,13 @@ internal sealed class NetworkObservationWriter(
     internal async Task PersistMarketAsync(
         MarketObservation market,
         DateTime observedAtUtc,
+        NetworkCaptureLease lease,
         CancellationToken cancellationToken,
         bool allowEquipmentPriceRefresh = true)
     {
-        string? serverName =
-            currentServerState.ServerName;
+        string serverName = lease.ServerName;
 
-        if (string.IsNullOrWhiteSpace(serverName) ||
+        if (!currentServerState.IsCaptureLeaseActive(lease) ||
             market.ItemId == 0)
         {
             return;
@@ -57,6 +58,9 @@ internal sealed class NetworkObservationWriter(
                 checked((long)market.ItemId),
                 context,
                 cancellationToken);
+
+        if (!currentServerState.IsCaptureLeaseActive(lease))
+            return;
 
         if (objectType ==
             MarketObjectType.Equipment)
@@ -99,6 +103,9 @@ internal sealed class NetworkObservationWriter(
                 maximumLadderLength);
             index++)
         {
+            if (!currentServerState.IsCaptureLeaseActive(lease))
+                return;
+
             ulong[] candidates =
                 market.Offers
                     .Where(
@@ -130,6 +137,9 @@ internal sealed class NetworkObservationWriter(
                     MarketPriceSource.InGameAutomatic,
                     cancellationToken);
 
+            if (!currentServerState.IsCaptureLeaseActive(lease))
+                return;
+
             marketDataChangeNotifier.Notify(
                 objectType.Value,
                 checked((long)market.ItemId),
@@ -144,15 +154,13 @@ internal sealed class NetworkObservationWriter(
             ulong,
             ItemDetailObservation> itemDetails,
         DateTime observedAtUtc,
+        NetworkCaptureLease lease,
         CancellationToken cancellationToken)
     {
-        string? serverName =
-            currentServerState.ServerName;
+        string serverName = lease.ServerName;
 
-        if (string.IsNullOrWhiteSpace(serverName))
-        {
+        if (!currentServerState.IsCaptureLeaseActive(lease))
             return;
-        }
 
         CoefficientService? coefficientService =
             null;
@@ -177,6 +185,9 @@ internal sealed class NetworkObservationWriter(
         {
             foreach (CrushLineObservation line in crush.Lines)
             {
+                if (!currentServerState.IsCaptureLeaseActive(lease))
+                    return;
+
                 if (!itemDetails.TryGetValue(
                         line.ItemUid,
                         out ItemDetailObservation? item) ||
@@ -191,6 +202,7 @@ internal sealed class NetworkObservationWriter(
                 await RememberLastEquipmentAsync(
                     item.ItemId,
                     observedAtUtc,
+                    lease,
                     cancellationToken);
 
                 NetworkCrushRuneResult[] runes =
@@ -216,6 +228,9 @@ internal sealed class NetworkObservationWriter(
                     continue;
                 }
 
+                if (!currentServerState.IsCaptureLeaseActive(lease))
+                    return;
+
                 await coefficientService
                     .AddObservationAsync(
                         checked((long)item.ItemId),
@@ -223,6 +238,9 @@ internal sealed class NetworkObservationWriter(
                         line.CoefficientPercent,
                         CoefficientSource.InGameAutomatic,
                         cancellationToken);
+
+                if (!currentServerState.IsCaptureLeaseActive(lease))
+                    return;
 
                 marketDataChangeNotifier.Notify(
                     MarketObjectType.Equipment,
@@ -235,11 +253,13 @@ internal sealed class NetworkObservationWriter(
             scope?.Dispose();
         }
 
-        if (networkResultLines.Count > 0)
+        if (networkResultLines.Count > 0 &&
+            currentServerState.IsCaptureLeaseActive(lease))
         {
             await applyNetworkCrushAsync(
                 networkResultLines,
                 observedAtUtc,
+                serverName,
                 cancellationToken);
         }
     }
@@ -247,21 +267,14 @@ internal sealed class NetworkObservationWriter(
     internal async Task RememberLastEquipmentAsync(
         ulong itemId,
         DateTime observedAtUtc,
+        NetworkCaptureLease lease,
         CancellationToken cancellationToken)
     {
-        if (itemId == 0)
-        {
+        if (itemId == 0 ||
+            !currentServerState.IsCaptureLeaseActive(lease))
             return;
-        }
 
-        string? serverName =
-            currentServerState.ServerName;
-
-        if (string.IsNullOrWhiteSpace(
-            serverName))
-        {
-            return;
-        }
+        string serverName = lease.ServerName;
 
         long dofusDbId =
             checked((long)itemId);
@@ -291,7 +304,8 @@ internal sealed class NetworkObservationWriter(
         }
 
         if (objectType !=
-            MarketObjectType.Equipment)
+                MarketObjectType.Equipment ||
+            !currentServerState.IsCaptureLeaseActive(lease))
         {
             return;
         }

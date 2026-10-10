@@ -27,6 +27,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly ILogger<
         DofusNetworkCaptureService> logger;
 
+    private readonly CurrentServerState _currentServerState;
+    private readonly LastNetworkEquipmentState _lastNetworkEquipmentState;
+
 #if WINDOWS
     private readonly NetworkDebugWriter
         _networkDebugWriter;
@@ -51,10 +54,11 @@ public sealed class DofusNetworkCaptureService : IDisposable
             npcapPrerequisiteService,
             settings,
             () => settings.DevTool_KeepDebugArtifacts,
-            (lines, observedAtUtc, cancellationToken) =>
+            (lines, observedAtUtc, serverName, cancellationToken) =>
                 crushSessionService.ApplyNetworkCrushAsync(
                     lines,
                     observedAtUtc,
+                    serverName,
                     cancellationToken),
             marketDataChangeNotifier,
             logger)
@@ -70,6 +74,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
         Func<
             IReadOnlyList<NetworkCrushResultLine>,
             DateTime,
+            string,
             CancellationToken,
             Task> applyNetworkCrushAsync,
         ILogger<DofusNetworkCaptureService> logger,
@@ -97,6 +102,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
         Func<
             IReadOnlyList<NetworkCrushResultLine>,
             DateTime,
+            string,
             CancellationToken,
             Task> applyNetworkCrushAsync,
         MarketDataChangeNotifier marketDataChangeNotifier,
@@ -105,6 +111,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
         this.npcapPrerequisiteService =
             npcapPrerequisiteService;
         this.logger = logger;
+        _currentServerState = currentServerState;
+        _lastNetworkEquipmentState = lastNetworkEquipmentState;
 
 #if WINDOWS
         _networkDebugWriter =
@@ -128,7 +136,11 @@ public sealed class DofusNetworkCaptureService : IDisposable
         _messageProcessor =
             new DofusNetworkMessageProcessor(
                 observationWriter,
-                _networkDebugWriter);
+                _networkDebugWriter,
+                currentServerState);
+
+        currentServerState.CaptureAuthorizationChanged +=
+            OnCaptureAuthorizationChanged;
 #endif
     }
 #if WINDOWS
@@ -153,6 +165,15 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private ProtocolMap? _map;
     private Task? _worker;
     private bool _started;
+
+    private void OnCaptureAuthorizationChanged()
+    {
+        _lastNetworkEquipmentState.Clear();
+
+        // Do not frame old stream bytes under a new confirmation.
+        lock (_streamLock)
+            _streams.Clear();
+    }
 
 #endif
 
@@ -353,7 +374,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
         string key,
         byte[] body,
         DateTime observedAtUtc,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string connectionId = "replay",
+        NetworkCaptureLease? recordedLease = null)
     {
         if (_map is null ||
             _worker is null)
@@ -361,6 +384,13 @@ public sealed class DofusNetworkCaptureService : IDisposable
             throw new InvalidOperationException(
                 "Le ProtocolMap de replay doit être chargé avant l'injection.");
         }
+
+        NetworkCaptureLease? lease =
+            recordedLease ?? _currentServerState.GetCaptureLease();
+
+        if (lease is { } candidate &&
+            !_currentServerState.TryAcceptConnection(candidate, connectionId))
+            lease = null;
 
         TaskCompletionSource<bool> completion =
             new(
@@ -372,6 +402,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     key,
                     body,
                     observedAtUtc,
+                    lease,
                     completion)))
         {
             throw new InvalidOperationException(
@@ -423,6 +454,33 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 sender is ICaptureDevice captureDevice
                     ? captureDevice.Name
                     : "unknown";
+
+            NetworkCaptureLease? lease =
+                _currentServerState.GetCaptureLease();
+
+            if (lease is null)
+                return;
+
+            string clientAddress =
+                tcp.SourcePort == DofusPort
+                    ? ip.DestinationAddress.ToString()
+                    : ip.SourceAddress.ToString();
+
+            int clientPort =
+                tcp.SourcePort == DofusPort
+                    ? tcp.DestinationPort
+                    : tcp.SourcePort;
+
+            string dofusAddress =
+                tcp.SourcePort == DofusPort
+                    ? ip.SourceAddress.ToString()
+                    : ip.DestinationAddress.ToString();
+
+            string connectionId =
+                $"{deviceName}|{clientAddress}:{clientPort}|{dofusAddress}:{DofusPort}";
+
+            if (!_currentServerState.TryAcceptConnection(lease.Value, connectionId))
+                return;
 
             TcpFlowKey flow =
                 new(
@@ -477,7 +535,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                 direction,
                                 any.Key,
                                 any.Body,
-                                DateTime.UtcNow));
+                                DateTime.UtcNow,
+                                lease));
                     }
                 }
             }
@@ -548,6 +607,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
     public void Dispose()
     {
+#if WINDOWS
+        _currentServerState.CaptureAuthorizationChanged -=
+            OnCaptureAuthorizationChanged;
+#endif
         Stop();
 #if WINDOWS
         _cancellation.Dispose();

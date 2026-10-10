@@ -3,6 +3,7 @@
 @inherits LayoutComponentBase
 @inject ServersService ServersService
 @inject NavigationManager NavigationManager
+@inject BestCrush.Services.CurrentServerState CurrentServerState
 
 <div class="min-vh-100 container d-flex flex-column" data-bs-theme="@_theme">
     <header class="d-flex flex-wrap align-items-center justify-content-center justify-content-md-between py-3 mb-4 border-bottom">
@@ -40,6 +41,7 @@
     </header>
 
     <NpcapRequirementBanner />
+    <NetworkCaptureConfirmation />
 
     <div class="flex-grow-1">
         @Body
@@ -69,10 +71,13 @@
 
         _servers = serversTask.Result;
         _currentServer = currentServerTask.Result;
+        CurrentServerState.SelectServer(_currentServer.Name);
     }
 
     async Task SelectServer(DofocusServer server)
     {
+        // Revoke authorization before asynchronous navigation.
+        CurrentServerState.SelectServer(server.Name);
         await ServersService.SetCurrentServerAsync(server);
         _currentServer = server;
         NavigationManager.NavigateTo(KnownRoutes.Server(server), true);

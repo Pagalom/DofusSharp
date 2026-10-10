@@ -733,6 +733,86 @@ public sealed class DofusNetworkRoutingTest
         harness.Notifications.Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task UnconfirmedCaptureDoesNotPersistOrRememberEquipment()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        harness.ServerState.SuspendCapture();
+
+        await harness.ReplayAsync(
+            "jzn", Market(42, MarketOffer(501, 42, 100)), ObservedAt);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 42))
+            .Should().BeEmpty();
+        harness.LastEquipment.GetForServer(RoutingHarness.Server)
+            .Should().BeNull();
+        harness.Notifications.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ChangingServersInvalidatesOldLeaseAndRequiresConfirmation()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        NetworkCaptureLease oldLease = harness.ServerState.GetCaptureLease()!.Value;
+
+        await harness.ReplayAsync(
+            "jzn", Market(200, MarketOffer(1, 200, 12)), ObservedAt);
+
+        harness.ServerState.SelectServer("OTHER_SERVER");
+
+        await harness.Service.ReplayMessageAsync(
+            "TEST", "jzn", Market(201, MarketOffer(2, 201, 15)),
+            ObservedAt.AddSeconds(1),
+            recordedLease: oldLease);
+
+        await harness.ReplayAsync(
+            "jzn", Market(202, MarketOffer(3, 202, 20)),
+            ObservedAt.AddSeconds(2));
+
+        harness.ServerState.ConfirmCapture("OTHER_SERVER");
+        await harness.ReplayAsync(
+            "jzn", Market(202, MarketOffer(3, 202, 30)),
+            ObservedAt.AddSeconds(3));
+
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200))
+            .Should().ContainSingle();
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 201))
+            .Should().BeEmpty();
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 202))
+            .Should().BeEmpty();
+        harness.Notifications.Select(n => n.ServerName)
+            .Should().Equal(RoutingHarness.Server, "OTHER_SERVER");
+    }
+
+    [Fact]
+    public async Task ASecondTcpConnectionSuspendsFurtherNetworkWrites()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+
+        await harness.Service.ReplayMessageAsync(
+            "TEST", "jzn", Market(200, MarketOffer(1, 200, 10)),
+            ObservedAt, connectionId: "client-A");
+
+        await harness.Service.ReplayMessageAsync(
+            "TEST", "jzn", Market(201, MarketOffer(2, 201, 20)),
+            ObservedAt.AddSeconds(1), connectionId: "client-B");
+
+        harness.ServerState.GetCaptureStatus().IsAmbiguous.Should().BeTrue();
+
+        await harness.Service.ReplayMessageAsync(
+            "TEST", "jzn", Market(202, MarketOffer(3, 202, 30)),
+            ObservedAt.AddSeconds(2), connectionId: "client-A");
+
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200))
+            .Should().ContainSingle();
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 201))
+            .Should().BeEmpty();
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 202))
+            .Should().BeEmpty();
+        harness.LastEquipment.GetForServer(RoutingHarness.Server)
+            .Should().BeNull();
+    }
+
     private static byte[] PurchaseRequest(
         ulong price,
         ulong quantity,
@@ -914,6 +994,7 @@ public sealed class DofusNetworkRoutingTest
 
             serverState.SelectServer(
                 Server);
+            serverState.ConfirmCapture(Server);
 
             LastNetworkEquipmentState lastEquipment =
                 new();
@@ -951,6 +1032,7 @@ public sealed class DofusNetworkRoutingTest
                     (
                         lines,
                         observedAtUtc,
+                        _,
                         _
                     ) =>
                     {
