@@ -554,7 +554,7 @@ private bool _hasF7VisibilitySnapshot;
         {
             PostUi(
                 marketCaptureOverlayService
-                    .ShowReadCancelled
+                    .ShowTooltipNotDetected
             );
 
             return;

@@ -41,6 +41,21 @@ public sealed class DofusItemTooltipDetectionService(
     private static readonly Scalar TooltipBodyUpper =
         new(53, 32, 30);
 
+    // The darker item-tooltip palette in newer Dofus UI builds is
+    // different from the legacy header/body palette above (BGR).
+    // Keep the existing detector first to preserve known-good captures.
+    private static readonly Scalar CurrentTooltipHeaderLower =
+        new(45, 25, 23);
+
+    private static readonly Scalar CurrentTooltipHeaderUpper =
+        new(65, 41, 42);
+
+    private static readonly Scalar CurrentTooltipBodyLower =
+        new(49, 29, 27);
+
+    private static readonly Scalar CurrentTooltipBodyUpper =
+        new(59, 40, 41);
+
     public async Task<DofusItemTooltipDetectionResult>
         DetectAsync(
             string captureFilePath,
@@ -168,24 +183,56 @@ public sealed class DofusItemTooltipDetectionService(
         );
     }
 
-    private static IReadOnlyList<CvRect>
+    // Internal seam so geometry/palette regression tests do not need OCR
+    // or any image from an actual player session.
+    internal static IReadOnlyList<CvRect>
         DetectTooltipHeaders(
             Mat capture)
+    {
+        IReadOnlyList<CvRect> legacy =
+            DetectTooltipHeadersByPalette(
+                capture,
+                TooltipDarkLower,
+                TooltipDarkUpper,
+                TooltipBodyLower,
+                TooltipBodyUpper
+            );
+
+        // The fallback is evaluated only when the legacy profile
+        // found no valid header/body pair.
+        return legacy.Count > 0
+            ? legacy
+            : DetectTooltipHeadersByPalette(
+                capture,
+                CurrentTooltipHeaderLower,
+                CurrentTooltipHeaderUpper,
+                CurrentTooltipBodyLower,
+                CurrentTooltipBodyUpper
+            );
+    }
+
+    private static IReadOnlyList<CvRect>
+        DetectTooltipHeadersByPalette(
+            Mat capture,
+            Scalar headerLower,
+            Scalar headerUpper,
+            Scalar bodyLower,
+            Scalar bodyUpper)
     {
         using Mat darkMask = new();
         using Mat bodyMask = new();
 
         Cv2.InRange(
             capture,
-            TooltipDarkLower,
-            TooltipDarkUpper,
+            headerLower,
+            headerUpper,
             darkMask
         );
 
         Cv2.InRange(
             capture,
-            TooltipBodyLower,
-            TooltipBodyUpper,
+            bodyLower,
+            bodyUpper,
             bodyMask
         );
 

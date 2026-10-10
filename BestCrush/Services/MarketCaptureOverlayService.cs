@@ -365,6 +365,12 @@ public sealed class MarketCaptureOverlayService(
                 page.ShowReadCancelled()
         );
 
+    public void ShowTooltipNotDetected() =>
+        Update(
+            page =>
+                page.ShowTooltipNotDetected()
+        );
+
     public void ShowCaptureStarted(
         DofusWindowInfo window) =>
         Update(

@@ -541,11 +541,25 @@ public sealed class MarketCaptureOverlayPage : ContentPage
         );
     }
 
+    public void ShowTooltipNotDetected()
+    {
+        SetState(
+            "⚠ Infobulle non détectée",
+            Colors.Orange,
+            "Aucun équipement en focus",
+            "La capture Dofus a réussi, mais aucune infobulle " +
+            "d'équipement exploitable n'a été repérée. " +
+            "Survole un seul équipement et réessaie avec F8.",
+            "Aucun focus modifié",
+            Colors.Orange
+        );
+    }
+
     public void ShowCaptureStarted(
         DofusWindowInfo window)
     {
         SetState(
-            $"Clic molette — capture {window.Width}×{window.Height}...",
+            $"F8 — capture {window.Width}×{window.Height}...",
             Colors.LightBlue,
             "Lecture en cours",
             "Capture de la fenêtre Dofus.",
