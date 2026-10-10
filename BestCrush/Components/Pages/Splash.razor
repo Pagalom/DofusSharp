@@ -1,8 +1,5 @@
 ﻿@inject ServersService ServersService
-@inject BestCrushDbContext BestCrushDbContext
-@inject ApplicationUpgradesHandler ApplicationUpgradesHandler
-@inject IDofusDbClientsFactory DofusDbClientsFactory
-@inject GameDataUpgradeHandler GameDataUpgradeHandler
+@inject BestCrush.Services.StartupInitializationService StartupInitializationService
 @inject NavigationManager NavigationManager
 @inject ILogger<Splash> Logger;
 @page "/"
@@ -16,6 +13,7 @@
 @using Microsoft.Extensions.Logging
 @using CurrentVersion = CurrentVersion
 @layout EmptyLayout
+@implements IDisposable
 
 <div class="container h-100 d-flex flex-column align-items-stretch justify-content-center gap-4 text-center py-5">
     @if (_error is not null)
@@ -77,53 +75,68 @@
     ProgressMessage _progress = new("Starting...", null);
     string? _error;
     string? _errorDetails;
+    private bool _disposed;
 
-    protected override void OnInitialized() => _ = Task.Run(ExecuteAsync);
+    // Keep the initialization task attached to the component lifecycle.
+    // The singleton initializer owns its database scope independently.
+    protected override Task OnInitializedAsync() => ExecuteAsync();
 
     async Task ExecuteAsync()
     {
         try
         {
             ProgressSync<ProgressMessage> progress = new(m =>
+            {
+                if (_disposed)
+                    return;
+
+                // Never block the UI dispatcher with GetResult().
+                _ = InvokeAsync(() =>
                 {
+                    if (_disposed)
+                        return;
+
                     _progress = m;
-                    InvokeAsync(StateHasChanged).GetAwaiter().GetResult();
-                }
-            );
+                    StateHasChanged();
+                });
+            });
 
-            _progress = new ProgressMessage("Migration de la base de données...", null);
-            await InvokeAsync(StateHasChanged);
-            await BestCrushDbContext.Database.MigrateAsync();
+            await StartupInitializationService.InitializeAsync(progress);
 
-            _progress = new ProgressMessage("Mise à jour des données...", 0);
-            await InvokeAsync(StateHasChanged);
-            await UpgradeAsync(progress);
+            if (_disposed)
+                return;
 
             _progress = new ProgressMessage("Chargement des serveurs...", null);
             await InvokeAsync(StateHasChanged);
             _ = await ServersService.GetServers();
 
+            if (_disposed)
+                return;
+
             _progress = new ProgressMessage("Prêt.", null, true);
             await InvokeAsync(StateHasChanged);
 
             DofocusServer? currentServer = await ServersService.GetCurrentServer();
-            NavigationManager.NavigateTo(currentServer is not null ? KnownRoutes.Server(currentServer) : KnownRoutes.Servers());
+
+            if (!_disposed)
+                NavigationManager.NavigateTo(
+                    currentServer is not null
+                        ? KnownRoutes.Server(currentServer)
+                        : KnownRoutes.Servers());
         }
         catch (Exception exn)
         {
+            Logger.LogError(exn, "An unexpected exception has occurred.");
+
+            if (_disposed)
+                return;
+
             _error = "Une erreur inattendue s'est produite.";
             _errorDetails = exn.ToString();
-            Logger.LogError(exn, "An unexpected exception has occurred.");
             await InvokeAsync(StateHasChanged);
         }
     }
 
-    async Task UpgradeAsync(ProgressSync<ProgressMessage>? progress = null, CancellationToken cancellationToken = default)
-    {
-        await ApplicationUpgradesHandler.UpgradeAsync(CurrentVersion.Version, progress?.DeriveSubtask(0, 50), cancellationToken);
-
-        Version version = await DofusDbClientsFactory.Version().GetVersionAsync(cancellationToken);
-        await GameDataUpgradeHandler.UpgradeAsync(version, progress?.DeriveSubtask(50, 100), cancellationToken);
-    }
+    public void Dispose() => _disposed = true;
 
 }
