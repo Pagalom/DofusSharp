@@ -166,7 +166,13 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
     private ProtocolMap? _map;
     private Task? _worker;
-    private bool _started;
+    private volatile bool _started;
+    private long _captureEpoch;
+
+    // The channel and its worker live until Dispose, not until Stop.
+    // A Stop/Start cycle invalidates the previous capture epoch.
+    internal long CaptureEpochForReplay =>
+        Interlocked.Read(ref _captureEpoch);
 
     private void OnServerSelectionChanged()
     {
@@ -225,6 +231,15 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 return;
             }
 
+            _worker ??=
+                Task.Run(
+                    () =>
+                        ProcessMessagesAsync(
+                            _cancellation.Token));
+
+            Interlocked.Increment(ref _captureEpoch);
+            _started = true;
+
             foreach (
                 ICaptureDevice device
                 in captureDevices)
@@ -275,19 +290,12 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
             if (_devices.Count == 0)
             {
+                _started = false;
+                Interlocked.Increment(ref _captureEpoch);
+
                 logger.LogWarning(
                     "Aucune interface réseau n'a pu être ouverte pour Dofus.");
-
-                return;
             }
-
-            _worker ??=
-                Task.Run(
-                    () =>
-                        ProcessMessagesAsync(
-                            _cancellation.Token));
-
-            _started = true;
         }
 #endif
     }
@@ -301,17 +309,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 return;
 
             _started = false;
+            Interlocked.Increment(ref _captureEpoch);
 
-            try
-            {
-                _cancellation.Cancel();
-                _messages.Writer.TryComplete();
-            }
-            catch
-            {
-                // Best effort.
-            }
-
+            // Do not complete the shared channel or cancel the worker here:
+            // Start() must be able to reactivate this service.
             foreach (ICaptureDevice device in _devices)
             {
                 try
@@ -366,9 +367,25 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     ProcessMessagesAsync(
                         _cancellation.Token));
 
-        // Le replay n'ouvre aucune interface Npcap. Il réutilise néanmoins
-        // le même cycle d'arrêt afin que Dispose annule proprement le worker.
+        // Replay uses the same Stop/Resume epoch semantics as Npcap.
+        Interlocked.Increment(ref _captureEpoch);
         _started = true;
+    }
+
+    internal void ResumeReplayForTests()
+    {
+        lock (_captureLock)
+        {
+            if (_worker is null || _map is null)
+                throw new InvalidOperationException(
+                    "Le replay doit être initialisé avant sa reprise.");
+
+            if (_started)
+                return;
+
+            Interlocked.Increment(ref _captureEpoch);
+            _started = true;
+        }
     }
 
     internal async Task ReplayMessageAsync(
@@ -377,7 +394,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
         byte[] body,
         DateTime observedAtUtc,
         CancellationToken cancellationToken = default,
-        NetworkCaptureLease? recordedLease = null)
+        NetworkCaptureLease? recordedLease = null,
+        long? recordedCaptureEpoch = null)
     {
         if (_map is null ||
             _worker is null)
@@ -386,8 +404,15 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 "Le ProtocolMap de replay doit être chargé avant l'injection.");
         }
 
+        if (!_started)
+            throw new InvalidOperationException(
+                "La capture réseau est arrêtée.");
+
         NetworkCaptureLease? lease =
             recordedLease ?? _currentServerState.GetCaptureLease();
+
+        long captureEpoch =
+            recordedCaptureEpoch ?? Interlocked.Read(ref _captureEpoch);
 
         TaskCompletionSource<bool> completion =
             new(
@@ -400,6 +425,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     body,
                     observedAtUtc,
                     lease,
+                    captureEpoch,
                     completion)))
         {
             throw new InvalidOperationException(
@@ -422,8 +448,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
     {
         try
         {
-            if (_map is null)
+            if (_map is null || !_started)
                 return;
+
+            long captureEpoch = Interlocked.Read(ref _captureEpoch);
 
             RawCapture raw = capture.GetPacket();
             Packet packet =
@@ -516,7 +544,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                 any.Key,
                                 any.Body,
                                 DateTime.UtcNow,
-                                lease));
+                                lease,
+                                captureEpoch));
                     }
                 }
             }
@@ -541,11 +570,17 @@ public sealed class DofusNetworkCaptureService : IDisposable
             {
                 try
                 {
-                    await _messageProcessor
-                        .ProcessMessageAsync(
-                            _map,
-                            message,
-                            cancellationToken);
+                    // Stop invalidates queued messages from the old run.
+                    if (_started &&
+                        message.CaptureEpoch ==
+                            Interlocked.Read(ref _captureEpoch))
+                    {
+                        await _messageProcessor
+                            .ProcessMessageAsync(
+                                _map,
+                                message,
+                                cancellationToken);
+                    }
 
                     message.Completion?
                         .TrySetResult(true);
@@ -593,6 +628,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
 #endif
         Stop();
 #if WINDOWS
+        _cancellation.Cancel();
+        _messages.Writer.TryComplete();
         _cancellation.Dispose();
 #endif
     }

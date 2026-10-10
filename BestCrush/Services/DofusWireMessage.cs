@@ -6,4 +6,5 @@ internal sealed record DofusWireMessage(
     byte[] Body,
     DateTime ObservedAtUtc,
     NetworkCaptureLease? CaptureLease,
+    long CaptureEpoch,
     TaskCompletionSource<bool>? Completion = null);

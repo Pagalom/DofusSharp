@@ -815,6 +815,104 @@ public sealed class DofusNetworkRoutingTest
         (await harness.ReadCoefficientsAsync(42)).Should().BeEmpty();
     }
 
+    [Fact]
+    public async Task StopRejectsReplayAndResumeProcessesFreshMessages()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "jzn", Market(200, MarketOffer(1, 200, 10)), ObservedAt);
+
+        long previousEpoch = harness.Service.CaptureEpochForReplay;
+        harness.Service.Stop();
+
+        Func<Task> stoppedReplay = () => harness.ReplayAsync(
+            "jzn", Market(201, MarketOffer(2, 201, 20)),
+            ObservedAt.AddSeconds(1));
+
+        await stoppedReplay.Should().ThrowAsync<InvalidOperationException>();
+
+        harness.Service.ResumeReplayForTests();
+
+        harness.Service.CaptureEpochForReplay.Should().NotBe(previousEpoch);
+
+        await harness.ReplayAsync(
+            "jzn", Market(201, MarketOffer(2, 201, 20)),
+            ObservedAt.AddSeconds(2));
+
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200))
+            .Should().ContainSingle();
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 201))
+            .Should().ContainSingle();
+
+        harness.Notifications.Select(n => n.DofusDbId)
+            .Should().Equal(200, 201);
+    }
+
+    [Fact]
+    public async Task PreviousRunMessageIsRejectedEvenIfQueuedAfterResume()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+
+        long oldEpoch = harness.Service.CaptureEpochForReplay;
+        harness.Service.Stop();
+        harness.Service.ResumeReplayForTests();
+
+        await harness.Service.ReplayMessageAsync(
+            "TEST", "jzn", Market(200, MarketOffer(1, 200, 10)),
+            ObservedAt, recordedCaptureEpoch: oldEpoch);
+
+        await harness.ReplayAsync(
+            "jzn", Market(201, MarketOffer(2, 201, 20)),
+            ObservedAt.AddSeconds(1));
+
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200))
+            .Should().BeEmpty();
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 201))
+            .Should().ContainSingle();
+        harness.Notifications.Select(n => n.DofusDbId)
+            .Should().Equal(201);
+    }
+
+    [Fact]
+    public async Task RestartClearsItemAndPurchaseCorrelations()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "kdb", Bytes(2, Bytes(5, Item(8001, 42))),
+            ObservedAt);
+
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 501),
+            ObservedAt.AddSeconds(1));
+
+        harness.Service.Stop();
+        harness.Service.ResumeReplayForTests();
+
+        await harness.ReplayAsync(
+            "kci", Bytes(1, CrushRow(8001, 1.5f, Rune(100, 2))),
+            ObservedAt.AddSeconds(2));
+
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(200, 501, 10, 100),
+            ObservedAt.AddSeconds(3));
+
+        harness.Crushes.Should().BeEmpty();
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200))
+            .Should().BeEmpty();
+
+        await harness.ReplayAsync(
+            "kdb", Bytes(2, Bytes(5, Item(8001, 42))),
+            ObservedAt.AddSeconds(4));
+
+        await harness.ReplayAsync(
+            "kci", Bytes(1, CrushRow(8001, 1.5f, Rune(100, 2))),
+            ObservedAt.AddSeconds(5));
+
+        harness.Crushes.Should().ContainSingle();
+    }
+
     private static byte[] PurchaseRequest(
         ulong price,
         ulong quantity,

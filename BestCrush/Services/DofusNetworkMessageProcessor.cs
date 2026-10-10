@@ -16,6 +16,7 @@ internal sealed class DofusNetworkMessageProcessor(
         ItemDetailObservation> _itemDetails = [];
 
     private NetworkCaptureLease? _lastLease;
+    private long? _lastCaptureEpoch;
 
     private PurchaseRequestObservation?
         _pendingPurchaseRequest;
@@ -28,13 +29,16 @@ internal sealed class DofusNetworkMessageProcessor(
         DofusWireMessage message,
         CancellationToken cancellationToken)
     {
-        if (_lastLease != message.CaptureLease)
+        if (_lastLease != message.CaptureLease ||
+            _lastCaptureEpoch != message.CaptureEpoch)
         {
-            // The UID and purchase caches cannot cross capture generations.
+            // UID and purchase caches cannot cross a server selection or
+            // an Npcap Stop/Start cycle.
             _itemDetails.Clear();
             _pendingPurchaseRequest = null;
             _pendingPurchaseRequestAtUtc = default;
             _lastLease = message.CaptureLease;
+            _lastCaptureEpoch = message.CaptureEpoch;
         }
 
         if (message.CaptureLease is not { } lease ||
