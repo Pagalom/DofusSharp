@@ -33,11 +33,32 @@ public sealed class TcpReassembler
         if (!_pending.ContainsKey(sequence))
             _pending.Add(sequence, payload);
 
-        while (_pending.TryGetValue(_nextSequence, out byte[]? next))
+        // An out-of-order segment can begin BEFORE _nextSequence after
+        // another segment has filled part of the gap. Consume only its
+        // unseen suffix instead of leaving it permanently queued.
+        while (_pending.Count > 0)
         {
-            _pending.Remove(_nextSequence);
-            _nextSequence += (uint)next.Length;
-            yield return next;
+            KeyValuePair<uint, byte[]> first = _pending.First();
+
+            if (first.Key > _nextSequence)
+                break;
+
+            _pending.Remove(first.Key);
+
+            ulong firstEnd = (ulong)first.Key + (uint)first.Value.Length;
+            if (firstEnd <= _nextSequence)
+                continue;
+
+            int alreadyDelivered =
+                checked((int)(_nextSequence - first.Key));
+
+            byte[] remaining =
+                alreadyDelivered == 0
+                    ? first.Value
+                    : first.Value[alreadyDelivered..];
+
+            _nextSequence += (uint)remaining.Length;
+            yield return remaining;
         }
     }
 }
