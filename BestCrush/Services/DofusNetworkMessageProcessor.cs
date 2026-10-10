@@ -11,9 +11,7 @@ internal sealed class DofusNetworkMessageProcessor(
     NetworkDebugWriter debugWriter,
     CurrentServerState currentServerState)
 {
-    private readonly Dictionary<
-        ulong,
-        ItemDetailObservation> _itemDetails = [];
+    private readonly RecentItemDetailsCache _itemDetails = new();
 
     private NetworkCaptureLease? _lastLease;
     private long? _lastCaptureEpoch;
@@ -65,7 +63,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (item is not null)
             {
-                _itemDetails[item.ItemUid] = item;
+                _itemDetails.Remember(item);
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
@@ -93,7 +91,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (item is not null)
             {
-                _itemDetails[item.ItemUid] = item;
+                _itemDetails.Remember(item);
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
@@ -121,7 +119,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (item is not null)
             {
-                _itemDetails[item.ItemUid] = item;
+                _itemDetails.Remember(item);
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
@@ -149,8 +147,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (result is not null)
             {
-                _itemDetails[result.Item.ItemUid] =
-                    result.Item;
+                _itemDetails.Remember(result.Item);
 
                 await observationWriter.RememberLastEquipmentAsync(
                     result.Item.ItemId,
@@ -360,7 +357,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
                 await observationWriter.PersistCrushAsync(
                     crush,
-                    _itemDetails,
+                    _itemDetails.Items,
                     message.ObservedAtUtc,
                     lease,
                     cancellationToken);

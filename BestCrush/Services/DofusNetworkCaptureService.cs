@@ -150,9 +150,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly object _streamLock = new();
 
     private readonly List<ICaptureDevice> _devices = [];
-    private readonly Dictionary<
-        TcpFlowKey,
-        (NetworkCaptureLease Lease, TcpReassembler Reader)> _streams = [];
+    private readonly NetworkFlowCache<TcpFlowKey, TcpReassembler>
+        _streams = new();
     private readonly Channel<DofusWireMessage> _messages =
         Channel.CreateUnbounded<DofusWireMessage>(
             new UnboundedChannelOptions
@@ -494,22 +493,19 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     ip.DestinationAddress.ToString(),
                     tcp.DestinationPort);
 
-            (NetworkCaptureLease Lease, TcpReassembler Reader) flowState;
+            TcpReassembler stream;
 
             lock (_streamLock)
             {
                 if (!_currentServerState.IsCaptureLeaseActive(lease.Value))
                     return;
 
-                if (!_streams.TryGetValue(flow, out flowState) ||
-                    flowState.Lease != lease.Value)
-                {
-                    flowState = (lease.Value, new TcpReassembler());
-                    _streams[flow] = flowState;
-                }
+                stream = _streams.GetOrCreate(
+                    flow,
+                    lease.Value,
+                    DateTime.UtcNow,
+                    static () => new TcpReassembler());
             }
-
-            TcpReassembler stream = flowState.Reader;
 
             lock (stream)
             {
