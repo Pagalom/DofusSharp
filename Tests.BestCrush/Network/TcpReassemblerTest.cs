@@ -1,4 +1,4 @@
-using BestCrush.NetworkProbe.Capture;
+using BestCrush.Network.Capture;
 using FluentAssertions;
 
 namespace Tests.BestCrush.Network;

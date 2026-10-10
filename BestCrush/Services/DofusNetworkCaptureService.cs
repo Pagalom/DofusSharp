@@ -8,8 +8,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 #if WINDOWS
-using BestCrush.NetworkProbe.Capture;
-using BestCrush.NetworkProbe.Protocol;
+using BestCrush.Network.Capture;
+using BestCrush.Network.Protocol;
 using PacketDotNet;
 using SharpPcap;
 #endif

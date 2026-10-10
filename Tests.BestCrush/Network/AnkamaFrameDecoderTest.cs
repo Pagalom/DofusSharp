@@ -1,5 +1,5 @@
 using System.Text;
-using BestCrush.NetworkProbe.Protocol;
+using BestCrush.Network.Protocol;
 using FluentAssertions;
 using static Tests.BestCrush.Network.NetworkPayload;
 

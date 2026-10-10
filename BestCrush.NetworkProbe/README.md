@@ -39,7 +39,7 @@ dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- -
 
 ## Mapping protocole
 
-`protocol-map.json` contient les opcodes observés pour le build Dofus testé :
+`../BestCrush.Network/protocol-map.json` est la source canonique, copiée en sortie du Probe sous `protocol-map.json`. Ce fichier contient les opcodes observés pour le build Dofus testé :
 
 - `price_list = jzn`
 - `crush_result = kci`

@@ -1,9 +1,9 @@
 using System.Buffers.Binary;
 using System.Text;
 
-namespace BestCrush.NetworkProbe.Protocol;
+namespace BestCrush.Network.Protocol;
 
-internal enum ProtoWireType : int
+public enum ProtoWireType : int
 {
     Varint = 0,
     Fixed64 = 1,
@@ -11,7 +11,7 @@ internal enum ProtoWireType : int
     Fixed32 = 5
 }
 
-internal sealed record ProtoField(
+public sealed record ProtoField(
     int Number,
     ProtoWireType WireType,
     ulong Varint = 0,
@@ -19,7 +19,7 @@ internal sealed record ProtoField(
     uint Fixed32 = 0,
     ulong Fixed64 = 0);
 
-internal static class ProtoWire
+public static class ProtoWire
 {
     public static List<ProtoField>? ReadFields(ReadOnlySpan<byte> data)
     {

@@ -32,12 +32,18 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tests.BestCrush", "Tests.Be
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "dofusdb", "dofusdb\dofusdb.csproj", "{ECE4797A-1FDA-4152-B3BB-136DD0CFC0E5}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "BestCrush.Network", "BestCrush.Network\BestCrush.Network.csproj", "{5B72D75A-6397-4B30-9C49-C79E5012E420}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{5B72D75A-6397-4B30-9C49-C79E5012E420}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5B72D75A-6397-4B30-9C49-C79E5012E420}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5B72D75A-6397-4B30-9C49-C79E5012E420}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5B72D75A-6397-4B30-9C49-C79E5012E420}.Release|Any CPU.Build.0 = Release|Any CPU
 		{4DB3FF4F-2C86-43D0-9D2C-7791D721C167}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{4DB3FF4F-2C86-43D0-9D2C-7791D721C167}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{4DB3FF4F-2C86-43D0-9D2C-7791D721C167}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -88,6 +94,7 @@ Global
 		{ECE4797A-1FDA-4152-B3BB-136DD0CFC0E5}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{5B72D75A-6397-4B30-9C49-C79E5012E420} = {4C55A816-EA26-473B-B7E0-7059CA09D651}
 		{4DB3FF4F-2C86-43D0-9D2C-7791D721C167} = {40F57244-FDA7-47BE-B5FB-DA00C7339485}
 		{A3DE0CCE-6B15-413D-AE71-3BB8360C4FC3} = {40F57244-FDA7-47BE-B5FB-DA00C7339485}
 		{D6FF4731-AE7C-4EF1-A67B-94C556AE7108} = {40F57244-FDA7-47BE-B5FB-DA00C7339485}

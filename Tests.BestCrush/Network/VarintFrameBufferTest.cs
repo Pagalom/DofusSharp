@@ -1,5 +1,5 @@
-using BestCrush.NetworkProbe.Capture;
-using BestCrush.NetworkProbe.Protocol;
+using BestCrush.Network.Capture;
+using BestCrush.Network.Protocol;
 using FluentAssertions;
 using static Tests.BestCrush.Network.NetworkPayload;
 

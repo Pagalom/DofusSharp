@@ -1,6 +1,6 @@
-namespace BestCrush.NetworkProbe.Capture;
+namespace BestCrush.Network.Capture;
 
-internal sealed class TcpReassembler
+public sealed class TcpReassembler
 {
     private readonly SortedDictionary<uint, byte[]> _pending = new();
     private bool _started;
@@ -42,7 +42,7 @@ internal sealed class TcpReassembler
     }
 }
 
-internal sealed class VarintFrameBuffer
+public sealed class VarintFrameBuffer
 {
     private readonly List<byte> _buffer = new();
 

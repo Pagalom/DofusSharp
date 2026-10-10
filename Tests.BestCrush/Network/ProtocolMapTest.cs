@@ -1,5 +1,5 @@
 using System.Text.Json;
-using BestCrush.NetworkProbe.Protocol;
+using BestCrush.Network.Protocol;
 using FluentAssertions;
 
 namespace Tests.BestCrush.Network;

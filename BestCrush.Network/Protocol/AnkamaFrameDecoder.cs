@@ -1,8 +1,8 @@
-namespace BestCrush.NetworkProbe.Protocol;
+namespace BestCrush.Network.Protocol;
 
-internal sealed record AnkamaAny(string TypeUrl, string Key, byte[] Body);
+public sealed record AnkamaAny(string TypeUrl, string Key, byte[] Body);
 
-internal static class AnkamaFrameDecoder
+public static class AnkamaFrameDecoder
 {
     private const string Prefix = "type.ankama.com/";
 

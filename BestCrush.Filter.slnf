@@ -2,6 +2,7 @@
   "solution": {
     "path": "DofusSharp.sln",
     "projects": [
+      "BestCrush.Network\\BestCrush.Network.csproj",
       "BestCrush.Domain\\BestCrush.Domain.csproj",
       "BestCrush.Migrations\\BestCrush.Migrations.csproj",
       "BestCrush\\BestCrush.csproj",

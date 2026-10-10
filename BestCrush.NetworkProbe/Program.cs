@@ -1,5 +1,5 @@
 using BestCrush.NetworkProbe.Capture;
-using BestCrush.NetworkProbe.Protocol;
+using BestCrush.Network.Protocol;
 using SharpPcap;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;

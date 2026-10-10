@@ -13,8 +13,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="protocol-map.json">
+    <None Include="..\BestCrush.Network\protocol-map.json" Link="protocol-map.json">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\BestCrush.Network\BestCrush.Network.csproj" />
   </ItemGroup>
 </Project>
