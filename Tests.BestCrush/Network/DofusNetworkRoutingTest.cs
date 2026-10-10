@@ -135,7 +135,7 @@ public sealed class DofusNetworkRoutingTest
     }
 
     [Fact]
-    public async Task JznSkipsUnsignedPriceThatCannotFitInLongButKeepsFollowingLot()
+    public async Task JznKeepsDecoderReversalBeforeSkippingUnsignedOverflow()
     {
         await using RoutingHarness harness =
             await RoutingHarness.CreateAsync();
@@ -160,12 +160,12 @@ public sealed class DofusNetworkRoutingTest
             .Select(price =>
                 (price.Quantity, price.Price))
             .Should()
-            .Equal((10, 100L));
+            .Equal((1, 100L));
 
         harness.Notifications
             .Select(change => change.Quantity)
             .Should()
-            .Equal(10);
+            .Equal(1);
     }
 
     [Theory]
