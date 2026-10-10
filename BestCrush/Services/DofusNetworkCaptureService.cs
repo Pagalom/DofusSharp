@@ -139,8 +139,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 _networkDebugWriter,
                 currentServerState);
 
-        currentServerState.CaptureAuthorizationChanged +=
-            OnCaptureAuthorizationChanged;
+        currentServerState.ServerSelectionChanged +=
+            OnServerSelectionChanged;
 #endif
     }
 #if WINDOWS
@@ -150,7 +150,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly object _streamLock = new();
 
     private readonly List<ICaptureDevice> _devices = [];
-    private readonly Dictionary<TcpFlowKey, TcpReassembler> _streams = [];
+    private readonly Dictionary<
+        TcpFlowKey,
+        (NetworkCaptureLease Lease, TcpReassembler Reader)> _streams = [];
     private readonly Channel<DofusWireMessage> _messages =
         Channel.CreateUnbounded<DofusWireMessage>(
             new UnboundedChannelOptions
@@ -166,11 +168,11 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private Task? _worker;
     private bool _started;
 
-    private void OnCaptureAuthorizationChanged()
+    private void OnServerSelectionChanged()
     {
         _lastNetworkEquipmentState.Clear();
 
-        // Do not frame old stream bytes under a new confirmation.
+        // Drop partial frames when the user selects another server.
         lock (_streamLock)
             _streams.Clear();
     }
@@ -375,7 +377,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
         byte[] body,
         DateTime observedAtUtc,
         CancellationToken cancellationToken = default,
-        string connectionId = "replay",
         NetworkCaptureLease? recordedLease = null)
     {
         if (_map is null ||
@@ -387,10 +388,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
         NetworkCaptureLease? lease =
             recordedLease ?? _currentServerState.GetCaptureLease();
-
-        if (lease is { } candidate &&
-            !_currentServerState.TryAcceptConnection(candidate, connectionId))
-            lease = null;
 
         TaskCompletionSource<bool> completion =
             new(
@@ -461,27 +458,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
             if (lease is null)
                 return;
 
-            string clientAddress =
-                tcp.SourcePort == DofusPort
-                    ? ip.DestinationAddress.ToString()
-                    : ip.SourceAddress.ToString();
-
-            int clientPort =
-                tcp.SourcePort == DofusPort
-                    ? tcp.DestinationPort
-                    : tcp.SourcePort;
-
-            string dofusAddress =
-                tcp.SourcePort == DofusPort
-                    ? ip.SourceAddress.ToString()
-                    : ip.DestinationAddress.ToString();
-
-            string connectionId =
-                $"{deviceName}|{clientAddress}:{clientPort}|{dofusAddress}:{DofusPort}";
-
-            if (!_currentServerState.TryAcceptConnection(lease.Value, connectionId))
-                return;
-
             TcpFlowKey flow =
                 new(
                     deviceName,
@@ -490,18 +466,22 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     ip.DestinationAddress.ToString(),
                     tcp.DestinationPort);
 
-            TcpReassembler stream;
+            (NetworkCaptureLease Lease, TcpReassembler Reader) flowState;
 
             lock (_streamLock)
             {
-                if (!_streams.TryGetValue(
-                    flow,
-                    out stream!))
+                if (!_currentServerState.IsCaptureLeaseActive(lease.Value))
+                    return;
+
+                if (!_streams.TryGetValue(flow, out flowState) ||
+                    flowState.Lease != lease.Value)
                 {
-                    stream = new TcpReassembler();
-                    _streams[flow] = stream;
+                    flowState = (lease.Value, new TcpReassembler());
+                    _streams[flow] = flowState;
                 }
             }
+
+            TcpReassembler stream = flowState.Reader;
 
             lock (stream)
             {
@@ -608,8 +588,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
     public void Dispose()
     {
 #if WINDOWS
-        _currentServerState.CaptureAuthorizationChanged -=
-            OnCaptureAuthorizationChanged;
+        _currentServerState.ServerSelectionChanged -=
+            OnServerSelectionChanged;
 #endif
         Stop();
 #if WINDOWS

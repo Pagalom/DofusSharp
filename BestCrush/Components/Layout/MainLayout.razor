@@ -41,7 +41,6 @@
     </header>
 
     <NpcapRequirementBanner />
-    <NetworkCaptureConfirmation />
 
     <div class="flex-grow-1">
         @Body
@@ -76,7 +75,7 @@
 
     async Task SelectServer(DofocusServer server)
     {
-        // Revoke authorization before asynchronous navigation.
+        // The selected server immediately becomes the capture context.
         CurrentServerState.SelectServer(server.Name);
         await ServersService.SetCurrentServerAsync(server);
         _currentServer = server;

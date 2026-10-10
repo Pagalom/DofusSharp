@@ -1,5 +1,7 @@
 # S2 — Attribution prudente de la capture réseau au serveur
 
+> Historique : ce document décrit le comportement du commit `ee90cf2`. **La confirmation obligatoire est remplacée par la sélection de serveur faisant autorité dans S2b.** Voir [S2b](stability-s2b-selection-authoritative.md) pour le comportement courant.
+
 Base : `18a1c08` ; S1 validé (227 tests, disparition NU1903 et intégrité de la copie SQLite : ok, 15 tables).
 
 ## Limite fondamentale

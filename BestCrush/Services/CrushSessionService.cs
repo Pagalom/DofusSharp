@@ -57,7 +57,6 @@ public sealed record CrushSessionSnapshot(
 
 public sealed class CrushSessionService(
     IServiceScopeFactory serviceScopeFactory,
-    CurrentServerState currentServerState,
     OverlayControlBarService overlayControlBarService,
     OverlayLayoutSettingsService
         overlayLayoutSettingsService,
