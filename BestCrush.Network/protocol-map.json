@@ -257,7 +257,7 @@
   "schema_version": 1,
   "verified_routes": {
     "price_list": "legacy-3.6.11.15",
-    "market_selection_response": "observed-x1-equipment-2026-10-11",
+    "market_selection_response": "observed-equipment-x1-and-stackable-four-lots-2026-10-11",
     "crush_result": "legacy-3.6.11.15",
     "item_detail": "legacy-3.6.11.15",
     "workshop_slot_put": "legacy-3.6.11.15",

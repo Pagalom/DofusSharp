@@ -66,7 +66,7 @@ Les correspondances sont **par route sémantique**, pas par clé brute. Si l'ide
 | Route du JSON | Fonctions concernées |
 | --- | --- |
 | `price_list` | prix du marché, lots, notification SQLite |
-| `market_selection_response` | dernier équipement réseau/clic molette ; **prix x1 des équipements uniquement**, après contrôle strict de la structure `jzs` |
+| `market_selection_response` | dernier équipement réseau/clic molette ; prix **x1 équipement** et **quatre lots rune/ressource** après validation stricte de `jzs` et de la catégorie enregistrée en base |
 | `crush_result` | résultats du concassage, runes, coefficients |
 | `item_detail`, `inventory_add`, `craft_output` | UID → ID équipement, stats, corrélation concassage |
 | `purchase_request`, `purchase_offer`, `purchase_receipt` | achats et rafraîchissement de prix |
@@ -81,7 +81,7 @@ Les valeurs de `verified_routes` commencent par :
 - `observed-...` : comportement corrélé à une capture réelle datée ;
 - `legacy-...` : uniquement un comportement historique, **non confirmé sur le client actuel**.
 
-**Situation au 11/10/2026** : `market_selection_response` / `jzs` est confirmée pour la sélection réseau **et** pour la liste des prix **x1 des équipements**. Relevé HDV Tongues Wabbits (item 6493) : liste de 34 offres, minimum x1 à **4 899 K**, retrouvé dans le premier des quatre entiers packed du champ imbriqué `f1[].f2` ; les trois derniers entiers sont à zéro sur ce relevé. Le sous-champ `f1[].f3` **n'est pas un prix**. La seconde réponse `jzs` avec offres vides ne doit pas écraser le marché. Un décodeur spécifique dans `SemanticDecoders` valide cette forme et transmet uniquement les prix x1 des **équipements connus en base** à `NetworkObservationWriter.PersistMarketAsync`, protégé par le serveur sélectionné et les paramètres de capture. Les lots x10/x100/x1000, les runes et ressources restent **non caractérisés**, donc exclus du nouveau parcours. Les autres routes conservent des structures historiques `3.6.11.15` non vérifiées sur le client actuel (notamment le concassage).
+**Situation au 11/10/2026 (P2.1)** : `market_selection_response` / `jzs` est confirmée pour la sélection et les prix. **Équipements** : Tongues Wabbits, ID 6493, 34 offres, minimum x1 **4 899 K**, avec trois positions packed nulles. **Rune** : Rune Ini, ID 7448, catégorie réseau 78, lots x1/x10/x100/x1000 **139 / 1 399 / 14 284 / 151 014 K**. **Ressource** : Ailes de Scarafeuille Rouge, ID 1457, catégorie réseau 104, lots **483 / 897 / 9 179 / 85 000 K**. Toutes ces valeurs ont été vérifiées à l'écran. Le champ packed de `root.f1[].f2` porte les quatre prix dans cet ordre ; le champ `f1[].f3` **n'est pas un prix**. Le second message `jzs` sans offres n'écrit aucun prix. `SemanticDecoders` utilise un validateur partagé et deux voies métier distinctes : équipement x1 uniquement ; rune/ressource quatre lots. `NetworkObservationWriter` classe l'ID par les tables de la base, **jamais par le numéro de groupe réseau**, conserve les garde-fous de capture et de serveur, et ne persiste que les minima strictement positifs. Les autres routes restent historiques/non vérifiées sur ce client, notamment le concassage.
 
 ### Procédure lors de la prochaine mise à jour du jeu
 
@@ -109,6 +109,6 @@ dotnet build .\BestCrush\BestCrush.csproj -f net10.0-windows10.0.19041.0
 dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
 ```
 
-Les **264 tests précédents** étaient attendus mais pas encore tous certifiés sur Windows. Ce lot ajoute **11 tests**, soit **275 attendus** si toutes les étapes antérieures sont passées.
+P1 : **313/313 tests .NET validés sur Windows** au commit `7fe7ad7`. P2.1 introduit des tests supplémentaires de décodage et de routage ; le nouveau total et la compilation doivent être confirmés sur Windows. Les tests Python de P2.0 restent à vérifier séparément.
 
 Checkpoint manuel : démarrage, sélection de serveur, focus molette HDV `jzs`, F8, capture réseau/brut, prix historiques, rendu overlays, résultats de concassage (si possible). Ne pas toucher à `main`, aux releases, au schéma SQLite ou à la version applicative.

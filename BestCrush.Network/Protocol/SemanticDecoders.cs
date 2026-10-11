@@ -233,14 +233,33 @@ public static class SemanticDecoders
             : null;
     }
 
-    // Verified against the 2026-10-11 HDV listing of Tongues Wabbits:
-    // jzs root f3=item ID, f2=market grouping;
-    // repeated root f1 has f1=item ID, f2=packed [x1,0,0,0],
-    // f3=opaque offer reference (meaning unconfirmed), f4=market grouping.
-    // 34 listing prices include 4899, 4900, 5000 K as shown in game.
-    // Only x1 equipment prices are established. Fail closed if another
-    // lot is nonzero, rather than persisting unverified x10/x100/x1000.
+    // Verified on 2026-10-11 against HDV listings:
+    // Tongues Wabbits equipment: f2=[x1, 0, 0, 0]; minimum x1=4899 K.
+    // Rune Ini (7448): [139, 1399, 14284, 151014] K.
+    // Ailes de Scarafeuille Rouge (1457):
+    // [483, 897, 9179, 85000] K.
+    //
+    // The focus decoder above remains independent. These two market
+    // decoders deliberately preserve the same strict wire structure but
+    // enforce different price-ladder rules according to the object type.
+    // The database writer independently checks whether the item really
+    // is an equipment, rune or resource before persisting a price.
     public static MarketObservation? TryDecodeJzsEquipmentPrices(byte[] body)
+    {
+        MarketObservation? market = TryDecodeJzsPriceLadders(body);
+
+        return market is not null &&
+               market.Offers.All(offer =>
+                   offer.Ladder[0] > 0 &&
+                   offer.Ladder.Skip(1).All(value => value == 0))
+            ? market
+            : null;
+    }
+
+    public static MarketObservation? TryDecodeJzsStackablePrices(byte[] body) =>
+        TryDecodeJzsPriceLadders(body);
+
+    private static MarketObservation? TryDecodeJzsPriceLadders(byte[] body)
     {
         List<ProtoField>? root = ProtoWire.ReadFields(body);
         if (root is null)
@@ -268,8 +287,8 @@ public static class SemanticDecoders
         ProtoField[] offerFields = root.Where(field =>
             field.Number == 1).ToArray();
 
-        // A second jzs with offers=0 follows a populated response.
-        // Never treat that clearing/selection message as a price.
+        // The empty jzs follow-up is a selection/reset notification,
+        // not a valid market observation. Never clear stored prices.
         if (offerFields.Length == 0)
             return null;
 
@@ -286,23 +305,25 @@ public static class SemanticDecoders
                 return null;
 
             ProtoField[] rowItems = fields.Where(field =>
-                field.Number == 1 &&
-                field.WireType == ProtoWireType.Varint).ToArray();
+                field.Number == 1).ToArray();
 
             ProtoField[] rowIds = fields.Where(field =>
-                field.Number == 3 &&
-                field.WireType == ProtoWireType.Varint).ToArray();
+                field.Number == 3).ToArray();
 
             ProtoField[] rowCategories = fields.Where(field =>
-                field.Number == 4 &&
-                field.WireType == ProtoWireType.Varint).ToArray();
+                field.Number == 4).ToArray();
 
             ProtoField[] priceFields = fields.Where(field =>
                 field.Number == 2).ToArray();
 
-            if (rowItems.Length != 1 || rowItems[0].Varint != itemId ||
-                rowIds.Length != 1 || rowIds[0].Varint == 0 ||
+            if (rowItems.Length != 1 ||
+                rowItems[0].WireType != ProtoWireType.Varint ||
+                rowItems[0].Varint != itemId ||
+                rowIds.Length != 1 ||
+                rowIds[0].WireType != ProtoWireType.Varint ||
+                rowIds[0].Varint == 0 ||
                 rowCategories.Length != 1 ||
+                rowCategories[0].WireType != ProtoWireType.Varint ||
                 rowCategories[0].Varint != category ||
                 priceFields.Length != 1 ||
                 priceFields[0].WireType != ProtoWireType.LengthDelimited ||
@@ -314,16 +335,17 @@ public static class SemanticDecoders
             List<ulong>? packed =
                 ProtoWire.ReadPackedVarints(priceFields[0].Bytes!);
 
+            // Preserve the original slot order. Missing lots remain zero:
+            // the persistence writer ignores them; it never writes 0 K.
+            // Reject a malformed or entirely empty row rather than
+            // persisting an incomplete market-wide minimum.
             if (packed is not { Count: 4 } ||
-                packed[0] == 0 ||
-                packed[0] > long.MaxValue ||
-                packed.Skip(1).Any(value => value != 0))
+                packed.Any(value => value > long.MaxValue) ||
+                packed.All(value => value == 0))
             {
                 return null;
             }
 
-            // Keep the original listing identifiers and raw slot order.
-            // Market-price minima and notifications remain the writer's job.
             offers.Add(new MarketOffer(
                 rowIds[0].Varint,
                 itemId,

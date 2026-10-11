@@ -104,26 +104,247 @@ public sealed class DofusNetworkRoutingTest
     }
 
     [Theory]
-    [InlineData(MarketObjectType.Resource, 200L)]
-    [InlineData(MarketObjectType.Rune, 100L)]
-    public async Task JzsPriceIsNotYetAuthorizedForStackableObjects(
-        MarketObjectType objectType, long itemId)
+    [InlineData(MarketObjectType.Rune, 100L, 78UL,
+                139L, 1399L, 14284L, 151014L)]
+    [InlineData(MarketObjectType.Resource, 200L, 104UL,
+                483L, 897L, 9179L, 85000L)]
+    public async Task JzsStackablePricesPersistAllFourLotsAndNotifyInLotOrder(
+        MarketObjectType objectType, long itemId, ulong category,
+        long one, long ten, long hundred, long thousand)
     {
         await using RoutingHarness harness =
             await RoutingHarness.CreateAsync();
 
         await harness.ReplayAsync(
             "jzs",
-            JzsMarket((ulong)itemId, 11,
-                JzsOffer((ulong)itemId, 100, 11, 4899, 0, 0, 0)),
+            JzsMarket((ulong)itemId, category,
+                JzsOffer((ulong)itemId, 13084, category,
+                         (ulong)one, (ulong)ten, (ulong)hundred,
+                         (ulong)thousand)),
+            ObservedAt);
+
+        IReadOnlyList<MarketPriceObservation> prices =
+            await harness.ReadPricesAsync(objectType, itemId);
+
+        prices.OrderBy(price => price.Quantity)
+            .Select(price => (price.Quantity, price.Price))
+            .Should().Equal(
+                (1, one), (10, ten), (100, hundred), (1000, thousand));
+
+        harness.Notifications
+            .Select(change => (change.ObjectType, change.DofusDbId,
+                               change.Quantity))
+            .Should().Equal(
+                (objectType, itemId, 1),
+                (objectType, itemId, 10),
+                (objectType, itemId, 100),
+                (objectType, itemId, 1000));
+
+        harness.LastEquipment
+            .GetForServer(RoutingHarness.Server)
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public async Task JzsStackableMinimaIgnoreZerosInEachSlot()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "jzs",
+            JzsMarket(200, 104,
+                JzsOffer(200, 100, 104, 600, 1000, 0, 85000),
+                JzsOffer(200, 101, 104, 483, 0, 9179, 90000),
+                JzsOffer(200, 102, 104, 0, 897, 10000, 0)),
+            ObservedAt);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200))
+            .OrderBy(price => price.Quantity)
+            .Select(price => (price.Quantity, price.Price))
+            .Should().Equal(
+                (1, 483L),
+                (10, 897L),
+                (100, 9179L),
+                (1000, 85000L));
+
+        harness.Notifications.Select(change => change.Quantity)
+            .Should().Equal(1, 10, 100, 1000);
+    }
+
+    [Fact]
+    public async Task JzsMissingX1AndX1000NeverPersistZeroPricedLots()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "jzs",
+            JzsMarket(100, 78,
+                JzsOffer(100, 100, 78, 0, 1399, 14284, 0)),
+            ObservedAt);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .OrderBy(price => price.Quantity)
+            .Select(price => (price.Quantity, price.Price))
+            .Should().Equal(
+                (10, 1399L),
+                (100, 14284L));
+
+        harness.Notifications.Select(change => change.Quantity)
+            .Should().Equal(10, 100);
+    }
+
+    [Fact]
+    public async Task JzsEmptyStackableFollowUpNeverOverwritesPrices()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "jzs",
+            JzsMarket(100, 78,
+                JzsOffer(100, 100, 78, 139, 1399, 14284, 151014)),
+            ObservedAt);
+
+        await harness.ReplayAsync(
+            "jzs",
+            JzsMarket(100, 78),
+            ObservedAt.AddSeconds(1));
+
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .Should().HaveCount(4);
+
+        harness.Notifications.Should().HaveCount(4);
+    }
+
+    [Theory]
+    [InlineData(MarketObjectType.Rune, 100L)]
+    [InlineData(MarketObjectType.Resource, 200L)]
+    public async Task JzsStackableCaptureFlagsBlockWrites(
+        MarketObjectType objectType, long itemId)
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        if (objectType == MarketObjectType.Rune)
+            harness.Settings.RuneCaptureEnabled = false;
+        else
+            harness.Settings.ResourceCaptureEnabled = false;
+
+        await harness.ReplayAsync(
+            "jzs",
+            JzsMarket((ulong)itemId, 78,
+                JzsOffer((ulong)itemId, 100, 78,
+                         139, 1399, 14284, 151014)),
             ObservedAt);
 
         (await harness.ReadPricesAsync(objectType, itemId))
             .Should().BeEmpty();
+        harness.Notifications.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task JzsPriceDataCannotChangeLastEquipmentFocus()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "jzs",
+            JzsMarket(42, 11,
+                JzsOffer(42, 100, 11, 4899, 0, 0, 0)),
+            ObservedAt);
+
+        await harness.ReplayAsync(
+            "jzs",
+            JzsMarket(100, 78,
+                JzsOffer(100, 101, 78, 139, 1399, 14284, 151014)),
+            ObservedAt.AddSeconds(1));
+
+        await harness.ReplayAsync(
+            "jzs",
+            JzsMarket(200, 104,
+                JzsOffer(200, 102, 104, 483, 897, 9179, 85000)),
+            ObservedAt.AddSeconds(2));
+
+        harness.LastEquipment.GetForServer(RoutingHarness.Server)
+            .Should().Be(new LastNetworkEquipmentSnapshot(
+                42, RoutingHarness.Server, ObservedAt));
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 42))
+            .Should().ContainSingle()
+            .Which.Price.Should().Be(4899L);
+    }
+
+    [Fact]
+    public async Task JzsUnverifiedStackableFormatRejectsWholeObservation()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "jzs",
+            JzsMarket(200, 104,
+                JzsOffer(200, 100, 104, 483, 897, 9179, 85000),
+                JzsOffer(200, 101, 104, 500, 1000, 10000, 90000, 5)),
+            ObservedAt);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200))
+            .Should().BeEmpty();
+        harness.Notifications.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(MarketObjectType.Rune, 100L)]
+    [InlineData(MarketObjectType.Resource, 200L)]
+    public async Task JzsNoSelectedServerCannotSaveStackablePrices(
+        MarketObjectType objectType, long itemId)
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        harness.ServerState.Clear();
+
+        await harness.ReplayAsync(
+            "jzs",
+            JzsMarket((ulong)itemId, 78,
+                JzsOffer((ulong)itemId, 100, 78,
+                         139, 1399, 14284, 151014)),
+            ObservedAt);
+
+        (await harness.ReadPricesAsync(objectType, itemId))
+            .Should().BeEmpty();
+        harness.Notifications.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task JzsOldServerLeaseCannotWriteRunePricesOnNewServer()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        NetworkCaptureLease oldLease =
+            harness.ServerState.GetCaptureLease()!.Value;
+
+        harness.ServerState.SelectServer("OTHER_SERVER");
+
+        await harness.Service.ReplayMessageAsync(
+            "TEST",
+            "jzs",
+            JzsMarket(100, 78,
+                JzsOffer(100, 100, 78, 139, 1399, 14284, 151014)),
+            ObservedAt,
+            recordedLease: oldLease);
+
+        (await harness.ReadPricesAsync(
+                MarketObjectType.Rune, 100, RoutingHarness.Server))
+            .Should().BeEmpty();
+
+        (await harness.ReadPricesAsync(
+                MarketObjectType.Rune, 100, "OTHER_SERVER"))
+            .Should().BeEmpty();
 
         harness.Notifications.Should().BeEmpty();
-        harness.LastEquipment.GetForServer(RoutingHarness.Server)
-            .Should().BeNull();
     }
 
     [Fact]

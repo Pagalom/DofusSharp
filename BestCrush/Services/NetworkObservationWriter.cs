@@ -37,7 +37,8 @@ internal sealed class NetworkObservationWriter(
         NetworkCaptureLease lease,
         CancellationToken cancellationToken,
         bool allowEquipmentPriceRefresh = true,
-        bool requireEquipment = false)
+        bool requireEquipment = false,
+        bool requireStackable = false)
     {
         string serverName = lease.ServerName;
 
@@ -63,12 +64,17 @@ internal sealed class NetworkObservationWriter(
         if (!currentServerState.IsCaptureLeaseActive(lease))
             return;
 
-        // Only the x1 equipment listings have been verified on the
-        // current jzs protocol. Resource/rune semantics need separate
-        // wire-to-UI confirmation before any automatic persistence.
-        if (requireEquipment &&
-            objectType != MarketObjectType.Equipment)
+        // jzs object-type guards: equipment uses x1-only observations,
+        // while rune/resource observations may carry four price lots.
+        // The independent database classification is authoritative.
+        if ((requireEquipment &&
+             objectType != MarketObjectType.Equipment) ||
+            (requireStackable &&
+             objectType != MarketObjectType.Rune &&
+             objectType != MarketObjectType.Resource))
+        {
             return;
+        }
 
         if (objectType ==
             MarketObjectType.Equipment)

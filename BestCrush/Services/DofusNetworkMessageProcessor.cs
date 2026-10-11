@@ -332,9 +332,9 @@ internal sealed class DofusNetworkMessageProcessor(
                     $"[MARKET-SELECTION] ItemId={itemId.Value}",
                     cancellationToken);
 
-                // The current jzs offer list uses a different layout than
-                // legacy jzn: root f1 rows, each containing a packed f2
-                // ladder. Only its x1 equipment price has been verified.
+                // The current jzs offer list differs from legacy jzn.
+                // Keep separate validation for equipment x1 and for the
+                // independently verified four-lot rune/resource prices.
                 // Invalid or empty rows never flow into SQLite.
                 MarketObservation? prices =
                     SemanticDecoders.TryDecodeJzsEquipmentPrices(body);
@@ -353,6 +353,23 @@ internal sealed class DofusNetworkMessageProcessor(
                         lease,
                         cancellationToken,
                         requireEquipment: true);
+                }
+
+                MarketObservation? stackablePrices =
+                    SemanticDecoders.TryDecodeJzsStackablePrices(body);
+
+                if (stackablePrices is not null &&
+                    stackablePrices.ItemId == itemId.Value)
+                {
+                    // No category inference from the wire group number:
+                    // the writer verifies that the ID belongs to a
+                    // catalogue rune or resource, never equipment.
+                    await observationWriter.PersistMarketAsync(
+                        stackablePrices,
+                        message.ObservedAtUtc,
+                        lease,
+                        cancellationToken,
+                        requireStackable: true);
                 }
             }
 
