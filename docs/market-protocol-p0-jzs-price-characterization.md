@@ -62,3 +62,30 @@ py -3 .\scripts\inspect_jzs_market.py --last 8
 ## Hors périmètre
 
 P0 ne modifie **aucun service produit**, aucune clé `protocol-map.json`, aucun prix, aucune base de données, aucun raccourci F8, aucune version ni branche `main`. Il ne prétend pas corriger les captures de concassage, qui nécessitent une étape ultérieure dédiée.
+
+## Observation corroborée en jeu — Tongues Wabbits (11/10/2026)
+
+Capture HDV fournie avec la sélection `jzs item f3=[6493]` (34 offres) :
+
+- **Nom de l'objet :** Tongues Wabbits, bottes niveau 60 ;
+- **premier prix réellement affiché pour un lot x1 : 4 899 kamas** ;
+- autres prix visibles : 4 900, 5 000, 5 197, 5 197, 5 198, 5 199, etc. ;
+- minimum du champ **`offer.f3` : 7 529**, clairement **différent** de 4 899 ;
+- `offer.f2` est un `bytes` de 5 ou 6 octets dans les entrées observées.
+
+**Conclusion confirmée :** il est faux d'enregistrer directement `offer.f3` comme prix affiché minimum. Il pourrait s'agir d'un identifiant d'offre, mais sa signification n'est pas établie. La présence du prix et de la quantité dans les 5–6 octets de `offer.f2` reste une **hypothèse**.
+
+### Lecture numérique facultative du champ `f2`
+
+La version suivante de `scripts/inspect_jzs_market.py` accepte :
+
+```powershell
+py -3 .\scripts\inspect_jzs_market.py --item-id 6493 --inspect-f2 --last 2 --rows 16
+```
+
+- `--item-id` filtre les messages du journal local **avant de retenir les deux derniers**.
+- `--inspect-f2` affiche, pour chaque entrée, une **hypothèse** de champs Protobuf numériques imbriqués, ou des varints non structurés si la forme Protobuf échoue.
+- Les octets bruts, les contenus Base64 et les éventuels sous-champs binaires ne sont **jamais affichés ni exportés**.
+- Les libellés `nested?` / `raw_varints?` restent **exploratoires** : des numéros égaux à 4 899 (ou à un autre prix de l'écran) ne suffiraient pas, seuls, à confirmer le sens métier. Il faudra comparer plusieurs lignes et au moins deux objets, puis vérifier les lots.
+
+Tests synthétiques : `py -3 -m unittest discover -s scripts -p test_inspect_jzs_market.py -v`. Aucun changement dans le décodage production de `jzs`, le fichier mutualisé, F8 ou SQLite.

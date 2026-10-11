@@ -5,6 +5,7 @@ import base64
 import importlib.util
 import json
 from pathlib import Path
+import tempfile
 import unittest
 
 
@@ -96,6 +97,58 @@ class MarketDiagnosticTests(unittest.TestCase):
                 "utc": "2026-10-11T08:00:00Z"
             })
             self.assertEqual(market.read_jzs(row) is not None, accepted)
+
+    def test_opaque_numeric_f2_parses_possible_protobuf_fields(self):
+        # A synthetic 5-byte f2 encodes quantity 1 and value 4899.
+        # The tool labels these as hypotheses, never confirmed prices.
+        blob_data = num(1, 1) + num(2, 4899)
+        self.assertEqual(len(blob_data), 5)
+        summary = market.opaque_numeric_summary(blob_data)
+        self.assertEqual(summary, {
+            "kind": "nested?",
+            "values": ["f1:wire0=1", "f2:wire0=4899"],
+            "truncated": False,
+        })
+
+    def test_f2_numeric_fallback_does_not_force_protobuf_interpretation(self):
+        summary = market.opaque_numeric_summary(bytes.fromhex("00a326"))
+        self.assertEqual(summary,
+                         {"kind": "raw_varints?", "values": [0, 4899]})
+        self.assertEqual(
+            market.opaque_numeric_summary(bytes.fromhex("80")),
+            {"kind": "unrecognized", "size": 1})
+
+    def test_optional_f2_hypothesis_does_not_change_default_output(self):
+        opaque = num(1, 1) + num(2, 4899)
+        row = num(1, 6493) + blob(2, opaque) + num(3, 7559) + num(4, 11)
+        body = blob(1, row) + num(2, 11) + num(3, 6493)
+        default = market.jzs_summary(body)
+        self.assertEqual(default["offers"][0]["f2_lengths"], [5])
+        self.assertNotIn("f2_numeric_hypotheses", default["offers"][0])
+        extended = market.jzs_summary(body, inspect_f2=True)
+        self.assertEqual(extended["offers"][0]["f2_numeric_hypotheses"],
+                         [{"kind": "nested?",
+                           "values": ["f1:wire0=1", "f2:wire0=4899"],
+                           "truncated": False}])
+        self.assertEqual(extended["offers"][0]["f3"], [7559])
+
+    def test_local_item_id_filter_only_returns_selected_equipment(self):
+        records = []
+        for item_id in (1624, 6493, 7107):
+            body = num(2, 11) + num(3, item_id)
+            records.append(json.dumps({
+                "key": "jzs",
+                "direction": "S→C",
+                "bodyBase64": base64.b64encode(body).decode("ascii"),
+                "utc": "2026-10-11T17:19:16Z",
+            }))
+        with tempfile.TemporaryDirectory() as directory:
+            capture = Path(directory) / "wire.jsonl"
+            capture.write_text(chr(10).join(records) + chr(10), encoding="utf-8")
+            result = list(market.iter_existing(
+                capture, last=8, inspect_f2=True, item_id=6493))
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0][1]["item_f3"], [6493])
 
     def test_rejects_overflow_and_invalid_tags(self):
         with self.assertRaises(ValueError):

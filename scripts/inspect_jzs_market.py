@@ -75,7 +75,45 @@ def varints(parsed: list[Field], number: int) -> list[int]:
     return [int(f.value) for f in parsed if f.number == number and f.wire_type == 0]
 
 
-def jzs_summary(body: bytes) -> dict:
+def opaque_numeric_summary(data: bytes) -> dict:
+    """Describe possible numeric structure, without revealing opaque bytes.
+
+    A valid nested protobuf is just a structural hypothesis; its integers
+    are *not* verified prices. If protobuf parsing fails, expose only a
+    bounded list of raw varints, likewise without price semantics.
+    """
+    if len(data) > 64:
+        return {"kind": "too_long", "size": len(data)}
+
+    try:
+        nested = fields(data)
+    except ValueError:
+        nested = None
+
+    if nested:
+        entries = []
+        for field in nested[:12]:
+            if field.wire_type == 2:
+                entries.append(f"f{field.number}:bytes({len(field.value)})")
+            else:
+                entries.append(f"f{field.number}:wire{field.wire_type}={field.value}")
+        return {"kind": "nested?", "values": entries,
+                "truncated": len(nested) > 12}
+
+    packed = []
+    offset = 0
+    try:
+        while offset < len(data) and len(packed) < 12:
+            value, offset = read_varint(data, offset)
+            packed.append(value)
+    except ValueError:
+        return {"kind": "unrecognized", "size": len(data)}
+    if offset != len(data):
+        return {"kind": "unrecognized", "size": len(data)}
+    return {"kind": "raw_varints?", "values": packed}
+
+
+def jzs_summary(body: bytes, inspect_f2: bool = False) -> dict:
     root = fields(body)
     offers = []
     invalid_rows = 0
@@ -94,6 +132,9 @@ def jzs_summary(body: bytes) -> dict:
             "f3": varints(nested, 3),
             "f4": varints(nested, 4),
             "f2_lengths": [len(v) for v in opaque_f2],
+            **({"f2_numeric_hypotheses": [opaque_numeric_summary(v)
+                                           for v in opaque_f2]}
+               if inspect_f2 else {}),
         })
     return {
         "root_f2": varints(root, 2),
@@ -120,13 +161,13 @@ def latest_capture() -> Path:
     return captures[0]
 
 
-def read_jzs(line: str) -> tuple[str, dict] | None:
+def read_jzs(line: str, inspect_f2: bool = False) -> tuple[str, dict] | None:
     try:
         record = json.loads(line)
         if record.get("key") != "jzs" or record.get("direction") != "S→C":
             return None
         body = base64.b64decode(record["bodyBase64"], validate=True)
-        summary = jzs_summary(body)
+        summary = jzs_summary(body, inspect_f2=inspect_f2)
         stamp = str(record.get("utc", "?"))
         return stamp, summary
     except (ValueError, TypeError, KeyError, json.JSONDecodeError):
@@ -134,8 +175,8 @@ def read_jzs(line: str) -> tuple[str, dict] | None:
 
 
 def display(stamp: str, summary: dict, max_rows: int) -> None:
-    # Labels are deliberately technical: f3 is a *candidate* for price,
-    # not a verified kamas value or lot x1/x10/x100/x1000.
+    # f3 failed the real-HDV price comparison (Tongues Wabbits:
+    # 4899 kamas displayed, minimum f3=7529). Never label it a price.
     root_id = summary["item_f3"]
     root_f2 = summary["root_f2"]
     offers = summary["offers"]
@@ -143,29 +184,37 @@ def display(stamp: str, summary: dict, max_rows: int) -> None:
           f" | offers={len(offers)} | invalid={summary['invalid_rows']}")
     for index, offer in enumerate(offers[:max_rows], 1):
         print(f"    row {index:02d}: f1={offer['f1']} "
-              f"f3?={offer['f3']} f4={offer['f4']} "
+              f"offer.f3={offer['f3']} f4={offer['f4']} "
               f"f2 byte lengths={offer['f2_lengths']}")
+        for number, hypothesis in enumerate(
+                offer.get("f2_numeric_hypotheses", []), 1):
+            print(f"        f2[{number}] {hypothesis['kind']}: "
+                  f"{hypothesis.get('values', 'non-decoded')}"
+                  f"{' (truncated)' if hypothesis.get('truncated') else ''}")
     if len(offers) > max_rows:
         print(f"    ... {len(offers) - max_rows} autres lignes")
     candidates = [v for o in offers for v in o["f3"] if v > 0]
     if candidates:
-        print(f"    minimum f3?={min(candidates)} (NON VALIDE comme prix)")
+        print(f"    minimum offer.f3={min(candidates)} (NE PAS utiliser comme prix)")
     print()
 
 
-def iter_existing(path: Path, last: int):
+def iter_existing(path: Path, last: int, inspect_f2: bool = False,
+                  item_id: int | None = None):
     matched: list[tuple[str, dict]] = []
     with path.open("r", encoding="utf-8-sig") as source:
         for line in source:
-            record = read_jzs(line)
-            if record is not None:
+            record = read_jzs(line, inspect_f2=inspect_f2)
+            if record is not None and (
+                    item_id is None or record[1]["item_f3"] == [item_id]):
                 matched.append(record)
                 if len(matched) > last:
                     matched.pop(0)
     yield from matched
 
 
-def watch(path: Path, max_rows: int) -> None:
+def watch(path: Path, max_rows: int, inspect_f2: bool = False,
+          item_id: int | None = None) -> None:
     # Watch only newly appended records, not past messages. Ctrl+C to stop.
     with path.open("r", encoding="utf-8-sig") as source:
         source.seek(0, os.SEEK_END)
@@ -174,8 +223,9 @@ def watch(path: Path, max_rows: int) -> None:
             if not line:
                 time.sleep(0.3)
                 continue
-            record = read_jzs(line)
-            if record is not None:
+            record = read_jzs(line, inspect_f2=inspect_f2)
+            if record is not None and (
+                    item_id is None or record[1]["item_f3"] == [item_id]):
                 display(record[0], record[1], max_rows)
 
 
@@ -188,21 +238,29 @@ def main() -> int:
                         help="offres affichées par message (défaut 6)")
     parser.add_argument("--watch", action="store_true",
                         help="attendre de nouveaux jzs jusqu'à Ctrl+C")
+    parser.add_argument("--inspect-f2", action="store_true",
+                        help="décrire les entiers possibles du champ f2 "
+                             "(aucun prix confirmé)")
+    parser.add_argument("--item-id", type=int,
+                        help="filtrer les réponses jzs sur un ID d'objet")
     args = parser.parse_args()
     if not 1 <= args.last <= 100 or not 1 <= args.rows <= 50:
         parser.error("--last doit être entre 1 et 100 et --rows entre 1 et 50")
+    if args.item_id is not None and args.item_id <= 0:
+        parser.error("--item-id doit être strictement positif")
     try:
         capture = args.file or latest_capture()
         if not capture.is_file():
             raise FileNotFoundError(str(capture))
         print(f"Diagnostic local en lecture seule : {capture.name}")
-        print("Les champs f3? ne sont PAS des prix confirmés. "
-              "Aucune écriture SQLite ou JSONL.\n")
+        print("offer.f3 ne correspond pas au minimum HDV observé "
+              "(Tongues Wabbits). Aucune écriture SQLite ou JSONL.\n")
         if args.watch:
             print("Survole / sélectionne un objet en HDV. Ctrl+C pour arrêter.\n")
-            watch(capture, args.rows)
+            watch(capture, args.rows, args.inspect_f2, args.item_id)
         else:
-            rows = list(iter_existing(capture, args.last))
+            rows = list(iter_existing(capture, args.last,
+                                      args.inspect_f2, args.item_id))
             if not rows:
                 print("Aucun message jzs S→C trouvé dans ce fichier.")
             for stamp, summary in rows:
