@@ -101,6 +101,61 @@ public sealed class CrushHistorySnapshotTest : IDisposable
     }
 
     [Fact]
+    public async Task EstimatedPartialLotSnapshotPreservesUnitFractionAfterPriceChanges()
+    {
+        // Only an x10 price exists: three runes are estimated as 3 * 1000 / 10.
+        var snapshot = Snapshot() with
+        {
+            TotalValue = 300,
+            DiscountedTotalValue = 285,
+            Runes =
+            [
+                new CrushHistoryRuneWriteModel(
+                    100, "Rune at crush time", 3, 300,
+                    [
+                        new CrushHistoryRuneLotWriteModel(
+                            3, 10, 1000, true,
+                            MarketPriceSource.InGameAutomatic,
+                            StartedAt.AddMinutes(-1))
+                    ])
+            ]
+        };
+
+        Guid id = await _service.SaveCrushSessionAsync(snapshot);
+
+        _context.MarketPriceObservations.Add(new MarketPriceObservation
+        {
+            ObjectType = MarketObjectType.Rune,
+            DofusDbId = 100,
+            ServerName = "TEST",
+            Price = 2000,
+            Quantity = 10,
+            Source = MarketPriceSource.InGameAutomatic,
+            ObservedAtUtc = StartedAt.AddMinutes(20)
+        });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        CrushHistorySession saved = await Read(id);
+        saved.TotalValue.Should().Be(300);
+        saved.DiscountedTotalValue.Should().Be(285);
+        CrushHistoryRune rune = saved.Runes.Should().ContainSingle().Which;
+        rune.Value.Should().Be(300);
+        rune.Quantity.Should().Be(3);
+        CrushHistoryRuneLot lot = rune.Lots.Should().ContainSingle().Which;
+        lot.Count.Should().Be(3);
+        lot.LotQuantity.Should().Be(10);
+        lot.LotPrice.Should().Be(1000);
+        lot.IsEstimated.Should().BeTrue();
+
+        // The correct economic value of this stored estimate is 300 K.
+        // The currently incorrect multiplication in History.razor remains
+        // a separate P4.2 display issue; it is NOT the persisted value.
+        ((double)lot.Count * lot.LotPrice / lot.LotQuantity)
+            .Should().Be(saved.TotalValue!.Value);
+    }
+
+    [Fact]
     public async Task RepeatedSaveAppendsAnotherSnapshotInsteadOfDeduplicating()
     {
         Guid first = await _service.SaveCrushSessionAsync(Snapshot());
