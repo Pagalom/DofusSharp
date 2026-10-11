@@ -199,18 +199,134 @@ public sealed class DofusItemTooltipDetectionService(
                 allowSeparatedLongBody: false
             );
 
-        // The fallback is evaluated only when the legacy profile
-        // found no valid header/body pair.
-        return legacy.Count > 0
-            ? legacy
-            : DetectTooltipHeadersByPalette(
-                capture,
-                CurrentTooltipHeaderLower,
-                CurrentTooltipHeaderUpper,
-                CurrentTooltipBodyLower,
-                CurrentTooltipBodyUpper,
-                allowSeparatedLongBody: true
-            );
+        if (legacy.Count > 0)
+            return legacy;
+
+        IReadOnlyList<CvRect> current = DetectTooltipHeadersByPalette(
+            capture,
+            CurrentTooltipHeaderLower,
+            CurrentTooltipHeaderUpper,
+            CurrentTooltipBodyLower,
+            CurrentTooltipBodyUpper,
+            allowSeparatedLongBody: true
+        );
+
+        // Some modern tooltips blend their title background into adjoining
+        // UI surfaces, so the header contour becomes wider than the tooltip
+        // and is rejected. Recover the title header from the aligned body
+        // palette instead of mistaking a lower STATUS bar for the item title.
+        return current.Count > 0
+            ? current
+            : DetectTooltipHeadersFromModernBody(capture);
+    }
+
+    // Final geometry fallback for modern tooltips whose header contour
+    // merges with neighboring panels. A dense body-colored rectangle
+    // anchors a backwards scan for the header-colored title band.
+    private static IReadOnlyList<CvRect>
+        DetectTooltipHeadersFromModernBody(Mat capture)
+    {
+        using Mat headerMask = new();
+        using Mat bodyMask = new();
+
+        Cv2.InRange(
+            capture,
+            CurrentTooltipHeaderLower,
+            CurrentTooltipHeaderUpper,
+            headerMask);
+        Cv2.InRange(
+            capture,
+            CurrentTooltipBodyLower,
+            CurrentTooltipBodyUpper,
+            bodyMask);
+
+        List<ContourRectangle> bodies = FindRectangles(
+            bodyMask,
+            minimumFillRatio: 0.75,
+            maximumHeight: 900);
+
+        List<CvRect> candidates = [];
+
+        foreach (ContourRectangle entry in bodies)
+        {
+            CvRect body = entry.Rectangle;
+
+            // Ignore small isolated bars and require room for a title
+            // band above the body. The normal detector handles short
+            // conventional tooltips first.
+            if (body.Height < 100 || body.Y < 60)
+                continue;
+
+            int firstMatchingRow = -1;
+            int lastMatchingRow = -1;
+            int misses = 0;
+            int scanFloor = Math.Max(0, body.Y - 200);
+
+            for (int y = body.Y - 1; y >= scanFloor; y--)
+            {
+                // Text and item artwork mostly occupy the left half.
+                // Sample the right half to find a uniform title panel.
+                int samples = 0;
+                int matches = 0;
+                int right = Math.Min(capture.Width, body.X + body.Width);
+                int left = Math.Max(0, body.X + body.Width / 2);
+
+                for (int x = left; x < right; x += 4)
+                {
+                    samples++;
+                    if (headerMask.At<byte>(y, x) != 0)
+                        matches++;
+                }
+
+                bool titleBackground =
+                    samples > 0 && matches * 100 >= samples * 45;
+
+                if (titleBackground)
+                {
+                    if (lastMatchingRow < 0)
+                        lastMatchingRow = y;
+
+                    firstMatchingRow = y;
+                    misses = 0;
+                }
+                else if (lastMatchingRow < 0)
+                {
+                    if (body.Y - 1 - y > 12)
+                        break;
+                }
+                else if (++misses > 4)
+                {
+                    break;
+                }
+            }
+
+            if (firstMatchingRow < 0 || lastMatchingRow < 0)
+                continue;
+
+            int height = lastMatchingRow - firstMatchingRow + 1;
+            int gap = body.Y - 1 - lastMatchingRow;
+
+            // A broad real header with a short separator is required;
+            // arbitrarily dark panels must not create OCR candidates.
+            if (height < 60 || height > 180 ||
+                gap > 12 || (double)body.Width / height < 1.8)
+                continue;
+
+            CvRect header = new(
+                body.X,
+                firstMatchingRow,
+                body.Width,
+                height);
+
+            if (!candidates.Any(existing =>
+                    Math.Abs(existing.X - header.X) < 30 &&
+                    Math.Abs(existing.Y - header.Y) < 30))
+            {
+                candidates.Add(header);
+            }
+        }
+
+        return candidates;
     }
 
     private static IReadOnlyList<CvRect>

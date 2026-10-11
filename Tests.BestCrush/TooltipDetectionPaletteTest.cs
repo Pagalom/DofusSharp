@@ -83,6 +83,68 @@ public sealed class TooltipDetectionPaletteTest
     }
 
     [Fact]
+    public void BlendedModernHeaderIsRecoveredFromBodyAtActualTitlePosition()
+    {
+        using Mat image = CreateImage();
+
+        // The title palette merges horizontally with the HDV interface;
+        // the contour is too wide for the classic header detector.
+        Cv2.Rectangle(
+            image,
+            new Rect(20, 50, 900, 115),
+            new Scalar(62, 30, 25),
+            thickness: -1);
+
+        // The body has its own distinct contiguous palette region.
+        Cv2.Rectangle(
+            image,
+            new Rect(55, 170, 390, 340),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().ContainSingle()
+            .Which.Should().Be(new Rect(55, 50, 390, 115));
+    }
+
+    [Fact]
+    public void DarkBodyWithoutTitleBandIsNotMistakenForATooltip()
+    {
+        using Mat image = CreateImage();
+
+        Cv2.Rectangle(
+            image,
+            new Rect(55, 170, 390, 340),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public void BlendedHeaderAlsoRecognizesMediumLengthTooltip()
+    {
+        using Mat image = CreateImage();
+
+        Cv2.Rectangle(
+            image,
+            new Rect(20, 50, 900, 115),
+            new Scalar(62, 30, 25),
+            thickness: -1);
+
+        Cv2.Rectangle(
+            image,
+            new Rect(55, 170, 390, 150),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().ContainSingle()
+            .Which.Should().Be(new Rect(55, 50, 390, 115));
+    }
+
+    [Fact]
     public void PlainImageDoesNotInventAnyTooltip()
     {
         using Mat image = CreateImage();
