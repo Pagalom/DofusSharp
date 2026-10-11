@@ -21,7 +21,7 @@ def v(value: int) -> bytes:
         data.append((value & 0x7F) | 0x80)
         value >>= 7
     data.append(value)
-    return bytes(data + bytes([value]))
+    return bytes(data)
 
 
 def num(field: int, value: int) -> bytes:
@@ -33,6 +33,23 @@ def blob(field: int, data: bytes) -> bytes:
 
 
 class MarketDiagnosticTests(unittest.TestCase):
+    def test_fixture_varint_encodes_terminal_byte_once(self):
+        # Protobuf fixtures must use a single final byte (< 0x80).
+        examples = (
+            (0, "00"),
+            (1, "01"),
+            (127, "7f"),
+            (128, "8001"),
+            (12851, "b364"),
+            (65535, "ffff03"),
+        )
+        for number, encoded_hex in examples:
+            with self.subTest(number=number):
+                encoded = bytes.fromhex(encoded_hex)
+                self.assertEqual(v(number), encoded)
+                self.assertEqual(market.read_varint(encoded, 0),
+                                 (number, len(encoded)))
+
     def test_characterizes_both_captured_equipment_identifiers(self):
         for item_id, group in ((12851, 9), (1356, 3)):
             row = num(1, item_id) + blob(2, b"\x00\x01\x02\x03\x04")
