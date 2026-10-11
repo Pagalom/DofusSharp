@@ -212,6 +212,84 @@ public sealed class TooltipDetectionPaletteTest
     }
 
     [Fact]
+    public void CapturedGelanoOverHdvWithTwentyNinePixelGapFindsTitle()
+    {
+        using Mat image = new(
+            new OpenCvSharp.Size(1920, 1080),
+            MatType.CV_8UC3,
+            new Scalar(130, 130, 130));
+
+        // Synthetic geometry based on the user's actual F8 WGC capture,
+        // 2026-10-11 08:02:42. No player image or session data is stored.
+        Cv2.Rectangle(
+            image,
+            new Rect(450, 65, 675, 680),
+            new Scalar(72, 61, 60),
+            thickness: -1);
+
+        // Title and body both match the modern BODY color range.
+        Cv2.Rectangle(
+            image,
+            new Rect(1079, 79, 387, 112),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        Cv2.Rectangle(
+            image,
+            new Rect(1079, 220, 387, 213),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().ContainSingle()
+            .Which.Should().Be(new Rect(1079, 79, 387, 112));
+    }
+
+    [Fact]
+    public void SamePaletteShortTooltipWithSeparatedBodyWorksWithoutHdv()
+    {
+        using Mat image = CreateImage();
+
+        Cv2.Rectangle(
+            image,
+            new Rect(50, 50, 400, 112),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        Cv2.Rectangle(
+            image,
+            new Rect(50, 191, 400, 191),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().ContainSingle()
+            .Which.Should().Be(new Rect(50, 50, 400, 112));
+    }
+
+    [Fact]
+    public void SamePaletteDistantPanelsAreNotMistakenForATooltip()
+    {
+        using Mat image = CreateImage();
+
+        Cv2.Rectangle(
+            image,
+            new Rect(50, 50, 400, 112),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        // A gap of 45 px exceeds the new 35 px bound.
+        Cv2.Rectangle(
+            image,
+            new Rect(50, 207, 400, 191),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
     public void PlainImageDoesNotInventAnyTooltip()
     {
         using Mat image = CreateImage();

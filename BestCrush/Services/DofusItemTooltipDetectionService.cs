@@ -235,7 +235,27 @@ public sealed class DofusItemTooltipDetectionService(
         // UI surfaces, so the header contour becomes wider than the tooltip
         // and is rejected. Recover the title header from the aligned body
         // palette instead of mistaking a lower STATUS bar for the item title.
-        return DetectTooltipHeadersFromModernBody(capture);
+        IReadOnlyList<CvRect> recovered =
+            DetectTooltipHeadersFromModernBody(capture);
+
+        if (recovered.Count > 0)
+            return recovered;
+
+        // Real WGC evidence: the Gelano tooltip in front of the HDV has a
+        // 387x112 title contour and a 387x213 body contour separated by 29 px.
+        // Both match the modern body BGR range; the title does not form a
+        // usable contour in the ordinary header palette. Require a sizeable
+        // nearby body to avoid mistaking short UI labels for tooltips.
+        return DetectTooltipHeadersByPalette(
+            capture,
+            CurrentTooltipBodyLower,
+            CurrentTooltipBodyUpper,
+            CurrentTooltipBodyLower,
+            CurrentTooltipBodyUpper,
+            allowSeparatedLongBody: false,
+            adjacentGapMax: 35,
+            minimumBodyHeight: 100
+        );
     }
 
     // Final geometry fallback for modern tooltips whose header contour
@@ -354,7 +374,9 @@ public sealed class DofusItemTooltipDetectionService(
             Scalar headerUpper,
             Scalar bodyLower,
             Scalar bodyUpper,
-            bool allowSeparatedLongBody)
+            bool allowSeparatedLongBody,
+            int adjacentGapMax = 15,
+            int minimumBodyHeight = 50)
     {
         using Mat darkMask = new();
         using Mat bodyMask = new();
@@ -433,7 +455,7 @@ public sealed class DofusItemTooltipDetectionService(
 
                                 verticalGap >= -5 &&
                                 (
-                                    verticalGap <= 15 ||
+                                    verticalGap <= adjacentGapMax ||
                                     // In long modern tooltips, the internal
                                     // sections interrupt the body-color mask.
                                     // The remaining uniform lower body can
@@ -447,7 +469,7 @@ public sealed class DofusItemTooltipDetectionService(
                                     )
                                 ) &&
 
-                                rectangle.Height >= 50;
+                                rectangle.Height >= minimumBodyHeight;
                         }
                     );
 
