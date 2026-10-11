@@ -145,6 +145,73 @@ public sealed class TooltipDetectionPaletteTest
     }
 
     [Fact]
+    public void MarketBehindTooltipWithMixedPalettesDetectsTheActualTitleHeader()
+    {
+        using Mat image = new(
+            new OpenCvSharp.Size(1920, 1080),
+            MatType.CV_8UC3,
+            new Scalar(130, 130, 130));
+
+        // Approximate the marketplace window to the left of the tooltip.
+        // The HDV has regions of the modern body palette, which must not
+        // steal the header/body association from the tooltip.
+        Cv2.Rectangle(
+            image,
+            new Rect(485, 50, 575, 750),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        // Regression geometry based on the user-reported HDV screenshot:
+        // modern header (1079,26,387,112), legacy body immediately after
+        // it (1079,139,387,116), while distant lower sections can use
+        // the modern palette.
+        Cv2.Rectangle(
+            image,
+            new Rect(1079, 26, 387, 112),
+            new Scalar(62, 30, 25),
+            thickness: -1);
+
+        Cv2.Rectangle(
+            image,
+            new Rect(1079, 139, 387, 116),
+            new Scalar(50, 29, 27),
+            thickness: -1);
+
+        Cv2.Rectangle(
+            image,
+            new Rect(1079, 346, 387, 102),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().ContainSingle()
+            .Which.Should().Be(new Rect(1079, 26, 387, 112));
+    }
+
+    [Fact]
+    public void MixedPaletteBodyMustStillBeAdjacentAndAligned()
+    {
+        using Mat image = CreateImage();
+
+        Cv2.Rectangle(
+            image,
+            new Rect(50, 50, 400, 120),
+            new Scalar(62, 30, 25),
+            thickness: -1);
+
+        // The distant lower panel is legacy-colored but must not be
+        // treated as the adjacent body of the title.
+        Cv2.Rectangle(
+            image,
+            new Rect(50, 230, 400, 125),
+            new Scalar(50, 29, 27),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
     public void PlainImageDoesNotInventAnyTooltip()
     {
         using Mat image = CreateImage();

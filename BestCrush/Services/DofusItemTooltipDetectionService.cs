@@ -211,13 +211,31 @@ public sealed class DofusItemTooltipDetectionService(
             allowSeparatedLongBody: true
         );
 
+        if (current.Count > 0)
+            return current;
+
+        // With the marketplace open behind an item tooltip, the title
+        // can use the modern palette while its immediately adjacent body
+        // remains in the legacy palette. Do not require both regions to
+        // use the same palette: preserve the strict 15 px alignment and
+        // adjacency checks before trying the permissive geometry fallback.
+        IReadOnlyList<CvRect> mixed = DetectTooltipHeadersByPalette(
+            capture,
+            CurrentTooltipHeaderLower,
+            CurrentTooltipHeaderUpper,
+            TooltipBodyLower,
+            TooltipBodyUpper,
+            allowSeparatedLongBody: false
+        );
+
+        if (mixed.Count > 0)
+            return mixed;
+
         // Some modern tooltips blend their title background into adjoining
         // UI surfaces, so the header contour becomes wider than the tooltip
         // and is rejected. Recover the title header from the aligned body
         // palette instead of mistaking a lower STATUS bar for the item title.
-        return current.Count > 0
-            ? current
-            : DetectTooltipHeadersFromModernBody(capture);
+        return DetectTooltipHeadersFromModernBody(capture);
     }
 
     // Final geometry fallback for modern tooltips whose header contour
