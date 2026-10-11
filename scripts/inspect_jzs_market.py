@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+"""Read-only local characterization of Dofus jzs market messages.
+
+No captured payloads are copied, exported or written. Only a restricted list
+of numeric protobuf fields is printed. This is not a price decoder.
+"""
+from __future__ import annotations
+
+import argparse
+import base64
+import json
+import os
+from pathlib import Path
+import sys
+import time
+from typing import NamedTuple
+
+
+class Field(NamedTuple):
+    number: int
+    wire_type: int
+    value: int | bytes
+
+
+def read_varint(data: bytes, pos: int) -> tuple[int, int]:
+    value = 0
+    for shift in range(0, 70, 7):
+        if pos >= len(data):
+            raise ValueError("truncated varint")
+        byte = data[pos]
+        pos += 1
+        value |= (byte & 0x7F) << shift
+        if byte < 0x80:
+            if value > (1 << 64) - 1:
+                raise ValueError("out-of-range varint")
+            return value, pos
+    raise ValueError("oversized varint")
+
+
+def fields(data: bytes) -> list[Field]:
+    pos = 0
+    parsed: list[Field] = []
+    if len(data) > 16 * 1024 * 1024:
+        raise ValueError("message too large")
+    while pos < len(data):
+        tag, pos = read_varint(data, pos)
+        num, kind = tag >> 3, tag & 7
+        if num == 0 or num > 536870911:
+            raise ValueError("invalid protobuf tag")
+        if kind == 0:
+            value, pos = read_varint(data, pos)
+        elif kind == 2:
+            length, pos = read_varint(data, pos)
+            if pos + length > len(data):
+                raise ValueError("truncated bytes")
+            value = data[pos:pos + length]
+            pos += length
+        elif kind == 1:
+            if pos + 8 > len(data):
+                raise ValueError("truncated fixed64")
+            value = int.from_bytes(data[pos:pos + 8], "little")
+            pos += 8
+        elif kind == 5:
+            if pos + 4 > len(data):
+                raise ValueError("truncated fixed32")
+            value = int.from_bytes(data[pos:pos + 4], "little")
+            pos += 4
+        else:
+            raise ValueError("unsupported wire type")
+        parsed.append(Field(num, kind, value))
+    return parsed
+
+
+def varints(parsed: list[Field], number: int) -> list[int]:
+    return [int(f.value) for f in parsed if f.number == number and f.wire_type == 0]
+
+
+def jzs_summary(body: bytes) -> dict:
+    root = fields(body)
+    offers = []
+    invalid_rows = 0
+    for field in root:
+        if field.number != 1 or field.wire_type != 2:
+            continue
+        try:
+            nested = fields(field.value)
+        except ValueError:
+            invalid_rows += 1
+            continue
+        # f2 opaque bytes are intentionally neither decoded nor printed.
+        opaque_f2 = [f.value for f in nested if f.number == 2 and f.wire_type == 2]
+        offers.append({
+            "f1": varints(nested, 1),
+            "f3": varints(nested, 3),
+            "f4": varints(nested, 4),
+            "f2_lengths": [len(v) for v in opaque_f2],
+        })
+    return {
+        "root_f2": varints(root, 2),
+        "item_f3": varints(root, 3),
+        "offers": offers,
+        "invalid_rows": invalid_rows,
+    }
+
+
+def latest_capture() -> Path:
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        raise FileNotFoundError(
+            "LOCALAPPDATA absent : renseigner --file explicitement"
+        )
+    parent = Path(local) / "BestCrush" / "DebugCaptures" / "Network"
+    captures = sorted(parent.glob("session-*/wire.jsonl"),
+                      key=lambda p: p.stat().st_mtime, reverse=True)
+    if not captures:
+        raise FileNotFoundError(
+            f"Aucun wire.jsonl sous {parent}. "
+            "Activer la conservation des artefacts de debug."
+        )
+    return captures[0]
+
+
+def read_jzs(line: str) -> tuple[str, dict] | None:
+    try:
+        record = json.loads(line)
+        if record.get("key") != "jzs" or record.get("direction") != "S→C":
+            return None
+        body = base64.b64decode(record["bodyBase64"], validate=True)
+        summary = jzs_summary(body)
+        stamp = str(record.get("utc", "?"))
+        return stamp, summary
+    except (ValueError, TypeError, KeyError, json.JSONDecodeError):
+        return None
+
+
+def display(stamp: str, summary: dict, max_rows: int) -> None:
+    # Labels are deliberately technical: f3 is a *candidate* for price,
+    # not a verified kamas value or lot x1/x10/x100/x1000.
+    root_id = summary["item_f3"]
+    root_f2 = summary["root_f2"]
+    offers = summary["offers"]
+    print(f"jzs {stamp} | item f3={root_id} | root f2={root_f2}"
+          f" | offers={len(offers)} | invalid={summary['invalid_rows']}")
+    for index, offer in enumerate(offers[:max_rows], 1):
+        print(f"    row {index:02d}: f1={offer['f1']} "
+              f"f3?={offer['f3']} f4={offer['f4']} "
+              f"f2 byte lengths={offer['f2_lengths']}")
+    if len(offers) > max_rows:
+        print(f"    ... {len(offers) - max_rows} autres lignes")
+    candidates = [v for o in offers for v in o["f3"] if v > 0]
+    if candidates:
+        print(f"    minimum f3?={min(candidates)} (NON VALIDE comme prix)")
+    print()
+
+
+def iter_existing(path: Path, last: int):
+    matched: list[tuple[str, dict]] = []
+    with path.open("r", encoding="utf-8-sig") as source:
+        for line in source:
+            record = read_jzs(line)
+            if record is not None:
+                matched.append(record)
+                if len(matched) > last:
+                    matched.pop(0)
+    yield from matched
+
+
+def watch(path: Path, max_rows: int) -> None:
+    # Watch only newly appended records, not past messages. Ctrl+C to stop.
+    with path.open("r", encoding="utf-8-sig") as source:
+        source.seek(0, os.SEEK_END)
+        while True:
+            line = source.readline()
+            if not line:
+                time.sleep(0.3)
+                continue
+            record = read_jzs(line)
+            if record is not None:
+                display(record[0], record[1], max_rows)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--file", type=Path, help="wire.jsonl à analyser")
+    parser.add_argument("--last", type=int, default=8,
+                        help="nombre de derniers jzs à afficher (défaut 8)")
+    parser.add_argument("--rows", type=int, default=6,
+                        help="offres affichées par message (défaut 6)")
+    parser.add_argument("--watch", action="store_true",
+                        help="attendre de nouveaux jzs jusqu'à Ctrl+C")
+    args = parser.parse_args()
+    if not 1 <= args.last <= 100 or not 1 <= args.rows <= 50:
+        parser.error("--last doit être entre 1 et 100 et --rows entre 1 et 50")
+    try:
+        capture = args.file or latest_capture()
+        if not capture.is_file():
+            raise FileNotFoundError(str(capture))
+        print(f"Diagnostic local en lecture seule : {capture.name}")
+        print("Les champs f3? ne sont PAS des prix confirmés. "
+              "Aucune écriture SQLite ou JSONL.\n")
+        if args.watch:
+            print("Survole / sélectionne un objet en HDV. Ctrl+C pour arrêter.\n")
+            watch(capture, args.rows)
+        else:
+            rows = list(iter_existing(capture, args.last))
+            if not rows:
+                print("Aucun message jzs S→C trouvé dans ce fichier.")
+            for stamp, summary in rows:
+                display(stamp, summary, args.rows)
+    except FileNotFoundError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\nDiagnostic arrêté.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
