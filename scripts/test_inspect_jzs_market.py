@@ -150,6 +150,79 @@ class MarketDiagnosticTests(unittest.TestCase):
         self.assertEqual(len(result), 1)
         self.assertEqual(result[0][1]["item_f3"], [6493])
 
+    def test_lot_positions_aggregate_four_numeric_slots_without_assuming_lots(self):
+        body = (blob(1, num(1, 100) + blob(2, v(0) + v(550) +
+                    v(0) + v(99000)) + num(3, 501) + num(4, 11)) +
+                blob(1, num(1, 100) + blob(2, v(120) + v(500) +
+                    v(8000) + v(0)) + num(3, 502) + num(4, 11)) +
+                num(2, 11) + num(3, 100))
+        summary = market.summarize_lot_candidates(body)
+        self.assertEqual(summary, {
+            "rows": 2,
+            "decoded_rows": 2,
+            "complete": True,
+            "positive_minima": [120, 500, 8000, 99000],
+            "nonzero_counts": [1, 2, 1, 1],
+        })
+
+    def test_lot_positions_ignore_zero_and_do_not_assert_prices(self):
+        body = (blob(1, num(1, 6493) +
+                    blob(2, v(4899) + v(0) + v(0) + v(0)) +
+                    num(3, 1234) + num(4, 11)) +
+                num(2, 11) + num(3, 6493))
+        default = market.jzs_summary(body)
+        self.assertNotIn("lot_candidate", default)
+        extended = market.jzs_summary(body, lot_summary=True)
+        self.assertEqual(extended["lot_candidate"]["positive_minima"],
+                         [4899, None, None, None])
+        self.assertEqual(extended["lot_candidate"]["nonzero_counts"],
+                         [1, 0, 0, 0])
+
+    def test_lot_positions_refuse_partial_rows_without_reporting_minimum(self):
+        good = blob(1, num(1, 100) +
+                    blob(2, v(200) + v(0) + v(0) + v(0)) +
+                    num(3, 1) + num(4, 11))
+        bad = blob(1, num(1, 101) +
+                   blob(2, v(1) + v(0) + v(0) + v(0)) +
+                   num(3, 2) + num(4, 11))
+        summary = market.summarize_lot_candidates(
+            good + bad + num(2, 11) + num(3, 100))
+        self.assertEqual(summary["rows"], 2)
+        self.assertEqual(summary["decoded_rows"], 1)
+        self.assertFalse(summary["complete"])
+        self.assertIsNone(summary["positive_minima"])
+
+    def test_lot_positions_reject_wrong_packed_shape(self):
+        for slots in ([100], [100, 0, 0], [100, 0, 0, 0, 0]):
+            with self.subTest(slots=slots):
+                body = (blob(1, num(1, 100) + blob(2, b"".join(
+                    v(value) for value in slots)) +
+                    num(3, 5) + num(4, 11)) +
+                    num(2, 11) + num(3, 100))
+                result = market.summarize_lot_candidates(body)
+                self.assertFalse(result["complete"])
+                self.assertIsNone(result["positive_minima"])
+
+    def test_lot_positions_reject_truncated_f2_without_inventing_prices(self):
+        body = (blob(1, num(1, 100) +
+                    blob(2, v(4899) + bytes.fromhex("80")) +
+                    num(3, 5) + num(4, 11)) +
+                num(2, 11) + num(3, 100))
+        result = market.summarize_lot_candidates(body)
+        self.assertFalse(result["complete"])
+        self.assertIsNone(result["positive_minima"])
+
+    def test_lot_positions_ignore_empty_followup(self):
+        response = num(2, 11) + num(3, 6493)
+        result = market.jzs_summary(response, lot_summary=True)
+        self.assertEqual(result["lot_candidate"], {
+            "rows": 0,
+            "decoded_rows": 0,
+            "complete": False,
+            "positive_minima": None,
+            "nonzero_counts": None,
+        })
+
     def test_rejects_overflow_and_invalid_tags(self):
         with self.assertRaises(ValueError):
             market.fields(b"\x00")
