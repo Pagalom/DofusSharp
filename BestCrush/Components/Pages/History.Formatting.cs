@@ -66,4 +66,20 @@ public partial class History
             ? $"{amount:N0} K"
             : "Indisponible";
 
+    // An estimated remainder counts individual runes, not whole lots.
+    // Keep the historical snapshot unchanged; only format its lot line.
+    internal static string FormatCrushHistoryLot(CrushHistoryRuneLot lot)
+    {
+        if (lot.IsEstimated && lot.LotQuantity > 1)
+        {
+            double estimatedValue =
+                (double)lot.Count * lot.LotPrice / lot.LotQuantity;
+
+            return $"{lot.Count:N0}×({lot.LotPrice:N0}/{lot.LotQuantity:N0})" +
+                   $" = {estimatedValue:N0} K";
+        }
+
+        double lotValue = (double)lot.Count * lot.LotPrice;
+        return $"{lot.Count:N0}×{lot.LotQuantity:N0} = {lotValue:N0} K";
+    }
 }

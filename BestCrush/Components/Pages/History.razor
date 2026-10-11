@@ -839,10 +839,7 @@
                                                                     @foreach (CrushHistoryRuneLot lot in runeLine.Lots.OrderByDescending(l => l.LotQuantity))
                                                                     {
                                                                         <div class="small d-flex flex-wrap justify-content-between gap-2">
-                                                                            <span>
-                                                                                @(lot.Count.ToString("N0"))×@(lot.LotQuantity)
-                                                                                = @((lot.Count * lot.LotPrice).ToString("N0")) K
-                                                                            </span>
+                                                                            <span>@FormatCrushHistoryLot(lot)</span>
                                                                             <span class="text-secondary">
                                                                                 @lot.LotPrice.ToString("N0") K / lot
                                                                                 @if (lot.IsEstimated)
