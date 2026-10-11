@@ -5,7 +5,7 @@ namespace BestCrush.Network.Capture;
 /// Callers must evict this flow: continuing with partial protobuf framing is unsafe.
 /// </summary>
 public sealed class TcpReassemblyLimitExceededException(string message)
-    : InvalidDataException(message)
+    : IOException(message)
 {
 }
 
