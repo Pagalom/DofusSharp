@@ -7,7 +7,8 @@ namespace Tests.BestCrush.Network;
 public sealed class MarketSelectionDecoderTest
 {
     // Observed jzs response: repeated f1 offers; f2 market/category;
-    // f3 selected Dofus item ID. This path must NEVER persist price data.
+    // f3 selected Dofus item ID. This focus-only decoder never persists.
+    // A separate strict x1-equipment decoder handles verified prices.
 
     [Theory]
     [InlineData(12851UL, 9UL)]

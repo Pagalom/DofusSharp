@@ -331,6 +331,29 @@ internal sealed class DofusNetworkMessageProcessor(
                     message.ObservedAtUtc,
                     $"[MARKET-SELECTION] ItemId={itemId.Value}",
                     cancellationToken);
+
+                // The current jzs offer list uses a different layout than
+                // legacy jzn: root f1 rows, each containing a packed f2
+                // ladder. Only its x1 equipment price has been verified.
+                // Invalid or empty rows never flow into SQLite.
+                MarketObservation? prices =
+                    SemanticDecoders.TryDecodeJzsEquipmentPrices(body);
+
+                if (prices is not null &&
+                    prices.ItemId == itemId.Value)
+                {
+                    await debugWriter.WriteEventDebugAsync(
+                        message.ObservedAtUtc,
+                        $"[MARKET-JZS-VERIFIED-X1] {FormatMarketDebug(prices)}",
+                        cancellationToken);
+
+                    await observationWriter.PersistMarketAsync(
+                        prices,
+                        message.ObservedAtUtc,
+                        lease,
+                        cancellationToken,
+                        requireEquipment: true);
+                }
             }
 
             return;

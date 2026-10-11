@@ -233,6 +233,106 @@ public static class SemanticDecoders
             : null;
     }
 
+    // Verified against the 2026-10-11 HDV listing of Tongues Wabbits:
+    // jzs root f3=item ID, f2=market grouping;
+    // repeated root f1 has f1=item ID, f2=packed [x1,0,0,0],
+    // f3=opaque offer reference (meaning unconfirmed), f4=market grouping.
+    // 34 listing prices include 4899, 4900, 5000 K as shown in game.
+    // Only x1 equipment prices are established. Fail closed if another
+    // lot is nonzero, rather than persisting unverified x10/x100/x1000.
+    public static MarketObservation? TryDecodeJzsEquipmentPrices(byte[] body)
+    {
+        List<ProtoField>? root = ProtoWire.ReadFields(body);
+        if (root is null)
+            return null;
+
+        ProtoField[] itemIds = root.Where(field =>
+            field.Number == 3 &&
+            field.WireType == ProtoWireType.Varint).ToArray();
+
+        ProtoField[] categories = root.Where(field =>
+            field.Number == 2 &&
+            field.WireType == ProtoWireType.Varint).ToArray();
+
+        if (itemIds.Length != 1 || categories.Length != 1 ||
+            itemIds[0].Varint == 0 ||
+            itemIds[0].Varint > long.MaxValue ||
+            categories[0].Varint == 0)
+        {
+            return null;
+        }
+
+        ulong itemId = itemIds[0].Varint;
+        ulong category = categories[0].Varint;
+
+        ProtoField[] offerFields = root.Where(field =>
+            field.Number == 1).ToArray();
+
+        // A second jzs with offers=0 follows a populated response.
+        // Never treat that clearing/selection message as a price.
+        if (offerFields.Length == 0)
+            return null;
+
+        List<MarketOffer> offers = [];
+
+        foreach (ProtoField offerField in offerFields)
+        {
+            if (offerField.WireType != ProtoWireType.LengthDelimited ||
+                offerField.Bytes is null)
+                return null;
+
+            List<ProtoField>? fields = ProtoWire.ReadFields(offerField.Bytes);
+            if (fields is null)
+                return null;
+
+            ProtoField[] rowItems = fields.Where(field =>
+                field.Number == 1 &&
+                field.WireType == ProtoWireType.Varint).ToArray();
+
+            ProtoField[] rowIds = fields.Where(field =>
+                field.Number == 3 &&
+                field.WireType == ProtoWireType.Varint).ToArray();
+
+            ProtoField[] rowCategories = fields.Where(field =>
+                field.Number == 4 &&
+                field.WireType == ProtoWireType.Varint).ToArray();
+
+            ProtoField[] priceFields = fields.Where(field =>
+                field.Number == 2).ToArray();
+
+            if (rowItems.Length != 1 || rowItems[0].Varint != itemId ||
+                rowIds.Length != 1 || rowIds[0].Varint == 0 ||
+                rowCategories.Length != 1 ||
+                rowCategories[0].Varint != category ||
+                priceFields.Length != 1 ||
+                priceFields[0].WireType != ProtoWireType.LengthDelimited ||
+                priceFields[0].Bytes is null)
+            {
+                return null;
+            }
+
+            List<ulong>? packed =
+                ProtoWire.ReadPackedVarints(priceFields[0].Bytes!);
+
+            if (packed is not { Count: 4 } ||
+                packed[0] == 0 ||
+                packed[0] > long.MaxValue ||
+                packed.Skip(1).Any(value => value != 0))
+            {
+                return null;
+            }
+
+            // Keep the original listing identifiers and raw slot order.
+            // Market-price minima and notifications remain the writer's job.
+            offers.Add(new MarketOffer(
+                rowIds[0].Varint,
+                itemId,
+                packed));
+        }
+
+        return new MarketObservation(itemId, offers);
+    }
+
     public static MarketObservation? TryDecodeMarket(byte[] body)
     {
         List<ProtoField>? root = ProtoWire.ReadFields(body);

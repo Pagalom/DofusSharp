@@ -66,7 +66,7 @@ Les correspondances sont **par route sémantique**, pas par clé brute. Si l'ide
 | Route du JSON | Fonctions concernées |
 | --- | --- |
 | `price_list` | prix du marché, lots, notification SQLite |
-| `market_selection_response` | dernier équipement réseau et clic molette ; **pas de prix** |
+| `market_selection_response` | dernier équipement réseau/clic molette ; **prix x1 des équipements uniquement**, après contrôle strict de la structure `jzs` |
 | `crush_result` | résultats du concassage, runes, coefficients |
 | `item_detail`, `inventory_add`, `craft_output` | UID → ID équipement, stats, corrélation concassage |
 | `purchase_request`, `purchase_offer`, `purchase_receipt` | achats et rafraîchissement de prix |
@@ -81,7 +81,7 @@ Les valeurs de `verified_routes` commencent par :
 - `observed-...` : comportement corrélé à une capture réelle datée ;
 - `legacy-...` : uniquement un comportement historique, **non confirmé sur le client actuel**.
 
-**Situation au 11/10/2026** : seule `market_selection_response` / `jzs` est confirmée sur le protocole récent ; les autres routes conservent des structures historiques `3.6.11.15` et doivent faire l'objet d'une caractérisation. Le présent refactor ne prétend PAS avoir restauré les prix ou le concassage sur les nouveaux messages.
+**Situation au 11/10/2026** : `market_selection_response` / `jzs` est confirmée pour la sélection réseau **et** pour la liste des prix **x1 des équipements**. Relevé HDV Tongues Wabbits (item 6493) : liste de 34 offres, minimum x1 à **4 899 K**, retrouvé dans le premier des quatre entiers packed du champ imbriqué `f1[].f2` ; les trois derniers entiers sont à zéro sur ce relevé. Le sous-champ `f1[].f3` **n'est pas un prix**. La seconde réponse `jzs` avec offres vides ne doit pas écraser le marché. Un décodeur spécifique dans `SemanticDecoders` valide cette forme et transmet uniquement les prix x1 des **équipements connus en base** à `NetworkObservationWriter.PersistMarketAsync`, protégé par le serveur sélectionné et les paramètres de capture. Les lots x10/x100/x1000, les runes et ressources restent **non caractérisés**, donc exclus du nouveau parcours. Les autres routes conservent des structures historiques `3.6.11.15` non vérifiées sur le client actuel (notamment le concassage).
 
 ### Procédure lors de la prochaine mise à jour du jeu
 

@@ -36,7 +36,8 @@ internal sealed class NetworkObservationWriter(
         DateTime observedAtUtc,
         NetworkCaptureLease lease,
         CancellationToken cancellationToken,
-        bool allowEquipmentPriceRefresh = true)
+        bool allowEquipmentPriceRefresh = true,
+        bool requireEquipment = false)
     {
         string serverName = lease.ServerName;
 
@@ -60,6 +61,13 @@ internal sealed class NetworkObservationWriter(
                 cancellationToken);
 
         if (!currentServerState.IsCaptureLeaseActive(lease))
+            return;
+
+        // Only the x1 equipment listings have been verified on the
+        // current jzs protocol. Resource/rune semantics need separate
+        // wire-to-UI confirmation before any automatic persistence.
+        if (requireEquipment &&
+            objectType != MarketObjectType.Equipment)
             return;
 
         if (objectType ==

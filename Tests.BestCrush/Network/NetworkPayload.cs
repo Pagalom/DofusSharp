@@ -56,6 +56,29 @@ internal static class NetworkPayload
     public static byte[] Market(ulong itemId, params byte[][] offers) =>
         Message(Unsigned(1, itemId), Message(offers.Select(offer => Bytes(2, offer)).ToArray()));
 
+    // Current jzs layout: root f1=offers, f2=category, f3=item ID.
+    // Each offer has f1=item ID, f2=packed numeric slots, f3=opaque
+    // listing reference, f4=category. These are synthetic fixtures.
+    public static byte[] JzsOffer(
+        ulong itemId,
+        ulong offerReference,
+        ulong category,
+        params ulong[] slots) =>
+        Message(
+            Unsigned(1, itemId),
+            Bytes(2, Packed(slots)),
+            Unsigned(3, offerReference),
+            Unsigned(4, category));
+
+    public static byte[] JzsMarket(
+        ulong itemId,
+        ulong category,
+        params byte[][] offers) =>
+        Message(
+            Message(offers.Select(offer => Bytes(1, offer)).ToArray()),
+            Unsigned(2, category),
+            Unsigned(3, itemId));
+
     // kci: root repeated f1 rows; row f1 runes, f2 float fraction, f3 item UID.
     public static byte[] CrushRow(ulong uid, float coefficient, params byte[][] runes) =>
         Message(Message(runes.Select(rune => Bytes(1, rune)).ToArray()), Float(2, coefficient), Unsigned(3, uid));
