@@ -2,7 +2,7 @@
 
 **Branche :** `refactor/codebase-cleanup`  
 **HEAD contrôlé :** `1be9030c96780ccd12dbbd14c5cd14f84b1375cd`  
-**Statut :** compilation, tests et fonctionnalités Windows **validés** ; **audit NuGet final encore à exécuter** ; **aucune approbation de merge/release demandée ou accordée**.
+**Statut :** **P6 clôturé techniquement le 12/10/2026**, avec les réserves ci-dessous ; compilations Windows, **394/394 tests**, contrôle F5 et **audits NuGet des projets Windows et migrations réussis**. **Aucune approbation de merge/release demandée ou accordée**.
 
 ## Preuves de validation
 
@@ -56,20 +56,25 @@ Cette validation F5 est **globale**, sans traces vidéo individuelles de chaque 
 
 Ces réserves sont inventoriées dans `docs/codebase-cleanup-p5-p0-final-robustness-audit.md` et `docs/codebase-cleanup-p5-p1-network-memory-bounds.md`.
 
-## Vérification P6 restant à recevoir : audit NuGet des dépendances résolues
+## Audit NuGet final — contrôlé le 12/10/2026
 
-Les projets `BestCrush`, `BestCrush.Domain`, `BestCrush.Migrations` et `Tests.BestCrush` référencent explicitement `SQLitePCLRaw.bundle_e_sqlite3 2.1.13`, mais le dernier checkpoint montre surtout **build + tests**. Vérifier qu'aucune dépendance transitivement résolue n'est encore signalée vulnérable, en particulier dans la cible Windows et le projet de migrations :
+Sorties PowerShell fournies par l'utilisateur, interrogations avec `https://api.nuget.org/v3/index.json` :
 
-```powershell
-dotnet list .\BestCrush\BestCrush.csproj package --vulnerable --include-transitive --framework net10.0-windows10.0.19041.0
+| Projet | Audit lancé | Résultat |
+| --- | --- | --- |
+| `BestCrush/BestCrush.csproj` | `--vulnerable --include-transitive --framework net10.0-windows10.0.19041.0` | **Aucun package vulnérable selon les sources actuelles** |
+| `BestCrush.Migrations/BestCrush.Migrations.csproj` | `--vulnerable --include-transitive` | **Aucun package vulnérable selon les sources actuelles** |
 
-dotnet list .\BestCrush.Migrations\BestCrush.Migrations.csproj package --vulnerable --include-transitive
-```
+Une tentative d'exécution du second audit a échoué parce que deux lignes PowerShell avaient été concaténées (`--include-transitivedotnet`). **Une nouvelle exécution complète du second audit a ensuite réussi et affiché le résultat ci-dessus**. Ce n'est ni une erreur du projet ni un échec d'audit restant.
 
-Cette commande nécessite un accès au service d'audit NuGet. **Une commande en échec, une impossibilité de contacter le service ou un résultat incomplet ne constitue pas un audit « sans vulnérabilité ».** Signaler les sorties en cas d'avertissements `NU190x` ; ne pas modifier les versions des packages sans nouveau lot approuvé.
+La restauration du projet BestCrush affiche encore **NU1701** : compatibilité ciblée `OpenCvSharp4.WpfExtensions`, **pas** une vulnérabilité `NU190x`. Ce warning et les avertissements nullable déjà documentés restent suivis en dette technique.
 
-### Après l'audit
+Ces contrôles attestent de l'absence de packages **connus comme vulnérables selon les sources NuGet interrogées au moment du test**. Ils ne constituent pas une garantie générale de sécurité.
 
-- Si l'audit résout les dépendances sans alerte nouvelle : **P6 clôturable techniquement avec réserves documentées**, sous réserve de l'acceptation explicite de la clôture par l'utilisateur.
-- Si vulnérabilité ou échec de résolution : **ne pas déclarer P6 terminé**, examiner l'origine et proposer un correctif limité.
-- Dans tous les cas : **ne pas merger `main`, ne pas changer la version, ne pas publier de release ou de package**, ni écraser les travaux/stashes locaux. Ces opérations nécessitent un accord distinct.
+## Conclusion de P6
+
+**Clôture technique du refactoring v0.2.0 avec réserves documentées.** L'utilisateur a confirmé la réussite du parcours F5 après P5.1, et les checkpoints Windows montrent des compilations réussies et **394 tests sur 394**. Les deux audits NuGet ci-dessus ne signalent aucune vulnérabilité. Aucun obstacle démontré ne justifie un nouveau chantier correctif immédiat.
+
+Les réserves **P4.1 rafraîchissement courant non confirmé en F5**, **canal de messages non borné**, **risque de doublons entre adaptateurs**, **warnings de compatibilité/nullabilité** et **rétention des traces de debug** demeurent ouvertes et non dissimulées.
+
+**P6 est clôturé techniquement, sans fusion ni livraison :** rester sur `refactor/codebase-cleanup`, ne pas toucher à `main`, ne pas changer la version, ne pas produire de release ni de package sans nouvelle autorisation explicite. Toute préparation de publication doit revoir `BestCrush/README.release.txt` et organiser un checkpoint de packaging distinct.
