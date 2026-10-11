@@ -130,8 +130,10 @@ internal sealed class DofusCaptureProbe : IDisposable
         }
 
 
-        if (_map.ItemDetail is not null &&
-            string.Equals(key, _map.ItemDetail, StringComparison.Ordinal))
+        if ((_map.ItemDetail is not null &&
+             string.Equals(key, _map.ItemDetail, StringComparison.Ordinal)) ||
+            (_map.CurrentItemDetail is not null &&
+             string.Equals(key, _map.CurrentItemDetail, StringComparison.Ordinal)))
         {
             ItemDetailObservation? item = SemanticDecoders.TryDecodeItemDetail(body);
             if (item is not null)
@@ -544,8 +546,10 @@ internal sealed class DofusCaptureProbe : IDisposable
             ConsoleRenderer.WriteProtoDebug($"DIAG {key}", any.Body);
         }
 
-        if (_map.CrushResult is not null &&
-            string.Equals(key, _map.CrushResult, StringComparison.Ordinal))
+        if ((_map.CrushResult is not null &&
+             string.Equals(key, _map.CrushResult, StringComparison.Ordinal)) ||
+            (_map.CurrentCrushResult is not null &&
+             string.Equals(key, _map.CurrentCrushResult, StringComparison.Ordinal)))
         {
             CrushObservation? crush = SemanticDecoders.TryDecodeCrush(body);
             if (crush is not null)

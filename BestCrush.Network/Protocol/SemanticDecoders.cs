@@ -23,7 +23,9 @@ public sealed record ProtocolMap(
     string? MarketListingRequest,
     string? MarketListingCreated,
     IReadOnlySet<string> DiagnosticMessages,
-    string? MarketSelectionResponse = null)
+    string? MarketSelectionResponse = null,
+    string? CurrentCrushResult = null,
+    string? CurrentItemDetail = null)
 {
     public ProtocolWireNormalizer WireNormalizer { get; init; } =
         ProtocolWireNormalizer.Empty;
@@ -36,7 +38,9 @@ public sealed record ProtocolMap(
         "price_list" => PriceList,
         "market_selection_response" => MarketSelectionResponse,
         "crush_result" => CrushResult,
+        "crush_result_current" => CurrentCrushResult,
         "item_detail" => ItemDetail,
+        "item_detail_current" => CurrentItemDetail,
         "workshop_slot_put" => WorkshopSlotPut,
         "purchase_request" => PurchaseRequest,
         "purchase_offer" => PurchaseOffer,
@@ -111,6 +115,8 @@ public sealed record ProtocolMap(
         string? marketListingRequest = root.TryGetProperty("market_listing_request", out JsonElement mlr) ? mlr.GetString() : null;
         string? marketListingCreated = root.TryGetProperty("market_listing_created", out JsonElement mlc) ? mlc.GetString() : null;
         string? marketSelectionResponse = root.TryGetProperty("market_selection_response", out JsonElement ms) ? ms.GetString() : null;
+        string? currentCrush = root.TryGetProperty("crush_result_current", out JsonElement cc) ? cc.GetString() : null;
+        string? currentItemDetail = root.TryGetProperty("item_detail_current", out JsonElement ci) ? ci.GetString() : null;
 
         HashSet<string> diagnostics = new(StringComparer.Ordinal);
         if (root.TryGetProperty("diagnostic_messages", out JsonElement dm) &&
@@ -145,7 +151,9 @@ public sealed record ProtocolMap(
             marketListingRequest,
             marketListingCreated,
             diagnostics,
-            marketSelectionResponse);
+            marketSelectionResponse,
+            currentCrush,
+            currentItemDetail);
 
         return map with
         {

@@ -207,7 +207,8 @@ public sealed class ProtocolWireNormalizerTest
         string[] routeNames =
         [
             "price_list", "market_selection_response", "crush_result",
-            "item_detail", "workshop_slot_put", "purchase_request",
+            "crush_result_current", "item_detail", "item_detail_current",
+            "workshop_slot_put", "purchase_request",
             "purchase_offer", "purchase_receipt", "inventory_add",
             "inventory_quantity", "inventory_remove", "craft_prepare",
             "craft_output", "smithmagic_request", "smithmagic_batch_request",

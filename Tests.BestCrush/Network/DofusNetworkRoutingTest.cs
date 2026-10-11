@@ -1123,6 +1123,239 @@ public sealed class DofusNetworkRoutingTest
     }
 
     [Fact]
+    public async Task CurrentKchAndKagRouteCoefficientAndRunesThroughRealWriter()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        DateTime crushAt = ObservedAt.AddSeconds(2);
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42, 1), ObservedAt);
+
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022491, 1.615723f,
+                    CurrentCrushRune(100, 6))), crushAt);
+
+        harness.Crushes.Should().ContainSingle();
+        NetworkCrushCapture actual = harness.Crushes.Single();
+        actual.ObservedAtUtc.Should().Be(crushAt);
+        actual.Lines.Should().ContainSingle();
+
+        NetworkCrushResultLine line = actual.Lines.Single();
+        line.EquipmentDofusDbId.Should().Be(42);
+        line.CoefficientPercent
+            .Should().BeApproximately(161.5723d, 0.0001d);
+        line.Runes.Should().ContainSingle()
+            .Which.Should().Be(new NetworkCrushRuneResult(100, 6));
+
+        (await harness.ReadCoefficientsAsync(42))
+            .Should().ContainSingle()
+            .Which.CoefficientPercent.Should()
+            .BeApproximately(161.5723d, 0.0001d);
+
+        harness.Notifications.Should().ContainSingle()
+            .Which.DofusDbId.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task CurrentKagWithoutRuneStillPersistsRealCoefficient()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(11387412, 43, 1), ObservedAt);
+
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(11387412, 0.5976145f)),
+            ObservedAt.AddSeconds(1));
+
+        harness.Crushes.Should().ContainSingle();
+        NetworkCrushResultLine line =
+            harness.Crushes.Single().Lines.Single();
+        line.EquipmentDofusDbId.Should().Be(43);
+        line.CoefficientPercent
+            .Should().BeApproximately(59.76145d, 0.0001d);
+        line.Runes.Should().BeEmpty();
+        (await harness.ReadCoefficientsAsync(43))
+            .Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task CurrentKagMissingUidCorrelationNeverWritesCoefficient()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022491, 1.615723f,
+                    CurrentCrushRune(100, 6))),
+            ObservedAt);
+
+        harness.Crushes.Should().BeEmpty();
+        (await harness.ReadCoefficientsAsync(42)).Should().BeEmpty();
+        harness.Notifications.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CurrentKagWrongUidDoesNotBorrowRecentlySeenItem()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42, 1), ObservedAt);
+
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022492, 1.615723f,
+                    CurrentCrushRune(100, 6))),
+            ObservedAt.AddSeconds(1));
+
+        harness.Crushes.Should().BeEmpty();
+        (await harness.ReadCoefficientsAsync(42)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CurrentKagStillDeliversRunesWhenCoefficientCaptureIsDisabled()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        harness.Settings.CoefficientCaptureEnabled = false;
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42), ObservedAt);
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022491, 1.615723f,
+                    CurrentCrushRune(100, 6))),
+            ObservedAt.AddSeconds(1));
+
+        (await harness.ReadCoefficientsAsync(42))
+            .Should().BeEmpty();
+        harness.Notifications.Should().BeEmpty();
+        harness.Crushes.Should().ContainSingle();
+        harness.Crushes.Single().Lines.Single()
+            .Runes.Should().ContainSingle()
+            .Which.Should().Be(new NetworkCrushRuneResult(100, 6));
+    }
+
+    [Fact]
+    public async Task CurrentKagCannotUsePreviousServerUidCache()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42), ObservedAt);
+        harness.ServerState.SelectServer("OTHER_SERVER");
+
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022491, 1.615723f,
+                    CurrentCrushRune(100, 6))),
+            ObservedAt.AddSeconds(1));
+
+        harness.Crushes.Should().BeEmpty();
+        (await harness.ReadCoefficientsAsync(42)).Should().BeEmpty();
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42),
+            ObservedAt.AddSeconds(2));
+
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022491, 1.615723f,
+                    CurrentCrushRune(100, 6))),
+            ObservedAt.AddSeconds(3));
+
+        harness.Crushes.Should().ContainSingle();
+        harness.Crushes.Single().Lines.Single()
+            .EquipmentDofusDbId.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task CurrentKagCannotUseUidCacheAfterCaptureRestart()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42), ObservedAt);
+
+        harness.Service.Stop();
+        harness.Service.ResumeReplayForTests();
+
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022491, 1.615723f)),
+            ObservedAt.AddSeconds(1));
+
+        harness.Crushes.Should().BeEmpty();
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42),
+            ObservedAt.AddSeconds(2));
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022491, 1.615723f)),
+            ObservedAt.AddSeconds(3));
+
+        harness.Crushes.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task CurrentKagWithoutServerCannotPersistOrRender()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        harness.ServerState.Clear();
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42), ObservedAt);
+
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022491, 1.615723f,
+                    CurrentCrushRune(100, 6))),
+            ObservedAt.AddSeconds(1));
+
+        harness.Crushes.Should().BeEmpty();
+        (await harness.ReadCoefficientsAsync(42)).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CurrentKagMultiItemKeepsMessageOrderAndRuneLines()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(8001, 42), ObservedAt);
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(8002, 43), ObservedAt);
+
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(8001, 1.5f,
+                    CurrentCrushRune(100, 2)),
+                CurrentCrushRow(8002, 0.75f,
+                    CurrentCrushRune(100, 3))),
+            ObservedAt.AddSeconds(1));
+
+        harness.Crushes.Should().ContainSingle();
+        harness.Crushes.Single().Lines
+            .Select(line => (line.EquipmentDofusDbId,
+                             line.Runes.Single().Quantity))
+            .Should().Equal((42L, 2), (43L, 3));
+        harness.Notifications
+            .Select(note => note.DofusDbId)
+            .Should().Equal(42, 43);
+    }
+
+    [Fact]
     public async Task QueuedReplayUsesSingleReaderMessageOrder()
     {
         await using RoutingHarness harness =

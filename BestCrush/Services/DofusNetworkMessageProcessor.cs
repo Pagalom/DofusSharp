@@ -55,11 +55,16 @@ internal sealed class DofusNetworkMessageProcessor(
         // Wire debug above intentionally retains original captured bytes.
         byte[] body = map.NormalizeBody(message.Key, message.Body);
 
-        if (map.ItemDetail is not null &&
-            string.Equals(
-                message.Key,
-                map.ItemDetail,
-                StringComparison.Ordinal))
+        if ((map.ItemDetail is not null &&
+             string.Equals(
+                 message.Key,
+                 map.ItemDetail,
+                 StringComparison.Ordinal)) ||
+            (map.CurrentItemDetail is not null &&
+             string.Equals(
+                 message.Key,
+                 map.CurrentItemDetail,
+                 StringComparison.Ordinal)))
         {
             ItemDetailObservation? item =
                 SemanticDecoders.TryDecodeItemDetail(
@@ -403,11 +408,16 @@ internal sealed class DofusNetworkMessageProcessor(
             return;
         }
 
-        if (map.CrushResult is not null &&
-            string.Equals(
-                message.Key,
-                map.CrushResult,
-                StringComparison.Ordinal))
+        if ((map.CrushResult is not null &&
+             string.Equals(
+                 message.Key,
+                 map.CrushResult,
+                 StringComparison.Ordinal)) ||
+            (map.CurrentCrushResult is not null &&
+             string.Equals(
+                 message.Key,
+                 map.CurrentCrushResult,
+                 StringComparison.Ordinal)))
         {
             CrushObservation? crush =
                 SemanticDecoders.TryDecodeCrush(

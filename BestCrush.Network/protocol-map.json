@@ -3,7 +3,9 @@
   "price_list": "jzn",
   "market_selection_response": "jzs",
   "crush_result": "kci",
+  "crush_result_current": "kag",
   "item_detail": "kdb",
+  "item_detail_current": "kch",
   "workshop_slot_put": "kec",
   "diagnostic_messages": [
     "itt",
@@ -73,6 +75,23 @@
         }
       }
     },
+    "crush_result_current": {
+      "1": {
+        "wire": 1,
+        "fields": {
+          "1": {
+            "wire": 4,
+            "fields": {
+              "1": 2,
+              "3": 1
+            }
+          },
+          "2": 1,
+          "3": 3,
+          "4": 2
+        }
+      }
+    },
     "item_detail": {
       "2": {
         "wire": 2,
@@ -90,6 +109,21 @@
                 }
               },
               "5": 5
+            }
+          }
+        }
+      }
+    },
+    "item_detail_current": {
+      "2": {
+        "wire": 3,
+        "fields": {
+          "5": {
+            "wire": 1,
+            "fields": {
+              "1": 5,
+              "2": 3,
+              "5": 4
             }
           }
         }
@@ -259,7 +293,9 @@
     "price_list": "legacy-3.6.11.15",
     "market_selection_response": "observed-equipment-x1-and-stackable-four-lots-2026-10-11",
     "crush_result": "legacy-3.6.11.15",
+    "crush_result_current": "observed-kag-coefficient-rune-vi-2026-10-11",
     "item_detail": "legacy-3.6.11.15",
+    "item_detail_current": "observed-kch-uid-item-2026-10-11",
     "workshop_slot_put": "legacy-3.6.11.15",
     "purchase_request": "legacy-3.6.11.15",
     "purchase_offer": "legacy-3.6.11.15",

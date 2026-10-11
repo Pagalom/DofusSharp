@@ -7,8 +7,8 @@
 Il est partagé et copié tel quel dans les sorties de **BestCrush**, **BestCrush.NetworkProbe** et **Tests.BestCrush**. Il porte trois responsabilités :
 
 1. Les **codes des messages** (ex. `market_selection_response = jzs`, `price_list = jzn`, `crush_result = kci`).
-2. La **correspondance des champs Protobuf** (section `field_mappings`) pour les **19 routes** de capture actuellement connues.
-3. L'**état de vérification** de chaque route (section `verified_routes`, même ensemble de 19 noms).
+2. La **correspondance des champs Protobuf** (section `field_mappings`) pour les **21 routes** de capture actuellement connues.
+3. L'**état de vérification** de chaque route (section `verified_routes`, même ensemble de 21 noms).
 
 Ce fichier utilise `schema_version: 1`. Une version de schéma non supportée bloque le chargement.
 
@@ -67,7 +67,9 @@ Les correspondances sont **par route sémantique**, pas par clé brute. Si l'ide
 | --- | --- |
 | `price_list` | prix du marché, lots, notification SQLite |
 | `market_selection_response` | dernier équipement réseau/clic molette ; prix **x1 équipement** et **quatre lots rune/ressource** après validation stricte de `jzs` et de la catégorie enregistrée en base |
-| `crush_result` | résultats du concassage, runes, coefficients |
+| `crush_result` | résultat historique `kci` (Dofus 3.6.11.15) |
+| `crush_result_current` | résultat actuel `kag` : coefficient, UID, runes et quantités |
+| `item_detail_current` | item `kch` : UID, ID équipement et quantité pour corréler `kag` |
 | `item_detail`, `inventory_add`, `craft_output` | UID → ID équipement, stats, corrélation concassage |
 | `purchase_request`, `purchase_offer`, `purchase_receipt` | achats et rafraîchissement de prix |
 | `market_listing_request`, `market_listing_created` | dépôt/vente HDV |
@@ -81,7 +83,15 @@ Les valeurs de `verified_routes` commencent par :
 - `observed-...` : comportement corrélé à une capture réelle datée ;
 - `legacy-...` : uniquement un comportement historique, **non confirmé sur le client actuel**.
 
-**Situation au 11/10/2026 (P2.1)** : `market_selection_response` / `jzs` est confirmée pour la sélection et les prix. **Équipements** : Tongues Wabbits, ID 6493, 34 offres, minimum x1 **4 899 K**, avec trois positions packed nulles. **Rune** : Rune Ini, ID 7448, catégorie réseau 78, lots x1/x10/x100/x1000 **139 / 1 399 / 14 284 / 151 014 K**. **Ressource** : Ailes de Scarafeuille Rouge, ID 1457, catégorie réseau 104, lots **483 / 897 / 9 179 / 85 000 K**. Toutes ces valeurs ont été vérifiées à l'écran. Le champ packed de `root.f1[].f2` porte les quatre prix dans cet ordre ; le champ `f1[].f3` **n'est pas un prix**. Le second message `jzs` sans offres n'écrit aucun prix. `SemanticDecoders` utilise un validateur partagé et deux voies métier distinctes : équipement x1 uniquement ; rune/ressource quatre lots. `NetworkObservationWriter` classe l'ID par les tables de la base, **jamais par le numéro de groupe réseau**, conserve les garde-fous de capture et de serveur, et ne persiste que les minima strictement positifs. Les autres routes restent historiques/non vérifiées sur ce client, notamment le concassage.
+**Situation au 11/10/2026 (P2.1)** : `market_selection_response` / `jzs` est confirmée pour la sélection et les prix. **Équipements** : Tongues Wabbits, ID 6493, 34 offres, minimum x1 **4 899 K**, avec trois positions packed nulles. **Rune** : Rune Ini, ID 7448, catégorie réseau 78, lots x1/x10/x100/x1000 **139 / 1 399 / 14 284 / 151 014 K**. **Ressource** : Ailes de Scarafeuille Rouge, ID 1457, catégorie réseau 104, lots **483 / 897 / 9 179 / 85 000 K**. Toutes ces valeurs ont été vérifiées à l'écran. Le champ packed de `root.f1[].f2` porte les quatre prix dans cet ordre ; le champ `f1[].f3` **n'est pas un prix**. Le second message `jzs` sans offres n'écrit aucun prix. `SemanticDecoders` utilise un validateur partagé et deux voies métier distinctes : équipement x1 uniquement ; rune/ressource quatre lots. `NetworkObservationWriter` classe l'ID par les tables de la base, **jamais par le numéro de groupe réseau**, conserve les garde-fous de capture et de serveur, et ne persiste que les minima strictement positifs. Les autres routes restent historiques/non vérifiées sur ce client, hormis les routes courantes de concassage `kch` et `kag` caractérisées en P3.0 le 11/10/2026 (voir ci-dessous).
+
+### Concassage actuel `kch` / `kag` — observations 11/10/2026
+
+Un concassage sans rune (Baguette de Boisaille) a produit `kag` contenant un float brut `0.5976145`, soit `59,76145 %` et `60 %` à l'écran, lié à l'UID `11387412`. Le second concassage a confirmé `kag` : float `1.615723`, affichage `162 %`, UID `9022491`, rune Vi (ID `1523`) en quantité `6`. `kch`, reçu auparavant, porte pour cet UID l'ID d'équipement `6924` et la quantité `1`.
+
+Le profil déclare désormais **deux routes supplémentaires** : `item_detail_current=kch` et `crush_result_current=kag`. Leurs `field_mappings` ramènent le protocole actuel à la **structure canonique du décodeur existant**. Les anciennes routes `item_detail=kdb` et `crush_result=kci` demeurent activées pour compatibilité. La corrélation UID → équipement, le coefficient exact (sans arrondi à l'UI), les runes, les observations de coefficient, les résultats de concassage et les overlays restent traités par le circuit métier existant. Le profil ne suppose pas que les messages historiques soient émis par le client actuel.
+
+Le premier checkpoint de compilation/tests et le test d'exécution F5 restent obligatoires avant de considérer P3.1 comme validé.
 
 ### Procédure lors de la prochaine mise à jour du jeu
 
