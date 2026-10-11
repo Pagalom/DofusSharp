@@ -195,7 +195,8 @@ public sealed class DofusItemTooltipDetectionService(
                 TooltipDarkLower,
                 TooltipDarkUpper,
                 TooltipBodyLower,
-                TooltipBodyUpper
+                TooltipBodyUpper,
+                allowSeparatedLongBody: false
             );
 
         // The fallback is evaluated only when the legacy profile
@@ -207,7 +208,8 @@ public sealed class DofusItemTooltipDetectionService(
                 CurrentTooltipHeaderLower,
                 CurrentTooltipHeaderUpper,
                 CurrentTooltipBodyLower,
-                CurrentTooltipBodyUpper
+                CurrentTooltipBodyUpper,
+                allowSeparatedLongBody: true
             );
     }
 
@@ -217,7 +219,8 @@ public sealed class DofusItemTooltipDetectionService(
             Scalar headerLower,
             Scalar headerUpper,
             Scalar bodyLower,
-            Scalar bodyUpper)
+            Scalar bodyUpper,
+            bool allowSeparatedLongBody)
     {
         using Mat darkMask = new();
         using Mat bodyMask = new();
@@ -295,7 +298,20 @@ public sealed class DofusItemTooltipDetectionService(
                                 ) <= 20 &&
 
                                 verticalGap >= -5 &&
-                                verticalGap <= 15 &&
+                                (
+                                    verticalGap <= 15 ||
+                                    // In long modern tooltips, the internal
+                                    // sections interrupt the body-color mask.
+                                    // The remaining uniform lower body can
+                                    // start much farther below the header.
+                                    // Require a long, aligned body so an
+                                    // unrelated panel is not accepted.
+                                    (
+                                        allowSeparatedLongBody &&
+                                        verticalGap <= 220 &&
+                                        rectangle.Height >= 300
+                                    )
+                                ) &&
 
                                 rectangle.Height >= 50;
                         }

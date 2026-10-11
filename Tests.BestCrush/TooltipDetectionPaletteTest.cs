@@ -34,6 +34,55 @@ public sealed class TooltipDetectionPaletteTest
     }
 
     [Fact]
+    public void LongModernTooltipWithSeparatedBodyStillProducesOneHeader()
+    {
+        using Mat image = CreateImage();
+
+        // A modern 1080p tooltip can contain several intervening dark
+        // sub-sections: only its bottom panel forms a contiguous body mask.
+        DrawTooltip(
+            image,
+            x: 50,
+            useLegacyPalette: false,
+            bodyY: 360,
+            bodyHeight: 330);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().ContainSingle()
+            .Which.Should().Be(new Rect(50, 50, 400, 120));
+    }
+
+    [Fact]
+    public void ShortSeparatedPanelDoesNotBecomeATooltipBody()
+    {
+        using Mat image = CreateImage();
+        DrawTooltip(
+            image,
+            x: 50,
+            useLegacyPalette: false,
+            bodyY: 360,
+            bodyHeight: 125);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LongPanelTooFarFromHeaderDoesNotBecomeATooltipBody()
+    {
+        using Mat image = CreateImage();
+        DrawTooltip(
+            image,
+            x: 50,
+            useLegacyPalette: false,
+            bodyY: 450,
+            bodyHeight: 300);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
     public void PlainImageDoesNotInventAnyTooltip()
     {
         using Mat image = CreateImage();
@@ -65,7 +114,9 @@ public sealed class TooltipDetectionPaletteTest
     private static void DrawTooltip(
         Mat image,
         int x,
-        bool useLegacyPalette)
+        bool useLegacyPalette,
+        int bodyY = 171,
+        int bodyHeight = 125)
     {
         // Synthetic BGR rectangles only; no user screenshot committed.
         // Slight header/body offset preserves the real tooltip geometry.
@@ -86,7 +137,7 @@ public sealed class TooltipDetectionPaletteTest
 
         Cv2.Rectangle(
             image,
-            new Rect(x + 5, 171, 395, 125),
+            new Rect(x + 5, bodyY, 395, bodyHeight),
             body,
             thickness: -1
         );
