@@ -64,6 +64,85 @@ public sealed class VarintFrameBufferTest
     }
 
     [Fact]
+    public void IncompleteFrameAtByteLimitDoesNotGrowOnRejectedAppend()
+    {
+        VarintFrameBuffer buffer = new(maximumBufferedBytes: 5);
+        buffer.Append([4, 10, 20, 30, 40]);
+        buffer.BufferedBytes.Should().Be(5);
+
+        Action overflow = () => buffer.Append([50]);
+        overflow.Should().Throw<TcpReassemblyLimitExceededException>();
+        buffer.BufferedBytes.Should().Be(5);
+
+        buffer.TryReadFrame(out byte[] frame).Should().BeTrue();
+        frame.Should().Equal(10, 20, 30, 40);
+        buffer.BufferedBytes.Should().Be(0);
+    }
+
+    [Fact]
+    public void FramingLimitRejectsIncompletePrefixOrPayloadBeforeAllocating()
+    {
+        VarintFrameBuffer buffer = new(maximumBufferedBytes: 6);
+        buffer.Append([0x81, 0x01, 1, 2]);
+        buffer.TryReadFrame(out _).Should().BeFalse();
+
+        Action overflow = () => buffer.Append([3, 4, 5]);
+        overflow.Should().Throw<TcpReassemblyLimitExceededException>();
+        buffer.BufferedBytes.Should().Be(4);
+    }
+
+    [Fact]
+    public void FreshFrameBufferAfterOverflowDoesNotKeepPartialOldFrames()
+    {
+        VarintFrameBuffer old = new(maximumBufferedBytes: 3);
+        old.Append([3, 10]);
+        Action overflow = () => old.Append([11, 12]);
+        overflow.Should().Throw<TcpReassemblyLimitExceededException>();
+
+        VarintFrameBuffer fresh = new(maximumBufferedBytes: 3);
+        fresh.Append([2, 40, 41]);
+        fresh.TryReadFrame(out byte[] frame).Should().BeTrue();
+        frame.Should().Equal(40, 41);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public void InvalidFramingLimitIsRejected(int limit)
+    {
+        Action create = () => new VarintFrameBuffer(maximumBufferedBytes: limit);
+        create.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
+    [Fact]
+    public void LargestAllowedFrameFollowedByAnotherFrameSurvivesChunkedAppend()
+    {
+        byte[] payload = new byte[VarintFrameBuffer.MaximumFrameBytes];
+        payload[0] = 11;
+        payload[^1] = 22;
+
+        byte[] wire = Message(Frame(payload), Frame([33]));
+        VarintFrameBuffer buffer = new();
+        List<byte[]> frames = [];
+
+        for (int offset = 0; offset < wire.Length; offset += 64 * 1024)
+        {
+            int length = Math.Min(64 * 1024, wire.Length - offset);
+            buffer.Append(wire.AsSpan(offset, length));
+
+            while (buffer.TryReadFrame(out byte[] frame))
+                frames.Add(frame);
+        }
+
+        frames.Should().HaveCount(2);
+        frames[0].Length.Should().Be(VarintFrameBuffer.MaximumFrameBytes);
+        frames[0][0].Should().Be(11);
+        frames[0][^1].Should().Be(22);
+        frames[1].Should().Equal(33);
+        buffer.BufferedBytes.Should().Be(0);
+    }
+
+    [Fact]
     public void TcpFragmentsProduceAnkamaMessagesInWireOrderWithoutNpcap()
     {
         byte[] market = Market(42, MarketOffer(501, 42, 12, 100, 900, 8000));

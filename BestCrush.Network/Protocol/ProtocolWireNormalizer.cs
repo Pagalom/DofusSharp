@@ -160,6 +160,8 @@ public sealed class ProtocolWireNormalizer
             return false;
 
         List<byte> output = new(bytes.Length);
+        Span<byte> fixed32Bytes = stackalloc byte[4];
+        Span<byte> fixed64Bytes = stackalloc byte[8];
 
         foreach (ProtoField field in fields)
         {
@@ -183,15 +185,15 @@ public sealed class ProtocolWireNormalizer
                     break;
 
                 case ProtoWireType.Fixed32:
-                    Span<byte> f32 = stackalloc byte[4];
-                    BinaryPrimitives.WriteUInt32LittleEndian(f32, field.Fixed32);
-                    output.AddRange(f32.ToArray());
+                    BinaryPrimitives.WriteUInt32LittleEndian(
+                        fixed32Bytes, field.Fixed32);
+                    output.AddRange(fixed32Bytes.ToArray());
                     break;
 
                 case ProtoWireType.Fixed64:
-                    Span<byte> f64 = stackalloc byte[8];
-                    BinaryPrimitives.WriteUInt64LittleEndian(f64, field.Fixed64);
-                    output.AddRange(f64.ToArray());
+                    BinaryPrimitives.WriteUInt64LittleEndian(
+                        fixed64Bytes, field.Fixed64);
+                    output.AddRange(fixed64Bytes.ToArray());
                     break;
 
                 case ProtoWireType.LengthDelimited:

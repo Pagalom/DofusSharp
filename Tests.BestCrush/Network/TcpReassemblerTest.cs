@@ -116,6 +116,86 @@ public sealed class TcpReassemblerTest
             .Should().BeFalse();
     }
 
+    [Fact]
+    public void GapQueueRetainsExactByteCountAndDrainsToZero()
+    {
+        TcpReassembler stream = new(maximumPendingBytes: 4);
+
+        Flatten(stream.Push(100, [1, 2])).Should().Equal(1, 2);
+        stream.PendingBytes.Should().Be(0);
+        stream.Push(104, [5, 6, 7, 8]).Should().BeEmpty();
+        stream.PendingSegments.Should().Be(1);
+        stream.PendingBytes.Should().Be(4);
+
+        Flatten(stream.Push(102, [3, 4]))
+            .Should().Equal(3, 4, 5, 6, 7, 8);
+        stream.PendingSegments.Should().Be(0);
+        stream.PendingBytes.Should().Be(0);
+    }
+
+    [Fact]
+    public void OutOfOrderPendingByteLimitRejectsNewSegmentWithoutGrowingQueue()
+    {
+        TcpReassembler stream = new(maximumPendingBytes: 4);
+
+        Flatten(stream.Push(100, [1])).Should().Equal(1);
+        stream.Push(110, [10, 11, 12]).Should().BeEmpty();
+        stream.PendingBytes.Should().Be(3);
+
+        Action overflow = () => Flatten(stream.Push(120, [20, 21]));
+        overflow.Should().Throw<TcpReassemblyLimitExceededException>();
+        stream.PendingBytes.Should().Be(3);
+        stream.PendingSegments.Should().Be(1);
+    }
+
+    [Fact]
+    public void PendingSegmentCountLimitRejectsDistinctSegmentsButNotDuplicates()
+    {
+        TcpReassembler stream = new(maximumPendingSegments: 2);
+
+        Flatten(stream.Push(100, [1])).Should().Equal(1);
+        stream.Push(104, [5]).Should().BeEmpty();
+        stream.Push(106, [7]).Should().BeEmpty();
+        stream.Push(104, [99, 98]).Should().BeEmpty();
+
+        stream.PendingSegments.Should().Be(2);
+        stream.PendingBytes.Should().Be(2);
+
+        Action overflow = () => Flatten(stream.Push(108, [9]));
+        overflow.Should().Throw<TcpReassemblyLimitExceededException>();
+        stream.PendingSegments.Should().Be(2);
+        stream.PendingBytes.Should().Be(2);
+
+        Flatten(stream.Push(101, [2, 3, 4, 5, 6, 7]))
+            .Should().Equal(2, 3, 4, 5, 6, 7);
+        stream.PendingSegments.Should().Be(0);
+        stream.PendingBytes.Should().Be(0);
+    }
+
+    [Fact]
+    public void LargeInOrderSegmentIsNotMistakenForIndefinitelyPendingData()
+    {
+        TcpReassembler stream = new(maximumPendingBytes: 2);
+
+        Flatten(stream.Push(100, [1, 2, 3, 4, 5]))
+            .Should().Equal(1, 2, 3, 4, 5);
+
+        stream.PendingSegments.Should().Be(0);
+        stream.PendingBytes.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData(0, 1)]
+    [InlineData(1, 0)]
+    public void InvalidPendingLimitsAreRejected(int bytes, int segments)
+    {
+        Action create = () => new TcpReassembler(
+            maximumPendingBytes: bytes,
+            maximumPendingSegments: segments);
+
+        create.Should().Throw<ArgumentOutOfRangeException>();
+    }
+
     private static void AppendContiguous(
         TcpReassembler stream,
         uint sequence,

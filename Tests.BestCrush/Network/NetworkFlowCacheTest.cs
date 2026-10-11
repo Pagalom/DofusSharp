@@ -68,6 +68,34 @@ public sealed class NetworkFlowCacheTest
     }
 
     [Fact]
+    public void SaturatedFlowCanBeRemovedWithoutEvictingItsReplacement()
+    {
+        NetworkFlowCache<string, object> cache =
+            new(capacity: 2, idleTimeout: TimeSpan.FromMinutes(10));
+
+        object old = cache.GetOrCreate(
+            "flow", ServerA, T0, () => new object());
+
+        cache.RemoveIfSame("flow", new object()).Should().BeFalse();
+        cache.Count.Should().Be(1);
+
+        object replacement = cache.GetOrCreate(
+            "flow", ServerA, T0.AddMinutes(10), () => new object());
+
+        cache.RemoveIfSame("flow", old).Should().BeFalse();
+        cache.Count.Should().Be(1);
+        cache.GetOrCreate(
+            "flow", ServerA, T0.AddMinutes(11), () => new object())
+            .Should().BeSameAs(replacement);
+
+        cache.RemoveIfSame("flow", replacement).Should().BeTrue();
+        cache.Count.Should().Be(0);
+        cache.GetOrCreate(
+            "flow", ServerA, T0.AddMinutes(12), () => new object())
+            .Should().NotBeSameAs(replacement);
+    }
+
+    [Fact]
     public void OldServerLeaseNeverReusesItsPreviousReader()
     {
         NetworkFlowCache<string, object> cache =

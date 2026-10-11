@@ -40,6 +40,19 @@ internal sealed class NetworkFlowCache<TKey, TReader>
 
     internal void Clear() => _entries.Clear();
 
+    // Avoid evicting a newer assembler if this flow was already replaced
+    // by an expiry, a lease change or another capture callback.
+    internal bool RemoveIfSame(TKey key, TReader reader)
+    {
+        if (_entries.TryGetValue(key, out Entry? existing) &&
+            ReferenceEquals(existing.Reader, reader))
+        {
+            return _entries.Remove(key);
+        }
+
+        return false;
+    }
+
     internal TReader GetOrCreate(
         TKey key,
         NetworkCaptureLease lease,

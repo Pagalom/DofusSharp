@@ -507,43 +507,73 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     static () => new TcpReassembler());
             }
 
-            lock (stream)
+            try
             {
-                foreach (
-                    ReadOnlyMemory<byte> contiguous
-                    in stream.Push(
-                        tcp.SequenceNumber,
-                        tcp.PayloadData))
+                lock (stream)
                 {
-                    stream.FrameBuffer.Append(
-                        contiguous.Span);
-
-                    while (
-                        stream.FrameBuffer.TryReadFrame(
-                            out byte[] frame))
+                    foreach (
+                        ReadOnlyMemory<byte> contiguous
+                        in stream.Push(
+                            tcp.SequenceNumber,
+                            tcp.PayloadData))
                     {
-                        AnkamaAny? any =
-                            AnkamaFrameDecoder.FindAny(
-                                frame);
+                        // A gap can release a large contiguous suffix at
+                        // once. Drain complete frames between small chunks
+                        // so even a valid 16-MiB frame cannot trip the
+                        // per-flow framing limit by coalescing with its
+                        // next frame.
+                        ReadOnlySpan<byte> remaining = contiguous.Span;
+                        while (!remaining.IsEmpty)
+                        {
+                            int chunkLength =
+                                Math.Min(remaining.Length, 64 * 1024);
 
-                        if (any is null)
-                            continue;
+                            stream.FrameBuffer.Append(
+                                remaining[..chunkLength]);
+                            remaining = remaining[chunkLength..];
 
-                        string direction =
-                            tcp.SourcePort == DofusPort
-                                ? "S→C"
-                                : "C→S";
+                            while (
+                                stream.FrameBuffer.TryReadFrame(
+                                    out byte[] frame))
+                            {
+                                AnkamaAny? any =
+                                    AnkamaFrameDecoder.FindAny(
+                                        frame);
 
-                        _messages.Writer.TryWrite(
-                            new DofusWireMessage(
-                                direction,
-                                any.Key,
-                                any.Body,
-                                DateTime.UtcNow,
-                                lease,
-                                captureEpoch));
+                                if (any is null)
+                                    continue;
+
+                                string direction =
+                                    tcp.SourcePort == DofusPort
+                                        ? "S→C"
+                                        : "C→S";
+
+                                _messages.Writer.TryWrite(
+                                    new DofusWireMessage(
+                                        direction,
+                                        any.Key,
+                                        any.Body,
+                                        DateTime.UtcNow,
+                                        lease,
+                                        captureEpoch));
+                            }
+                        }
                     }
                 }
+            }
+            catch (TcpReassemblyLimitExceededException ex)
+            {
+                // Never keep a saturated/partial decoder as the source
+                // of subsequent frames. Only this TCP flow is evicted;
+                // other flows, already decoded messages and SQLite
+                // observations remain untouched.
+                lock (_streamLock)
+                    _streams.RemoveIfSame(flow, stream);
+
+                logger.LogWarning(
+                    ex,
+                    "Flux TCP Dofus abandonné après dépassement de limite de réassemblage : {Flow}.",
+                    flow);
             }
         }
         catch (Exception ex)

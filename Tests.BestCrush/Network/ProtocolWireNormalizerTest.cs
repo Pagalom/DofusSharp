@@ -158,6 +158,44 @@ public sealed class ProtocolWireNormalizerTest
             .Should().Be(12851);
     }
 
+    [Fact]
+    public void ManyFixedFieldsCanBeRemappedWithoutStackGrowthPerField()
+    {
+        ProtocolMap map = LoadMap(
+            """
+            {
+              "market_selection_response": "qff",
+              "field_mappings": {
+                "market_selection_response": {"2": 7, "3": 8}
+              }
+            }
+            """);
+
+        const ulong fixedBits = 0x1122334455667788UL;
+        static byte[] Fixed64(int field, ulong bits) =>
+            Message(
+                Varint(((ulong)field << 3) | 1),
+                BitConverter.GetBytes(bits));
+
+        byte[] wire = Message(Enumerable.Range(0, 16_384)
+            .SelectMany(i => new[]
+            {
+                Float(7, i),
+                Fixed64(8, fixedBits)
+            })
+            .ToArray());
+
+        byte[] expected = Message(Enumerable.Range(0, 16_384)
+            .SelectMany(i => new[]
+            {
+                Float(2, i),
+                Fixed64(3, fixedBits)
+            })
+            .ToArray());
+
+        map.NormalizeBody("qff", wire).Should().Equal(expected);
+    }
+
     [Theory]
     [InlineData("{\"price_list\":\"abc\",\"field_mappings\":{\"price_list\":{\"1\":2,\"3\":2}}}")]
     [InlineData("{\"price_list\":\"abc\",\"field_mappings\":{\"not_a_route\":{\"1\":1}}}")]
