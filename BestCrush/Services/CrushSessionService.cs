@@ -10,6 +10,7 @@ using BestCrush.Domain.Services;
 using BestCrush.Overlay;
 
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Maui.ApplicationModel;
 
 namespace BestCrush.Services;
@@ -55,13 +56,36 @@ public sealed record CrushSessionSnapshot(
     string? ErrorMessage
 );
 
-public sealed class CrushSessionService(
-    IServiceScopeFactory serviceScopeFactory,
-    OverlayControlBarService overlayControlBarService,
-    OverlayLayoutSettingsService
-        overlayLayoutSettingsService,
-    IBestCrushSettingsProvider settingsProvider)
+public sealed class CrushSessionService
 {
+    private readonly IServiceScopeFactory serviceScopeFactory;
+    private readonly OverlayControlBarService overlayControlBarService;
+    private readonly OverlayLayoutSettingsService overlayLayoutSettingsService;
+    private readonly IBestCrushSettingsProvider settingsProvider;
+    private readonly CurrentServerState currentServerState;
+    private readonly ILogger<CrushSessionService> logger;
+
+    // All three are singletons in MauiProgram. Subscribe once, not each time
+    // the overlay is shown; a hidden overlay still owns the latest result.
+    public CrushSessionService(
+        IServiceScopeFactory serviceScopeFactory,
+        OverlayControlBarService overlayControlBarService,
+        OverlayLayoutSettingsService overlayLayoutSettingsService,
+        IBestCrushSettingsProvider settingsProvider,
+        MarketDataChangeNotifier notifier,
+        CurrentServerState currentServerState,
+        ILogger<CrushSessionService> logger)
+    {
+        this.serviceScopeFactory = serviceScopeFactory;
+        this.overlayControlBarService = overlayControlBarService;
+        this.overlayLayoutSettingsService = overlayLayoutSettingsService;
+        this.settingsProvider = settingsProvider;
+        this.currentServerState = currentServerState;
+        this.logger = logger;
+
+        notifier.Changed += OnMarketDataChanged;
+    }
+
     private Window? _window;
     private CrushSessionOverlayPage? _page;
 
@@ -119,6 +143,21 @@ public sealed class CrushSessionService(
         _networkCrushCount;
 
     private long _sessionId;
+
+    // Prevent delayed reads from writing over a new crush or a newer
+    // price notification. The history write model is NEVER updated here.
+    private long _valuationRefreshRevision;
+
+    private Task _lastValuationRefresh = Task.CompletedTask;
+
+    internal Task LastValuationRefreshForTests
+    {
+        get
+        {
+            lock (_stateLock)
+                return _lastValuationRefresh;
+        }
+    }
 
     public bool IsVisible
     {
@@ -435,6 +474,7 @@ public sealed class CrushSessionService(
     {
         lock (_stateLock)
         {
+            _valuationRefreshRevision++;
             _idleCaptureCount = 0;
 
             _lastCursorX = null;
@@ -915,6 +955,7 @@ public sealed class CrushSessionService(
             // transaction. Mirror that behavior: each kci replaces
             // the previous result instead of accumulating forever.
             _sessionId++;
+            _valuationRefreshRevision++;
 
             _isRunning = false;
             _errorMessage = null;
@@ -1066,6 +1107,144 @@ public sealed class CrushSessionService(
             .InvokeOnMainThreadAsync(
                 Show
             );
+    }
+
+    private void OnMarketDataChanged(
+        object? sender,
+        MarketDataChangedEventArgs change)
+    {
+        if (change.ObjectType != MarketObjectType.Rune)
+            return;
+
+        long sessionId;
+        long revision;
+        (long RuneId, int Quantity)[] runeQuantities;
+
+        lock (_stateLock)
+        {
+            // Don't change an old result after switching servers, and
+            // never refresh for unrelated runes or an empty session.
+            if (_networkCrushCount <= 0 ||
+                _runes.Count == 0 ||
+                !_runes.ContainsKey(change.DofusDbId) ||
+                !string.Equals(
+                    _sessionServerName,
+                    change.ServerName,
+                    StringComparison.Ordinal) ||
+                !string.Equals(
+                    currentServerState.ServerName,
+                    change.ServerName,
+                    StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            sessionId = _sessionId;
+            revision = ++_valuationRefreshRevision;
+            runeQuantities = _runes
+                .Select(entry =>
+                    (RuneId: entry.Key, Quantity: entry.Value.Quantity))
+                .ToArray();
+        }
+
+        // Notifications are synchronous and can originate on the network
+        // worker. Never await SQLite or the UI inside that worker.
+        Task refresh = RefreshCurrentRuneValuesAsync(
+            sessionId,
+            revision,
+            change.ServerName,
+            runeQuantities);
+
+        lock (_stateLock)
+        {
+            if (_sessionId == sessionId &&
+                _valuationRefreshRevision == revision)
+            {
+                _lastValuationRefresh = refresh;
+            }
+        }
+    }
+
+    private async Task RefreshCurrentRuneValuesAsync(
+        long sessionId,
+        long revision,
+        string serverName,
+        IReadOnlyList<(long RuneId, int Quantity)> runeQuantities)
+    {
+        try
+        {
+            using IServiceScope scope = serviceScopeFactory.CreateScope();
+
+            MarketPriceService marketPriceService =
+                scope.ServiceProvider.GetRequiredService<MarketPriceService>();
+
+            IReadOnlyDictionary<
+                (long DofusDbId, int Quantity),
+                MarketPriceObservation> observations =
+                    await marketPriceService
+                        .GetLatestObservationsForServerAsync(
+                            MarketObjectType.Rune,
+                            serverName);
+
+            Dictionary<
+                long,
+                (double? Value, IReadOnlyList<CrushSessionRuneLotLine> Lots)>
+                valuations = [];
+
+            foreach ((long runeId, int quantity) in runeQuantities)
+            {
+                MarketValueResult? value =
+                    marketPriceService.CalculateValue(
+                        runeId, quantity, observations);
+
+                valuations[runeId] = (
+                    value?.Value,
+                    value is null
+                        ? []
+                        : BuildRuneLotBreakdown(
+                            runeId, quantity, observations));
+            }
+
+            lock (_stateLock)
+            {
+                if (_sessionId != sessionId ||
+                    _valuationRefreshRevision != revision ||
+                    _networkCrushCount <= 0 ||
+                    !string.Equals(
+                        _sessionServerName, serverName,
+                        StringComparison.Ordinal) ||
+                    !string.Equals(
+                        currentServerState.ServerName, serverName,
+                        StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                foreach (KeyValuePair<
+                    long,
+                    (double? Value, IReadOnlyList<CrushSessionRuneLotLine> Lots)>
+                    entry in valuations)
+                {
+                    if (!_runes.TryGetValue(
+                        entry.Key, out AccumulatedRune? rune))
+                        return;
+
+                    rune.Value = entry.Value.Value;
+                    rune.Lots = entry.Value.Lots;
+                }
+            }
+
+            // Never change the saved HistoryService write model or save
+            // another session on an ordinary price update.
+            if (_page is not null)
+                PublishSnapshot();
+        }
+        catch (Exception exception)
+        {
+            logger.LogWarning(
+                exception,
+                "Actualisation de la valorisation du concassage impossible.");
+        }
     }
 
     private static IReadOnlyList<
