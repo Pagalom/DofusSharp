@@ -290,6 +290,94 @@ public sealed class TooltipDetectionPaletteTest
     }
 
     [Fact]
+    public void BootsTooltipOverHdvRecognizesHeaderAcrossLongBodyGap()
+    {
+        using Mat image = new(
+            new OpenCvSharp.Size(1920, 1080),
+            MatType.CV_8UC3,
+            new Scalar(130, 130, 130));
+
+        // Synthetic geometry from the actual WGC F8 capture received
+        // 2026-10-11 08:12:46: the market splits a long tooltip body.
+        // The original player screenshot is not committed.
+        Cv2.Rectangle(
+            image,
+            new Rect(450, 65, 675, 680),
+            new Scalar(72, 61, 60),
+            thickness: -1);
+
+        // HDV title background merges horizontally into the same
+        // modern-header contour: the normal modern detector sees a
+        // >600 px wide header and rejects it. This ensures the test
+        // actually exercises the same-palette fallback.
+        Cv2.Rectangle(
+            image,
+            new Rect(526, 79, 553, 112),
+            new Scalar(62, 30, 25),
+            thickness: -1);
+
+        Cv2.Rectangle(
+            image,
+            new Rect(1079, 79, 387, 112),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        // Deliberately preserve the 92 px break between header and
+        // surviving contiguous lower body.
+        Cv2.Rectangle(
+            image,
+            new Rect(1076, 283, 390, 501),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().ContainSingle()
+            .Which.Should().Be(new Rect(1079, 79, 387, 112));
+    }
+
+    [Fact]
+    public void DistantSamePaletteBodyMustBeLongToPairWithHeader()
+    {
+        using Mat image = CreateImage();
+
+        Cv2.Rectangle(
+            image,
+            new Rect(50, 50, 400, 112),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        Cv2.Rectangle(
+            image,
+            new Rect(50, 254, 400, 250),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public void LongSamePaletteBodyTooFarFromHeaderIsRejected()
+    {
+        using Mat image = CreateImage();
+
+        Cv2.Rectangle(
+            image,
+            new Rect(50, 50, 400, 112),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        Cv2.Rectangle(
+            image,
+            new Rect(50, 383, 400, 305),
+            new Scalar(52, 34, 30),
+            thickness: -1);
+
+        DofusItemTooltipDetectionService.DetectTooltipHeaders(image)
+            .Should().BeEmpty();
+    }
+
+    [Fact]
     public void PlainImageDoesNotInventAnyTooltip()
     {
         using Mat image = CreateImage();

@@ -252,7 +252,10 @@ public sealed class DofusItemTooltipDetectionService(
             CurrentTooltipBodyUpper,
             CurrentTooltipBodyLower,
             CurrentTooltipBodyUpper,
-            allowSeparatedLongBody: false,
+            // HDV overlays can split the modern-colored tooltip into
+            // several sections. Keep the short 35 px Gelano gap, but also
+            // accept a farther matching body only when it is >= 300 px tall.
+            allowSeparatedLongBody: true,
             adjacentGapMax: 35,
             minimumBodyHeight: 100
         );
