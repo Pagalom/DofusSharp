@@ -55,7 +55,7 @@ public sealed class CrushCurrentValuationRefreshTest
     }
 
     [Fact]
-    public void WrongRuneObjectTypeOrServerLeavesSnapshotUntouched()
+    public async Task WrongRuneObjectTypeOrServerLeavesSnapshotUntouched()
     {
         using Harness harness = new();
         await harness.StoreAsync(1523, 1, 200);
@@ -76,7 +76,7 @@ public sealed class CrushCurrentValuationRefreshTest
     }
 
     [Fact]
-    public void ServerSelectionChangePreventsRevaluationOfPreviousServerResult()
+    public async Task ServerSelectionChangePreventsRevaluationOfPreviousServerResult()
     {
         using Harness harness = new();
         await harness.StoreAsync(1523, 1, 200);
@@ -91,7 +91,7 @@ public sealed class CrushCurrentValuationRefreshTest
     }
 
     [Fact]
-    public void ClosingResultPreventsLaterPriceNotificationsFromRestoringIt()
+    public async Task ClosingResultPreventsLaterPriceNotificationsFromRestoringIt()
     {
         using Harness harness = new();
         await harness.StoreAsync(1523, 1, 200);
