@@ -75,9 +75,9 @@ internal sealed class CharacterMetadataProbe(
                 tcp.SequenceNumber,
                 tcp.PayloadData,
                 DateTime.UtcNow,
-                syn: tcp.Syn,
-                fin: tcp.Fin,
-                rst: tcp.Rst);
+                syn: tcp.Synchronize,
+                fin: tcp.Finished,
+                rst: tcp.Reset);
 
             foreach (CharacterCaptureEvent entry in events)
             {
