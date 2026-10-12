@@ -1,0 +1,35 @@
+@page "/modules/{Slug}"
+@using BestCrush.Components
+
+<div class="container py-4">
+    @if (_module is null)
+    {
+        <h1>Module introuvable</h1>
+        <p>Ce module n'est pas défini dans BestCrush.</p>
+    }
+    else
+    {
+        <h1>@_module.Name</h1>
+        <div class="alert alert-secondary mt-4" role="status">
+            <strong>Module en préparation.</strong>
+            Son interface est disponible dans la nouvelle navigation.
+            Les fonctionnalités métier seront intégrées dans les prochains lots.
+        </div>
+        <p class="text-secondary">
+            Les données de marché et les captures existantes ne sont pas
+            modifiées par ce module pour le moment.
+        </p>
+    }
+</div>
+
+@code {
+    [Parameter]
+    public string Slug { get; set; } = string.Empty;
+
+    private WorkspaceModule? _module;
+
+    protected override void OnParametersSet()
+    {
+        _module = WorkspaceModules.Find(Slug);
+    }
+}

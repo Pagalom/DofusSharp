@@ -4,6 +4,7 @@
 @inject ILogger<Server> Logger
 @inject BestCrush.Services.OverlayService OverlayService
 @inject BestCrush.Services.CurrentServerState CurrentServerState
+@inject NavigationManager NavigationManager
 @inject IDataPriorityProvider DataPriorityProvider
 @inject EquipmentProfitabilityService EquipmentProfitabilityService
 
@@ -816,6 +817,13 @@
     private void CloseSettings()
     {
         _showSettings = false;
+
+        // A global header link may have opened the existing settings
+        // modal via ?settings=1. Remove that query when closing it.
+        if (ShowSettingsFromQuery)
+            NavigationManager.NavigateTo(
+                BestCrush.Components.KnownRoutes.Server(ServerName),
+                replace: true);
     }
     Equipment[]? _allItems;
     List<ItemCrushResult>? _rankedItems;
@@ -839,6 +847,9 @@
 
     [Parameter]
     public required string ServerName { get; set; }
+
+    [SupplyParameterFromQuery(Name = "settings")]
+    public bool ShowSettingsFromQuery { get; set; }
 
     [SupplyParameterFromForm]
     private SearchItemsModel? Model { get; set; }
@@ -865,6 +876,9 @@
 
     protected override void OnParametersSet()
     {
+        if (ShowSettingsFromQuery)
+            _showSettings = true;
+
         CurrentServerState.SelectServer(
             ServerName
         );
