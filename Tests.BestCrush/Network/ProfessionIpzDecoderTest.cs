@@ -74,7 +74,7 @@ public sealed class ProfessionIpzDecoderTest
                 : Row(i))).ToArray();
         ProfessionIpzDecoder.TryDecode(Message(rows), out _).Should().BeFalse();
 
-        rows[5] = Bytes(1, Unsigned(1, 6));
+        rows[5] = Bytes(1, Message(Unsigned(1, 6), Unsigned(2, 55), Unsigned(2, 55)));
         ProfessionIpzDecoder.TryDecode(Message(rows), out _).Should().BeFalse();
     }
 

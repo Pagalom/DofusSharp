@@ -27,9 +27,13 @@ public sealed class ProfessionIpzRow
 public sealed class ProfessionIpzSnapshot
 {
     public IReadOnlyList<ProfessionIpzRow> Rows { get; }
+    public int ImplicitZeroExperienceRows { get; }
 
-    internal ProfessionIpzSnapshot(List<ProfessionIpzRow> rows) =>
+    internal ProfessionIpzSnapshot(List<ProfessionIpzRow> rows, int implicitZeroExperienceRows)
+    {
         Rows = rows.AsReadOnly();
+        ImplicitZeroExperienceRows = implicitZeroExperienceRows;
+    }
 
     public override string ToString() => "[ipz snapshot: values redacted]";
 }
@@ -43,35 +47,94 @@ public static class ProfessionIpzDecoder
     private const int MaxRowBytes = 1024;
 
     public static bool TryDecode(
-        ReadOnlySpan<byte> body, out ProfessionIpzSnapshot? snapshot)
+        ReadOnlySpan<byte> body, out ProfessionIpzSnapshot? snapshot) =>
+        TryDecode(body, out snapshot, out _);
+
+    /// <summary>
+    /// Diagnostics are fixed categorical strings only. Never include packet
+    /// contents, numeric fields, raw bytes or private reference values.
+    /// In proto3 a missing scalar varint denotes the default value zero;
+    /// f2 (cumulative XP candidate) may therefore be omitted for level 1.
+    /// </summary>
+    public static bool TryDecode(
+        ReadOnlySpan<byte> body, out ProfessionIpzSnapshot? snapshot,
+        out string? rejectionReason)
     {
         snapshot = null;
+        rejectionReason = null;
         if (body.IsEmpty || body.Length > MaxBodyBytes)
+        {
+            rejectionReason = "size";
             return false;
+        }
 
         try
         {
             List<ProtoField>? root = ProtoWire.ReadFields(body);
-            if (root is null || root.Count != ExpectedRows ||
-                root.Any(f => f.Number != 1 ||
+            if (root is null)
+            {
+                rejectionReason = "invalid-root";
+                return false;
+            }
+
+            if (root.Count != ExpectedRows)
+            {
+                rejectionReason = "row-count";
+                return false;
+            }
+
+            if (root.Any(f => f.Number != 1 ||
                     f.WireType != ProtoWireType.LengthDelimited ||
                     f.Bytes is null || f.Bytes.Length is < 1 or > MaxRowBytes))
+            {
+                rejectionReason = "row-envelope";
                 return false;
+            }
 
             List<ProfessionIpzRow> rows = new(ExpectedRows);
+            int implicitZeroXp = 0;
             foreach (ProtoField record in root)
             {
                 List<ProtoField>? fields = ProtoWire.ReadFields(record.Bytes!);
                 if (fields is null)
+                {
+                    rejectionReason = "invalid-row";
                     return false;
+                }
 
                 ProtoField[] levels = fields.Where(f => f.Number == 1).ToArray();
                 ProtoField[] xp = fields.Where(f => f.Number == 2).ToArray();
-                if (levels.Length != 1 || xp.Length != 1 ||
-                    levels[0].WireType != ProtoWireType.Varint ||
-                    xp[0].WireType != ProtoWireType.Varint ||
-                    levels[0].Varint is < 1 or > 200)
+                if (levels.Length != 1)
+                {
+                    rejectionReason = "level-cardinality";
                     return false;
+                }
+
+                if (levels[0].WireType != ProtoWireType.Varint ||
+                    levels[0].Varint is < 1 or > 200)
+                {
+                    rejectionReason = "level-type-or-range";
+                    return false;
+                }
+
+                // protobuf scalar zero values can be absent on the wire.
+                // A missing f2 is not yet proof that this is XP, but is
+                // consistent with an explicit varint zero.
+                if (xp.Length > 1)
+                {
+                    rejectionReason = "xp-duplicate";
+                    return false;
+                }
+
+                if (xp.Length == 1 && xp[0].WireType != ProtoWireType.Varint)
+                {
+                    rejectionReason = "xp-type";
+                    return false;
+                }
+
+                ulong experience = xp.Length == 1 ? xp[0].Varint : 0;
+                if (xp.Length == 0)
+                    implicitZeroXp++;
 
                 Dictionary<int, ulong> other = [];
                 HashSet<int> duplicated = [];
@@ -82,7 +145,7 @@ public static class ProfessionIpzDecoder
                         continue;
 
                     // Repeated unknown scalars are not considered stable
-                    // job identifiers. Do not infer semantics from their values.
+                    // job identifiers. Do not infer semantics from values.
                     if (!other.TryAdd(field.Number, field.Varint))
                         duplicated.Add(field.Number);
                 }
@@ -91,19 +154,20 @@ public static class ProfessionIpzDecoder
                     other.Remove(key);
 
                 rows.Add(new ProfessionIpzRow(
-                    (int)levels[0].Varint, xp[0].Varint, other));
+                    (int)levels[0].Varint, experience, other));
             }
 
-            snapshot = new ProfessionIpzSnapshot(rows);
+            snapshot = new ProfessionIpzSnapshot(rows, implicitZeroXp);
             return true;
         }
         catch (OverflowException)
         {
+            rejectionReason = "invalid-wire";
             return false;
         }
         catch (ArgumentOutOfRangeException)
         {
-            // Malformed varint length rejected without exposing wire data.
+            rejectionReason = "invalid-wire";
             return false;
         }
     }
@@ -148,6 +212,7 @@ public static class ProfessionIpzDecoder
             }));
 
         return $"rows={rowCount} matched={matched}/{references.Count} " +
+               $"xp-implicit-zero={snapshot.ImplicitZeroExperienceRows} " +
                $"unknown=[{extra}] identity=unverified";
     }
 }

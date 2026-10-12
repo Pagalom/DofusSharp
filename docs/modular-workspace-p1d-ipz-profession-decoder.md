@@ -18,9 +18,10 @@ la relation au personnage actif ni le sens exact du compteur XP.
 `ProfessionIpzDecoder.TryDecode` est un décodeur de recherche isolé.
 Il vérifie le format du message entier avant de fournir des valeurs
 en mémoire : exactement 20 lignes de type `f1:len` ; dans chaque
-ligne, un et un seul `f1:varint` de niveau (1–200), et un
-`f2:varint` de compteur XP. Toute structure incohérente est
-rejetée en bloc. Aucun nom de métier n'est inféré.
+ligne, un et un seul `f1:varint` de niveau (1–200), et au plus un
+`f2:varint` de compteur XP. Un `f2` absent est décodé en zéro
+(valeur implicite autorisée par protobuf). Les doublons et les
+structures incohérentes sont rejetés en bloc. Aucun nom de métier n'est inféré.
 
 Les autres champs numériques sont conservés temporairement
 en mémoire comme *champs non identifiés* ; leur rôle demeure
@@ -36,7 +37,10 @@ retrouvés et les statistiques des champs inconnus, sans leurs
 valeurs. Les autres opcodes sont supprimés de la sortie.
 
 Une trame `ipz` malformée est signalée
-`IPZ=[rejected-layout]`, sans aucun détail privé.
+`IPZ=[rejected-layout:<categorie>]`, sans aucun détail privé.
+La catégorie fixe (par exemple `xp-duplicate`, `level-cardinality`,
+`row-envelope` ou `row-count`) aide à corriger le décodeur sans
+imprimer aucune valeur issue de la trame.
 
 ## Mode d'emploi (Windows)
 
@@ -67,7 +71,8 @@ Résultat fictif (aucune donnée personnelle) :
 ## Critères d'acceptation
 
 - La compilation du probe et la suite de tests doivent réussir.
-- `rows=20` sur un message `ipz` de connexion complet.
+- `rows=20` sur un message `ipz` de connexion complet et
+  `xp-implicit-zero=N` pour les lignes sans champ `f2`.
 - `matched=6/6` attendu si les six valeurs de référence
   sont toujours à jour depuis la capture précédente.
 - Vérifier les statistiques des champs `f3`, `f5`, `f6`
@@ -76,6 +81,24 @@ Résultat fictif (aucune donnée personnelle) :
   jusqu'à preuve que Dofus transmet l'XP cumulée.
 - Pas de transformation d'une simple corrélation en
   identité de personnage vérifiée.
+
+## Retour P1d.1 sur la capture réelle
+
+La capture du 12 octobre vers 18 h 21 (heure française) montre
+`ipz 268 octets IPZ=[rejected-layout]`. Le message existe,
+mais le décodeur P1d était trop strict sur `f2` : plusieurs
+métiers visibles ont un compteur d'expérience nul.
+En proto3, un scalaire nul peut ne pas être sérialisé.
+
+P1d.1 teste donc l'absence de `f2` comme zéro implicite,
+sans inférer de métier. Pour distinguer cette hypothèse
+d'une autre incompatibilité de structure, le rapport produit
+désormais uniquement des catégories de rejet prédéfinies,
+sans afficher ni identifiant, ni niveau, ni expérience.
+
+La validation sur Windows reste nécessaire. Si le décodeur
+retourne encore un rejet, relever uniquement la catégorie
+et garder les trames brutes privées.
 
 ## Confidentialité et isolation
 

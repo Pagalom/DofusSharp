@@ -252,9 +252,10 @@ public sealed class CharacterCaptureFlowTracker
 
     private static string FormatIpz(
         byte[] body, IReadOnlyList<ProfessionReference> references) =>
-        ProfessionIpzDecoder.TryDecode(body, out ProfessionIpzSnapshot? snapshot)
+        ProfessionIpzDecoder.TryDecode(
+            body, out ProfessionIpzSnapshot? snapshot, out string? reason)
             ? ProfessionIpzDecoder.DescribeAnonymously(snapshot!, references)
-            : "rejected-layout";
+            : $"rejected-layout:{reason ?? "unknown"}";
 
     private static bool IsSafeOpcode(string key) =>
         key.Length is >= 1 and <= 16 &&
