@@ -1,14 +1,72 @@
 @page "/profile"
-@using BestCrush.Components
+@implements IDisposable
+@inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
 
 <div class="container py-4">
     <h1>Personnage</h1>
-    <div class="alert alert-secondary mt-4" role="status">
-        Le profil personnage sera configuré dans M2.
-        Il permettra notamment de renseigner les niveaux des métiers
-        et les paramètres communs aux différents modules.
-    </div>
-    <p class="text-secondary">
-        Aucun personnage n'est encore créé ni enregistré dans cette version.
-    </p>
+
+    @if (CurrentCharacterState.ServerName is null)
+    {
+        <div class="alert alert-info mt-4" role="status">
+            Sélectionnez un serveur en haut à droite pour configurer votre personnage.
+        </div>
+    }
+    else
+    {
+        <p class="text-secondary">
+            Personnage actif sur le serveur <strong>@CurrentCharacterState.ServerName</strong>.
+            Ce nom est partagé entre les modules et mémorisé pour ce serveur.
+        </p>
+
+        <div class="mb-3" style="max-width: 420px;">
+            <label class="form-label" for="character-name">Nom du personnage</label>
+            <input id="character-name" type="text" class="form-control"
+                   maxlength="80" @bind="_draftName" />
+        </div>
+
+        <button class="btn btn-primary" type="button" @onclick="SaveCharacter">
+            Enregistrer
+        </button>
+
+        @if (_saved)
+        {
+            <span class="text-success ms-2" role="status">Enregistré.</span>
+        }
+
+        <p class="text-secondary mt-4">
+            Les niveaux de métiers et les autres caractéristiques seront ajoutés
+            au profil lors de l'intégration des modules qui les utilisent.
+        </p>
+    }
 </div>
+
+@code {
+    private string _draftName = string.Empty;
+    private bool _saved;
+
+    protected override void OnInitialized()
+    {
+        CurrentCharacterState.Changed += OnCharacterChanged;
+        _draftName = CurrentCharacterState.CharacterName;
+    }
+
+    private void SaveCharacter()
+    {
+        CurrentCharacterState.SetCharacterName(_draftName);
+        _draftName = CurrentCharacterState.CharacterName;
+        _saved = true;
+    }
+
+    private void OnCharacterChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            _draftName = CurrentCharacterState.CharacterName;
+            _saved = false;
+            StateHasChanged();
+        });
+    }
+
+    public void Dispose() =>
+        CurrentCharacterState.Changed -= OnCharacterChanged;
+}

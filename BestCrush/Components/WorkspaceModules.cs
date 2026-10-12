@@ -25,10 +25,29 @@ internal static class WorkspaceModules
         All.FirstOrDefault(module =>
             string.Equals(module.Slug, slug, StringComparison.Ordinal));
 
-    internal static string Href(WorkspaceModule module, string serverName) =>
-        module.Slug == "concassage"
+    internal static string Href(WorkspaceModule module, string? serverName) =>
+        module.Slug == "concassage" && !string.IsNullOrWhiteSpace(serverName)
             ? KnownRoutes.Server(serverName)
             : KnownRoutes.Module(module.Slug);
+
+    // Extract legacy route scope before rendering any server-scoped component.
+    internal static string? ServerFromRoute(string? relativePath)
+    {
+        if (string.IsNullOrWhiteSpace(relativePath))
+            return null;
+
+        string path = relativePath.Split('?', '#')[0].Trim('/');
+        string[] segments = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+        return segments.Length >= 2 && segments[0] == "servers"
+            ? Uri.UnescapeDataString(segments[1])
+            : null;
+    }
+
+    internal static bool IsRouteCompatible(string? relativePath, string? selectedServer) =>
+        ServerFromRoute(relativePath) is not { } fromUrl ||
+        (selectedServer is not null &&
+         string.Equals(fromUrl, selectedServer, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
     /// Only actual workspace modules count as tabs. The existing
@@ -48,9 +67,7 @@ internal static class WorkspaceModules
             return Find(segments[1])?.Slug;
         }
 
-        if (segments.Length >= 2 &&
-            segments[0] == "servers" &&
-            !string.IsNullOrWhiteSpace(segments[1]))
+        if (ServerFromRoute(relativePath) is not null)
         {
             return "concassage";
         }

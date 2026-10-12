@@ -1,21 +1,25 @@
-﻿using System.Net.Http.Headers;
+using System.Net.Http.Headers;
 using DofusSharp.Dofocus.ApiClients;
 using DofusSharp.Dofocus.ApiClients.Models.Servers;
 
 namespace BestCrush.Domain.Services;
 
-public class ServersService(ImageCache imageCache, IDofocusClientFactory dofocusClientFactory)
+public class ServersService(
+    ImageCache imageCache,
+    IDofocusClientFactory dofocusClientFactory,
+    IWorkspacePreferences? workspacePreferences = null)
 {
-    IReadOnlyCollection<DofocusServer>? _servers;
-    readonly SemaphoreSlim _serversLock = new(1, 1);
-    DofocusServer? _currentServer;
+    public const string LastServerPreferenceKey = "Workspace.LastSelectedServer";
+
+    private IReadOnlyCollection<DofocusServer>? _servers;
+    private readonly SemaphoreSlim _serversLock = new(1, 1);
+    private readonly SemaphoreSlim _selectionLock = new(1, 1);
+    private DofocusServer? _currentServer;
 
     public async Task<IReadOnlyCollection<DofocusServer>> GetServers()
     {
         if (_servers is not null)
-        {
             return _servers;
-        }
 
         await _serversLock.WaitAsync();
         try
@@ -43,11 +47,59 @@ public class ServersService(ImageCache imageCache, IDofocusClientFactory dofocus
         return $"image/webp;base64,{Convert.ToBase64String(content)}";
     }
 
-    public Task<DofocusServer?> GetCurrentServer() => Task.FromResult(_currentServer);
-
-    public Task SetCurrentServerAsync(DofocusServer server)
+    /// <summary>
+    /// Only restore a server that is present in the current server catalog.
+    /// Unknown old selections must never be used to enable network captures.
+    /// </summary>
+    public async Task<DofocusServer?> GetCurrentServer()
     {
-        _currentServer = server;
-        return Task.CompletedTask;
+        if (_currentServer is not null || workspacePreferences is null)
+            return _currentServer;
+
+        await _selectionLock.WaitAsync();
+        try
+        {
+            if (_currentServer is not null)
+                return _currentServer;
+
+            string? savedName = workspacePreferences.GetString(LastServerPreferenceKey);
+            if (string.IsNullOrWhiteSpace(savedName))
+                return null;
+
+            IReadOnlyCollection<DofocusServer> catalog = await GetServers();
+            DofocusServer? restored = catalog.FirstOrDefault(server =>
+                string.Equals(server.Name, savedName, StringComparison.OrdinalIgnoreCase));
+
+            if (restored is null)
+            {
+                workspacePreferences.Remove(LastServerPreferenceKey);
+                return null;
+            }
+
+            _currentServer = restored;
+            return _currentServer;
+        }
+        finally
+        {
+            _selectionLock.Release();
+        }
+    }
+
+    public async Task SetCurrentServerAsync(DofocusServer server)
+    {
+        ArgumentNullException.ThrowIfNull(server);
+        if (string.IsNullOrWhiteSpace(server.Name))
+            throw new ArgumentException("Le serveur doit avoir un nom.", nameof(server));
+
+        await _selectionLock.WaitAsync();
+        try
+        {
+            workspacePreferences?.SetString(LastServerPreferenceKey, server.Name);
+            _currentServer = server;
+        }
+        finally
+        {
+            _selectionLock.Release();
+        }
     }
 }

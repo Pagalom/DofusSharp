@@ -6,23 +6,22 @@ using FluentAssertions;
 namespace Tests.BestCrush;
 
 /// <summary>
-/// M0 baseline only: protect the exact current startup routing and the
-/// in-memory-only server selection before moving to the modular workspace.
-/// The legacy routing expectations must change explicitly in M1/M2.
+/// M0 baseline adapted for M2: startup now opens the workspace.
+/// The legacy Concassage and history URLs remain server-scoped.
 /// </summary>
 public sealed class StartupNavigationCharacterizationTest
 {
     [Fact]
-    public void WithoutCurrentServerSplashCurrentlyOpensLegacyServerPicker()
+    public void WithoutCurrentServerSplashOpensModularConcassageLanding()
     {
         KnownRoutes.Splash().Should().Be("/");
         KnownRoutes.AfterInitialization(null)
-            .Should().Be(KnownRoutes.Servers());
+            .Should().Be(KnownRoutes.Module("concassage"));
         KnownRoutes.Servers().Should().Be("/servers");
     }
 
     [Fact]
-    public void WithCurrentServerSplashCurrentlyOpensThatServersConcassagePage()
+    public void WithRestoredServerSplashOpensThatServersConcassagePage()
     {
         DofocusServer current = new() { Name = "Kourial" };
 
@@ -40,7 +39,7 @@ public sealed class StartupNavigationCharacterizationTest
     }
 
     [Fact]
-    public async Task ServersServiceCurrentlyKeepsChoiceOnlyWithinItsInstance()
+    public async Task ServersServiceWithoutPreferenceAdapterRemainsInMemoryOnly()
     {
         // These two methods do not use the catalog/image dependencies.
         // No network calls or MAUI preferences are involved in this test.
@@ -54,6 +53,6 @@ public sealed class StartupNavigationCharacterizationTest
 
         (await firstInstance.GetCurrentServer()).Should().BeSameAs(choice);
         (await recreatedInstance.GetCurrentServer()).Should().BeNull(
-            "persisting the last chosen server is a future M2 requirement, not existing behavior");
+            "without an injected persistence adapter these instances must not share state");
     }
 }

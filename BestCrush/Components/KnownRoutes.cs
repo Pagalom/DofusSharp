@@ -6,11 +6,10 @@ static class KnownRoutes
 {
     public static string Splash() => "/";
 
-    // M0 characterization seam: Splash uses this exact legacy redirect.
-    // M1/M2 will deliberately replace it with the modular landing route.
+    // M2: open the modular workspace, even without a selected server.
     public static string AfterInitialization(DofocusServer? currentServer) =>
         currentServer is null
-            ? Servers()
+            ? Module("concassage")
             : Server(currentServer);
 
     public static string Servers() => "/servers";

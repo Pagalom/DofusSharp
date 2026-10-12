@@ -1,5 +1,6 @@
 ﻿@inject ServersService ServersService
 @inject NavigationManager NavigationManager
+@inject BestCrush.Services.CurrentServerState CurrentServerState
 @page "/servers"
 @using BestCrush.Components.Layout
 @using BestCrush.Domain.Services
@@ -54,7 +55,12 @@
 
     async Task SelectServer(DofocusServer server)
     {
+        if (!string.Equals(
+            CurrentServerState.ServerName, server.Name, StringComparison.Ordinal))
+            CurrentServerState.Clear();
+
         await ServersService.SetCurrentServerAsync(server);
+        CurrentServerState.SelectServer(server.Name);
         NavigationManager.NavigateTo(KnownRoutes.Server(server));
     }
 

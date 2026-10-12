@@ -6,6 +6,7 @@
 @inject ServersService ServersService
 @inject NavigationManager NavigationManager
 @inject BestCrush.Services.CurrentServerState CurrentServerState
+@inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
 
 <div class="min-vh-100 container-fluid px-3 px-xl-4 d-flex flex-column" data-bs-theme="@_theme">
     <header class="d-flex align-items-center justify-content-between gap-3 py-2">
@@ -15,7 +16,7 @@
         </div>
 
         <div class="d-flex align-items-center justify-content-end gap-2">
-            @if (_currentServer is null || _servers is null)
+            @if (_servers is null)
             {
                 <div class="spinner-border spinner-border-sm text-primary" role="status">
                     <span class="visually-hidden">Chargement du serveur...</span>
@@ -26,7 +27,7 @@
                 <div class="dropdown">
                     <button class="btn btn-outline-secondary dropdown-toggle"
                             type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Serveur : @_currentServer.Name
+                        Serveur : @(_currentServer?.Name ?? "Choisir un serveur")
                     </button>
                     <ul class="dropdown-menu dropdown-menu-end">
                         @foreach (DofocusServer server in _servers)
@@ -45,9 +46,11 @@
 
             <a class="btn btn-outline-secondary"
                href="@KnownRoutes.Profile()"
-               title="Profil personnage (configuration prévue dans M2)"
+               title="Profil du personnage actif"
                aria-label="Personnage">
-                👤
+                👤 @(!string.IsNullOrWhiteSpace(CurrentCharacterState.CharacterName)
+                    ? CurrentCharacterState.CharacterName
+                    : "Personnage")
             </a>
 
             @if (_currentServer is not null)
@@ -62,24 +65,30 @@
         </div>
     </header>
 
-    @if (_currentServer is not null)
-    {
-        <nav class="workspace-tabs mb-3" aria-label="Modules BestCrush">
-            @foreach (WorkspaceModule module in WorkspaceModules.All)
-            {
-                <a class="@TabClass(module)"
-                   href="@WorkspaceModules.Href(module, _currentServer.Name)"
-                   aria-current="@(ActiveTab == module.Slug ? "page" : null)">
-                    @module.Name
-                </a>
-            }
-        </nav>
-    }
+    <nav class="workspace-tabs mb-3" aria-label="Modules BestCrush">
+        @foreach (WorkspaceModule module in WorkspaceModules.All)
+        {
+            <a class="@TabClass(module)"
+               href="@WorkspaceModules.Href(module, _currentServer?.Name)"
+               aria-current="@(ActiveTab == module.Slug ? "page" : null)">
+                @module.Name
+            </a>
+        }
+    </nav>
 
     <NpcapRequirementBanner />
 
     <div class="flex-grow-1">
-        @Body
+        @if (_servers is null)
+        {
+            <div class="spinner-border spinner-border-sm text-primary" role="status">
+                <span class="visually-hidden">Chargement de l'espace de travail...</span>
+            </div>
+        }
+        else if (IsRouteCompatible)
+        {
+            @Body
+        }
     </div>
 
     <Footer></Footer>
@@ -101,6 +110,24 @@
             ? "workspace-tab active"
             : "workspace-tab";
 
+    // Never instantiate legacy pages scoped to another selected server.
+    private bool IsRouteCompatible =>
+        WorkspaceModules.IsRouteCompatible(
+            NavigationManager.ToBaseRelativePath(NavigationManager.Uri),
+            _currentServer?.Name);
+
+    private void GuardLegacyRoute()
+    {
+        if (IsRouteCompatible)
+            return;
+
+        NavigationManager.NavigateTo(
+            _currentServer is null
+                ? KnownRoutes.Module("concassage")
+                : KnownRoutes.Server(_currentServer),
+            replace: true);
+    }
+
     protected override async Task OnInitializedAsync()
     {
         NavigationManager.LocationChanged += OnLocationChanged;
@@ -112,39 +139,57 @@
 
         await Task.WhenAll(serversTask, currentServerTask);
 
-        if (currentServerTask.Result is null)
-        {
-            // M1 preserves the existing first-run picker. M2 will
-            // open the workspace directly with no active server.
-            NavigationManager.NavigateTo(KnownRoutes.Servers());
-            return;
-        }
-
         _servers = serversTask.Result;
         _currentServer = currentServerTask.Result;
-        CurrentServerState.SelectServer(_currentServer.Name);
+
+        if (_currentServer is null)
+            CurrentServerState.Clear();
+        else
+            CurrentServerState.SelectServer(_currentServer.Name);
+
+        CurrentCharacterState.SelectServer(_currentServer?.Name);
+        CurrentCharacterState.Changed += OnCharacterChanged;
+        GuardLegacyRoute();
     }
 
     private void OnLocationChanged(
         object? sender,
         LocationChangedEventArgs args)
     {
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            GuardLegacyRoute();
+            StateHasChanged();
+        });
     }
+
+    private void OnCharacterChanged() =>
+        _ = InvokeAsync(StateHasChanged);
 
     private async Task SelectServer(DofocusServer server)
     {
-        CurrentServerState.SelectServer(server.Name);
-        await ServersService.SetCurrentServerAsync(server);
-        _currentServer = server;
+        // Reject queued captures during the change; never activate a new
+        // context until the preference and selection are both committed.
+        bool changed = !string.Equals(
+            CurrentServerState.ServerName, server.Name, StringComparison.Ordinal);
+        if (changed)
+            CurrentServerState.Clear();
 
-        // Keep the original navigation semantics for M1. M2 will
-        // centralize server switching across independent modules.
-        NavigationManager.NavigateTo(KnownRoutes.Server(server), true);
+        await ServersService.SetCurrentServerAsync(server);
+        CurrentServerState.SelectServer(server.Name);
+        _currentServer = server;
+        CurrentCharacterState.SelectServer(server.Name);
+
+        // Legacy routes are server-scoped; other module URLs are independent.
+        if (ActiveTab == "concassage")
+            NavigationManager.NavigateTo(KnownRoutes.Server(server), true);
+        else
+            StateHasChanged();
     }
 
     public void Dispose()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
+        CurrentCharacterState.Changed -= OnCharacterChanged;
     }
 }

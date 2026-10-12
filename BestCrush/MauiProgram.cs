@@ -48,6 +48,8 @@ public static class MauiProgram
             ConfigureDatabase(builder, dbPath, logger);
 
             builder.Services.AddSingleton(new ImageCache(Path.Combine(dataDirectory, "Cache", "images")));
+            builder.Services.AddSingleton<IWorkspacePreferences, MauiWorkspacePreferences>();
+            builder.Services.AddSingleton<CurrentCharacterState>();
             builder.Services.AddSingleton<ServersService>();
             builder.Services.AddSingleton<RunesService>();
             builder.Services.AddSingleton<CrushService>();
