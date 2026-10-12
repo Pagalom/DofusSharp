@@ -13,12 +13,16 @@ namespace BestCrush.NetworkProbe.Capture;
 internal sealed class CharacterMetadataProbe(
     ICaptureDevice device, int port,
     IReadOnlySet<string>? shapeKeys = null,
-    IReadOnlyList<ProfessionReference>? professionReferences = null) : IDisposable
+    IReadOnlyList<ProfessionReference>? professionReferences = null,
+    bool decodeIpz = false) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
-    private readonly CharacterCaptureFlowTracker _flows = new(shapeKeys: shapeKeys, professionReferences: professionReferences);
+    private readonly CharacterCaptureFlowTracker _flows = new(
+        shapeKeys: shapeKeys, professionReferences: professionReferences,
+        decodeIpz: decodeIpz);
     private readonly bool _shapeMode = shapeKeys is not null;
-    private readonly bool _professionMode = professionReferences is not null;
+    private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
+    private readonly bool _decodeIpz = decodeIpz;
     private readonly Dictionary<(int Session, string Opcode), HashSet<string>>
         _reportedShapes = new();
 
@@ -93,6 +97,10 @@ internal sealed class CharacterMetadataProbe(
                     entry.ProfessionCandidates is null)
                     continue;
 
+                if (_decodeIpz && entry.Kind == CharacterCaptureEventKind.Message &&
+                    entry.ProfessionIpzSummary is null)
+                    continue;
+
                 if (_shapeMode && entry.Kind == CharacterCaptureEventKind.Message)
                 {
                     // Shape scan shows only selected opcodes, no routine noise.
@@ -117,7 +125,8 @@ internal sealed class CharacterMetadataProbe(
                 string detail = entry.Kind == CharacterCaptureEventKind.Message
                     ? $"{entry.Opcode} {entry.BodyLength} octets" +
                       (_shapeMode ? $" shape=[{entry.Shape}]" : "") +
-                      (_professionMode ? $" CANDIDAT=[{entry.ProfessionCandidates}]" : "")
+                      (_professionMode ? $" CANDIDAT=[{entry.ProfessionCandidates}]" : "") +
+                      (_decodeIpz ? $" IPZ=[{entry.ProfessionIpzSummary}]" : "")
                     : entry.Kind.ToString().ToUpperInvariant();
 
                 Console.WriteLine(

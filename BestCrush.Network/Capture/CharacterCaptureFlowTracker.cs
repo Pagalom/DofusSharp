@@ -32,7 +32,8 @@ public sealed record CharacterCaptureEvent(
     string? Opcode = null,
     int BodyLength = 0,
     string? Shape = null,
-    string? ProfessionCandidates = null);
+    string? ProfessionCandidates = null,
+    string? ProfessionIpzSummary = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -59,12 +60,14 @@ public sealed class CharacterCaptureFlowTracker
     private readonly TimeSpan _idleTimeout;
     private readonly HashSet<string> _shapeKeys;
     private readonly IReadOnlyList<ProfessionReference>? _professionReferences;
+    private readonly bool _decodeIpz;
     private int _nextNumber;
 
     public CharacterCaptureFlowTracker(
         int maxFlows = 128, TimeSpan? idleTimeout = null,
         IReadOnlySet<string>? shapeKeys = null,
-        IReadOnlyList<ProfessionReference>? professionReferences = null)
+        IReadOnlyList<ProfessionReference>? professionReferences = null,
+        bool decodeIpz = false)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -83,12 +86,19 @@ public sealed class CharacterCaptureFlowTracker
                 "Shape keys must be simple, non-empty protocol opcodes.",
                 nameof(shapeKeys));
 
+        if (decodeIpz && professionReferences is null)
+            throw new ArgumentException(
+                "Ipz comparison requires local reference pairs.",
+                nameof(professionReferences));
+
         if (professionReferences is not null)
         {
             // Validate upfront with a synthetic non-sensitive message.
             ProfessionWireMatcher.Describe([], professionReferences);
             _professionReferences = Array.AsReadOnly(professionReferences.ToArray());
         }
+
+        _decodeIpz = decodeIpz;
     }
 
     public int FlowCount
@@ -201,10 +211,15 @@ public sealed class CharacterCaptureFlowTracker
                                     _shapeKeys.Contains(any.Key)
                                         ? ProtoShapeSummarizer.Describe(any.Body)
                                         : null,
-                                    _professionReferences is not null &&
+                                    _professionReferences is not null && !_decodeIpz &&
                                     direction == CharacterCaptureDirection.ServerToClient
                                         ? ProfessionWireMatcher.Describe(
                                             any.Body, _professionReferences)
+                                        : null,
+                                    _decodeIpz &&
+                                    direction == CharacterCaptureDirection.ServerToClient &&
+                                    string.Equals(any.Key, "ipz", StringComparison.Ordinal)
+                                        ? FormatIpz(any.Body, _professionReferences!)
                                         : null));
                             }
                         }
@@ -234,6 +249,12 @@ public sealed class CharacterCaptureFlowTracker
             return events;
         }
     }
+
+    private static string FormatIpz(
+        byte[] body, IReadOnlyList<ProfessionReference> references) =>
+        ProfessionIpzDecoder.TryDecode(body, out ProfessionIpzSnapshot? snapshot)
+            ? ProfessionIpzDecoder.DescribeAnonymously(snapshot!, references)
+            : "rejected-layout";
 
     private static bool IsSafeOpcode(string key) =>
         key.Length is >= 1 and <= 16 &&

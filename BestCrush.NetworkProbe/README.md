@@ -35,6 +35,16 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### Décodeur expérimental des métiers (P1d)
+
+Mode `--profession-decode` : demande des couples `niveau:XP_totale` dans le terminal,
+puis affiche seulement le nombre de lignes `ipz`, les correspondances et les
+statistiques des champs inconnus. Voir `docs/modular-workspace-p1d-ipz-profession-decoder.md`.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-decode
+```
+
 ### Analyse des structures protobuf (P1b — sans valeurs personnelles)
 
 ```powershell

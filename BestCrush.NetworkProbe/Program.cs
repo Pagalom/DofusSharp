@@ -29,6 +29,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  (option) --shape-keys irl,ico,jei,isr");
     Console.WriteLine("Pour confronter les niveaux/XP visibles aux champs numériques :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-match");
+    Console.WriteLine("Pour valider le décodage des 20 lignes ipz sans afficher leurs valeurs :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-decode");
     Console.WriteLine("Pour les diagnostics historiques :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --all");
     return;
@@ -48,8 +50,10 @@ Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceI
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
 if (options.CharacterScan)
 {
-    Console.WriteLine(options.ProfessionMatch
-        ? "Mode P1c : corrélation locale métier/niveau/XP, aucune valeur affichée ou sauvegardée."
+    Console.WriteLine(options.ProfessionDecode
+        ? "Mode P1d : ipz (20 lignes attendues), valeurs privées masquées, métiers non identifiés."
+        : options.ProfessionMatch
+            ? "Mode P1c : corrélation locale métier/niveau/XP, aucune valeur affichée ou sauvegardée."
         : options.CharacterShape
             ? "Mode P1b : formes protobuf uniquement pour les opcodes ciblés ; aucune valeur enregistrée."
             : "Mode P1a : métadonnées uniquement, flux TCP isolés, aucun payload enregistré.");
@@ -58,6 +62,8 @@ if (options.CharacterScan)
     Console.WriteLine("Notes manuelles : connexion, caractéristiques, métiers (J), inventaire, banque, déconnexion.");
     if (options.ProfessionMatch)
         Console.WriteLine("Seuls les chemins de deux couples niveau/XP concordants au minimum seront affichés.");
+    if (options.ProfessionDecode)
+        Console.WriteLine("Seul ipz sera analysé. Les champs métiers non identifiés restent anonymes.");
 }
 else
 {
@@ -68,10 +74,12 @@ Console.WriteLine("Ctrl+C pour arrêter.");
 Console.WriteLine();
 
 IReadOnlyList<ProfessionReference>? professionReferences = null;
-if (options.ProfessionMatch)
+if (options.ProfessionMatch || options.ProfessionDecode)
 {
     Console.WriteLine();
-    Console.WriteLine("Saisir localement 2 à 20 couples niveau:XP de progression (séparés par une virgule).");
+    Console.WriteLine(options.ProfessionDecode
+        ? "Saisir localement 2 à 20 couples niveau:XP TOTALE (séparés par une virgule)."
+        : "Saisir localement 2 à 20 couples niveau:XP (séparés par une virgule).");
     Console.WriteLine("Exemple fictif : 82:150,63:245,47:20");
     Console.WriteLine("Ces valeurs ne seront pas affichées dans les résultats ni enregistrées.");
     Console.Write("Références : ");
@@ -99,7 +107,8 @@ if (options.CharacterScan)
     using CharacterMetadataProbe probe = new(
         devices[options.DeviceIndex.Value], options.Port,
         options.CharacterShape ? options.ShapeKeys : null,
-        professionReferences);
+        professionReferences,
+        options.ProfessionDecode);
 
     probe.Start();
     stop.Wait();
@@ -126,7 +135,8 @@ internal sealed record ProbeOptions(
     bool CharacterScan,
     bool CharacterShape,
     IReadOnlySet<string> ShapeKeys,
-    bool ProfessionMatch)
+    bool ProfessionMatch,
+    bool ProfessionDecode)
 {
     private static readonly string[] DefaultShapeKeys =
     [
@@ -144,6 +154,7 @@ internal sealed record ProbeOptions(
         bool characterScan = false;
         bool characterShape = false;
         bool professionMatch = false;
+        bool professionDecode = false;
         string? shapeKeysCsv = null;
 
         for (int i = 0; i < args.Length; i++)
@@ -171,6 +182,9 @@ internal sealed record ProbeOptions(
                 case "--profession-match":
                     professionMatch = true;
                     break;
+                case "--profession-decode":
+                    professionDecode = true;
+                    break;
                 case "--shape-keys" when i + 1 < args.Length:
                     shapeKeysCsv = args[++i];
                     characterShape = true;
@@ -191,14 +205,15 @@ internal sealed record ProbeOptions(
             throw new ArgumentException(
                 "--shape-keys requires 1 to 32 simple comma-separated opcodes.");
 
-        if (professionMatch && characterShape)
+        if ((professionMatch && characterShape) ||
+            (professionDecode && (professionMatch || characterShape)))
             throw new ArgumentException(
-                "--profession-match and --character-shape are separate diagnostic modes.");
+                "Use only one character diagnostic mode at a time.");
 
         // P1b/P1c both imply the isolated, passive capture path of P1a.
         return new ProbeOptions(
             device, port, all, list,
-            characterScan || characterShape || professionMatch,
-            characterShape, shapeKeys, professionMatch);
+            characterScan || characterShape || professionMatch || professionDecode,
+            characterShape, shapeKeys, professionMatch, professionDecode);
     }
 }
