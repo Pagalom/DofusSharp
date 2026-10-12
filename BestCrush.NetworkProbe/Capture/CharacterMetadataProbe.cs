@@ -1,4 +1,5 @@
 using BestCrush.Network.Capture;
+using BestCrush.Network.Protocol;
 using PacketDotNet;
 using SharpPcap;
 
@@ -11,11 +12,13 @@ namespace BestCrush.NetworkProbe.Capture;
 /// </summary>
 internal sealed class CharacterMetadataProbe(
     ICaptureDevice device, int port,
-    IReadOnlySet<string>? shapeKeys = null) : IDisposable
+    IReadOnlySet<string>? shapeKeys = null,
+    IReadOnlyList<ProfessionReference>? professionReferences = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
-    private readonly CharacterCaptureFlowTracker _flows = new(shapeKeys: shapeKeys);
+    private readonly CharacterCaptureFlowTracker _flows = new(shapeKeys: shapeKeys, professionReferences: professionReferences);
     private readonly bool _shapeMode = shapeKeys is not null;
+    private readonly bool _professionMode = professionReferences is not null;
     private readonly Dictionary<(int Session, string Opcode), HashSet<string>>
         _reportedShapes = new();
 
@@ -86,6 +89,10 @@ internal sealed class CharacterMetadataProbe(
 
             foreach (CharacterCaptureEvent entry in events)
             {
+                if (_professionMode && entry.Kind == CharacterCaptureEventKind.Message &&
+                    entry.ProfessionCandidates is null)
+                    continue;
+
                 if (_shapeMode && entry.Kind == CharacterCaptureEventKind.Message)
                 {
                     // Shape scan shows only selected opcodes, no routine noise.
@@ -109,7 +116,8 @@ internal sealed class CharacterMetadataProbe(
 
                 string detail = entry.Kind == CharacterCaptureEventKind.Message
                     ? $"{entry.Opcode} {entry.BodyLength} octets" +
-                      (_shapeMode ? $" shape=[{entry.Shape}]" : "")
+                      (_shapeMode ? $" shape=[{entry.Shape}]" : "") +
+                      (_professionMode ? $" CANDIDAT=[{entry.ProfessionCandidates}]" : "")
                     : entry.Kind.ToString().ToUpperInvariant();
 
                 Console.WriteLine(
