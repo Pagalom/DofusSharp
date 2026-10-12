@@ -6,7 +6,7 @@ Le catalogue `BestCrush.Network/protocol-map.json` référence les événements 
 
 L'identification automatique n'est **pas activée dans l'application** par ce lot. Il serait dangereux de déduire le personnage à partir des seules observations d'inventaire, de prix ou du nom saisi manuellement. Les opcodes Dofus sont obfusqués et peuvent changer de build.
 
-M2 (persistance du serveur et profil manuel) est publié mais attend toujours son checkpoint Windows. P0 doit rester isolé : pas de changement de capture Npcap, d'OCR F8, de base, de routage métier ou de persistences existantes.
+M2 (persistance du **serveur uniquement**) est publié mais attend toujours son checkpoint Windows. Les fiches des personnages, y compris les inventories et métiers, n'existent qu'en RAM et ne doivent jamais être enregistrées entre sessions. P0 doit rester isolé : pas de changement de capture Npcap, d'OCR F8, de base, de routage métier ou de persistences existantes.
 
 ## Architecture cible
 
@@ -27,7 +27,7 @@ Le `CharacterIdentityCorrelator` est une **machine à états préparatoire pure*
 1. Le flux `DofusWireMessage` actuel contient direction, opcode, corps, timestamp, bail serveur et captureEpoch ; il **ne contient pas de clé TCP de session**. Impossible de corréler de manière sûre des comptes simultanés avec ces seuls champs.
 2. `DofusNetworkCaptureService.OnPacketArrival` ignore les paquets TCP sans données ; un FIN/RST ne remonte donc pas au routeur métier. Un mécanisme de déconnexion/reconnexion (avec timeout de session prudent) est nécessaire.
 3. Le `NetworkProbe` existant utilise un réassembleur par direction et non par 5-tuple ; ne pas utiliser son résultat lors de **captures simultanées de plusieurs clients** sans corriger ce point.
-4. `CurrentCharacterState` (M2) mémorise aujourd'hui un seul nom **par serveur**. Ce n'est pas encore une base multi-personnages et ne doit pas recevoir automatiquement des identités spéculatives.
+4. `CurrentCharacterState` est un registre multi-personnages **éphémère** : aucune liste de personnages ni leur dernière sélection ne sont restaurées après fermeture. Son alimentation réelle par le protocole reste à implémenter.
 5. `CurrentServerState` connaît le serveur **sélectionné par l'utilisateur** ; les paquets ne prouvent pas encore sur quel serveur Dofus est connecté. Un changement de personnage vers un autre serveur doit donc rester non attribué jusqu'à confirmation.
 
 ## Protocole expérimental P1 (Windows, une seule instance du jeu)
@@ -57,7 +57,14 @@ Corréler temporellement ces événements ne **prouve pas** encore la sémantiqu
 - **P0** : spécification et `CharacterIdentityCorrelator` isolé + tests sans toucher aux flux en production.
 - **P1** : caractérisation des vraies trames identité / déconnexion / professions ; séparation des flux TCP dans le probe, données de diagnostic minimisées.
 - **P2** : décodeurs versionnés et tests protobuf, propagation de la connexion et des resets dans `DofusWireMessage`, protection contre les messages tardifs ou mélangés.
-- **P3** : stockage multi-personnages, niveau/classe/métiers par identifiant stable ; migration progressive du profil manuel M2 et interface indiquant Confirmé / En cours / Incertain.
+- **P3** : fiches temporaires en RAM, niveau/classe/métiers/inventaires/kamas par identifiant stable, portraits de sélection manuelle et ciblage automatique de la fenêtre Dofus, avec indicateur de confiance. **Pas de persistance personnage.**
 - **P4** : tests réels changement A→B→A, reconnexion, changement serveur, multi-compte simultané, ouverture des métiers, progression et F7/F8/concassage.
 
 **Aucune synchronisation automatique active ne doit être prétendue fonctionnelle tant que les preuves P1/P2 et le checkpoint Windows ne sont pas validés.**
+
+### Confidentialité et durée de vie
+
+- Les données de personnage ne sont **jamais** écrites en Preferences, SQLite, exports, journal métier ni dans un cache durable. Le dernier joueur n'est pas repris au redémarrage.
+- Seule la sélection du serveur (pas celle d'un personnage) peut rester mémorisée.
+- Attention : le mode diagnostique historique `NetworkDebugWriter` peut enregistrer sur disque des corps réseau bruts (`wire.jsonl`), potentiellement porteurs d'informations de personnage. **Avant de brancher les décodeurs d'identité, il faudra empêcher ces données personnelles de se retrouver dans les captures conservées sur disque ou limiter/redacter ces diagnostics.** Le prototype actuel de fiche temporaire ne branche aucun nouveau décodage réseau.
+- L'absence de réponse du serveur ne signifie pas « inventaire vide » ni « 0 kama ». Les deux inventaires et les deux soldes sont des champs observés indépendants ; `null` représente une donnée inconnue.

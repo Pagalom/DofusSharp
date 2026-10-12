@@ -4,6 +4,7 @@
 @inherits LayoutComponentBase
 @implements IDisposable
 @inject ServersService ServersService
+@inject IWorkspacePreferences WorkspacePreferences
 @inject NavigationManager NavigationManager
 @inject BestCrush.Services.CurrentServerState CurrentServerState
 @inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
@@ -44,13 +45,30 @@
                 </div>
             }
 
+            <div class="d-flex align-items-center gap-1"
+                 role="group" aria-label="Personnages détectés cette session">
+                @foreach (BestCrush.Services.CharacterSessionProfile character in CurrentCharacterState.Characters)
+                {
+                    <button type="button"
+                            class="character-avatar @(CurrentCharacterState.ActiveCharacterKey == character.Key ? "active" : "")"
+                            title="@($"{character.Name} — {character.Key.ServerName}")"
+                            aria-label="@($"Cibler {character.Name}")"
+                            aria-pressed="@(CurrentCharacterState.ActiveCharacterKey == character.Key)"
+                            disabled="@(!CurrentCharacterState.IsCharacterConnected(character.Key))"
+                            @onclick="() => SelectCharacter(character.Key)">
+                        <span class="character-avatar-face" aria-hidden="true">👤</span>
+                        <span class="character-avatar-initial" aria-hidden="true">
+                            @(string.IsNullOrWhiteSpace(character.Name) ? "?" : character.Name[..1].ToUpperInvariant())
+                        </span>
+                    </button>
+                }
+            </div>
+
             <a class="btn btn-outline-secondary"
                href="@KnownRoutes.Profile()"
-               title="Profil du personnage actif"
-               aria-label="Personnage">
-                👤 @(!string.IsNullOrWhiteSpace(CurrentCharacterState.CharacterName)
-                    ? CurrentCharacterState.CharacterName
-                    : "Personnage")
+               title="Personnages détectés dans cette session"
+               aria-label="Ouvrir les fiches des personnages">
+                @(CurrentCharacterState.ActiveProfile?.Name ?? "Personnages")
             </a>
 
             @if (_currentServer is not null)
@@ -142,6 +160,11 @@
         _servers = serversTask.Result;
         _currentServer = currentServerTask.Result;
 
+        // One-time compatibility cleanup: M2 briefly used preferences to
+        // remember character names. No character data may survive app exit.
+        foreach (DofocusServer knownServer in _servers)
+            WorkspacePreferences.Remove($"Workspace.CharacterName.{knownServer.Name}");
+
         if (_currentServer is null)
             CurrentServerState.Clear();
         else
@@ -161,6 +184,11 @@
             GuardLegacyRoute();
             StateHasChanged();
         });
+    }
+
+    private void SelectCharacter(BestCrush.Services.CharacterKey key)
+    {
+        CurrentCharacterState.SelectCharacter(key);
     }
 
     private void OnCharacterChanged() =>

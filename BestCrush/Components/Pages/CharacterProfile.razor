@@ -3,69 +3,85 @@
 @inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
 
 <div class="container py-4">
-    <h1>Personnage</h1>
+    <h1>Personnages — session actuelle</h1>
+    <p class="text-secondary">
+        Les fiches sont créées automatiquement quand un personnage est identifié
+        de manière fiable. Elles existent uniquement en mémoire et disparaissent
+        à la fermeture de BestCrush.
+    </p>
 
     @if (CurrentCharacterState.ServerName is null)
     {
-        <div class="alert alert-info mt-4" role="status">
-            Sélectionnez un serveur en haut à droite pour configurer votre personnage.
+        <div class="alert alert-info" role="status">
+            Aucun serveur sélectionné. Le contexte personnage reste indéterminé.
+        </div>
+    }
+    else if (CurrentCharacterState.Characters.Count == 0)
+    {
+        <div class="alert alert-secondary" role="status">
+            Aucun personnage identifié sur @CurrentCharacterState.ServerName.
+            L'identification réseau et la lecture des inventaires et métiers
+            nécessitent encore la validation du protocole Dofus.
         </div>
     }
     else
     {
-        <p class="text-secondary">
-            Personnage actif sur le serveur <strong>@CurrentCharacterState.ServerName</strong>.
-            Ce nom est partagé entre les modules et mémorisé pour ce serveur.
-        </p>
-
-        <div class="mb-3" style="max-width: 420px;">
-            <label class="form-label" for="character-name">Nom du personnage</label>
-            <input id="character-name" type="text" class="form-control"
-                   maxlength="80" @bind="_draftName" />
+        <div class="d-flex flex-wrap gap-3">
+            @foreach (BestCrush.Services.CharacterSessionProfile character in CurrentCharacterState.Characters)
+            {
+                <div class="card" style="min-width: 260px; max-width: 360px;">
+                    <div class="card-body">
+                        <h2 class="h5 card-title">@character.Name</h2>
+                        <p class="small text-secondary">Serveur : @character.Key.ServerName</p>
+                        <p class="small mb-2">
+                            Niveau : @(character.Level?.ToString() ?? "Non observé")
+                            | Classe : @(character.ClassId?.ToString() ?? "Non observée")
+                        </p>
+                        <p class="small mb-2">
+                            Kamas en poche : @(character.PocketKamas?.ToString("N0") ?? "Non observés")
+                        </p>
+                        <p class="small mb-2">
+                            Kamas en banque : @(character.BankKamas?.ToString("N0") ?? "Non observés")
+                        </p>
+                        <p class="small mb-2">
+                            Inventaire : @(character.Inventory is null ? "Non observé" : $"{character.Inventory.Count} lignes")
+                        </p>
+                        <p class="small mb-2">
+                            Banque : @(character.BankInventory is null ? "Non observée" : $"{character.BankInventory.Count} lignes")
+                        </p>
+                        <p class="small mb-3">
+                            Métiers : @(character.ProfessionLevels is null ? "Non observés" : $"{character.ProfessionLevels.Count} niveaux relevés")
+                        </p>
+                        <button class="btn btn-sm @(CurrentCharacterState.ActiveCharacterKey == character.Key ? "btn-secondary" : "btn-outline-primary")"
+                                type="button"
+                                disabled="@(!CurrentCharacterState.IsCharacterConnected(character.Key))"
+                                @onclick="() => SelectCharacter(character.Key)">
+                            @(CurrentCharacterState.ActiveCharacterKey == character.Key ? "Personnage ciblé" : "Cibler ce personnage")
+                        </button>
+                    </div>
+                </div>
+            }
         </div>
-
-        <button class="btn btn-primary" type="button" @onclick="SaveCharacter">
-            Enregistrer
-        </button>
-
-        @if (_saved)
-        {
-            <span class="text-success ms-2" role="status">Enregistré.</span>
-        }
-
-        <p class="text-secondary mt-4">
-            Les niveaux de métiers et les autres caractéristiques seront ajoutés
-            au profil lors de l'intégration des modules qui les utilisent.
-        </p>
     }
+
+    <p class="text-secondary mt-4">
+        La sélection automatique suivra la fenêtre Dofus ciblée après
+        validation de la détection réseau. Le choix manuel reste possible
+        parmi les personnages détectés durant cette session.
+    </p>
 </div>
 
 @code {
-    private string _draftName = string.Empty;
-    private bool _saved;
-
-    protected override void OnInitialized()
-    {
+    protected override void OnInitialized() =>
         CurrentCharacterState.Changed += OnCharacterChanged;
-        _draftName = CurrentCharacterState.CharacterName;
+
+    private void SelectCharacter(BestCrush.Services.CharacterKey key)
+    {
+        CurrentCharacterState.SelectCharacter(key);
     }
 
-    private void SaveCharacter()
-    {
-        CurrentCharacterState.SetCharacterName(_draftName);
-        _draftName = CurrentCharacterState.CharacterName;
-        _saved = true;
-    }
-
-    private void OnCharacterChanged()
-    {
-        _ = InvokeAsync(() =>
-        {
-            _draftName = CurrentCharacterState.CharacterName;
-            _saved = false;
-            StateHasChanged();
-        });
-    }
+    private void OnCharacterChanged() =>
+        _ = InvokeAsync(StateHasChanged);
 
     public void Dispose() =>
         CurrentCharacterState.Changed -= OnCharacterChanged;

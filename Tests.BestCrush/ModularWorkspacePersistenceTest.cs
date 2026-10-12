@@ -111,44 +111,30 @@ public sealed class ModularWorkspacePersistenceTest
     }
 
     [Fact]
-    public void CharacterProfileIsPersistedPerServerAndSharedInMemory()
+    public void RestoredServerNeverRestoresAnyCharacter()
     {
-        FakePreferences preferences = new();
-        CurrentCharacterState profile = new(preferences);
-        int changes = 0;
-        profile.Changed += () => changes++;
+        CurrentCharacterState first = new();
+        first.SelectServer("Kourial");
+        first.CharacterName.Should().BeEmpty();
+        first.ActiveProfile.Should().BeNull();
+        first.Characters.Should().BeEmpty();
 
-        profile.SelectServer("Kourial");
-        profile.SetCharacterName(" Alice ");
-        profile.CharacterName.Should().Be("Alice");
-
-        profile.SelectServer("Other");
-        profile.CharacterName.Should().BeEmpty();
-        profile.SetCharacterName("Bob");
-
-        CurrentCharacterState recreated = new(preferences);
-        recreated.SelectServer("Kourial");
-        recreated.CharacterName.Should().Be("Alice");
-        recreated.SelectServer("Other");
-        recreated.CharacterName.Should().Be("Bob");
-        changes.Should().Be(4);
+        CurrentCharacterState newApplication = new();
+        newApplication.SelectServer("Kourial");
+        newApplication.CharacterName.Should().BeEmpty();
+        newApplication.ActiveProfile.Should().BeNull();
+        newApplication.Characters.Should().BeEmpty();
     }
 
     [Fact]
-    public void NoServerDisallowsCharacterWrites()
+    public void SwitchingServerDoesNotReselectLastActiveCharacter()
     {
-        CurrentCharacterState profile = new(new FakePreferences());
-        Action save = () => profile.SetCharacterName("Alice");
-        save.Should().Throw<InvalidOperationException>();
-    }
-
-    [Fact]
-    public void CharacterNameRejectsOversizedInput()
-    {
-        CurrentCharacterState profile = new(new FakePreferences());
-        profile.SelectServer("Kourial");
-        Action save = () => profile.SetCharacterName(new string('A', 81));
-        save.Should().Throw<ArgumentOutOfRangeException>();
+        CurrentCharacterState state = new();
+        state.SelectServer("Kourial");
+        state.SelectServer("Other");
+        state.ActiveCharacterKey.Should().BeNull();
+        state.SelectServer("Kourial");
+        state.ActiveCharacterKey.Should().BeNull();
     }
 
     private static ServersService CreateService(
