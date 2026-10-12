@@ -120,9 +120,7 @@
 
             if (!_disposed)
                 NavigationManager.NavigateTo(
-                    currentServer is not null
-                        ? KnownRoutes.Server(currentServer)
-                        : KnownRoutes.Servers());
+                    KnownRoutes.AfterInitialization(currentServer));
         }
         catch (Exception exn)
         {

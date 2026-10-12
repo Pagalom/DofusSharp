@@ -46,6 +46,60 @@ public sealed class NetworkServerSelectionTest
     }
 
     [Fact]
+    public void ReturningToAPreviouslyVisitedServerNeverReactivatesItsOldLease()
+    {
+        CurrentServerState state = new();
+        state.SelectServer("Kourial");
+        NetworkCaptureLease first = state.GetCaptureLease()!.Value;
+
+        state.SelectServer("Another");
+        NetworkCaptureLease middle = state.GetCaptureLease()!.Value;
+
+        state.SelectServer("Kourial");
+        NetworkCaptureLease restored = state.GetCaptureLease()!.Value;
+
+        restored.ServerName.Should().Be("Kourial");
+        restored.Should().NotBe(first);
+        state.IsCaptureLeaseActive(first).Should().BeFalse();
+        state.IsCaptureLeaseActive(middle).Should().BeFalse();
+        state.IsCaptureLeaseActive(restored).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ReSelectingSameServerAfterNavigationDoesNotInvalidateCapturedMessages()
+    {
+        CurrentServerState state = new();
+        int changeEvents = 0;
+        state.ServerSelectionChanged += () => changeEvents++;
+
+        state.SelectServer("Kourial");
+        NetworkCaptureLease beforeNavigation = state.GetCaptureLease()!.Value;
+        state.SelectServer("Kourial");
+
+        state.GetCaptureLease().Should().Be(beforeNavigation);
+        state.IsCaptureLeaseActive(beforeNavigation).Should().BeTrue();
+        changeEvents.Should().Be(1);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData(" \t ")]
+    public void InvalidServerChoiceCannotReplaceTheActiveCaptureLease(
+        string? invalidServerName)
+    {
+        CurrentServerState state = new();
+        state.SelectServer("Kourial");
+        NetworkCaptureLease validLease = state.GetCaptureLease()!.Value;
+
+        Action select = () => state.SelectServer(invalidServerName!);
+
+        select.Should().Throw<ArgumentException>();
+        state.GetCaptureLease().Should().Be(validLease);
+        state.IsCaptureLeaseActive(validLease).Should().BeTrue();
+    }
+
+    [Fact]
     public void SelectionChangeEventOnlyFiresForRealChanges()
     {
         CurrentServerState state = new();
