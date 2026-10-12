@@ -62,15 +62,15 @@ public sealed class ProtoShapeSummarizerTest
     }
 
     [Fact]
-    public void TruncatesDeepOrVeryLargeFieldSetsWithoutValues()
+    public void RootFieldCountHasAnIndependentUpperBound()
     {
-        byte[] body = Message(Enumerable.Range(1, 520)
+        byte[] body = Message(Enumerable.Range(1, 32780)
             .Select(_ => Unsigned(1, 999999)).ToArray());
 
         string shape = ProtoShapeSummarizer.Describe(body);
 
-        shape.Should().Contain("1:vx512");
-        shape.Should().Contain("[partial]");
+        shape.Should().Contain("root=[1:vx32768]");
+        shape.Should().Contain("[partial-root]");
         shape.Should().NotContain("999999");
         shape.Length.Should().BeLessThan(200);
     }
@@ -120,10 +120,61 @@ public sealed class ProtoShapeSummarizerTest
         CharacterCaptureEvent first = alice.Single(x => x.Kind == CharacterCaptureEventKind.Message);
         CharacterCaptureEvent second = bob.Single(x => x.Kind == CharacterCaptureEventKind.Message);
         first.SessionNumber.Should().NotBe(second.SessionNumber);
-        first.Shape.Should().Be("1:v");
-        second.Shape.Should().Be("1:v");
+        first.Shape.Should().Be("root=[1:v]");
+        second.Shape.Should().Be("root=[1:v]");
         other.Single(x => x.Kind == CharacterCaptureEventKind.Message)
             .Shape.Should().BeNull();
+    }
+
+    [Fact]
+    public void RepeatedRootRecordsAreCountedExactlyEvenIfNestedSamplingStops()
+    {
+        byte[][] records = Enumerable.Range(0, 172)
+            .Select(index => Bytes(2, Message(
+                Unsigned(1, (ulong)index + 100),
+                Unsigned(4, 123456789),
+                Bytes(5, Message(Unsigned(3, 999999))))))
+            .ToArray();
+
+        string shape = ProtoShapeSummarizer.Describe(Message(records));
+
+        shape.Should().Contain("root=[2:lenx172]");
+        shape.Should().Contain("?2.1:vx3");
+        shape.Should().Contain("?2.4:vx3");
+        shape.Should().NotContain("[partial-root]");
+        shape.Should().NotContain("123456789");
+        shape.Should().NotContain("999999");
+    }
+
+    [Fact]
+    public void NestedFieldLimitNeverTruncatesIndependentRootCounts()
+    {
+        byte[] hugeNestedMessage = Message(Enumerable.Range(0, 600)
+            .Select(_ => Unsigned(1, 5)).ToArray());
+        byte[] body = Message(
+            Bytes(2, hugeNestedMessage),
+            Unsigned(7, 555),
+            Unsigned(7, 666));
+
+        string shape = ProtoShapeSummarizer.Describe(body);
+
+        shape.Should().Contain("root=[2:len 7:vx2]");
+        shape.Should().NotContain("[partial-root]");
+        shape.Should().NotContain("sampled=[");
+    }
+
+    [Fact]
+    public void RepeatedTextAndBinaryDataAreNotEmittedAsValues()
+    {
+        byte[][] strings = Enumerable.Range(0, 172)
+            .Select(_ => Bytes(9,
+                Encoding.UTF8.GetBytes("SensitiveCharacterName")))
+            .ToArray();
+
+        string shape = ProtoShapeSummarizer.Describe(Message(strings));
+
+        shape.Should().Be("root=[9:lenx172]");
+        shape.Should().NotContain("SensitiveCharacterName");
     }
 
     [Fact]

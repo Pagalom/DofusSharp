@@ -1,17 +1,19 @@
 namespace BestCrush.Network.Protocol;
 
 /// <summary>
-/// A bounded protobuf wire-shape observation: field numbers and wire types only.
-/// No varint values, UTF-8 content, byte arrays, raw lengths of nested fields,
-/// hashes or character identifiers are exposed. Nested structures are heuristic.
+/// Privacy-preserving protobuf wire-shape exploration. Only field numbers,
+/// wire types and repetition counts are reported. Never output scalar values,
+/// strings, bytes, hashes, wire values or network endpoint identifiers.
 /// </summary>
 public static class ProtoShapeSummarizer
 {
     private const int MaxBodyBytes = 256 * 1024;
-    private const int MaxFields = 512;
+    private const int MaxRootFields = 32768;
+    private const int MaxNestedFields = 512;
     private const int MaxEntries = 48;
-    private const int MaxNestedBytes = 2048;
-    private const int MaxTotalNestedBytes = 16 * 1024;
+    private const int MaxNestedBytes = 4096;
+    private const int MaxTotalNestedBytes = 24 * 1024;
+    private const int MaxSamplesPerPath = 3;
     private const int MaximumDepth = 2;
 
     public static string Describe(ReadOnlySpan<byte> body)
@@ -21,50 +23,66 @@ public static class ProtoShapeSummarizer
         if (body.Length > MaxBodyBytes)
             return "too-large";
 
-        int remainingFields = MaxFields;
-        int nestedBudget = MaxTotalNestedBytes;
-        Dictionary<string, int> entries = new(StringComparer.Ordinal);
+        Dictionary<string, int> root = new(StringComparer.Ordinal);
+        Dictionary<string, int> nestedSamples = new(StringComparer.Ordinal);
+        Dictionary<string, int> sampledPaths = new(StringComparer.Ordinal);
 
-        if (!TryReadShape(body, "", 0, entries,
-                ref remainingFields, ref nestedBudget, out bool truncated))
+        int rootBudget = MaxRootFields;
+        int nestedFieldsBudget = MaxNestedFields;
+        int nestedByteBudget = MaxTotalNestedBytes;
+
+        // The root is always scanned independently from the nested budget.
+        // A message with hundreds of repeated records can be counted
+        // completely, even when only the first few children are inspected.
+        if (!Scan(body, "", 0,
+                root, nestedSamples, sampledPaths,
+                ref rootBudget, ref nestedFieldsBudget, ref nestedByteBudget,
+                out bool rootPartial))
             return "unrecognized";
 
-        IEnumerable<KeyValuePair<string, int>> visible = entries
+        string output = "root=[" + Format(root) + "]";
+        if (nestedSamples.Count != 0)
+            output += " sampled=[" + Format(nestedSamples) + "]";
+
+        if (rootPartial)
+            output += " [partial-root]";
+
+        return output;
+    }
+
+    private static string Format(Dictionary<string, int> entries)
+    {
+        IEnumerable<KeyValuePair<string, int>> selected = entries
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .Take(MaxEntries);
 
-        string description = string.Join(" ", visible.Select(entry =>
-            entry.Value == 1
-                ? entry.Key
-                : $"{entry.Key}x{entry.Value}"));
+        string result = string.Join(" ", selected.Select(x =>
+            x.Value == 1 ? x.Key : $"{x.Key}x{x.Value}"));
 
-        if (entries.Count > MaxEntries)
-            description += " ...";
-
-        if (truncated)
-            description += " [partial]";
-
-        return description.Length == 0 ? "unrecognized" : description;
+        return entries.Count > MaxEntries ? result + " ..." : result;
     }
 
-    private static bool TryReadShape(
+    private static bool Scan(
         ReadOnlySpan<byte> data,
         string prefix,
         int depth,
-        Dictionary<string, int> entries,
-        ref int remainingFields,
-        ref int nestedBudget,
-        out bool truncated)
+        Dictionary<string, int> rootEntries,
+        Dictionary<string, int> nestedEntries,
+        Dictionary<string, int> sampledPaths,
+        ref int rootBudget,
+        ref int nestedFieldsBudget,
+        ref int nestedByteBudget,
+        out bool partial)
     {
-        truncated = false;
+        partial = false;
         int cursor = 0;
-        int fieldsSeen = 0;
+        int seen = 0;
 
         while (cursor < data.Length)
         {
-            if (remainingFields <= 0)
+            if (depth == 0 ? rootBudget == 0 : nestedFieldsBudget == 0)
             {
-                truncated = true;
+                partial = true;
                 return true;
             }
 
@@ -77,10 +95,13 @@ public static class ProtoShapeSummarizer
                 wireType is not (0 or 1 or 2 or 5))
                 return false;
 
-            remainingFields--;
-            fieldsSeen++;
+            if (depth == 0)
+                rootBudget--;
+            else
+                nestedFieldsBudget--;
+            seen++;
 
-            string wireLabel = wireType switch
+            string label = wireType switch
             {
                 0 => "v",
                 1 => "64",
@@ -89,9 +110,12 @@ public static class ProtoShapeSummarizer
             };
 
             string fieldPath = prefix + fieldNumber;
-            string fieldLabel = fieldPath + ":" + wireLabel;
-            entries.TryGetValue(fieldLabel, out int frequency);
-            entries[fieldLabel] = frequency + 1;
+            string fieldLabel = fieldPath + ":" + label;
+            Dictionary<string, int> output = depth == 0
+                ? rootEntries
+                : nestedEntries;
+            output.TryGetValue(fieldLabel, out int count);
+            output[fieldLabel] = count + 1;
 
             if (wireType == 0)
             {
@@ -100,10 +124,10 @@ public static class ProtoShapeSummarizer
             }
             else if (wireType is 1 or 5)
             {
-                int count = wireType == 1 ? 8 : 4;
-                if (data.Length - cursor < count)
+                int size = wireType == 1 ? 8 : 4;
+                if (data.Length - cursor < size)
                     return false;
-                cursor += count;
+                cursor += size;
             }
             else
             {
@@ -112,35 +136,50 @@ public static class ProtoShapeSummarizer
                     return false;
 
                 int length = (int)rawLength;
-                // A field of wire type 2 can contain text, bytes, packed
-                // scalars OR a protobuf message. Do not assume it is nested.
-                // "?f2.f1" explicitly marks an unverified nested candidate.
-                if (depth < MaximumDepth && length is > 0 and <= MaxNestedBytes &&
-                    nestedBudget >= length && remainingFields > 0)
+                // Length-delimited fields might instead be text, opaque
+                // bytes or packed integers. A "?" prefix explicitly marks
+                // an unverified nested-message hypothesis.
+                if (depth < MaximumDepth &&
+                    length is > 0 and <= MaxNestedBytes &&
+                    nestedByteBudget >= length &&
+                    nestedFieldsBudget > 0)
                 {
-                    nestedBudget -= length;
-                    int tentativeFields = remainingFields;
-                    int tentativeNestedBudget = nestedBudget;
-                    Dictionary<string, int> candidate = new(StringComparer.Ordinal);
-                    bool possible = TryReadShape(
-                        data.Slice(cursor, length),
-                        "?" + fieldPath + ".",
-                        depth + 1,
-                        candidate,
-                        ref tentativeFields,
-                        ref tentativeNestedBudget,
-                        out bool nestedTruncated);
-
-                    if (possible && !nestedTruncated && candidate.Count > 0)
+                    sampledPaths.TryGetValue(fieldPath, out int attempts);
+                    if (attempts < MaxSamplesPerPath)
                     {
-                        foreach (KeyValuePair<string, int> kv in candidate)
-                        {
-                            entries.TryGetValue(kv.Key, out int previous);
-                            entries[kv.Key] = previous + kv.Value;
-                        }
+                        sampledPaths[fieldPath] = attempts + 1;
+                        nestedByteBudget -= length;
 
-                        remainingFields = tentativeFields;
-                        nestedBudget = tentativeNestedBudget;
+                        Dictionary<string, int> candidate = new(StringComparer.Ordinal);
+                        int trialRoot = rootBudget;
+                        int trialNestedFields = nestedFieldsBudget;
+                        int trialNestedBytes = nestedByteBudget;
+
+                        // Roll back speculative subfields from invalid
+                        // candidates. Never expose partial child structures.
+                        bool valid = Scan(
+                            data.Slice(cursor, length),
+                            "?" + fieldPath + ".",
+                            depth + 1,
+                            rootEntries,
+                            candidate,
+                            sampledPaths,
+                            ref trialRoot,
+                            ref trialNestedFields,
+                            ref trialNestedBytes,
+                            out bool childPartial);
+
+                        nestedFieldsBudget = trialNestedFields;
+                        nestedByteBudget = trialNestedBytes;
+
+                        if (valid && !childPartial && candidate.Count > 0)
+                        {
+                            foreach (KeyValuePair<string, int> sub in candidate)
+                            {
+                                nestedEntries.TryGetValue(sub.Key, out int prior);
+                                nestedEntries[sub.Key] = prior + sub.Value;
+                            }
+                        }
                     }
                 }
 
@@ -148,7 +187,7 @@ public static class ProtoShapeSummarizer
             }
         }
 
-        return fieldsSeen > 0;
+        return seen > 0;
     }
 
     private static bool TryReadVarint(

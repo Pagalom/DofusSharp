@@ -20,18 +20,23 @@ et ne donne pour les opcodes sélectionnés que :
 
 - Horodatage UTC, numéro de session anonyme et direction ;
 - opcode, taille de corps déjà disponible en P1a ;
-- nombres de champs, types protobuf (varint `v`, fixed32 `32`,
-  fixed64 `64`, length-delimited `len`) ;
-- sous-champs *présumés* identifiés par un préfixe `?` ;
-- indicateur `[partial]` ou `unrecognized` en cas de limites.
+- `root=[...]` : nombres d'occurrences de champs sur **l'intégralité
+  du corps** (varint `v`, fixed32 `32`, fixed64 `64`, length-delimited
+  `len`) ;
+- `sampled=[...]` : formes des sous-champs plausibles avec préfixe `?`,
+  sur un **échantillon seulement** (maximum 3 instances par chemin),
+  sans pouvoir déduire leurs effectifs totaux ;
+- `[partial-root]` : limite d'analyse des champs de premier niveau atteinte ;
+  `unrecognized` : trame non reconnue comme protobuf.
 
 **Jamais de valeurs scalaires, textes, octets bruts, base64, IP,
 UID, noms, niveaux, soldes bancaires ou jetons.** Le filtrage utilise
 une liste de clés explicitement observées ; les noms métier ne sont
 pas déduits des opcodes.
 
-Les limites sont : corps maximum 256 Kio, 512 champs, profondeur deux,
-48 chemins affichés, 16 Kio de tentative d'analyse imbriquée,
+Les limites sont : corps maximum 256 Kio, 32 768 champs racine,
+512 champs d'échantillonnage imbriqué, profondeur deux,
+48 chemins affichés par section, 24 Kio de tentative d'analyse imbriquée,
 3 variantes distinctes par opcode/connexion. Les variantes identiques
 sont supprimées pour éviter les centaines de lignes répétitives.
 Tout est traité en RAM uniquement, aucun fichier n'est produit.
@@ -86,6 +91,22 @@ Le préfixe `?` ne distingue pas un sous-message d'un tableau compacté
 de nombres. Avant d'écrire des décodeurs, il faudra vérifier sur captures
 répétées et fixtures fabriquées, puis relier les messages à une connexion
 et au personnage cible sans incertitude.
+
+## Retours sur les captures du 12 octobre 2026
+
+L'ancien outil avait atteint sa limite commune de 512 champs en descendant
+dans les premières occurrences des messages de chargement. Le diagnostic
+était donc `[partial]` pour `mdp`, `irl`, `ico`, `jei` et `isr`,
+et ne permettait pas de connaître le nombre total d'enregistrements.
+
+Le correctif P1b.1 sépare le comptage **complet des champs racine** de
+l'exploration **échantillonnée** des sous-messages. Les répétitions
+observées de 172 sur `mdp` et `isr` restaient des décomptes partiels ;
+leur signification métier ne peut pas être déduite à ce stade.
+
+La même commande `--character-shape --shape-keys irl,ico,jei,isr,mdp`
+est conservée. Le format de sortie change pour éviter d'assimiler les
+compteurs d'échantillons aux nombres d'éléments réels.
 
 ## Checkpoint
 

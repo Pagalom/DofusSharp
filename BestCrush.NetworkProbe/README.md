@@ -52,19 +52,22 @@ dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- -
 Exemple de format **fictif** :
 
 ```text
-[14:31:03.000 UTC] Session #1 S→C irl 64 octets shape=[1:v 2:len ?2.1:v]
+[14:31:03.000 UTC] Session #1 S→C irl 64 octets shape=[root=[2:lenx4] sampled=[?2.1:vx3]]
 ```
 
-`1:v` signifie « champ n° 1 de type varint », **pas sa valeur**.
-`2:len` représente des octets de longueur délimitée, pouvant être du texte,
-un message imbriqué ou des nombres compactés. Le `?` signifie que le sous-message
-est seulement *plausible*, pas confirmé. `[partial]` indique que les limites
-de traitement ont interrompu l'exploration ; `unrecognized` indique un corps
-non reconnu en protobuf.
+`root=[...]` compte les champs **sur tout le message**. `2:lenx4`
+signifie quatre occurrences du champ n° 2, à contenu opaque. `sampled=[...]`
+résume seulement un échantillon des premières occurrences imbriquées (au plus
+trois par chemin) : ses répétitions ne sont **pas** celles du message complet.
+`1:v` désigne un champ varint, jamais sa valeur. Le `?` signifie
+« sous-message protobuf plausible », et non identifié de manière certaine.
+`[partial-root]` indique que la limite des 32 768 champs racine a été
+atteinte. `unrecognized` désigne un corps non reconnu comme protobuf.
 
 Les valeurs, textes, quantités, identifiants, noms et données bancaires ne sont
 jamais affichés, hachés ni enregistrés. Limites : messages de 256 Kio,
-512 champs explorés, profondeur 2, 48 chemins affichés et **au plus trois
+32 768 champs racine, 512 champs imbriqués échantillonnés,
+profondeur 2, 48 chemins affichés par section et **au plus trois
 structures distinctes par opcode et connexion**. Ce mode masque tous les autres
 messages et le bruit réseau ordinaire. Il reste distinct du diagnostic
 historique `--all`, qui peut afficher des données sensibles.
