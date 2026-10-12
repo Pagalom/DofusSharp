@@ -33,7 +33,8 @@ public sealed record CharacterCaptureEvent(
     int BodyLength = 0,
     string? Shape = null,
     string? ProfessionCandidates = null,
-    string? ProfessionIpzSummary = null);
+    string? ProfessionIpzSummary = null,
+    string? ProfessionStudySummary = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -61,13 +62,17 @@ public sealed class CharacterCaptureFlowTracker
     private readonly HashSet<string> _shapeKeys;
     private readonly IReadOnlyList<ProfessionReference>? _professionReferences;
     private readonly bool _decodeIpz;
+    private readonly IReadOnlyList<ProfessionStudyReference>? _studyReferences;
+    private readonly bool _showCandidateJobIds;
     private int _nextNumber;
 
     public CharacterCaptureFlowTracker(
         int maxFlows = 128, TimeSpan? idleTimeout = null,
         IReadOnlySet<string>? shapeKeys = null,
         IReadOnlyList<ProfessionReference>? professionReferences = null,
-        bool decodeIpz = false)
+        bool decodeIpz = false,
+        IReadOnlyList<ProfessionStudyReference>? studyReferences = null,
+        bool showCandidateJobIds = false)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -99,6 +104,20 @@ public sealed class CharacterCaptureFlowTracker
         }
 
         _decodeIpz = decodeIpz;
+
+        if (studyReferences is not null)
+        {
+            if (decodeIpz || professionReferences is not null || shapeKeys is not null)
+                throw new ArgumentException("P1e is a standalone diagnostic mode.",
+                    nameof(studyReferences));
+            // Validate before Npcap starts (with non-sensitive empty body).
+            ProfessionIpzStudy.Analyze([], studyReferences);
+            _studyReferences = Array.AsReadOnly(studyReferences.ToArray());
+        }
+        if (showCandidateJobIds && studyReferences is null)
+            throw new ArgumentException("Candidate IDs require P1e references.",
+                nameof(showCandidateJobIds));
+        _showCandidateJobIds = showCandidateJobIds;
     }
 
     public int FlowCount
@@ -220,6 +239,12 @@ public sealed class CharacterCaptureFlowTracker
                                     direction == CharacterCaptureDirection.ServerToClient &&
                                     string.Equals(any.Key, "ipz", StringComparison.Ordinal)
                                         ? FormatIpz(any.Body, _professionReferences!)
+                                        : null,
+                                    _studyReferences is not null &&
+                                    direction == CharacterCaptureDirection.ServerToClient &&
+                                    string.Equals(any.Key, "ipz", StringComparison.Ordinal)
+                                        ? ProfessionIpzStudy.Analyze(
+                                            any.Body, _studyReferences, _showCandidateJobIds)
                                         : null));
                             }
                         }

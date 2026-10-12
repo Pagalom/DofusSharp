@@ -1,0 +1,142 @@
+{
+  "protocolBuild": "3.6.11.15",
+  "opcode": "ipz",
+  "direction": "server-to-client",
+  "rowPath": "f1",
+  "schemaStatus": "research-only-unverified",
+  "fields": [
+    {
+      "path": "f1.f1",
+      "hypothesis": "profession-level",
+      "status": "correlated-six-reference-pairs"
+    },
+    {
+      "path": "f1.f2",
+      "hypothesis": "cumulative-profession-experience",
+      "status": "correlated-six-reference-pairs"
+    },
+    {
+      "path": "f1.f3",
+      "hypothesis": "cumulative-xp-start-of-level",
+      "status": "unverified"
+    },
+    {
+      "path": "f1.f4",
+      "hypothesis": "unknown",
+      "status": "unverified"
+    },
+    {
+      "path": "f1.f5",
+      "hypothesis": "profession-global-id",
+      "status": "candidate-only-unverified"
+    },
+    {
+      "path": "f1.f6",
+      "hypothesis": "cumulative-xp-next-level",
+      "status": "unverified"
+    }
+  ],
+  "note": "The professionId values MUST remain null until validated against independent reference data across sessions. Never store player XP or character identity in this file.",
+  "professions": [
+    {
+      "name": "Alchimiste",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Bijoutier",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Bricoleur",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Bûcheron",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Chasseur",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Cordomage",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Cordonnier",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Costumage",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Éleveur",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Façomage",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Façonneur",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Forgemage",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Forgeron",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Joaillomage",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Mineur",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Paysan",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Pêcheur",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Sculptemage",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Sculpteur",
+      "professionId": null,
+      "status": "unverified"
+    },
+    {
+      "name": "Tailleur",
+      "professionId": null,
+      "status": "unverified"
+    }
+  ]
+}

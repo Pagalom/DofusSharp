@@ -35,6 +35,28 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### Étude ciblée des champs métiers (P1e)
+
+Le mode `--profession-study` corrèle les deux seuils XP
+supposés (`f3` / `f6`), recense **tous les types** de `f4`,
+et teste si `f5` peut servir de clé de métier.
+L'interface demande des références locales
+`Métier:Niveau:XPtotale:XPdansNiveau:XPnecessaire` uniquement en RAM.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-study
+```
+
+Par défaut, aucune valeur du message ni ID candidat n'est affiché.
+Le drapeau explicite `--show-candidate-ids` autorise l'affichage
+local des seuls couples `Métier / f5 candidat` ayant passé les
+contrôles (sans les valider comme IDs globaux). Voir
+`docs/modular-workspace-p1e-ipz-field-study.md`.
+
+La table **versionnée**, sans données de personnage, est
+`BestCrush.Network/Protocol/ipz-profession-mapping.3.6.11.15.json`.
+Ses 20 identifiants sont volontairement `null` avant validation.
+
 ### Décodeur expérimental des métiers (P1d)
 
 Mode `--profession-decode` : demande des couples `niveau:XP_totale` dans le terminal,

@@ -31,6 +31,9 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-match");
     Console.WriteLine("Pour valider le décodage des 20 lignes ipz sans afficher leurs valeurs :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-decode");
+    Console.WriteLine("Pour vérifier f3/f6, f4 et les identifiants de métier candidats :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-study");
+    Console.WriteLine("  (option explicite) --show-candidate-ids");
     Console.WriteLine("Pour les diagnostics historiques :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --all");
     return;
@@ -50,8 +53,10 @@ Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceI
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
 if (options.CharacterScan)
 {
-    Console.WriteLine(options.ProfessionDecode
-        ? "Mode P1d : ipz (20 lignes attendues), valeurs privées masquées, métiers non identifiés."
+    Console.WriteLine(options.ProfessionStudy
+        ? "Mode P1e : validation f3/f6, inventaire de f4, candidats f5 (valeurs masquées par défaut)."
+        : options.ProfessionDecode
+            ? "Mode P1d : ipz (20 lignes attendues), valeurs privées masquées, métiers non identifiés."
         : options.ProfessionMatch
             ? "Mode P1c : corrélation locale métier/niveau/XP, aucune valeur affichée ou sauvegardée."
         : options.CharacterShape
@@ -64,6 +69,12 @@ if (options.CharacterScan)
         Console.WriteLine("Seuls les chemins de deux couples niveau/XP concordants au minimum seront affichés.");
     if (options.ProfessionDecode)
         Console.WriteLine("Seul ipz sera analysé. Les champs métiers non identifiés restent anonymes.");
+    if (options.ProfessionStudy)
+    {
+        Console.WriteLine("Seul ipz est analysé ; aucun fichier n'est écrit.");
+        if (options.ShowCandidateJobIds)
+            Console.WriteLine("ATTENTION : affichage explicite des f5 CANDIDATS, qui ne sont pas encore prouvés être des IDs métier.");
+    }
 }
 else
 {
@@ -95,6 +106,26 @@ if (options.ProfessionMatch || options.ProfessionDecode)
     Console.WriteLine("Références chargées en mémoire. Démarrer la connexion du personnage.");
 }
 
+IReadOnlyList<ProfessionStudyReference>? studyReferences = null;
+if (options.ProfessionStudy)
+{
+    Console.WriteLine();
+    Console.WriteLine("Entrer 2 à 20 références : Métier:Niveau:XPtotale:XPdansNiveau:XPnecessaire.");
+    Console.WriteLine("Séparer les métiers par une virgule. Exemple fictif : Alchimiste:82:30000:150:1640,Tailleur:63:19000:245:1260");
+    Console.WriteLine("Références locales uniquement, non enregistrées.");
+    Console.Write("Références P1e : ");
+    string? rawStudy = Console.ReadLine();
+    if (!ProfessionStudyReferenceInput.TryParse(rawStudy, out var parsedStudy))
+    {
+        Console.Error.WriteLine("Format P1e invalide : noms de métiers connus, 2 à 20 références distinctes et XP cohérentes.");
+        return;
+    }
+
+    studyReferences = parsedStudy;
+    rawStudy = null;
+    Console.WriteLine("Références P1e chargées en RAM. Tu peux maintenant connecter ton personnage.");
+}
+
 using ManualResetEventSlim stop = new(false);
 Console.CancelKeyPress += (_, e) =>
 {
@@ -108,7 +139,9 @@ if (options.CharacterScan)
         devices[options.DeviceIndex.Value], options.Port,
         options.CharacterShape ? options.ShapeKeys : null,
         professionReferences,
-        options.ProfessionDecode);
+        options.ProfessionDecode,
+        studyReferences,
+        options.ShowCandidateJobIds);
 
     probe.Start();
     stop.Wait();
@@ -136,7 +169,9 @@ internal sealed record ProbeOptions(
     bool CharacterShape,
     IReadOnlySet<string> ShapeKeys,
     bool ProfessionMatch,
-    bool ProfessionDecode)
+    bool ProfessionDecode,
+    bool ProfessionStudy,
+    bool ShowCandidateJobIds)
 {
     private static readonly string[] DefaultShapeKeys =
     [
@@ -155,6 +190,8 @@ internal sealed record ProbeOptions(
         bool characterShape = false;
         bool professionMatch = false;
         bool professionDecode = false;
+        bool professionStudy = false;
+        bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
 
         for (int i = 0; i < args.Length; i++)
@@ -185,6 +222,12 @@ internal sealed record ProbeOptions(
                 case "--profession-decode":
                     professionDecode = true;
                     break;
+                case "--profession-study":
+                    professionStudy = true;
+                    break;
+                case "--show-candidate-ids":
+                    showCandidateJobIds = true;
+                    break;
                 case "--shape-keys" when i + 1 < args.Length:
                     shapeKeysCsv = args[++i];
                     characterShape = true;
@@ -205,15 +248,23 @@ internal sealed record ProbeOptions(
             throw new ArgumentException(
                 "--shape-keys requires 1 to 32 simple comma-separated opcodes.");
 
-        if ((professionMatch && characterShape) ||
-            (professionDecode && (professionMatch || characterShape)))
+        int selectedModes =
+            (professionMatch ? 1 : 0) + (professionDecode ? 1 : 0) +
+            (professionStudy ? 1 : 0) + (characterShape ? 1 : 0);
+        if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
+
+        if (showCandidateJobIds && !professionStudy)
+            throw new ArgumentException(
+                "--show-candidate-ids requires --profession-study.");
 
         // P1b/P1c both imply the isolated, passive capture path of P1a.
         return new ProbeOptions(
             device, port, all, list,
-            characterScan || characterShape || professionMatch || professionDecode,
-            characterShape, shapeKeys, professionMatch, professionDecode);
+            characterScan || characterShape || professionMatch ||
+                professionDecode || professionStudy,
+            characterShape, shapeKeys, professionMatch, professionDecode,
+            professionStudy, showCandidateJobIds);
     }
 }
