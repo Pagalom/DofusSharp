@@ -22,7 +22,9 @@ if (options.ListDevices || options.DeviceIndex is null)
         return;
 
     Console.WriteLine();
-    Console.WriteLine("Relance avec --device <index>. Exemple :");
+    Console.WriteLine("Pour étudier les personnages sans payload :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --character-scan");
+    Console.WriteLine("Pour les diagnostics historiques :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --all");
     return;
 }
@@ -39,16 +41,18 @@ ProtocolMap map = ProtocolMap.Load(mapPath);
 Console.WriteLine($"BestCrush Network Probe — Dofus {map.ClientBuild}");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
-Console.WriteLine($"Mapping   : price_list={map.PriceList ?? "?"}, crush_result={map.CrushResult ?? "?"}");
+if (options.CharacterScan)
+{
+    Console.WriteLine("Mode P1 : métadonnées uniquement, flux TCP isolés, aucun payload enregistré.");
+    Console.WriteLine("Notes manuelles : connexion A, caractéristiques, métiers (J), déconnexion, connexion B.");
+}
+else
+{
+    Console.WriteLine($"Mapping   : price_list={map.PriceList ?? "?"}, crush_result={map.CrushResult ?? "?"}");
+}
 Console.WriteLine();
 Console.WriteLine("Ctrl+C pour arrêter.");
 Console.WriteLine();
-
-using DofusCaptureProbe probe = new(
-    devices[options.DeviceIndex.Value],
-    options.Port,
-    map,
-    options.ShowAllMessages);
 
 using ManualResetEventSlim stop = new(false);
 Console.CancelKeyPress += (_, e) =>
@@ -57,11 +61,34 @@ Console.CancelKeyPress += (_, e) =>
     stop.Set();
 };
 
-probe.Start();
-stop.Wait();
-probe.Stop();
+if (options.CharacterScan)
+{
+    using CharacterMetadataProbe probe = new(
+        devices[options.DeviceIndex.Value], options.Port);
 
-internal sealed record ProbeOptions(int? DeviceIndex, int Port, bool ShowAllMessages, bool ListDevices)
+    probe.Start();
+    stop.Wait();
+    probe.Stop();
+}
+else
+{
+    using DofusCaptureProbe probe = new(
+        devices[options.DeviceIndex.Value],
+        options.Port,
+        map,
+        options.ShowAllMessages);
+
+    probe.Start();
+    stop.Wait();
+    probe.Stop();
+}
+
+internal sealed record ProbeOptions(
+    int? DeviceIndex,
+    int Port,
+    bool ShowAllMessages,
+    bool ListDevices,
+    bool CharacterScan)
 {
     public static ProbeOptions Parse(string[] args)
     {
@@ -69,6 +96,7 @@ internal sealed record ProbeOptions(int? DeviceIndex, int Port, bool ShowAllMess
         int port = 5555;
         bool all = false;
         bool list = false;
+        bool characterScan = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -86,9 +114,13 @@ internal sealed record ProbeOptions(int? DeviceIndex, int Port, bool ShowAllMess
                 case "--list":
                     list = true;
                     break;
+                case "--character-scan":
+                    characterScan = true;
+                    break;
             }
         }
 
-        return new ProbeOptions(device, port, all, list);
+        // Always use the non-payload path when --character-scan is set.
+        return new ProbeOptions(device, port, all, list, characterScan);
     }
 }

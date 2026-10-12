@@ -35,7 +35,25 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
-`--all` affiche chaque message Ankama détecté. Sans `--all`, seuls les événements sémantiques reconnus sont affichés.
+### Exploration des personnages (P1 — à privilégier)
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --character-scan
+```
+
+Ce mode est **indépendant de l'analyse de marché** et affiche uniquement :
+
+```text
+[15:42:18.100 UTC] Session #1 S→C abc 42 octets
+[15:42:19.020 UTC] Session #1 C→S def 7 octets
+[15:42:20.450 UTC] Session #1 S→C CLOSED
+```
+
+Chaque numéro de session identifie une **connexion TCP spécifique**. Aucun endpoint, nom de personnage, contenu protobuf, token ou payload n'est imprimé ou sauvegardé par ce mode. Les flux sont plafonnés à 128 connexions et purgés après 30 minutes d'inactivité. Un FIN/RST est journalisé même sans payload. `--character-scan` prend la priorité sur `--all` lorsqu'ils sont combinés.
+
+**Attention :** les traces terminal peuvent toujours révéler un timing d'activité. Ne partage que les lignes nécessaires et relève manuellement l'heure des actions en jeu. Aucun décodage d'identité, de métier, de banque ou de kamas n'est encore revendiqué.
+
+`--all` affiche chaque message Ankama détecté dans le **mode historique**. Sans `--all`, seuls les événements sémantiques reconnus sont affichés. Ce mode historique peut afficher des contenus réseau : ne pas le choisir pour l'étude des personnages.
 
 ## Mapping protocole
 
