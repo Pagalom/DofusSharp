@@ -24,6 +24,9 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine();
     Console.WriteLine("Pour étudier les personnages sans payload :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --character-scan");
+    Console.WriteLine("Pour voir les structures de champs des messages de connexion :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --character-shape");
+    Console.WriteLine("  (option) --shape-keys irl,ico,jei,isr");
     Console.WriteLine("Pour les diagnostics historiques :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --all");
     return;
@@ -43,8 +46,12 @@ Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceI
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
 if (options.CharacterScan)
 {
-    Console.WriteLine("Mode P1 : métadonnées uniquement, flux TCP isolés, aucun payload enregistré.");
-    Console.WriteLine("Notes manuelles : connexion A, caractéristiques, métiers (J), déconnexion, connexion B.");
+    Console.WriteLine(options.CharacterShape
+        ? "Mode P1b : formes protobuf uniquement pour les opcodes ciblés ; aucune valeur enregistrée."
+        : "Mode P1a : métadonnées uniquement, flux TCP isolés, aucun payload enregistré.");
+    if (options.CharacterShape)
+        Console.WriteLine("Op codes ciblés : " + string.Join(", ", options.ShapeKeys.OrderBy(x => x)));
+    Console.WriteLine("Notes manuelles : connexion, caractéristiques, métiers (J), inventaire, banque, déconnexion.");
 }
 else
 {
@@ -64,7 +71,8 @@ Console.CancelKeyPress += (_, e) =>
 if (options.CharacterScan)
 {
     using CharacterMetadataProbe probe = new(
-        devices[options.DeviceIndex.Value], options.Port);
+        devices[options.DeviceIndex.Value], options.Port,
+        options.CharacterShape ? options.ShapeKeys : null);
 
     probe.Start();
     stop.Wait();
@@ -88,8 +96,17 @@ internal sealed record ProbeOptions(
     int Port,
     bool ShowAllMessages,
     bool ListDevices,
-    bool CharacterScan)
+    bool CharacterScan,
+    bool CharacterShape,
+    IReadOnlySet<string> ShapeKeys)
 {
+    private static readonly string[] DefaultShapeKeys =
+    [
+        "kta", "kmz", "knc", "krg", "mdp", "ica", "irl",
+        "ico", "jei", "isr", "irp", "hpe", "ifg", "lve",
+        "lxb", "jfo", "jgq", "kmt", "kmi", "ipg", "ipz", "jhb"
+    ];
+
     public static ProbeOptions Parse(string[] args)
     {
         int? device = null;
@@ -97,6 +114,8 @@ internal sealed record ProbeOptions(
         bool all = false;
         bool list = false;
         bool characterScan = false;
+        bool characterShape = false;
+        string? shapeKeysCsv = null;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -117,10 +136,32 @@ internal sealed record ProbeOptions(
                 case "--character-scan":
                     characterScan = true;
                     break;
+                case "--character-shape":
+                    characterShape = true;
+                    break;
+                case "--shape-keys" when i + 1 < args.Length:
+                    shapeKeysCsv = args[++i];
+                    characterShape = true;
+                    break;
             }
         }
 
-        // Always use the non-payload path when --character-scan is set.
-        return new ProbeOptions(device, port, all, list, characterScan);
+        HashSet<string> shapeKeys = new(
+            shapeKeysCsv is null
+                ? DefaultShapeKeys
+                : shapeKeysCsv.Split(',', StringSplitOptions.TrimEntries |
+                                            StringSplitOptions.RemoveEmptyEntries),
+            StringComparer.Ordinal);
+
+        if (shapeKeys.Count == 0 || shapeKeys.Count > 32 ||
+            shapeKeys.Any(key => key.Length is < 1 or > 16 ||
+                key.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('_' or '-'))))
+            throw new ArgumentException(
+                "--shape-keys requires 1 to 32 simple comma-separated opcodes.");
+
+        // P1b implies P1a's passive metadata-only capture path.
+        return new ProbeOptions(
+            device, port, all, list, characterScan || characterShape,
+            characterShape, shapeKeys);
     }
 }

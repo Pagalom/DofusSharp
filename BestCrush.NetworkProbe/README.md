@@ -35,7 +35,41 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
-### Exploration des personnages (P1 — à privilégier)
+### Analyse des structures protobuf (P1b — sans valeurs personnelles)
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --character-shape
+```
+
+Les opcodes sont ciblés à partir des observations de connexion précédentes
+(`kta`, `krg`, `irl`, `ico`, `jei`, `isr`, `irp`, `mdp`, etc.).
+Pour réduire la sortie à quelques messages :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --character-shape --shape-keys irl,ico,jei,isr
+```
+
+Exemple de format **fictif** :
+
+```text
+[14:31:03.000 UTC] Session #1 S→C irl 64 octets shape=[1:v 2:len ?2.1:v]
+```
+
+`1:v` signifie « champ n° 1 de type varint », **pas sa valeur**.
+`2:len` représente des octets de longueur délimitée, pouvant être du texte,
+un message imbriqué ou des nombres compactés. Le `?` signifie que le sous-message
+est seulement *plausible*, pas confirmé. `[partial]` indique que les limites
+de traitement ont interrompu l'exploration ; `unrecognized` indique un corps
+non reconnu en protobuf.
+
+Les valeurs, textes, quantités, identifiants, noms et données bancaires ne sont
+jamais affichés, hachés ni enregistrés. Limites : messages de 256 Kio,
+512 champs explorés, profondeur 2, 48 chemins affichés et **au plus trois
+structures distinctes par opcode et connexion**. Ce mode masque tous les autres
+messages et le bruit réseau ordinaire. Il reste distinct du diagnostic
+historique `--all`, qui peut afficher des données sensibles.
+
+### Exploration des personnages (P1a — sans valeurs personnelles)
 
 ```powershell
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --character-scan

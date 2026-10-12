@@ -30,7 +30,8 @@ public sealed record CharacterCaptureEvent(
     CharacterCaptureDirection Direction,
     CharacterCaptureEventKind Kind,
     string? Opcode = null,
-    int BodyLength = 0);
+    int BodyLength = 0,
+    string? Shape = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -55,10 +56,12 @@ public sealed class CharacterCaptureFlowTracker
     private readonly Dictionary<CharacterCaptureFlowKey, Session> _flows = new();
     private readonly int _maxFlows;
     private readonly TimeSpan _idleTimeout;
+    private readonly HashSet<string> _shapeKeys;
     private int _nextNumber;
 
     public CharacterCaptureFlowTracker(
-        int maxFlows = 128, TimeSpan? idleTimeout = null)
+        int maxFlows = 128, TimeSpan? idleTimeout = null,
+        IReadOnlySet<string>? shapeKeys = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -67,6 +70,15 @@ public sealed class CharacterCaptureFlowTracker
         _idleTimeout = idleTimeout ?? TimeSpan.FromMinutes(30);
         if (_idleTimeout <= TimeSpan.Zero)
             throw new ArgumentOutOfRangeException(nameof(idleTimeout));
+
+        _shapeKeys = shapeKeys is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(shapeKeys, StringComparer.Ordinal);
+
+        if (_shapeKeys.Any(key => !IsSafeOpcode(key)))
+            throw new ArgumentException(
+                "Shape keys must be simple, non-empty protocol opcodes.",
+                nameof(shapeKeys));
     }
 
     public int FlowCount
@@ -175,7 +187,10 @@ public sealed class CharacterCaptureFlowTracker
                                 events.Add(new CharacterCaptureEvent(
                                     observedAtUtc, flow.Number, direction,
                                     CharacterCaptureEventKind.Message,
-                                    SafeOpcode(any.Key), any.Body.Length));
+                                    SafeOpcode(any.Key), any.Body.Length,
+                                    _shapeKeys.Contains(any.Key)
+                                        ? ProtoShapeSummarizer.Describe(any.Body)
+                                        : null));
                             }
                         }
                     }
@@ -205,9 +220,10 @@ public sealed class CharacterCaptureFlowTracker
         }
     }
 
-    private static string SafeOpcode(string key) =>
+    private static bool IsSafeOpcode(string key) =>
         key.Length is >= 1 and <= 16 &&
-        key.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')
-            ? key
-            : "(invalid)";
+        key.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-');
+
+    private static string SafeOpcode(string key) =>
+        IsSafeOpcode(key) ? key : "(invalid)";
 }

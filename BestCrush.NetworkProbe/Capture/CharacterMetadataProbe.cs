@@ -10,9 +10,14 @@ namespace BestCrush.NetworkProbe.Capture;
 /// A per-client TCP tracker is required to avoid cross-account mixing.
 /// </summary>
 internal sealed class CharacterMetadataProbe(
-    ICaptureDevice device, int port) : IDisposable
+    ICaptureDevice device, int port,
+    IReadOnlySet<string>? shapeKeys = null) : IDisposable
 {
-    private readonly CharacterCaptureFlowTracker _flows = new();
+    private const int MaximumVariantsPerOpcode = 3;
+    private readonly CharacterCaptureFlowTracker _flows = new(shapeKeys: shapeKeys);
+    private readonly bool _shapeMode = shapeKeys is not null;
+    private readonly Dictionary<(int Session, string Opcode), HashSet<string>>
+        _reportedShapes = new();
 
     public void Start()
     {
@@ -81,16 +86,43 @@ internal sealed class CharacterMetadataProbe(
 
             foreach (CharacterCaptureEvent entry in events)
             {
+                if (_shapeMode && entry.Kind == CharacterCaptureEventKind.Message)
+                {
+                    // Shape scan shows only selected opcodes, no routine noise.
+                    if (entry.Shape is null || entry.Opcode is null)
+                        continue;
+
+                    var group = (entry.SessionNumber, entry.Opcode);
+                    if (!_reportedShapes.TryGetValue(group, out HashSet<string>? seen))
+                    {
+                        seen = new HashSet<string>(StringComparer.Ordinal);
+                        _reportedShapes.Add(group, seen);
+                    }
+
+                    if (seen.Count >= MaximumVariantsPerOpcode ||
+                        !seen.Add(entry.Shape))
+                        continue;
+                }
+
                 string direction = entry.Direction ==
                     CharacterCaptureDirection.ServerToClient ? "S→C" : "C→S";
 
                 string detail = entry.Kind == CharacterCaptureEventKind.Message
-                    ? $"{entry.Opcode} {entry.BodyLength} octets"
+                    ? $"{entry.Opcode} {entry.BodyLength} octets" +
+                      (_shapeMode ? $" shape=[{entry.Shape}]" : "")
                     : entry.Kind.ToString().ToUpperInvariant();
 
                 Console.WriteLine(
                     $"[{entry.ObservedAtUtc:HH:mm:ss.fff} UTC] " +
                     $"Session #{entry.SessionNumber} {direction} {detail}");
+
+                if (entry.Kind is CharacterCaptureEventKind.Closed or
+                    CharacterCaptureEventKind.Evicted)
+                {
+                    foreach (var group in _reportedShapes.Keys
+                        .Where(group => group.Session == entry.SessionNumber).ToArray())
+                        _reportedShapes.Remove(group);
+                }
             }
         }
         catch (Exception ex)
