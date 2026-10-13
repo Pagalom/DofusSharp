@@ -3,7 +3,7 @@
   "opcode": "ipz",
   "direction": "server-to-client",
   "rowPath": "f1",
-  "schemaStatus": "research-only-conflicting-name-reference-observation-requires-reconciliation",
+  "schemaStatus": "research-only-ten-observed-candidates-sculptemage-unresolved",
   "fields": [
     {
       "path": "f1.f1",
@@ -36,7 +36,7 @@
       "status": "confirmed-six-reference-threshold-matches"
     }
   ],
-  "note": "candidateProfessionId values are uniquely associated with named profession reference pairs within one real ipz snapshot. legacyProfessionIdHint is only a historical hint, not observed via ipz. professionId stays null until additional validation. Do not store player XP, character identities, IPs, raw packets, or credentials.",
+  "note": "Only protocol ID candidates are stored. Cordomage 62 is supported by a repeated capture and historical reference; Sculptemage 48 remains historical-only, never observed via unambiguous ipz correlation. professionId stays null until identity criteria are met. No character XP, ID, session, or packet data is versioned.",
   "professions": [
     {
       "name": "Alchimiste",
@@ -69,7 +69,7 @@
     {
       "name": "Cordomage",
       "professionId": null,
-      "status": "observed-and-legacy-corroborated-but-conflicting-subsequent-name-reference",
+      "status": "correlated-across-two-captures-and-legacy-corroborated",
       "candidateProfessionId": 62
     },
     {
@@ -135,7 +135,7 @@
     {
       "name": "Sculptemage",
       "professionId": null,
-      "status": "legacy-hint-only-current-name-reference-collides-with-cordomage",
+      "status": "legacy-hint-only-no-unambiguous-current-ipz-identification",
       "legacyProfessionIdHint": 48
     },
     {
@@ -185,7 +185,12 @@
       "kind": "live-ipz-experiment",
       "scope": "two-named-reference-pairs-one-unique-match-name-conflict",
       "build": "3.6.11.15",
-      "detail": "Later ipz session reports a unique reference provided as Sculptemage at f5=62, while the Cordomage reference is not matched. Earlier session associated f5=62 with Cordomage, independently supported by legacy IDs. Names or reference freshness must be verified; no reassignment is justified. No private level/XP retained."
+      "detail": "The later report associated f5=62 with a user-supplied label Sculptemage; the user subsequently confirmed having leveled Cordomage instead. This resolves the apparent conflict. f5=62 remained tied to Cordomage. Sculptemage f5 not observed unambiguously. No private XP retained."
+    },
+    {
+      "kind": "user-clarification",
+      "scope": "label-correction-for-later-ipz-capture",
+      "detail": "The player confirmed that the profession which gained XP was Cordomage, not Sculptemage. No new profession ID inferred."
     }
   ]
 }

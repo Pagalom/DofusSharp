@@ -111,37 +111,33 @@ L'identifiant global et le rattachement au personnage
 restent non etablis.
 
 
-## P1f - Divergence sur la nouvelle capture
+## P1f — Apparente divergence levée par clarification
 
-Une capture ulterieure ipz du meme build 3.6.11.15 presente
-`rows=20`, `pairs=1/2`, `f5-unique=true`.
-Le programme associe **l'etiquette saisie « Sculptemage »**
-a `f5=62`, tandis que le couple saisi sous l'etiquette
-« Cordomage » n'est pas retrouve. Il s'agit d'une
-**observation contradictoire**, et NON de la preuve que
-l'identifiant global 62 designe Sculptemage.
+Une capture ultérieure (build 3.6.11.15) affichait
+`rows=20 pairs=1/2 f5-unique=true`, avec
+`Sculptemage:f5=62` dans la sortie. Cette association de
+nom résultait de la **référence saisie incorrectement** :
+l'utilisateur a confirmé avoir fait progresser **Cordomage**
+et non Sculptemage.
 
-L'experience precedente associait 62 a Cordomage et une
-reference historique independante associe egalement 62
-a Cordomage. La reference historique donne Sculptemage=48.
-Ces observations ne sont pas reconciliables sans verifier
-directement les libelles des metiers dans l'interface Dofus
-et leurs niveaux/XP cumulees au meme instant.
+Par conséquent :
+- La corrélation réseau `f5=62` est cohérente avec Cordomage,
+  déjà identifié lors d'une capture antérieure et recoupé
+  avec une liste publique historique.
+- Le signal `Sculptemage:f5=62` de la seconde capture ne
+  constitue **pas** une identification de Sculptemage :
+  la paire niveau/XP avait été attribuée au mauvais métier.
+- Sculptemage reste **non identifié** dans le trafic actuel ;
+  `48` est uniquement un indice historique externe.
+- Il reste **10 métiers** associés à un f5 candidat observé
+  dans la table, sans activation automatique de `professionId`.
 
-**Decision :** ne PAS inverser les correspondances,
-ne PAS renseigner `professionId`, ne PAS activer la table
-en production. Le candidat 62 reste lie a Cordomage avec
-un statut de divergence explicite. Le numero 48 reste
-un indice historique uniquement.
+Pour identifier réellement Sculptemage, vérifier son nom
+avant de faire progresser exclusivement ce métier, puis
+relever son niveau et son XP **totale**. Lancer P1f avec
+Sculptemage et un deuxième métier de référence dont les
+données n'ont pas changé. Une association unique permettra
+alors de le lier à une valeur f5 sans confusion.
 
-**Prochain controle minimal :** demander une capture
-de l'interface des metiers montrant cote a cote Cordomage
-et Sculptemage, ou des relevés textuels verifies pour
-les deux metiers. Il est possible que le metier qui a
-monte de niveau ait ete mal nomme lors de la saisie,
-mais on ne peut pas en deduire la cause avec le log.
-Ne pas poursuivre l'XP tant que les deux noms et
-les valeurs courantes ne sont pas reconciliés.
-
-Les valeurs personnelles (niveaux, XP cumulées,
-identite et donnees de sessions) ne sont pas versionnees.
+La table Git conserve cette clarification sans contenir
+les XP personnelles ni les noms de personnages.
