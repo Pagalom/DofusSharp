@@ -75,3 +75,37 @@ f5 manquants/dupliqués, confidentialité et séparation des
 sessions TCP. Une reconnexion Dofus est nécessaire pour
 observer les valeurs réelles des cinq métiers. Le commit ne
 vaut pas validation Windows.
+
+## Premier resultat reel et correspondances retenues
+
+Une session du client 3.6.11.15 confirme :
+- 20 lignes ipz avec 20 valeurs f5 distinctes.
+- Quatre couples niveau/XP cumulee retrouves exactement une fois
+  parmi cinq references metiers fournies.
+- Correspondances metier -> f5 observees :
+  Cordomage 62, Façomage 74, Forgemage 44, Joaillomage 63.
+- Cordomage, Forgemage et Joaillomage concordent egalement
+  avec la liste publique des IDs de metiers de 2020 :
+  https://forum.cheat-gam3.com/threads/identifiant-ressources-et-m%C3%A9tier.204598/
+- Façomage 74 reste seulement observe dans la session actuelle.
+- Sculptemage : non retrouve de maniere unique parmi les cinq
+  references. Le diagnostic P1f actuel ne differencie pas
+  `absent` de `plusieurs lignes identiques`; aucune valeur
+  f5 ne peut etre atribuee a ce metier avec cette observation.
+- La liste publique ancienne propose Sculptemage 48 ; cela
+  reste un `legacyProfessionIdHint` et NON un f5 observe
+  pour Sculptemage sur le client actuel.
+
+### Etape suivante
+
+Pour distinguer un metier dont le couple niveau/XP pourrait
+coincider avec un autre metier, faire progresser UNIQUEMENT
+le metier ambigu pour obtenir un nouveau couple unique,
+puis retenter P1f avec au moins deux references distinctes,
+dont un metier deja reconnaissable. Eviter de faire progresser
+les autres metiers dans le meme intervalle de verification.
+
+Ne pas sauvegarder les XP du joueur dans les tests ou
+dans `ipz-profession-mapping.3.6.11.15.json`.
+L'identifiant global et le rattachement au personnage
+restent non etablis.

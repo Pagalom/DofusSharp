@@ -3,7 +3,7 @@
   "opcode": "ipz",
   "direction": "server-to-client",
   "rowPath": "f1",
-  "schemaStatus": "research-only-six-candidates-awaiting-independent-session",
+  "schemaStatus": "research-only-ten-observed-candidates-one-legacy-hint-awaiting-confirmation",
   "fields": [
     {
       "path": "f1.f1",
@@ -36,7 +36,7 @@
       "status": "confirmed-six-reference-threshold-matches"
     }
   ],
-  "note": "Only candidateProfessionId values are stored; professionId stays null until independent repeat capture and semantic cross-check. No player XP, character identity, payloads, or user-derived non-protocol data.",
+  "note": "candidateProfessionId values are uniquely associated with named profession reference pairs within one real ipz snapshot. legacyProfessionIdHint is only a historical hint, not observed via ipz. professionId stays null until additional validation. Do not store player XP, character identities, IPs, raw packets, or credentials.",
   "professions": [
     {
       "name": "Alchimiste",
@@ -69,7 +69,8 @@
     {
       "name": "Cordomage",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-and-corroborated-in-legacy-reference",
+      "candidateProfessionId": 62
     },
     {
       "name": "Cordonnier",
@@ -90,7 +91,8 @@
     {
       "name": "Façomage",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-in-current-client-only",
+      "candidateProfessionId": 74
     },
     {
       "name": "Façonneur",
@@ -100,7 +102,8 @@
     {
       "name": "Forgemage",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-and-corroborated-in-legacy-reference",
+      "candidateProfessionId": 44
     },
     {
       "name": "Forgeron",
@@ -110,7 +113,8 @@
     {
       "name": "Joaillomage",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-and-corroborated-in-legacy-reference",
+      "candidateProfessionId": 63
     },
     {
       "name": "Mineur",
@@ -131,7 +135,8 @@
     {
       "name": "Sculptemage",
       "professionId": null,
-      "status": "unverified"
+      "status": "legacy-source-only-not-observed-unambiguously-in-p1f",
+      "legacyProfessionIdHint": 48
     },
     {
       "name": "Sculpteur",
@@ -163,6 +168,18 @@
       "url": "https://www.dofuspourlespros.com/mise-a-jour-305.html",
       "published": "2026-02-28",
       "scope": "Breeder introduced in Dofus 3.5; does not verify candidate ID 79"
+    },
+    {
+      "kind": "live-ipz-experiment",
+      "scope": "four-distinct-profession-pairs-out-of-five-supplied",
+      "build": "3.6.11.15",
+      "detail": "one later TCP session; 20 rows; 4/5 level-XP pairs matched uniquely; f5 unique among 20 rows; no unambiguous wire association for Sculptemage"
+    },
+    {
+      "kind": "legacy-public-reference",
+      "url": "https://forum.cheat-gam3.com/threads/identifiant-ressources-et-m%C3%A9tier.204598/",
+      "published": "2020-04-22",
+      "scope": "Cordomage 62, Forgemage 44, Joaillomage 63 corroborate current live capture; Sculptemage 48 is historical-only hint; no evidence for Façomage 74"
     }
   ]
 }
