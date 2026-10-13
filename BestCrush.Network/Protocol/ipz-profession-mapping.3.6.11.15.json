@@ -3,7 +3,7 @@
   "opcode": "ipz",
   "direction": "server-to-client",
   "rowPath": "f1",
-  "schemaStatus": "research-only-unverified",
+  "schemaStatus": "research-only-six-candidates-awaiting-independent-session",
   "fields": [
     {
       "path": "f1.f1",
@@ -18,30 +18,31 @@
     {
       "path": "f1.f3",
       "hypothesis": "cumulative-xp-start-of-level",
-      "status": "unverified"
+      "status": "confirmed-six-reference-threshold-matches"
     },
     {
       "path": "f1.f4",
       "hypothesis": "unknown",
-      "status": "unverified"
+      "status": "absent-all-wire-types-across-twenty-rows-in-one-capture"
     },
     {
       "path": "f1.f5",
       "hypothesis": "profession-global-id",
-      "status": "candidate-only-unverified"
+      "status": "six-candidates-observed-five-externally-corroborated-awaiting-followup"
     },
     {
       "path": "f1.f6",
       "hypothesis": "cumulative-xp-next-level",
-      "status": "unverified"
+      "status": "confirmed-six-reference-threshold-matches"
     }
   ],
-  "note": "The professionId values MUST remain null until validated against independent reference data across sessions. Never store player XP or character identity in this file.",
+  "note": "Only candidateProfessionId values are stored; professionId stays null until independent repeat capture and semantic cross-check. No player XP, character identity, payloads, or user-derived non-protocol data.",
   "professions": [
     {
       "name": "Alchimiste",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-and-corroborated-in-legacy-reference",
+      "candidateProfessionId": 26
     },
     {
       "name": "Bijoutier",
@@ -56,12 +57,14 @@
     {
       "name": "Bûcheron",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-and-corroborated-in-legacy-reference",
+      "candidateProfessionId": 2
     },
     {
       "name": "Chasseur",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-and-corroborated-in-legacy-reference",
+      "candidateProfessionId": 41
     },
     {
       "name": "Cordomage",
@@ -81,7 +84,8 @@
     {
       "name": "Éleveur",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-in-current-client-only",
+      "candidateProfessionId": 79
     },
     {
       "name": "Façomage",
@@ -116,7 +120,8 @@
     {
       "name": "Paysan",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-and-corroborated-in-legacy-reference",
+      "candidateProfessionId": 28
     },
     {
       "name": "Pêcheur",
@@ -136,7 +141,28 @@
     {
       "name": "Tailleur",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-and-corroborated-in-legacy-reference",
+      "candidateProfessionId": 27
+    }
+  ],
+  "sources": [
+    {
+      "kind": "live-ipz-experiment",
+      "scope": "six-distinct-professions",
+      "build": "3.6.11.15",
+      "detail": "one session; 6/6 unique level-totalXP and lower/upper thresholds; 20 unique f5; 20 rows; no f4"
+    },
+    {
+      "kind": "legacy-public-reference",
+      "url": "https://forum.cheat-gam3.com/threads/identifiant-ressources-et-m%C3%A9tier.204598/",
+      "published": "2020-04-22",
+      "scope": "five observed legacy profession IDs; not 2026 version-specific"
+    },
+    {
+      "kind": "current-profession-context",
+      "url": "https://www.dofuspourlespros.com/mise-a-jour-305.html",
+      "published": "2026-02-28",
+      "scope": "Breeder introduced in Dofus 3.5; does not verify candidate ID 79"
     }
   ]
 }

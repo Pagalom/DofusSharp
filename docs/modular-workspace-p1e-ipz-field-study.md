@@ -118,3 +118,44 @@ les references ambigues, l'absence de fuite des identifiants
 sans option, le filtrage S vers C et la separation des
 sessions TCP. La compilation et l'observation reelle sur
 Windows sont les prochaines etapes, pas encore validees.
+
+## Observation réelle P1e — 13 octobre 2026
+
+Une session ipz du build 3.6.11.15 a été analysée avec
+six références locales de métiers distincts. Résultat :
+
+- 20 lignes / 20 ; six couples niveau et XP cumulée sur six.
+- Six seuils de début de niveau `f1.f3` sur six.
+- Six seuils de prochain niveau `f1.f6` sur six.
+- `f1.f4` absent dans les 20 lignes, **tous wire types confondus**.
+- `f1.f5` présent dans les 20 lignes, 20 valeurs distinctes.
+- Six liaisons métier -> valeur f5 rendues uniques par les
+  couples niveau/XP et les deux seuils.
+
+| Métier | f1.f5 observé | Recoupement indépendant |
+|---|---:|---|
+| Alchimiste | 26 | Oui : liste publique de 2020 |
+| Tailleur | 27 | Oui : liste publique de 2020 |
+| Bûcheron | 2 | Oui : liste publique de 2020 |
+| Paysan | 28 | Oui : liste publique de 2020 |
+| Chasseur | 41 | Oui : liste publique de 2020 |
+| Éleveur | 79 | Non : métier introduit en 2026 |
+
+Sources indépendantes :
+- https://forum.cheat-gam3.com/threads/identifiant-ressources-et-m%C3%A9tier.204598/
+  (avril 2020 : les cinq IDs historiques concordent).
+- https://www.dofuspourlespros.com/mise-a-jour-305.html
+  (février 2026 : introduction du métier Éleveur en Dofus 3.5 ;
+  ne fournit PAS son identifiant).
+
+**Décision** : enregistrer les six valeurs dans
+`ipz-profession-mapping.3.6.11.15.json` sous le champ
+`candidateProfessionId`, accompagné du statut de preuve,
+sans remplir `professionId` et sans activer leur usage
+en production avant nouvelle confirmation. Les 14 autres métiers
+restent sans valeur candidate établie par ce protocole.
+
+L'enregistrement des valeurs `f1.f5` est celui de constantes
+hypothétiques de protocole ; aucune expérience, donnée de compte,
+ID de personnage ni donnée de session n'est enregistrée.
+
