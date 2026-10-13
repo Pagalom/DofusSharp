@@ -141,3 +141,21 @@ alors de le lier à une valeur f5 sans confusion.
 
 La table Git conserve cette clarification sans contenir
 les XP personnelles ni les noms de personnages.
+
+## P1f — Corrélation Sculptemage confirmée dans le trafic
+
+Une nouvelle capture du client 3.6.11.15 a confirmé :
+- 20 lignes ipz, `pairs=2/2`, `f5-unique=true`, `candidate-links=2/2`.
+- Cordomage : `f1.f5=62`, conforme aux observations précédentes.
+- Sculptemage : `f1.f5=48`, association unique et cohérente avec
+  la liste publique historique des identifiants de métiers.
+
+L'ancienne contradiction provenait d'une erreur d'étiquette du
+métier monté en XP, explicitement clarifiée par l'utilisateur.
+
+La table comporte désormais **11 identifiants candidats
+observés sur 20 métiers**. Aucun ID n'est encore activé en
+production : les champs `professionId` restent à null
+tant que l'identité du personnage et la portée globale du
+mapping ne sont pas validées. Les niveaux et XP personnelles
+ne sont pas enregistrés dans le dépôt.

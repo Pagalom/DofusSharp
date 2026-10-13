@@ -3,7 +3,7 @@
   "opcode": "ipz",
   "direction": "server-to-client",
   "rowPath": "f1",
-  "schemaStatus": "research-only-ten-observed-candidates-sculptemage-unresolved",
+  "schemaStatus": "research-only-eleven-observed-candidates-awaiting-global-and-character-validation",
   "fields": [
     {
       "path": "f1.f1",
@@ -28,7 +28,7 @@
     {
       "path": "f1.f5",
       "hypothesis": "profession-global-id",
-      "status": "six-candidates-observed-five-externally-corroborated-awaiting-followup"
+      "status": "eleven-observed-candidates-awaiting-global-validation"
     },
     {
       "path": "f1.f6",
@@ -69,7 +69,7 @@
     {
       "name": "Cordomage",
       "professionId": null,
-      "status": "correlated-across-two-captures-and-legacy-corroborated",
+      "status": "correlated-across-three-captures-and-legacy-corroborated",
       "candidateProfessionId": 62
     },
     {
@@ -135,8 +135,8 @@
     {
       "name": "Sculptemage",
       "professionId": null,
-      "status": "legacy-hint-only-no-unambiguous-current-ipz-identification",
-      "legacyProfessionIdHint": 48
+      "status": "observed-unique-and-legacy-corroborated-awaiting-global-validation",
+      "candidateProfessionId": 48
     },
     {
       "name": "Sculpteur",
@@ -191,6 +191,12 @@
       "kind": "user-clarification",
       "scope": "label-correction-for-later-ipz-capture",
       "detail": "The player confirmed that the profession which gained XP was Cordomage, not Sculptemage. No new profession ID inferred."
+    },
+    {
+      "kind": "live-ipz-experiment",
+      "scope": "two-distinct-named-references",
+      "build": "3.6.11.15",
+      "detail": "20 rows, 2/2 unique matches, f5 unique: Cordomage 62 and Sculptemage 48; confirmed separately by a historical public profession-ID list. No individual XP or character identity retained."
     }
   ]
 }
