@@ -35,6 +35,27 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### Identification ciblée par couple niveau/XP (P1f)
+
+Pour un métier qui était ambigu au niveau 1, il suffit de le faire
+progresser jusqu'à posséder un couple `niveau:XP totale` unique.
+Le mode `--profession-identify` demande de 2 à 20 couples
+`Métier:Niveau:XPtotale` dans sa console. Aucun état initial ni
+aucun seuil de progression supplémentaire n'est nécessaire.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-identify --show-candidate-ids
+```
+
+`--show-candidate-ids` est volontaire : sans cette option,
+seuls des compteurs de correspondance sont affichés. Les noms et
+les valeurs `f5` n'apparaissent que pour des correspondances
+univoques dans le même message `ipz`, lorsque les 20 `f5`
+sont présents et différents. Aucun mapping n'est écrit dans
+le dépôt automatiquement ; les IDs restent candidats.
+
+Voir `docs/modular-workspace-p1f-profession-identification.md`.
+
 ### Étude ciblée des champs métiers (P1e)
 
 Le mode `--profession-study` corrèle les deux seuils XP

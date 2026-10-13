@@ -16,17 +16,20 @@ internal sealed class CharacterMetadataProbe(
     IReadOnlyList<ProfessionReference>? professionReferences = null,
     bool decodeIpz = false,
     IReadOnlyList<ProfessionStudyReference>? studyReferences = null,
-    bool showCandidateJobIds = false) : IDisposable
+    bool showCandidateJobIds = false,
+    IReadOnlyList<ProfessionNamedReference>? identifyReferences = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterCaptureFlowTracker _flows = new(
         shapeKeys: shapeKeys, professionReferences: professionReferences,
         decodeIpz: decodeIpz, studyReferences: studyReferences,
-        showCandidateJobIds: showCandidateJobIds);
+        showCandidateJobIds: showCandidateJobIds,
+        identifyReferences: identifyReferences);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;
     private readonly bool _studyIpz = studyReferences is not null;
+    private readonly bool _identifyIpz = identifyReferences is not null;
     private readonly Dictionary<(int Session, string Opcode), HashSet<string>>
         _reportedShapes = new();
 
@@ -109,6 +112,10 @@ internal sealed class CharacterMetadataProbe(
                     entry.ProfessionStudySummary is null)
                     continue;
 
+                if (_identifyIpz && entry.Kind == CharacterCaptureEventKind.Message &&
+                    entry.ProfessionIdentifySummary is null)
+                    continue;
+
                 if (_shapeMode && entry.Kind == CharacterCaptureEventKind.Message)
                 {
                     // Shape scan shows only selected opcodes, no routine noise.
@@ -135,7 +142,8 @@ internal sealed class CharacterMetadataProbe(
                       (_shapeMode ? $" shape=[{entry.Shape}]" : "") +
                       (_professionMode ? $" CANDIDAT=[{entry.ProfessionCandidates}]" : "") +
                       (_decodeIpz ? $" IPZ=[{entry.ProfessionIpzSummary}]" : "") +
-                      (_studyIpz ? $" IPZ_STUDY=[{entry.ProfessionStudySummary}]" : "")
+                      (_studyIpz ? $" IPZ_STUDY=[{entry.ProfessionStudySummary}]" : "") +
+                      (_identifyIpz ? $" IPZ_IDENTIFY=[{entry.ProfessionIdentifySummary}]" : "")
                     : entry.Kind.ToString().ToUpperInvariant();
 
                 Console.WriteLine(

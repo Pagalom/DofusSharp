@@ -34,7 +34,8 @@ public sealed record CharacterCaptureEvent(
     string? Shape = null,
     string? ProfessionCandidates = null,
     string? ProfessionIpzSummary = null,
-    string? ProfessionStudySummary = null);
+    string? ProfessionStudySummary = null,
+    string? ProfessionIdentifySummary = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -64,6 +65,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly bool _decodeIpz;
     private readonly IReadOnlyList<ProfessionStudyReference>? _studyReferences;
     private readonly bool _showCandidateJobIds;
+    private readonly IReadOnlyList<ProfessionNamedReference>? _identifyReferences;
     private int _nextNumber;
 
     public CharacterCaptureFlowTracker(
@@ -72,7 +74,8 @@ public sealed class CharacterCaptureFlowTracker
         IReadOnlyList<ProfessionReference>? professionReferences = null,
         bool decodeIpz = false,
         IReadOnlyList<ProfessionStudyReference>? studyReferences = null,
-        bool showCandidateJobIds = false)
+        bool showCandidateJobIds = false,
+        IReadOnlyList<ProfessionNamedReference>? identifyReferences = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -114,8 +117,22 @@ public sealed class CharacterCaptureFlowTracker
             ProfessionIpzStudy.Analyze([], studyReferences);
             _studyReferences = Array.AsReadOnly(studyReferences.ToArray());
         }
-        if (showCandidateJobIds && studyReferences is null)
-            throw new ArgumentException("Candidate IDs require P1e references.",
+        if (identifyReferences is not null)
+        {
+            if (studyReferences is not null || decodeIpz ||
+                professionReferences is not null || shapeKeys is not null)
+                throw new ArgumentException(
+                    "P1f identification is an exclusive diagnostic mode.",
+                    nameof(identifyReferences));
+
+            ProfessionNamedReferenceInput.Validate(identifyReferences);
+            _identifyReferences =
+                Array.AsReadOnly(identifyReferences.ToArray());
+        }
+        if (showCandidateJobIds &&
+            studyReferences is null && identifyReferences is null)
+            throw new ArgumentException(
+                "Candidate IDs require P1e or P1f references.",
                 nameof(showCandidateJobIds));
         _showCandidateJobIds = showCandidateJobIds;
     }
@@ -245,6 +262,12 @@ public sealed class CharacterCaptureFlowTracker
                                     string.Equals(any.Key, "ipz", StringComparison.Ordinal)
                                         ? ProfessionIpzStudy.Analyze(
                                             any.Body, _studyReferences, _showCandidateJobIds)
+                                        : null,
+                                    _identifyReferences is not null &&
+                                    direction == CharacterCaptureDirection.ServerToClient &&
+                                    string.Equals(any.Key, "ipz", StringComparison.Ordinal)
+                                        ? ProfessionIpzNameMatcher.Analyze(
+                                            any.Body, _identifyReferences, _showCandidateJobIds)
                                         : null));
                             }
                         }
