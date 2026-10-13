@@ -109,3 +109,39 @@ Ne pas sauvegarder les XP du joueur dans les tests ou
 dans `ipz-profession-mapping.3.6.11.15.json`.
 L'identifiant global et le rattachement au personnage
 restent non etablis.
+
+
+## P1f - Divergence sur la nouvelle capture
+
+Une capture ulterieure ipz du meme build 3.6.11.15 presente
+`rows=20`, `pairs=1/2`, `f5-unique=true`.
+Le programme associe **l'etiquette saisie « Sculptemage »**
+a `f5=62`, tandis que le couple saisi sous l'etiquette
+« Cordomage » n'est pas retrouve. Il s'agit d'une
+**observation contradictoire**, et NON de la preuve que
+l'identifiant global 62 designe Sculptemage.
+
+L'experience precedente associait 62 a Cordomage et une
+reference historique independante associe egalement 62
+a Cordomage. La reference historique donne Sculptemage=48.
+Ces observations ne sont pas reconciliables sans verifier
+directement les libelles des metiers dans l'interface Dofus
+et leurs niveaux/XP cumulees au meme instant.
+
+**Decision :** ne PAS inverser les correspondances,
+ne PAS renseigner `professionId`, ne PAS activer la table
+en production. Le candidat 62 reste lie a Cordomage avec
+un statut de divergence explicite. Le numero 48 reste
+un indice historique uniquement.
+
+**Prochain controle minimal :** demander une capture
+de l'interface des metiers montrant cote a cote Cordomage
+et Sculptemage, ou des relevés textuels verifies pour
+les deux metiers. Il est possible que le metier qui a
+monte de niveau ait ete mal nomme lors de la saisie,
+mais on ne peut pas en deduire la cause avec le log.
+Ne pas poursuivre l'XP tant que les deux noms et
+les valeurs courantes ne sont pas reconciliés.
+
+Les valeurs personnelles (niveaux, XP cumulées,
+identite et donnees de sessions) ne sont pas versionnees.

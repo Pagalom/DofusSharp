@@ -3,7 +3,7 @@
   "opcode": "ipz",
   "direction": "server-to-client",
   "rowPath": "f1",
-  "schemaStatus": "research-only-ten-observed-candidates-one-legacy-hint-awaiting-confirmation",
+  "schemaStatus": "research-only-conflicting-name-reference-observation-requires-reconciliation",
   "fields": [
     {
       "path": "f1.f1",
@@ -69,7 +69,7 @@
     {
       "name": "Cordomage",
       "professionId": null,
-      "status": "observed-and-corroborated-in-legacy-reference",
+      "status": "observed-and-legacy-corroborated-but-conflicting-subsequent-name-reference",
       "candidateProfessionId": 62
     },
     {
@@ -135,7 +135,7 @@
     {
       "name": "Sculptemage",
       "professionId": null,
-      "status": "legacy-source-only-not-observed-unambiguously-in-p1f",
+      "status": "legacy-hint-only-current-name-reference-collides-with-cordomage",
       "legacyProfessionIdHint": 48
     },
     {
@@ -180,6 +180,12 @@
       "url": "https://forum.cheat-gam3.com/threads/identifiant-ressources-et-m%C3%A9tier.204598/",
       "published": "2020-04-22",
       "scope": "Cordomage 62, Forgemage 44, Joaillomage 63 corroborate current live capture; Sculptemage 48 is historical-only hint; no evidence for Façomage 74"
+    },
+    {
+      "kind": "live-ipz-experiment",
+      "scope": "two-named-reference-pairs-one-unique-match-name-conflict",
+      "build": "3.6.11.15",
+      "detail": "Later ipz session reports a unique reference provided as Sculptemage at f5=62, while the Cordomage reference is not matched. Earlier session associated f5=62 with Cordomage, independently supported by legacy IDs. Names or reference freshness must be verified; no reassignment is justified. No private level/XP retained."
     }
   ]
 }
