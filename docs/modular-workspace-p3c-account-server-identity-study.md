@@ -1,5 +1,38 @@
 # P3c — Caractérisation indépendante du compte et du serveur
 
+## Checklist P3c — validations reportées
+
+**Statut : EN ATTENTE — l'opérateur ne dispose pas encore d'un second compte Dofus.**
+Ces contrôles ne sont pas requis pour poursuivre les autres phases
+de recherche, mais **aucune identité de compte vérifiée, attribution
+automatique des métiers ou persistance compte + serveur** ne doit être
+activée tant qu'ils restent non validés.
+
+- [ ] Disposer d'un **second compte Dofus distinct**, idéalement avec
+  un personnage **sur le même serveur** que le premier.
+- [ ] Contrôle positif : personnage A → B sur un seul compte / serveur ;
+  le candidat de compte reste stable.
+- [ ] **Contrôle négatif indispensable : compte A → compte B sur le même serveur** ;
+  le candidat de compte doit différer, sans déduction à partir de
+  `ipz`, `ksc`/`ksb`, du nom de personnage ou des connexions TCP.
+- [ ] Contrôle serveur : utiliser le même compte sur deux serveurs
+  distincts, si disponible ; le candidat de serveur doit différer.
+- [ ] Contrôle multiclient : deux comptes simultanés, puis changement
+  de fenêtre, déconnexion/reconnexion et messages tardifs ; aucune
+  contamination de compte, serveur ou métiers entre sessions.
+- [ ] Vérifier que les preuves reposent sur des messages
+  **sémantiquement indépendants et caractérisés**, sans consulter,
+  imprimer, hacher ou sauvegarder d'authentifiants, tokens, payloads
+  ni identifiants personnels ; seuls des indicateurs anonymes sont permis.
+- [ ] Seulement après validation : définir un modèle de métiers
+  **compte + serveur**, distinct des profils personnages,
+  avec isolation stricte et tests synthétiques.
+
+**Décision actuelle :** laisser `account=unverified server=unverified`
+et ne pas interpréter l'égalité des vingt métiers P3b comme une
+preuve d'identité. Reprendre cette checklist lorsque le second
+compte sera disponible.
+
 ## État confirmé
 
 - P2j : `ksc` et `ksb` concordent sur une même session
