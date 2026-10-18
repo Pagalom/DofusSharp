@@ -75,3 +75,53 @@ Les champs `professionId` de la table des métiers restent
 désactivés. Aucune identité n'est confirmée et aucune fiche
 BestCrush n'est alimentée. Aucun fichier personnel
 n'est enregistré.
+
+
+## Observation réelle P2d — deux entrées distinctes
+
+Une capture du client 3.6.11.15, effectuée sur un seul
+lancement de NetworkProbe, donne :
+
+- Session TCP #1 : `ksb`, correspondance unique sur le
+  nom et niveau de référence, `parent-numeric=[f3]`,
+  `cross-session-f3=baseline`, une session enregistrée en RAM.
+- Session TCP #3 : `ksc`, correspondance unique sur la
+  référence, `parent-numeric=[f3]`, et :
+  `ksc-rows=[total=2 complete=2 names-distinct=true
+  f3-distinct=true selected-f3-unique=true
+  semantic=unverified]`.
+- Sur cette **même** session #3, `ksb` confirme
+  `shared-equal-parent=[f3]` face à `ksc`.
+- Entre les sessions TCP #1 et #3, le candidat
+  `ksb.f1.f1.f3` reste égal
+  (`cross-session-f3=equal reference-sessions=2`).
+
+Interprétation : il existe, dans ce snapshot de `ksc`,
+**deux entrées complètes avec noms distincts et f3 distincts** ;
+la valeur de l'entrée sélectionnée par la référence locale
+correspond à celle du `ksb` qui suit sur la même connexion.
+Cette valeur a été stable sur deux chargements du même
+personnage. Cela renforce l'hypothèse d'un identifiant
+propre à chaque entrée.
+
+**Limites non levées :**
+- Le protocole métier des entrées `ksc` n'est pas encore
+  établi (liste de personnages ? autre liste ?).
+- Le caractère durable/global de f3 et son absence de
+  collision sur d'autres comptes/serveurs ne sont pas validés.
+- Deux opcodes différents ne garantissent pas deux sources
+  de preuve indépendantes.
+- Les tests synthétiques de sécurité et le checkpoint Windows
+  complet ne sont pas attestés par ce seul journal.
+
+**Prochaine validation souhaitée :** confirmer directement
+combien de personnages sélectionnables sont visibles sur
+l'écran de sélection Dofus. Si deux sont visibles,
+corréler le nombre et les différences d'entrées sans
+copier de nom ou d'ID dans le dépôt. Sinon étudier
+les conditions d'émission et la sémantique de `ksc`
+avant toute attribution automatique.
+
+Aucun nom, niveau, identifiant de personnage ou XP réelle
+n'est conservé dans cette documentation ou dans un mapping
+de production. `professionId` reste à null.
