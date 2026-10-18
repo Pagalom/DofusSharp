@@ -255,26 +255,52 @@ La corrélation temporelle **ne démontre pas**
 encore le sens exact de `kba` ni la présence
 d'une valeur d'XP dans `ipz`.
 
-La taille `ipz` augmente de 13 à 14 octets.
-Une variation de longueur seule n'établit
-ni la valeur ni le changement du compteur XP.
-Elle peut refléter différents champs ou longueurs
-de varints. Les valeurs exactes de niveau et XP
-lors de **cette** capture n'ont pas été
-communiquées ; ne pas lui attribuer les gains
-précédents sans confirmation.
+### Relevés manuels correspondants, fournis après la capture
 
-**Question restante :** obtenir les niveaux et
-XP avant, entre et après les **deux fabrications de
-23:16:21 et 23:16:34 UTC**. Ne pas leur affecter
-automatiquement les relevés d'une capture
-précédente. L'étape suivante consiste à étudier
-de manière ciblée les champs du `ipz` mono-entrée
-et à comparer **localement** leurs changements aux
-relevés manuels, sans exposer de valeurs de compte
-ou de payload réseau.
+Il s'agit **bien** des deux fabrications de
+23:16:21 et 23:16:34 UTC, **pas** des gains
++16/+16 de P3e.1. Les gains sont **+16, puis +14** :
+
+| Action | XP affichée | Gain | `ipz` S→C |
+| --- | ---: | ---: | --- |
+| Avant fabrication 1 | 108 | — | — |
+| Après fabrication 1 | **124** | +16 | **13 octets** |
+| Après fabrication 2 | **138** | +14 | **14 octets** |
+
+Le niveau initial était 3 lors de P3e.1 ;
+le niveau pour **cette** capture n'a pas été
+reconfirmé. Ne pas déduire automatiquement
+l'absence de changement de niveau.
+
+**Indice protocolaire très fort : frontière
+Protobuf varint à 128.** Un entier **124**
+occupe **1 octet** en varint non signé ;
+un entier **138** en occupe **2**.
+Si le message `ipz` mono-entrée embarque
+le compteur d'XP affiché sous forme d'un varint,
+son passage de 124 à 138 explique exactement
+le **+1 octet** de la longueur `ipz`,
+de 13 à 14. Ce n'est cependant pas une
+preuve de champ ni de sémantique :
+un autre champ peut aussi changer de taille,
+et l'encodage/le sens exact du compteur
+reste à confirmer.
+
+**P3e.3 recommandé :** capture ciblée
+`--character-scan` après une nouvelle
+fabrication avec relevé XP avant/après.
+Si l'XP reste **entre 128 et 16 383**, sans
+autre changement de champ ni de niveau,
+le même varint resterait sur **2 octets** :
+`ipz` pourrait alors rester à **14 octets**.
+Cette prédiction est réfutable, pas garantie.
+Ensuite, si utile, prévoir une étude locale
+opt-in des champs **sans exposer de valeurs,
+de flux ni d'identités**.
 
 Statut : **deux fabrications confirmées**,
-`kba → ipz` corrélé deux fois, `ipz`
-**candidat prioritaire** pour une mise à jour
-du métier, **sémantique XP non validée**.
+`kba → ipz` corrélé deux fois ;
+hypothèse de compteur XP dans `ipz`
+**nettement renforcée par le franchissement
+varint 127→128**, non encore validée.
+
