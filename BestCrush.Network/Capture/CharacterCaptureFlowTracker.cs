@@ -455,9 +455,11 @@ public sealed class CharacterCaptureFlowTracker
         // is NOT independently corroborated semantic identity.
         string classStudy = CharacterClassWireShapeStudy.Describe(
             opcode, body, reference);
+        string appearanceStudy = CharacterAppearanceWireStudy.Describe(
+            opcode, body, reference);
         return "p2f=decoded candidates=" + snapshot.Candidates.Count +
                " class=unknown candidate-link=" + match +
-               " identity=unverified " + classStudy;
+               " identity=unverified " + classStudy + " " + appearanceStudy;
     }
 
     private string ObserveKsbAcrossSessions(

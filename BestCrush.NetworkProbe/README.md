@@ -35,6 +35,16 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P2h : lecture anonyme de la structure interne de leaf.f5
+
+Le mode `--identity-fields` inclut maintenant un relevé
+`p2h` pour `leaf.f5`. Il n'affiche que la structure
+protobuf potentielle et les chemins des sous-champs
+qui diffèrent entre les personnages de `ksc`,
+jamais les valeurs. Un contenu non décodable reste
+`opaque`. Le champ de classe demeure inconnu.
+Voir `docs/modular-workspace-p2h-leaf-f5-shape.md`.
+
 ### P2g : structure des champs de classe possibles
 
 Le mode `--identity-fields` ajoute un relevé `p2g` limité
