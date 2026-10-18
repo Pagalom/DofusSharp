@@ -304,3 +304,69 @@ hypothèse de compteur XP dans `ipz`
 **nettement renforcée par le franchissement
 varint 127→128**, non encore validée.
 
+
+
+## P3e.3 — Contrôle de stabilité de taille au-delà de 127 XP
+
+Capture `--character-scan`, une fabrication confirmée
+par l'opérateur, sur la même version Dofus :
+
+| Heure UTC | Événement | Taille |
+| --- | --- | ---: |
+| 23:26:54.823 | `kba` C→S | 4 octets |
+| 23:26:54.824 | `ipz` S→C | **14 octets** |
+
+Relevé manuel : **142 → 166 XP**, gain
+**+24 XP**. La valeur initiale est 142,
+**et non 138** : la différence entre cette
+capture et la fin de P3e.2 n'a pas été
+observée, et ne doit pas être imputée à
+la fabrication de P3e.3.
+
+### Hypothèse varint, prédiction testée
+
+- P3e.2 après 1re fabrication : **124 XP**
+  et `ipz` **13 octets**.
+- P3e.2 après 2e fabrication : **138 XP**
+  et `ipz` **14 octets**.
+- P3e.3 après fabrication : **166 XP**
+  et `ipz` **14 octets**.
+
+Un entier varint positif de 124 occupe
+**1 octet**, un entier de 138 ou 166 occupe
+**2 octets**. La prédiction *la longueur
+de `ipz` reste de 14 octets pour une nouvelle
+valeur XP au-dessus de 127* est **observée**.
+
+C'est une corrélation réfutable cohérente avec
+un compteur d'XP dans `ipz` mono-entrée ;
+ce n'est toujours **pas une identification
+de champ ou un décodage validé**. Une autre
+variable (ou d'autres champs) pourrait
+expliquer la même longueur. La taille
+n'est pas nécessairement une fonction
+exclusivement du compteur XP.
+
+### Prochaine expérience pertinente
+
+Au lieu de répéter seulement des captures
+de longueur, concevoir un diagnostic expérimental
+**opt-in** qui examine les champs varint du
+`ipz` à **une seule entrée**, puis compare en
+mémoire, aux relevés d'XP fournis localement,
+les positions de champs compatibles, et n'affiche
+que des indicateurs catégoriels et chemins de
+champs. Ne pas afficher la valeur des champs,
+la charge utile, des IDs, le nom de personnage
+ou une empreinte du paquet.
+
+Ne pas modifier `ProfessionIpzDecoder`
+(instantané complet de 20 métiers) sans
+caractérisation du format `ipz` mono-entrée.
+Ne pas utiliser cette étude pour attribuer
+automatiquement des métiers à un compte tant
+que P3c reste non validé. Aucun nouveau
+test d'isolation multi-compte à cette étape.
+
+Statut P3e.3 : **hypothèse de seuil varint
+corroborée**, sémantique XP encore à vérifier.
