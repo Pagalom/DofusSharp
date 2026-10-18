@@ -175,7 +175,7 @@ public sealed class CharacterWireCandidateDecoderTest
     {
         byte[] badUtf8 = Bytes(1, Bytes(1, Message(
             Unsigned(3, FirstId), Bytes(4, Message(
-                Unsigned(3, 137), Bytes(6, [0xc3, 0x28, 0x44])))));
+                Unsigned(3, 137), Bytes(6, [0xc3, 0x28, 0x44]))))));
         byte[] control = Ksb(name: "Bad\nName");
 
         CharacterWireCandidateDecoder.TryDecode(
