@@ -27,8 +27,7 @@ public sealed record CharacterSessionProfile(
     long? PocketKamas = null,
     long? BankKamas = null,
     IReadOnlyList<CharacterInventoryItem>? Inventory = null,
-    IReadOnlyList<CharacterInventoryItem>? BankInventory = null,
-    IReadOnlyDictionary<int, int>? ProfessionLevels = null);
+    IReadOnlyList<CharacterInventoryItem>? BankInventory = null);
 
 /// <summary>
 /// Proposed verified semantic data, not yet connected to the network decoder.
@@ -41,8 +40,7 @@ internal sealed record CharacterDataObservation(
     long? PocketKamas = null,
     long? BankKamas = null,
     IReadOnlyList<CharacterInventoryItem>? Inventory = null,
-    IReadOnlyList<CharacterInventoryItem>? BankInventory = null,
-    IReadOnlyDictionary<int, int>? ProfessionLevels = null);
+    IReadOnlyList<CharacterInventoryItem>? BankInventory = null);
 
 /// <summary>
 /// In-memory character workspace for the lifetime of the MAUI process only.
@@ -161,8 +159,7 @@ public sealed class CurrentCharacterState
                     PocketKamas = newConnection ? null : existing.PocketKamas,
                     BankKamas = newConnection ? null : existing.BankKamas,
                     Inventory = newConnection ? null : existing.Inventory,
-                    BankInventory = newConnection ? null : existing.BankInventory,
-                    ProfessionLevels = newConnection ? null : existing.ProfessionLevels
+                    BankInventory = newConnection ? null : existing.BankInventory
                 };
             }
             else
@@ -235,8 +232,7 @@ public sealed class CurrentCharacterState
             observation.PocketKamas is < 0 ||
             observation.BankKamas is < 0 ||
             observation.Inventory?.Any(item => item.ItemId == 0 || item.Quantity < 0) == true ||
-            observation.BankInventory?.Any(item => item.ItemId == 0 || item.Quantity < 0) == true ||
-            observation.ProfessionLevels?.Any(entry => entry.Key <= 0 || entry.Value <= 0) == true)
+            observation.BankInventory?.Any(item => item.ItemId == 0 || item.Quantity < 0) == true)
             return false;
 
         lock (_sync)
@@ -252,10 +248,7 @@ public sealed class CurrentCharacterState
                 PocketKamas = observation.PocketKamas ?? existing.PocketKamas,
                 BankKamas = observation.BankKamas ?? existing.BankKamas,
                 Inventory = observation.Inventory?.ToArray() ?? existing.Inventory,
-                BankInventory = observation.BankInventory?.ToArray() ?? existing.BankInventory,
-                ProfessionLevels = observation.ProfessionLevels is null
-                    ? existing.ProfessionLevels
-                    : new Dictionary<int, int>(observation.ProfessionLevels)
+                BankInventory = observation.BankInventory?.ToArray() ?? existing.BankInventory
             };
         }
 

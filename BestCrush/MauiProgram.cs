@@ -50,6 +50,7 @@ public static class MauiProgram
             builder.Services.AddSingleton(new ImageCache(Path.Combine(dataDirectory, "Cache", "images")));
             builder.Services.AddSingleton<IWorkspacePreferences, MauiWorkspacePreferences>();
             builder.Services.AddSingleton<CurrentCharacterState>();
+            builder.Services.AddSingleton<CurrentAccountProfessionsState>();
             builder.Services.AddSingleton<ServersService>();
             builder.Services.AddSingleton<RunesService>();
             builder.Services.AddSingleton<CrushService>();

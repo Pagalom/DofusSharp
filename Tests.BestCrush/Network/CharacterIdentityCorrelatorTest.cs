@@ -60,11 +60,9 @@ public sealed class CharacterIdentityCorrelatorTest
     }
 
     [Fact]
-    public void DifferentCharacterOnSameConnectionImmediatelyRevokesOldIdentityAndJobs()
+    public void DifferentCharacterOnSameConnectionImmediatelyRevokesOldIdentity()
     {
         CharacterIdentityCorrelator tracker = Confirmed(out CharacterConnectionScope scope);
-        tracker.TryRecordProfession(scope, 123, 2, 200, T0.AddSeconds(3))
-            .Should().BeTrue();
 
         CharacterIdentityAssessment pending = tracker.Observe(Signal(
             scope, CharacterIdentityEvidenceSource.CharacterSelection, 456,
@@ -72,16 +70,12 @@ public sealed class CharacterIdentityCorrelatorTest
 
         pending.Status.Should().Be(CharacterIdentityStatus.Pending);
         pending.Character.Should().BeNull();
-        pending.ProfessionLevels.Should().BeEmpty();
-        tracker.TryRecordProfession(scope, 123, 2, 200, T0.AddSeconds(6))
-            .Should().BeFalse();
 
         CharacterIdentityAssessment confirmed = tracker.Observe(Signal(
             scope, CharacterIdentityEvidenceSource.CharacterDetails, 456,
             "Bob", 2, 42, 7));
 
         confirmed.Character!.CharacterId.Should().Be(456);
-        confirmed.ProfessionLevels.Should().BeEmpty();
     }
 
     [Fact]
@@ -97,8 +91,6 @@ public sealed class CharacterIdentityCorrelatorTest
         tracker.Observe(Signal(
             scope, CharacterIdentityEvidenceSource.CharacterSelection,
             offsetSeconds: 5)).Status.Should().Be(CharacterIdentityStatus.Ambiguous);
-        tracker.TryRecordProfession(scope, 123, 3, 100, T0.AddSeconds(6))
-            .Should().BeFalse();
     }
 
     [Fact]
@@ -189,24 +181,14 @@ public sealed class CharacterIdentityCorrelatorTest
     }
 
     [Fact]
-    public void ProfessionUpdateRequiresConfirmedIdentityAndMatchingScopedFlow()
+    public void CharacterIdentityAssessmentDoesNotCarryAccountProfessions()
     {
-        CharacterIdentityCorrelator tracker = new();
-        CharacterConnectionScope scope = Scope();
-        tracker.Observe(Signal(scope, CharacterIdentityEvidenceSource.CharacterSelection));
-        tracker.TryRecordProfession(scope, 123, 5, 180, T0.AddSeconds(1))
-            .Should().BeFalse();
+        CharacterIdentityCorrelator tracker = Confirmed(out CharacterConnectionScope scope);
+        CharacterIdentityAssessment state = tracker.Read(scope);
 
-        tracker.Observe(Signal(
-            scope, CharacterIdentityEvidenceSource.CharacterDetails,
-            offsetSeconds: 2));
-        tracker.TryRecordProfession(scope, 999, 5, 180, T0.AddSeconds(3))
-            .Should().BeFalse();
-        tracker.TryRecordProfession(scope with { ConnectionEpoch = 2 },
-            123, 5, 180, T0.AddSeconds(3)).Should().BeFalse();
-        tracker.TryRecordProfession(scope, 123, 5, 180, T0.AddSeconds(3))
-            .Should().BeTrue();
-        tracker.Read(scope).ProfessionLevels[5].Should().Be(180);
+        state.Status.Should().Be(CharacterIdentityStatus.Confirmed);
+        state.Character!.CharacterId.Should().Be(123);
+        state.GetType().GetProperty("ProfessionLevels").Should().BeNull();
     }
 
     [Fact]

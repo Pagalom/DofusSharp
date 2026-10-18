@@ -53,13 +53,12 @@ internal sealed record ConfirmedCharacterIdentity(
 internal sealed record CharacterIdentityAssessment(
     CharacterIdentityStatus Status,
     CharacterConnectionScope Scope,
-    ConfirmedCharacterIdentity? Character,
-    IReadOnlyDictionary<int, int> ProfessionLevels);
+    ConfirmedCharacterIdentity? Character);
 
 /// <summary>
-/// Fail-closed character attribution. Multiple independent identity message
+/// Fail-closed character identity only. Multiple independent identity message
 /// families with the same stable character ID and name are required before
-/// any character-specific profession observation can be attributed.
+/// character-specific observations can be attributed.
 ///
 /// Intentionally disconnected from live protocol routing until verified wire
 /// messages and reliable per-TCP-connection lifecycle signals are available.
@@ -76,7 +75,6 @@ internal sealed class CharacterIdentityCorrelator
         internal int? Level;
         internal DateTime LastObservedAtUtc = DateTime.MinValue;
         internal HashSet<CharacterIdentityEvidenceSource> Sources = [];
-        internal Dictionary<int, int> Professions = [];
     }
 
     private readonly object _sync = new();
@@ -120,7 +118,6 @@ internal sealed class CharacterIdentityCorrelator
                        session.ClassId != evidence.ClassId)))
             {
                 session.Status = CharacterIdentityStatus.Ambiguous;
-                session.Professions.Clear();
                 return Snapshot(session);
             }
 
@@ -160,37 +157,6 @@ internal sealed class CharacterIdentityCorrelator
             session.LastObservedAtUtc = observedAtUtc;
             session.Status = CharacterIdentityStatus.Disconnected;
             return Snapshot(session);
-        }
-    }
-
-    /// <summary>
-    /// Profession messages may omit character ID only when confirmed flow
-    /// ownership is reliable and explicitly tied to this exact scope.
-    /// No such decoder has been activated yet.
-    /// </summary>
-    internal bool TryRecordProfession(
-        CharacterConnectionScope scope,
-        ulong? explicitCharacterId,
-        int professionId,
-        int level,
-        DateTime observedAtUtc)
-    {
-        if (professionId <= 0 || level <= 0)
-            return false;
-
-        lock (_sync)
-        {
-            if (!_sessions.TryGetValue(scope.ConnectionKey, out Session? session) ||
-                session.Scope != scope ||
-                session.Status != CharacterIdentityStatus.Confirmed ||
-                (explicitCharacterId is not null &&
-                 explicitCharacterId.Value != session.CharacterId) ||
-                observedAtUtc < session.LastObservedAtUtc)
-                return false;
-
-            session.Professions[professionId] = level;
-            session.LastObservedAtUtc = observedAtUtc;
-            return true;
         }
     }
 
@@ -272,7 +238,6 @@ internal sealed class CharacterIdentityCorrelator
         session.ClassId = null;
         session.Level = null;
         session.Sources.Clear();
-        session.Professions.Clear();
         session.Status = CharacterIdentityStatus.Unknown;
     }
 
@@ -283,13 +248,12 @@ internal sealed class CharacterIdentityCorrelator
             session.Status == CharacterIdentityStatus.Confirmed
                 ? new ConfirmedCharacterIdentity(
                     session.CharacterId, session.Name, session.ClassId, session.Level)
-                : null,
-            new Dictionary<int, int>(session.Professions));
+                : null);
 
     private static CharacterIdentityAssessment Assessment(
         CharacterConnectionScope scope,
         CharacterIdentityStatus status) =>
-        new(status, scope, null, new Dictionary<int, int>());
+        new(status, scope, null);
 
     private static void ValidateScope(CharacterConnectionScope scope)
     {

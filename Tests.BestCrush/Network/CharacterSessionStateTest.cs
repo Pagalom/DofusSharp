@@ -28,6 +28,16 @@ public sealed class CharacterSessionStateTest
     }
 
     [Fact]
+    public void AccountProfessionWorkspaceStartsUnobserved()
+    {
+        CurrentAccountProfessionsState accountProfessions = new();
+        accountProfessions.ActiveSnapshot.Should().BeNull();
+
+        // P3d prepares UI and types, but never manufactures an account
+        // or a profession profile from a character or a TCP session.
+    }
+
+    [Fact]
     public void StartupNeverRestoresCharacterOrRecreatesCachedProfile()
     {
         CurrentCharacterState session = new();
@@ -122,7 +132,7 @@ public sealed class CharacterSessionStateTest
     }
 
     [Fact]
-    public void DistinctInventoriesKamasBankAndProfessionLevelsNeverMerge()
+    public void CharacterProfilesRetainTheirOwnInventoriesKamasAndBank()
     {
         CurrentCharacterState session = new();
         session.SelectServer("Kourial");
@@ -139,8 +149,7 @@ public sealed class CharacterSessionStateTest
             PocketKamas: 25000,
             BankKamas: 100000,
             Inventory: [new CharacterInventoryItem(111, 99, 3)],
-            BankInventory: [new CharacterInventoryItem(222, null, 10)],
-            ProfessionLevels: new Dictionary<int, int> { [2] = 180 }))
+            BankInventory: [new CharacterInventoryItem(222, null, 10)]))
             .Should().BeTrue();
 
         session.ApplyObservedData(bob, new CharacterDataObservation(
@@ -148,8 +157,7 @@ public sealed class CharacterSessionStateTest
             PocketKamas: 500,
             BankKamas: 2000,
             Inventory: [],
-            BankInventory: [],
-            ProfessionLevels: new Dictionary<int, int> { [3] = 200 }))
+            BankInventory: []))
             .Should().BeTrue();
 
         CharacterSessionProfile first = session.Characters.Single(p => p.Name == "Alice");
@@ -159,13 +167,11 @@ public sealed class CharacterSessionStateTest
         first.BankKamas.Should().Be(100000);
         first.Inventory.Should().ContainSingle(x => x.ItemId == 111 && x.Quantity == 3);
         first.BankInventory.Should().ContainSingle(x => x.ItemId == 222);
-        first.ProfessionLevels![2].Should().Be(180);
 
         second.PocketKamas.Should().Be(500);
         second.BankKamas.Should().Be(2000);
         second.Inventory.Should().BeEmpty();
         second.BankInventory.Should().BeEmpty();
-        second.ProfessionLevels![3].Should().Be(200);
     }
 
     [Fact]

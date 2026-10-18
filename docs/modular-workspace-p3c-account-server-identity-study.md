@@ -33,6 +33,19 @@ et ne pas interpréter l'égalité des vingt métiers P3b comme une
 preuve d'identité. Reprendre cette checklist lorsque le second
 compte sera disponible.
 
+## Avancement parallèle P3d
+
+P3d prépare la séparation des métiers hors des profils
+personnages et leur affichage compte + serveur, sans
+ingestion réseau ni association automatique.
+Voir `docs/modular-workspace-p3d-account-professions-workspace.md`.
+
+**Les contrôles d'identité multi-compte et les tests
+d'isolation restent reportés dans cette checklist** :
+aucun second compte de test n'est encore disponible.
+L'intégration des métiers à un compte réel est
+toujours bloquée jusqu'à leur validation.
+
 ## État confirmé
 
 - P2j : `ksc` et `ksb` concordent sur une même session
