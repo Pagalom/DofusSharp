@@ -59,7 +59,7 @@ public sealed class CharacterClassCandidateDecoderTest
 
         snapshot!.Candidates.Select(c => c.ClassIdCandidate)
             .Should().Equal(17, 6);
-        snapshot.Candidates.Should().OnlyContain(c => c.ClassId is null);
+        snapshot.Candidates.Should().OnlyContain(c => c.ClassId == null);
         snapshot.IdentityConfirmed.Should().BeFalse();
     }
 
