@@ -240,13 +240,20 @@ visibles sans déduplication. Aucun `kbf`,
 sur cet intervalle, même si ces opcodes étaient
 présents dans la capture de fabrication P3e.0.
 
-**Hypothèse :** `kba` sollicite un ensemble
-d'informations contenant une réponse `ipz`
-mono-entrée. La corrélation est répétée deux fois
-avec un écart d'une milliseconde entre demande
-et réponse, mais l'origine fonctionnelle de
-`kba` reste non identifiée (consultation d'un
-panneau ? autre requête de jeu ?).
+**Confirmation manuelle P3e.2 : l'opérateur a
+réalisé exactement ses deux fabrications pendant
+cette capture**, et non deux ouvertures de la fenêtre
+métiers à ces moments. Les deux séquences
+`kba` C→S puis `ipz` S→C coïncident avec ces
+actions, à environ 13 secondes d'écart.
+
+**Hypothèse renforcée :** `kba` est lié au
+déclenchement ou à une étape des fabrications,
+et `ipz` mono-entrée pourrait être une
+actualisation ciblée du métier après celles-ci.
+La corrélation temporelle **ne démontre pas**
+encore le sens exact de `kba` ni la présence
+d'une valeur d'XP dans `ipz`.
 
 La taille `ipz` augmente de 13 à 14 octets.
 Une variation de longueur seule n'établit
@@ -257,13 +264,17 @@ lors de **cette** capture n'ont pas été
 communiquées ; ne pas lui attribuer les gains
 précédents sans confirmation.
 
-**Question expérimentale :** l'opérateur a-t-il
-ouvert la fenêtre métiers `J` aux deux instants
-`kba`, ou ces instants correspondent-ils aux
-fabrications ? Avant d'écrire un décodeur,
-distinguer consultation de métier, fabrication
-et transmission spontanée de progression.
+**Question restante :** obtenir les niveaux et
+XP avant, entre et après les **deux fabrications de
+23:16:21 et 23:16:34 UTC**. Ne pas leur affecter
+automatiquement les relevés d'une capture
+précédente. L'étape suivante consiste à étudier
+de manière ciblée les champs du `ipz` mono-entrée
+et à comparer **localement** leurs changements aux
+relevés manuels, sans exposer de valeurs de compte
+ou de payload réseau.
 
-Statut : `ipz` mono-entrée lié
-temporellement à `kba` sur deux occurrences ;
-**XP sur le fil non validée.**
+Statut : **deux fabrications confirmées**,
+`kba → ipz` corrélé deux fois, `ipz`
+**candidat prioritaire** pour une mise à jour
+du métier, **sémantique XP non validée**.
