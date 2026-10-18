@@ -20,7 +20,8 @@ internal sealed class CharacterMetadataProbe(
     IReadOnlyList<ProfessionNamedReference>? identifyReferences = null,
     CharacterNameLevelReference? characterNameReference = null,
     IReadOnlySet<string>? characterNameOpCodes = null,
-    CharacterNameLevelReference? identityFieldsReference = null) : IDisposable
+    CharacterNameLevelReference? identityFieldsReference = null,
+    int? expectedClassId = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterCaptureFlowTracker _flows = new(
@@ -30,7 +31,8 @@ internal sealed class CharacterMetadataProbe(
         identifyReferences: identifyReferences,
         characterNameReference: characterNameReference,
         characterNameOpCodes: characterNameOpCodes,
-        identityFieldsReference: identityFieldsReference);
+        identityFieldsReference: identityFieldsReference,
+        expectedClassId: expectedClassId);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;

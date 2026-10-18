@@ -40,6 +40,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-name");
     Console.WriteLine("Pour comparer localement les champs numériques ksb et ksc dans une même connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields");
+    Console.WriteLine("Pour vérifier le candidat de classe f5.f3 (comparaison anonymisée seulement) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields --expected-class-id 6");
     Console.WriteLine("Pour les diagnostics historiques :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --all");
     return;
@@ -81,6 +83,8 @@ if (options.CharacterScan)
         Console.WriteLine("Recherche du nom exact en UTF-8 ; les chemins affichés ne prouvent pas l'identité du personnage.");
     if (options.IdentityFields)
         Console.WriteLine("ksb/ksc : recherche des champs égaux (sans leurs valeurs) dans une même session ; ID et identité NON vérifiés.");
+    if (options.ExpectedClassId.HasValue)
+        Console.WriteLine("P2i : comparaison locale de f5.f3 à la classe attendue ; aucune valeur réseau affichée, classe NON vérifiée.");
     if (options.ProfessionMatch)
         Console.WriteLine("Seuls les chemins de deux couples niveau/XP concordants au minimum seront affichés.");
     if (options.ProfessionDecode)
@@ -213,7 +217,8 @@ if (options.CharacterScan)
         identifyReferences,
         diagnosticReferences.NameSearch,
         options.IdentityName ? ProbeOptions.IdentityNameOpCodes : null,
-        diagnosticReferences.FieldStudy);
+        diagnosticReferences.FieldStudy,
+        options.ExpectedClassId);
 
     probe.Start();
     stop.Wait();
@@ -246,7 +251,8 @@ internal sealed record ProbeOptions(
     bool ShowCandidateJobIds,
     bool ProfessionIdentify,
     bool IdentityName,
-    bool IdentityFields)
+    bool IdentityFields,
+    int? ExpectedClassId)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -275,6 +281,7 @@ internal sealed record ProbeOptions(
         bool professionIdentify = false;
         bool identityName = false;
         bool identityFields = false;
+        int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
 
@@ -318,6 +325,15 @@ internal sealed record ProbeOptions(
                 case "--identity-fields":
                     identityFields = true;
                     break;
+                case "--expected-class-id" when i + 1 < args.Length &&
+                    int.TryParse(args[i + 1], out int parsedClassId):
+                    i++;
+                    expectedClassId = parsedClassId;
+                    break;
+                case "--expected-class-id":
+                    throw new ArgumentException(
+                        "--expected-class-id requires a numeric class ID.");
+
                 case "--show-candidate-ids":
                     showCandidateJobIds = true;
                     break;
@@ -353,6 +369,10 @@ internal sealed record ProbeOptions(
         if (showCandidateJobIds && !professionStudy && !professionIdentify)
             throw new ArgumentException(
                 "--show-candidate-ids requires --profession-study or --profession-identify.");
+        if (expectedClassId.HasValue &&
+            (!identityFields || expectedClassId.Value is < 1 or > 19))
+            throw new ArgumentException(
+                "--expected-class-id requires --identity-fields and an ID from 1 to 19.");
 
         // P1b/P1c both imply the isolated, passive capture path of P1a.
         return new ProbeOptions(
@@ -362,6 +382,6 @@ internal sealed record ProbeOptions(
                 identityName || identityFields,
             characterShape, shapeKeys, professionMatch, professionDecode,
             professionStudy, showCandidateJobIds, professionIdentify,
-            identityName, identityFields);
+            identityName, identityFields, expectedClassId);
     }
 }

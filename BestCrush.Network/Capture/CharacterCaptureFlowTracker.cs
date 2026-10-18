@@ -75,6 +75,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly IReadOnlyList<ProfessionNamedReference>? _identifyReferences;
     private readonly CharacterNameLevelReference? _characterNameReference;
     private readonly CharacterNameLevelReference? _identityFieldsReference;
+    private readonly int? _expectedClassId;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -95,7 +96,8 @@ public sealed class CharacterCaptureFlowTracker
         IReadOnlyList<ProfessionNamedReference>? identifyReferences = null,
         CharacterNameLevelReference? characterNameReference = null,
         IReadOnlySet<string>? characterNameOpCodes = null,
-        CharacterNameLevelReference? identityFieldsReference = null)
+        CharacterNameLevelReference? identityFieldsReference = null,
+        int? expectedClassId = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -192,6 +194,14 @@ public sealed class CharacterCaptureFlowTracker
             CharacterNameLevelReferenceInput.Validate(identityFieldsReference.Value);
             _identityFieldsReference = identityFieldsReference;
         }
+
+        if (expectedClassId is not null &&
+            (identityFieldsReference is null ||
+             expectedClassId is < 1 or > 19))
+            throw new ArgumentException(
+                "P2i expected class ID requires the exclusive P2b field study.",
+                nameof(expectedClassId));
+        _expectedClassId = expectedClassId;
     }
 
     public int FlowCount
@@ -420,7 +430,8 @@ public sealed class CharacterCaptureFlowTracker
         // P2f is a separate versioned experimental decoder. Its values
         // never leave this per-TCP-session object. No CharacterIdentityCorrelator
         // or business service receives them.
-        string decoded = ObserveCandidateDecode(flow, opcode, body, reference);
+        string decoded = ObserveCandidateDecode(
+            flow, opcode, body, reference, _expectedClassId);
 
         if (flow.KsbFields is not null && flow.KscFields is not null)
             return report + " " + CharacterIdentityFieldStudy.Compare(
@@ -432,7 +443,7 @@ public sealed class CharacterCaptureFlowTracker
 
     private static string ObserveCandidateDecode(
         Session flow, string opcode, byte[] body,
-        CharacterNameLevelReference reference)
+        CharacterNameLevelReference reference, int? expectedClassId)
     {
         if (!CharacterWireCandidateDecoder.TryDecode(
                 opcode, body, out CharacterWireCandidateSnapshot? snapshot) ||
@@ -457,9 +468,14 @@ public sealed class CharacterCaptureFlowTracker
             opcode, body, reference);
         string appearanceStudy = CharacterAppearanceWireStudy.Describe(
             opcode, body, reference);
+        string classReferenceStudy = expectedClassId.HasValue
+            ? " " + CharacterBreedHypothesisStudy.Describe(
+                opcode, body, reference, expectedClassId.Value)
+            : "";
         return "p2f=decoded candidates=" + snapshot.Candidates.Count +
                " class=unknown candidate-link=" + match +
-               " identity=unverified " + classStudy + " " + appearanceStudy;
+               " identity=unverified " + classStudy + " " + appearanceStudy +
+               classReferenceStudy;
     }
 
     private string ObserveKsbAcrossSessions(

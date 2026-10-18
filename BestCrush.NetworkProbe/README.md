@@ -35,6 +35,21 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P2i : comparer f5.f3 à une classe attendue
+
+Pour vérifier **localement** l'hypothèse que `leaf.f5.f3`
+contient le code de classe, lancer :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --identity-fields --expected-class-id 6
+```
+
+Le champ `--expected-class-id` est optionnel et accepté
+uniquement avec `--identity-fields`. Il provoque une simple
+comparaison anonymisée `p2i=f5-f3-check reference-equal=yes/no`,
+sans afficher de valeurs réseau ni confirmer l'identité.
+Voir `docs/modular-workspace-p2i-class-id-candidate-check.md`.
+
 ### P2h : lecture anonyme de la structure interne de leaf.f5
 
 Le mode `--identity-fields` inclut maintenant un relevé
