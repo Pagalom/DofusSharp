@@ -35,6 +35,26 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P2a : exploration des champs d'identité, valeurs privées masquées
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --identity-name
+```
+
+Saisir le **nom exact du personnage** et son niveau dans
+le terminal local au format `NomDuPersonnage:Niveau`.
+Seuls les chemins protobuf où le nom apparaît exactement,
+et les chemins numériques voisins égaux au niveau déclaré,
+sont affichés. Les valeurs, identifiants, adresses TCP et
+trames ne sont jamais affichés ni sauvegardés. La **ligne
+de saisie elle-même** reste visible dans le terminal :
+la masquer avant de partager une capture.
+
+Les messages ciblés sont `krg`, `ksb`, `kes`, `jev`,
+`jgi`, `ksc`, `knc`, `kod`, `ifg`, `kmz`.
+Ce mode expérimental n'identifie pas encore un personnage :
+voir `docs/modular-workspace-p2a-identity-field-discovery.md`.
+
 ### Identification ciblée par couple niveau/XP (P1f)
 
 Pour un métier qui était ambigu au niveau 1, il suffit de le faire

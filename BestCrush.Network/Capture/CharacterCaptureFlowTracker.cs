@@ -35,7 +35,8 @@ public sealed record CharacterCaptureEvent(
     string? ProfessionCandidates = null,
     string? ProfessionIpzSummary = null,
     string? ProfessionStudySummary = null,
-    string? ProfessionIdentifySummary = null);
+    string? ProfessionIdentifySummary = null,
+    string? CharacterNameProbeSummary = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -66,6 +67,8 @@ public sealed class CharacterCaptureFlowTracker
     private readonly IReadOnlyList<ProfessionStudyReference>? _studyReferences;
     private readonly bool _showCandidateJobIds;
     private readonly IReadOnlyList<ProfessionNamedReference>? _identifyReferences;
+    private readonly CharacterNameLevelReference? _characterNameReference;
+    private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
     public CharacterCaptureFlowTracker(
@@ -75,7 +78,9 @@ public sealed class CharacterCaptureFlowTracker
         bool decodeIpz = false,
         IReadOnlyList<ProfessionStudyReference>? studyReferences = null,
         bool showCandidateJobIds = false,
-        IReadOnlyList<ProfessionNamedReference>? identifyReferences = null)
+        IReadOnlyList<ProfessionNamedReference>? identifyReferences = null,
+        CharacterNameLevelReference? characterNameReference = null,
+        IReadOnlySet<string>? characterNameOpCodes = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -135,6 +140,28 @@ public sealed class CharacterCaptureFlowTracker
                 "Candidate IDs require P1e or P1f references.",
                 nameof(showCandidateJobIds));
         _showCandidateJobIds = showCandidateJobIds;
+
+        if (characterNameReference is not null)
+        {
+            if (decodeIpz || professionReferences is not null ||
+                studyReferences is not null || identifyReferences is not null ||
+                shapeKeys is not null || showCandidateJobIds)
+                throw new ArgumentException("P2a name probe must run exclusively.",
+                    nameof(characterNameReference));
+
+            CharacterNameLevelReferenceInput.Validate(characterNameReference.Value);
+            _characterNameReference = characterNameReference;
+        }
+        _characterNameOpCodes = characterNameOpCodes is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>(characterNameOpCodes, StringComparer.Ordinal);
+        if (_characterNameOpCodes.Any(k => !IsSafeOpcode(k)))
+            throw new ArgumentException("Invalid identity probe opcode.",
+                nameof(characterNameOpCodes));
+        if (_characterNameOpCodes.Count > 16 ||
+            (_characterNameReference is null && _characterNameOpCodes.Count > 0))
+            throw new ArgumentException("Identity probe requires a local reference and up to 16 opcodes.",
+                nameof(characterNameOpCodes));
     }
 
     public int FlowCount
@@ -268,6 +295,11 @@ public sealed class CharacterCaptureFlowTracker
                                     string.Equals(any.Key, "ipz", StringComparison.Ordinal)
                                         ? ProfessionIpzNameMatcher.Analyze(
                                             any.Body, _identifyReferences, _showCandidateJobIds)
+                                        : null,
+                                    _characterNameReference.HasValue &&
+                                    _characterNameOpCodes.Contains(any.Key)
+                                        ? CharacterIdentityNameProbe.Describe(
+                                            any.Body, _characterNameReference.Value)
                                         : null));
                             }
                         }
