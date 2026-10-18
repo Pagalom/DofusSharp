@@ -11,19 +11,20 @@ Le relevé manuel du joueur, sur un métier suivi :
 | après fabrication 1 | 2 | 22 |
 | après fabrication 2 | 2 | 40 |
 
-**Précision de l'opérateur : exactement DEUX
-fabrications, chacune annoncée comme rapportant
-20 XP.** Ne pas interpréter le nombre de messages
-réseau comme un nombre de fabrications.
+**Précision définitive de l'opérateur : exactement DEUX
+fabrications : la première a rapporté +20 XP,
+la seconde +18 XP.** Ne pas interpréter le nombre
+de messages réseau comme un nombre de fabrications.
 
-Le niveau 1 → 2 change entre les deux premiers
-relevés. Entre les deux relevés au niveau 2,
-l'affichage passe de 22 à 40, soit +18,
-alors que le gain annoncé pour la deuxième
-fabrication est de +20 : cet écart est **non
-expliqué**. Vérifier la signification exacte du
-compteur affiché (total, niveau, état transitoire,
-etc.) avant toute affirmation de validation XP.
+Les différences des valeurs affichées correspondent
+aux gains déclarés : 2 → 22 (+20) avec passage
+du niveau 1 au niveau 2, puis 22 → 40 (+18)
+sans passage de niveau. **Il n'y a pas d'écart
+inexpliqué.** La nature exacte du compteur affiché
+(total ou progression propre à un niveau) reste
+une question distincte, à ne pas déduire de ces
+trois seuls relevés. Ces valeurs constituent
+désormais deux références de terrain pour P3e.
 
 ## Capture P3e.0 — métadonnées uniquement
 
