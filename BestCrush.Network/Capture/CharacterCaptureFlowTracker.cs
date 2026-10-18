@@ -377,6 +377,10 @@ public sealed class CharacterCaptureFlowTracker
             if (previous.NumericSiblings.Count != observation.NumericSiblings.Count ||
                 previous.NumericSiblings.Any(pair =>
                     !observation.NumericSiblings.TryGetValue(
+                        pair.Key, out ulong other) || pair.Value != other) ||
+                previous.NumericParent.Count != observation.NumericParent.Count ||
+                previous.NumericParent.Any(pair =>
+                    !observation.NumericParent.TryGetValue(
                         pair.Key, out ulong other) || pair.Value != other))
             {
                 flow.IdentityFieldsConflicted = true;

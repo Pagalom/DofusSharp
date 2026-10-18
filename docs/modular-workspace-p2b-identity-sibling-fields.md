@@ -83,3 +83,48 @@ Reste expressément interdit à cette étape :
 - attribuer les métiers `ipz` à un personnage non confirmé ;
 - sauvegarder identités, niveaux ou données de métiers en dur ;
 - modifier les fonctionnalités de production de BestCrush.
+
+
+## P2b — Extension aux champs numériques parents
+
+La capture réelle suivante a livré sur la même session TCP :
+`ksc: match=unique numeric-siblings=[none]` puis
+`ksb: match=unique numeric-siblings=[none]`,
+avec `same-session=yes shared-equal-numeric=[none]`.
+Les sous-messages portant le nom et le niveau ne contiennent
+donc pas d'autre champ numérique varint directement voisin.
+
+Une analyse préalable des seules structures protobuf avait
+cependant révélé un champ `f3` varint dans les parents :
+
+- `ksb` : parent `f1.f1`, contenant un descendant `f4`
+  avec nom et niveau ;
+- `ksc` : parent `f2`, contenant également un descendant
+  `f4` avec nom et niveau.
+
+Le **même mode `--identity-fields`** étudie maintenant aussi
+les champs numériques du parent directement lié à la ligne
+dont le nom et le niveau correspondent exactement. Dans les
+réponses, `parent-numeric=[f3]` indique seulement que le
+parent contient un champ numérique f3. Lorsqu'un `ksb` et
+un `ksc` sont capturés dans la **même connexion TCP**,
+`shared-equal-parent=[f3]` signifie que leurs valeurs
+numériques f3 sont égales. Aucune valeur n'est publiée.
+
+La sélection de la ligne du bon personnage est indispensable
+dans les listes répétées de `ksc`. Les deux familles ont
+des structures d'enveloppes différentes ; seules les varints
+du **parent immédiat** sont comparées par numéro de champ.
+Les changements de ces varints à l'intérieur d'une même
+famille et d'une même connexion bloquent la comparaison.
+
+Cette observation ne prouve ni qu'un éventuel `f3`
+commun est un ID global, ni que les familles de messages
+sont indépendantes, ni que l'on peut attribuer les métiers
+`ipz` au personnage. Il faudra encore des tests de
+stabilité, de différenciation et du cycle de vie des sessions.
+
+Le code est couvert par des fixtures synthétiques comprenant
+un enregistrement dont la feuille n'a que nom et niveau,
+un champ f3 dans le parent et deux personnages distincts
+dans la liste `ksc`. Pas de données du joueur versionnées.

@@ -18,14 +18,16 @@ public sealed class CharacterIdentityFieldStudyTest
 
     private static byte[] Ksb(ulong id = 9000123, string name = "Exemple-Ciel",
         int level = 137) =>
-        Bytes(1, Bytes(1, Bytes(4, Person(name, id, level))));
+        Bytes(1, Bytes(1, Message(
+            Unsigned(3, id),
+            Bytes(4, Person(name, id, level)))));
 
     private static byte[] Ksc(ulong id = 9000123,
         string name = "Exemple-Ciel", bool duplicate = false) =>
         Message(
-            Bytes(2, Message(Unsigned(3, 2), Bytes(4, Person("Autre-Ciel", 9000789, 100)))),
-            Bytes(2, Message(Unsigned(3, 4), Bytes(4, Person(name, id)))),
-            duplicate ? Bytes(2, Bytes(4, Person(name, id))) : []);
+            Bytes(2, Message(Unsigned(3, 9000789), Bytes(4, Person("Autre-Ciel", 9000789, 100)))),
+            Bytes(2, Message(Unsigned(3, id), Bytes(4, Person(name, id)))),
+            duplicate ? Bytes(2, Message(Unsigned(3, id), Bytes(4, Person(name, id)))) : []);
 
     [Fact]
     public void BothWireFamiliesExposeNumericSiblingsOnlyWhenNameAndLevelMatch()
@@ -33,13 +35,14 @@ public sealed class CharacterIdentityFieldStudyTest
         var first = CharacterIdentityFieldStudy.Observe("ksb", Ksb(), Local, out var ksb);
         var second = CharacterIdentityFieldStudy.Observe("ksc", Ksc(), Local, out var ksc);
 
-        first.Should().Contain("match=unique numeric-siblings=[f1,f2]");
-        second.Should().Contain("match=unique numeric-siblings=[f1,f2]");
+        first.Should().Contain("match=unique numeric-siblings=[f1,f2] parent-numeric=[f3]");
+        second.Should().Contain("match=unique numeric-siblings=[f1,f2] parent-numeric=[f3]");
         ksb.Should().NotBeNull();
         ksc.Should().NotBeNull();
         ksb!.ToString().Should().Be("[character identity fields: redacted]");
         var report = CharacterIdentityFieldStudy.Compare(ksb, ksc!);
         report.Should().Contain("shared-equal-numeric=[f1,f2]");
+        report.Should().Contain("shared-equal-parent=[f3]");
         report.Should().Contain("id=unverified");
         report.Should().NotContain(Local.Name);
         report.Should().NotContain("137");
@@ -53,6 +56,7 @@ public sealed class CharacterIdentityFieldStudyTest
         CharacterIdentityFieldStudy.Observe("ksc", Ksc(9000555), Local, out var second);
         string comparison = CharacterIdentityFieldStudy.Compare(first!, second!);
         comparison.Should().Contain("shared-equal-numeric=[f2]");
+        comparison.Should().Contain("shared-equal-parent=[none]");
         comparison.Should().NotContain("f1,");
     }
 
@@ -120,6 +124,7 @@ public sealed class CharacterIdentityFieldStudyTest
             .Single(e => e.Kind == CharacterCaptureEventKind.Message);
         a2.CharacterIdentityFieldSummary.Should().Contain("same-session=yes");
         a2.CharacterIdentityFieldSummary.Should().Contain("shared-equal-numeric=[f1,f2]");
+        a2.CharacterIdentityFieldSummary.Should().Contain("shared-equal-parent=[f3]");
         a2.CharacterIdentityFieldSummary.Should().NotContain("9000123");
         a2.CharacterNameProbeSummary.Should().BeNull();
     }
@@ -153,6 +158,58 @@ public sealed class CharacterIdentityFieldStudyTest
             100, Frame(Any("ksc", Ksc())), now)
             .Single(e => e.Kind == CharacterCaptureEventKind.Message);
         client.CharacterIdentityFieldSummary.Should().BeNull();
+    }
+
+
+    [Fact]
+    public void ParentCanContainCandidateWhenLeafHasOnlyNameAndLevel()
+    {
+        static byte[] PersonMinimal() => Message(
+            Unsigned(3, 137),
+            Bytes(6, Encoding.UTF8.GetBytes("Exemple-Ciel")));
+
+        byte[] ksb = Bytes(1, Bytes(1, Message(
+            Unsigned(3, 9000123),
+            Bytes(4, PersonMinimal()))));
+        byte[] ksc = Bytes(2, Message(
+            Unsigned(3, 9000123),
+            Bytes(4, PersonMinimal())));
+
+        string first = CharacterIdentityFieldStudy.Observe(
+            "ksb", ksb, Local, out var a);
+        string second = CharacterIdentityFieldStudy.Observe(
+            "ksc", ksc, Local, out var b);
+
+        first.Should().Contain("numeric-siblings=[none] parent-numeric=[f3]");
+        second.Should().Contain("numeric-siblings=[none] parent-numeric=[f3]");
+        string report = CharacterIdentityFieldStudy.Compare(a!, b!);
+        report.Should().Contain("shared-equal-numeric=[none]");
+        report.Should().Contain("shared-equal-parent=[f3]");
+        report.Should().NotContain("9000123");
+        report.Should().NotContain(Local.Name);
+        report.Should().NotContain("137");
+    }
+
+    [Fact]
+    public void ParentValueChangesBlockStudyEvenIfLeafValueIsUnchanged()
+    {
+        static byte[] KsbWithParent(ulong parentId) =>
+            Bytes(1, Bytes(1, Message(
+                Unsigned(3, parentId),
+                Bytes(4, Person("Exemple-Ciel", 9000123)))));
+
+        var tracker = new CharacterCaptureFlowTracker(identityFieldsReference: Local);
+        var now = new DateTime(2026, 10, 18, 10, 0, 0, DateTimeKind.Utc);
+        var scope = new CharacterCaptureFlowKey("127.0.0.1", 40003, "10.0.0.1", 5555);
+        byte[] a = Frame(Any("ksb", KsbWithParent(9000123)));
+        byte[] b = Frame(Any("ksb", KsbWithParent(9000777)));
+        tracker.Observe(scope, CharacterCaptureDirection.ServerToClient,
+            100, a, now).Single(x => x.Kind == CharacterCaptureEventKind.Message)
+            .CharacterIdentityFieldSummary.Should().Contain("parent-numeric=[f3]");
+        tracker.Observe(scope, CharacterCaptureDirection.ServerToClient,
+            (uint)(100 + a.Length), b, now.AddSeconds(1))
+            .Single(x => x.Kind == CharacterCaptureEventKind.Message)
+            .CharacterIdentityFieldSummary.Should().Be("status=conflicted identity=unverified");
     }
 
     [Fact]

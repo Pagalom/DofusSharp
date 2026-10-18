@@ -11,12 +11,15 @@ public sealed class CharacterIdentityFieldObservation
 {
     public string Opcode { get; }
     public IReadOnlyDictionary<int, ulong> NumericSiblings { get; }
+    public IReadOnlyDictionary<int, ulong> NumericParent { get; }
 
     internal CharacterIdentityFieldObservation(
-        string opcode, Dictionary<int, ulong> siblings)
+        string opcode, Dictionary<int, ulong> siblings,
+        Dictionary<int, ulong> parent)
     {
         Opcode = opcode;
         NumericSiblings = new ReadOnlyDictionary<int, ulong>(siblings);
+        NumericParent = new ReadOnlyDictionary<int, ulong>(parent);
     }
 
     public override string ToString() => "[character identity fields: redacted]";
@@ -33,6 +36,11 @@ public static class CharacterIdentityFieldStudy
     private const int MaxNodeBytes = 8192;
     private const int MaxNodeFields = 1024;
     private const int MaxMatches = 2;
+
+    // The parent of the name/level record is f1.f1 in ksb, f2 in ksc.
+    // A numeric field such as parent f3 may exist even when the name/level
+    // record itself contains no other numeric sibling fields.
+    private sealed record Candidate(byte[] Body, byte[] ParentBody);
 
     public static string Observe(string opcode, ReadOnlySpan<byte> body,
         CharacterNameLevelReference reference,
@@ -55,15 +63,16 @@ public static class CharacterIdentityFieldStudy
         try
         {
             byte[] expectedName = Encoding.UTF8.GetBytes(reference.Name);
-            List<byte[]> candidates = [body.ToArray()];
+            byte[] root = body.ToArray();
+            List<Candidate> candidates = [new(root, [])];
             foreach (int fieldNumber in path)
             {
-                List<byte[]> next = [];
-                foreach (byte[] bytes in candidates)
+                List<Candidate> next = [];
+                foreach (Candidate candidate in candidates)
                 {
-                    if (bytes.Length > MaxNodeBytes)
+                    if (candidate.Body.Length > MaxNodeBytes)
                         return "rejected-layout";
-                    List<ProtoField>? parent = ProtoWire.ReadFields(bytes);
+                    List<ProtoField>? parent = ProtoWire.ReadFields(candidate.Body);
                     if (parent is null || parent.Count > MaxNodeFields)
                         return "rejected-layout";
                     foreach (ProtoField field in parent)
@@ -72,7 +81,7 @@ public static class CharacterIdentityFieldStudy
                             field.WireType == ProtoWireType.LengthDelimited &&
                             field.Bytes is { Length: > 0 and <= MaxNodeBytes })
                         {
-                            next.Add(field.Bytes);
+                            next.Add(new Candidate(field.Bytes, candidate.Body));
                             if (next.Count > MaxNodeFields)
                                 return "rejected-layout";
                         }
@@ -85,9 +94,10 @@ public static class CharacterIdentityFieldStudy
 
             int matched = 0;
             Dictionary<int, ulong>? siblings = null;
-            foreach (byte[] leafBytes in candidates)
+            Dictionary<int, ulong>? parentNumbers = null;
+            foreach (Candidate candidate in candidates)
             {
-                List<ProtoField>? fields = ProtoWire.ReadFields(leafBytes);
+                List<ProtoField>? fields = ProtoWire.ReadFields(candidate.Body);
                 if (fields is null || fields.Count > MaxNodeFields)
                     return "rejected-layout";
 
@@ -104,29 +114,26 @@ public static class CharacterIdentityFieldStudy
                 if (matched >= MaxMatches)
                     return "match=ambiguous";
 
-                Dictionary<int, ulong> values = [];
-                HashSet<int> duplicates = [];
-                foreach (ProtoField field in fields)
-                {
-                    if (field.WireType != ProtoWireType.Varint ||
-                        field.Number is 3 or 6)
-                        continue;
-                    if (!values.TryAdd(field.Number, field.Varint))
-                        duplicates.Add(field.Number);
-                }
-                foreach (int number in duplicates)
-                    values.Remove(number);
-                siblings = values;
+                // Only extract parent values after finding a unique exact
+                // name + level match in the child. Never correlate a parent
+                // of a different character from ksc's repeated rows.
+                List<ProtoField>? parentFields =
+                    ProtoWire.ReadFields(candidate.ParentBody);
+                if (parentFields is null || parentFields.Count > MaxNodeFields)
+                    return "rejected-layout";
+
+                siblings = UniqueVarints(fields, excludeLevel: true);
+                parentNumbers = UniqueVarints(parentFields, excludeLevel: false);
             }
 
-            if (matched == 0 || siblings is null)
+            if (matched == 0 || siblings is null || parentNumbers is null)
                 return "match=absent";
 
-            observation = new CharacterIdentityFieldObservation(opcode, siblings);
-            string siblingFields = siblings.Count == 0
-                ? "none"
-                : string.Join(",", siblings.Keys.OrderBy(k => k).Select(k => "f" + k));
-            return "match=unique numeric-siblings=[" + siblingFields +
+            observation = new CharacterIdentityFieldObservation(
+                opcode, siblings, parentNumbers);
+            return "match=unique numeric-siblings=[" +
+                   FormatFields(siblings.Keys) +
+                   "] parent-numeric=[" + FormatFields(parentNumbers.Keys) +
                    "] identity=unverified";
         }
         catch (OverflowException)
@@ -139,6 +146,41 @@ public static class CharacterIdentityFieldStudy
         }
     }
 
+    private static Dictionary<int, ulong> UniqueVarints(
+        List<ProtoField> fields, bool excludeLevel)
+    {
+        Dictionary<int, ulong> values = [];
+        HashSet<int> duplicates = [];
+        foreach (ProtoField field in fields)
+        {
+            if (field.WireType != ProtoWireType.Varint ||
+                (excludeLevel && field.Number == 3))
+                continue;
+            if (!values.TryAdd(field.Number, field.Varint))
+                duplicates.Add(field.Number);
+        }
+        foreach (int duplicate in duplicates)
+            values.Remove(duplicate);
+        return values;
+    }
+
+    private static string FormatFields(IEnumerable<int> fields)
+    {
+        int[] numbers = fields.OrderBy(n => n).ToArray();
+        return numbers.Length == 0
+            ? "none"
+            : string.Join(",", numbers.Select(n => "f" + n));
+    }
+
+    private static string SharedEqualFields(
+        IReadOnlyDictionary<int, ulong> first,
+        IReadOnlyDictionary<int, ulong> second) =>
+        FormatFields(first
+            .Where(pair => pair.Value != 0 &&
+                second.TryGetValue(pair.Key, out ulong other) &&
+                pair.Value == other)
+            .Select(pair => pair.Key));
+
     public static string Compare(
         CharacterIdentityFieldObservation first,
         CharacterIdentityFieldObservation second)
@@ -150,17 +192,12 @@ public static class CharacterIdentityFieldStudy
                 .SequenceEqual(new[] { "ksb", "ksc" }))
             throw new ArgumentException("Expected different ksb/ksc message families.");
 
-        int[] matchedFields = first.NumericSiblings
-            .Where(pair => pair.Value != 0 &&
-                second.NumericSiblings.TryGetValue(pair.Key, out ulong other) &&
-                other == pair.Value)
-            .Select(pair => pair.Key)
-            .OrderBy(x => x).ToArray();
-
-        string fields = matchedFields.Length == 0
-            ? "none"
-            : string.Join(",", matchedFields.Select(x => "f" + x));
-        return "same-session=yes shared-equal-numeric=[" + fields +
+        string leaf = SharedEqualFields(
+            first.NumericSiblings, second.NumericSiblings);
+        string parent = SharedEqualFields(
+            first.NumericParent, second.NumericParent);
+        return "same-session=yes shared-equal-numeric=[" + leaf +
+               "] shared-equal-parent=[" + parent +
                "] id=unverified identity=unverified";
     }
 }
