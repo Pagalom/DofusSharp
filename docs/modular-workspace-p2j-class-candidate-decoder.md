@@ -161,3 +161,35 @@ Aucune valeur de personnage, aucun identifiant, nom,
 niveau, contenu de réseau ni référence privée n'est
 ajouté au dépôt. `ClassId` reste `null` et
 `IdentityConfirmed` reste `false`.
+
+
+## Observation P2j suivante — fermeture TCP sans ksb correspondant
+
+Un autre essai `--identity-fields --expected-class-id 17`
+confirme à nouveau l'extraction réelle de la classe
+candidate dans deux connexions successives :
+
+- Session #1, `ksb` : `p2i reference-equal=yes`,
+  `p2j class-candidate=all class-link=pending`.
+- Session #3, `ksc` : `p2i reference-equal=yes
+  peers-differ=yes`, `p2j class-candidate=all
+  class-link=pending`.
+- Session #3 fermée environ cinq secondes après le
+  `ksc`, sans aucun `ksb` capturé sur cette
+  même connexion.
+
+Le résultat n'est pas une contradiction de classe :
+il **manque une observation**, et le mécanisme
+d'isolation TCP refuse correctement de rapprocher
+les sessions #1 et #3.
+
+**Question préalable à tout changement de code :**
+le personnage a-t-il effectivement terminé son
+chargement et atteint le jeu après le `ksc` de la
+session #3 ? Si non, un `ksb` absent est normal.
+Si oui, caractériser le parcours réseau/fermeture de
+connexion avant de modifier les règles d'attribution.
+
+Aucun identifiant ou nom privé, niveau, payload,
+adresse, jeton ni donnée de compte n'est ajouté à
+cette documentation.
