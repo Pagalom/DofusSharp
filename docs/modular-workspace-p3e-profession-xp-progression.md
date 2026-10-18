@@ -141,3 +141,83 @@ de compte et sans écriture dans la base.
   en P3c. Aucun changement de production.
 
 Statut : **P3e.0 observé ; sémantique XP non vérifiée.**
+
+
+## P3e.1 — Deux gains +16 XP, niveau constant, formes protobuf
+
+Nouvelle observation fournie par l'opérateur :
+
+| Étape | Niveau | XP affichée | Variation |
+| --- | ---: | ---: | ---: |
+| Début | 3 | 76 | — |
+| Milieu | 3 | 92 | +16 |
+| Fin | 3 | 108 | +16 |
+
+Aucun changement de niveau entre les mesures :
+c'est une référence plus simple que la première
+séquence comprenant le passage niveau 1 → 2.
+
+Capture `--character-shape --shape-keys
+kbf,kas,ith,iqx,irx,iqq,lof,jzx,ipz,kba`
+dans **une session**. L'unique groupe visible
+à **23:10:41 UTC** est :
+
+- `kba` C→S, 4 octets :
+  `root=[1:v 2:v]` ;
+- `irx` S→C, 15 octets :
+  `root=[2:len 3:len]`,
+  sous-champs candidats `?2.1:v ?2.4:v ?3.1:v ?3.3:v` ;
+- `ipz` S→C, **12 octets** :
+  `root=[1:len]`,
+  sous-champs candidats
+  `?1.1:v ?1.2:v ?1.3:v ?1.5:v ?1.6:v` ;
+- `iqq` S→C, 6 octets :
+  `root=[1:v 2:v]`.
+
+### Limite majeure du diagnostic employé
+
+Le code du probe `CharacterMetadataProbe`
+déduplique les structures **par session + opcode**
+et n'écrit que les **trois premières structures
+distinctes**. Les répétitions exactes d'une
+forme ne s'affichent **jamais**. Ainsi, le journal
+ne prouve **ni l'absence de messages
+ultérieurs** ni la présence d'un événement
+propre à chacune des deux fabrications.
+Les horaires précis des deux fabrications ne
+sont pas indiqués dans la trace.
+
+L'observation de `ipz root=[1:len]`
+suggère une **ligne unique** par opposition
+au format à vingt lignes précédemment décodé.
+Cela fait de `ipz` un candidat intéressant
+pour une réponse ciblée mais **ne prouve pas**
+son rôle dans la progression XP ni les sémantiques
+des champs `?1.1`/`?1.2`/etc.
+Ce `ipz` suit immédiatement `kba` ; il pourrait
+être déclenché par une demande de consultation,
+et non par une fabrication.
+
+### Décision et suite
+
+Ne pas développer un décodeur XP métier sur cette
+seule forme. Pour progresser, capturer toutes
+les occurrences anonymes pendant les fabrications,
+avec une fenêtre de repos avant/après et les horaires
+manuels de chacune :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --character-scan
+```
+
+Le mode `--character-scan` rapporte chaque
+message/opcode/taille/heure sans valeurs brutes ;
+il n'applique **pas** la déduplication
+`--character-shape`. Les prochaines analyses
+pourront ensuite cibler un mode P3e opt-in
+comparant des champs anonymement à des niveaux/XP
+de référence, sans identité de compte présumée.
+Aucun code de production ni test d'isolation ajouté.
+
+Statut P3e.1 : **deux gains +16 contrôlés,
+message d'XP non identifié**.
