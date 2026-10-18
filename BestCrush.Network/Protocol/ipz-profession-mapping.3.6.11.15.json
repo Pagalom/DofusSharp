@@ -3,7 +3,7 @@
   "opcode": "ipz",
   "direction": "server-to-client",
   "rowPath": "f1",
-  "schemaStatus": "research-only-eleven-observed-candidates-awaiting-global-and-character-validation",
+  "schemaStatus": "research-only-twenty-observed-candidates-awaiting-global-and-character-validation",
   "fields": [
     {
       "path": "f1.f1",
@@ -28,7 +28,7 @@
     {
       "path": "f1.f5",
       "hypothesis": "profession-global-id",
-      "status": "eleven-observed-candidates-awaiting-global-validation"
+      "status": "twenty-observed-unambiguous-profession-correlations-in-ipz-global-identity-unverified"
     },
     {
       "path": "f1.f6",
@@ -36,7 +36,7 @@
       "status": "confirmed-six-reference-threshold-matches"
     }
   ],
-  "note": "Only protocol ID candidates are stored. Cordomage 62 is supported by a repeated capture and historical reference; Sculptemage 48 remains historical-only, never observed via unambiguous ipz correlation. professionId stays null until identity criteria are met. No character XP, ID, session, or packet data is versioned.",
+  "note": "All twenty candidateProfessionId values have been associated with named profession level/cumulative-XP references in live ipz captures on client 3.6.11.15. Some values are also historically corroborated. professionId remains null pending validation of global identity and per-character session binding. Do not version personal XP, character IDs, TCP session details or payloads.",
   "professions": [
     {
       "name": "Alchimiste",
@@ -47,12 +47,14 @@
     {
       "name": "Bijoutier",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-unambiguous-in-current-client-awaiting-global-validation",
+      "candidateProfessionId": 16
     },
     {
       "name": "Bricoleur",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-unambiguous-in-current-client-awaiting-global-validation",
+      "candidateProfessionId": 65
     },
     {
       "name": "Bûcheron",
@@ -75,12 +77,14 @@
     {
       "name": "Cordonnier",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-unambiguous-in-current-client-awaiting-global-validation",
+      "candidateProfessionId": 15
     },
     {
       "name": "Costumage",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-unambiguous-in-current-client-awaiting-global-validation",
+      "candidateProfessionId": 64
     },
     {
       "name": "Éleveur",
@@ -97,7 +101,8 @@
     {
       "name": "Façonneur",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-unambiguous-in-current-client-awaiting-global-validation",
+      "candidateProfessionId": 60
     },
     {
       "name": "Forgemage",
@@ -108,7 +113,8 @@
     {
       "name": "Forgeron",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-unambiguous-in-current-client-awaiting-global-validation",
+      "candidateProfessionId": 11
     },
     {
       "name": "Joaillomage",
@@ -119,7 +125,8 @@
     {
       "name": "Mineur",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-unambiguous-in-current-client-awaiting-global-validation",
+      "candidateProfessionId": 24
     },
     {
       "name": "Paysan",
@@ -130,7 +137,8 @@
     {
       "name": "Pêcheur",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-unambiguous-in-current-client-awaiting-global-validation",
+      "candidateProfessionId": 36
     },
     {
       "name": "Sculptemage",
@@ -141,7 +149,8 @@
     {
       "name": "Sculpteur",
       "professionId": null,
-      "status": "unverified"
+      "status": "observed-unambiguous-in-current-client-awaiting-global-validation",
+      "candidateProfessionId": 13
     },
     {
       "name": "Tailleur",
@@ -197,6 +206,12 @@
       "scope": "two-distinct-named-references",
       "build": "3.6.11.15",
       "detail": "20 rows, 2/2 unique matches, f5 unique: Cordomage 62 and Sculptemage 48; confirmed separately by a historical public profession-ID list. No individual XP or character identity retained."
+    },
+    {
+      "kind": "live-ipz-experiment",
+      "scope": "nine-remaining-professions-unambiguous",
+      "build": "3.6.11.15",
+      "detail": "20 rows, pairs=9/9, f5 unique across 20 rows, candidate-links=9/9. IDs observed: Bijoutier 16; Bricoleur 65; Cordonnier 15; Costumage 64; Façonneur 60; Forgeron 11; Mineur 24; Pêcheur 36; Sculpteur 13. No individual XP stored."
     }
   ]
 }

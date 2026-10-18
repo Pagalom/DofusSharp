@@ -159,3 +159,45 @@ production : les champs `professionId` restent à null
 tant que l'identité du personnage et la portée globale du
 mapping ne sont pas validées. Les niveaux et XP personnelles
 ne sont pas enregistrés dans le dépôt.
+
+## P1f — Couverture complète des métiers (nouvelle capture)
+
+Une nouvelle capture `ipz` sur le client 3.6.11.15 a donné :
+- `rows=20`, `pairs=9/9`, `f5-unique=true`
+- `candidate-links=9/9` et `mapping=unverified`
+- Neuf nouvelles correspondances univoques :
+
+| Métier | f1.f5 candidat |
+|---|---:|
+| Bijoutier | 16 |
+| Bricoleur | 65 |
+| Cordonnier | 15 |
+| Costumage | 64 |
+| Façonneur | 60 |
+| Forgeron | 11 |
+| Mineur | 24 |
+| Pêcheur | 36 |
+| Sculpteur | 13 |
+
+Les 11 valeurs précédentes sont conservées : la table
+`BestCrush.Network/Protocol/ipz-profession-mapping.3.6.11.15.json`
+comporte maintenant **20 métiers sur 20 avec des valeurs f5
+candidates toutes distinctes**, corrélées à leur nom depuis
+des références de niveau / XP cumulée observées en jeu.
+
+**Portée de cette preuve :** correspondance stable de chaque
+ligne au sein d'un snapshot ; pas une preuve suffisante que
+toutes les valeurs sont des IDs universels inchangés sur
+plusieurs personnages ou versions, ni que les 20 lignes sont
+attribuables au bon personnage dans toutes les sessions.
+Le décodeur de production continue de ne pas utiliser ce
+mapping (`professionId: null`).
+
+Étape suivante : caractériser puis sécuriser le rattachement
+personnage / session au moyen de deux indices indépendants
+pour une même connexion TCP et de tests multi-personnages
+synthétiques. Une notification `ipz` isolée ne doit jamais
+être rattachée automatiquement au dernier personnage observé.
+
+Aucun niveau, aucune XP cumulée personnelle, aucune trame brute
+et aucun identifiant de compte/personnage n'a été ajouté au dépôt.
