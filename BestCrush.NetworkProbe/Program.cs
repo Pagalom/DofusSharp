@@ -197,6 +197,12 @@ Console.CancelKeyPress += (_, e) =>
 
 if (options.CharacterScan)
 {
+    // P2a and P2b accept the same local input, but only one diagnostic
+    // receives it. Never supply both character identity references.
+    CharacterIdentityDiagnosticReferences diagnosticReferences =
+        CharacterIdentityDiagnosticReferenceRouter.Route(
+            options.IdentityName, options.IdentityFields, characterNameReference);
+
     using CharacterMetadataProbe probe = new(
         devices[options.DeviceIndex.Value], options.Port,
         options.CharacterShape ? options.ShapeKeys : null,
@@ -205,9 +211,9 @@ if (options.CharacterScan)
         studyReferences,
         options.ShowCandidateJobIds,
         identifyReferences,
-        characterNameReference,
+        diagnosticReferences.NameSearch,
         options.IdentityName ? ProbeOptions.IdentityNameOpCodes : null,
-        options.IdentityFields ? characterNameReference : null);
+        diagnosticReferences.FieldStudy);
 
     probe.Start();
     stop.Wait();

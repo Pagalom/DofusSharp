@@ -47,6 +47,47 @@ public static class CharacterNameLevelReferenceInput
 }
 
 /// <summary>
+/// Routes the one local identity reference to exactly one diagnostic mode.
+/// Kept separate from the CLI so the P2a/P2b exclusivity is testable.
+/// </summary>
+public readonly record struct CharacterIdentityDiagnosticReferences(
+    CharacterNameLevelReference? NameSearch,
+    CharacterNameLevelReference? FieldStudy)
+{
+    public override string ToString() => "[character diagnostic references: redacted]";
+}
+
+public static class CharacterIdentityDiagnosticReferenceRouter
+{
+    public static CharacterIdentityDiagnosticReferences Route(
+        bool identityName, bool identityFields,
+        CharacterNameLevelReference? reference)
+    {
+        if (identityName && identityFields)
+            throw new ArgumentException("Identity modes must be exclusive.");
+
+        if (identityName || identityFields)
+        {
+            if (reference is null)
+                throw new ArgumentException(
+                    "Selected identity mode requires a local reference.",
+                    nameof(reference));
+            CharacterNameLevelReferenceInput.Validate(reference.Value);
+        }
+        else if (reference is not null)
+        {
+            throw new ArgumentException(
+                "Identity reference was provided without a selected mode.",
+                nameof(reference));
+        }
+
+        return new CharacterIdentityDiagnosticReferences(
+            identityName ? reference : null,
+            identityFields ? reference : null);
+    }
+}
+
+/// <summary>
 /// P2a research-only, value-blind search of exact UTF-8 name fields
 /// in bounded protobuf submessages. A level match in the same parent
 /// node is only a proximity clue, never evidence of stable character ID.

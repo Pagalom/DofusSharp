@@ -166,4 +166,58 @@ public sealed class CharacterIdentityFieldStudyTest
             identityFieldsReference: Local, shapeKeys: new HashSet<string> { "ksb" });
         b.Should().Throw<ArgumentException>();
     }
+
+    [Fact]
+    public void P2bCliReferenceRoutingDoesNotAlsoActivateP2a()
+    {
+        CharacterIdentityDiagnosticReferences selected =
+            CharacterIdentityDiagnosticReferenceRouter.Route(
+                identityName: false, identityFields: true, reference: Local);
+
+        selected.NameSearch.Should().BeNull();
+        selected.FieldStudy.Should().Be(Local);
+        selected.ToString().Should().NotContain(Local.Name);
+
+        // Regression: this exact combination previously threw
+        // "P2b field study is an exclusive diagnostic mode."
+        Action construct = () => new CharacterCaptureFlowTracker(
+            characterNameReference: selected.NameSearch,
+            characterNameOpCodes: null,
+            identityFieldsReference: selected.FieldStudy);
+        construct.Should().NotThrow();
+    }
+
+    [Fact]
+    public void IdentityRoutingKeepsP2aAvailableAndRejectsBothModes()
+    {
+        CharacterIdentityDiagnosticReferences nameOnly =
+            CharacterIdentityDiagnosticReferenceRouter.Route(
+                identityName: true, identityFields: false, reference: Local);
+        nameOnly.NameSearch.Should().Be(Local);
+        nameOnly.FieldStudy.Should().BeNull();
+
+        Action constructName = () => new CharacterCaptureFlowTracker(
+            characterNameReference: nameOnly.NameSearch,
+            characterNameOpCodes: new HashSet<string> { "ksb" },
+            identityFieldsReference: nameOnly.FieldStudy);
+        constructName.Should().NotThrow();
+
+        CharacterIdentityDiagnosticReferences inactive =
+            CharacterIdentityDiagnosticReferenceRouter.Route(
+                identityName: false, identityFields: false, reference: null);
+        inactive.NameSearch.Should().BeNull();
+        inactive.FieldStudy.Should().BeNull();
+
+        Action both = () => CharacterIdentityDiagnosticReferenceRouter.Route(
+            identityName: true, identityFields: true, reference: Local);
+        both.Should().Throw<ArgumentException>();
+
+        Action missingReference = () => CharacterIdentityDiagnosticReferenceRouter.Route(
+            identityName: false, identityFields: true, reference: null);
+        missingReference.Should().Throw<ArgumentException>();
+
+        Action inactiveWithReference = () => CharacterIdentityDiagnosticReferenceRouter.Route(
+            identityName: false, identityFields: false, reference: Local);
+        inactiveWithReference.Should().Throw<ArgumentException>();
+    }
 }
