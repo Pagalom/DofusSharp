@@ -48,25 +48,25 @@ public sealed class ProfessionFlowStudyTest
         study.Observe("ksb", Ksb()).Should().Be(
             "p3a=ksb decoded=yes selection-link=yes class-link=yes identity=unverified");
         study.Observe("ipz", Ipz()).Should().Be(
-            "p3a=ipz decoded=yes rows=20 f5-unique=yes selection-link=yes class-link=yes owner=unverified mapping=unverified");
+            "p3a=ipz decoded=yes rows=20 f5-unique=yes selection-link=yes class-link=yes scope=account-server account=unverified server=unverified mapping=unverified");
     }
 
     [Fact]
-    public void IpzBeforeCharacterLoadingDoesNotIdentifyOwner()
+    public void IpzBeforeCharacterLoadingDoesNotIdentifyAccountOrServer()
     {
         var study = new ProfessionFlowStudy();
         string result = study.Observe("ipz", Ipz());
         result.Should().Contain("selection-link=pending class-link=unavailable");
-        result.Should().Contain("owner=unverified mapping=unverified");
+        result.Should().Contain("scope=account-server account=unverified server=unverified mapping=unverified");
     }
 
     [Fact]
-    public void KsbWithoutSelectionIsNotEnoughToAttributeProfessions()
+    public void KsbWithoutSelectionCannotEstablishAccountServerScope()
     {
         var study = new ProfessionFlowStudy();
         study.Observe("ksb", Ksb());
         study.Observe("ipz", Ipz()).Should().Contain(
-            "selection-link=unavailable class-link=unavailable owner=unverified");
+            "selection-link=unavailable class-link=unavailable scope=account-server account=unverified server=unverified");
     }
 
     [Fact]
@@ -76,20 +76,20 @@ public sealed class ProfessionFlowStudyTest
         study.Observe("ksc", Ksc());
         study.Observe("ksb", Ksb());
         study.Observe("ipz", Ipz()).Should().Contain(
-            "selection-link=yes class-link=yes owner=unverified");
+            "selection-link=yes class-link=yes scope=account-server account=unverified server=unverified");
 
         study.Observe("ksc", Ksc());
         study.Observe("ipz", Ipz()).Should().Contain(
-            "selection-link=pending class-link=unavailable owner=unverified");
+            "selection-link=pending class-link=unavailable scope=account-server account=unverified server=unverified");
 
         study.Observe("ksb", Ksb(first: false));
         study.Observe("ipz", Ipz()).Should().Contain(
-            "selection-link=yes class-link=yes owner=unverified");
+            "selection-link=yes class-link=yes scope=account-server account=unverified server=unverified");
 
         study.Observe("ksc", Ksc());
         study.Observe("ksb", Ksb());
         study.Observe("ipz", Ipz()).Should().Contain(
-            "selection-link=yes class-link=yes owner=unverified");
+            "selection-link=yes class-link=yes scope=account-server account=unverified server=unverified");
     }
 
     [Fact]
@@ -101,7 +101,7 @@ public sealed class ProfessionFlowStudyTest
         study.Observe("ksb", [0x80]).Should().Contain(
             "decoded=no selection-link=unavailable");
         study.Observe("ipz", Ipz()).Should().Contain(
-            "selection-link=pending class-link=unavailable owner=unverified");
+            "selection-link=pending class-link=unavailable scope=account-server account=unverified server=unverified");
     }
 
     [Fact]
@@ -111,7 +111,7 @@ public sealed class ProfessionFlowStudyTest
         study.Observe("ksc", Ksc());
         study.Observe("ksb", Ksb(overrideClass: 17));
         study.Observe("ipz", Ipz()).Should().Contain(
-            "selection-link=yes class-link=no owner=unverified");
+            "selection-link=yes class-link=no scope=account-server account=unverified server=unverified");
     }
 
     [Fact]
@@ -124,7 +124,7 @@ public sealed class ProfessionFlowStudyTest
             Row(9000999, "Hiver-Rouge", 83, 6)));
         study.Observe("ksb", third);
         study.Observe("ipz", Ipz()).Should().Contain(
-            "selection-link=no class-link=unavailable owner=unverified");
+            "selection-link=no class-link=unavailable scope=account-server account=unverified server=unverified");
     }
 
     [Fact]
@@ -134,7 +134,7 @@ public sealed class ProfessionFlowStudyTest
         study.Observe("ksc", Ksc());
         study.Observe("ksb", Ksb());
         study.Observe("ipz", Ipz(rows: 19)).Should().Be(
-            "p3a=ipz decoded=no selection-link=yes class-link=yes owner=unverified mapping=unverified");
+            "p3a=ipz decoded=no selection-link=yes class-link=yes scope=account-server account=unverified server=unverified mapping=unverified");
     }
 
     [Fact]
@@ -146,7 +146,7 @@ public sealed class ProfessionFlowStudyTest
             study.Observe("ksc", Ksc());
             study.Observe("ksb", Ksb());
             study.Observe("ipz", body).Should().Contain(
-                "f5-unique=no selection-link=yes class-link=yes owner=unverified mapping=unverified");
+                "f5-unique=no selection-link=yes class-link=yes scope=account-server account=unverified server=unverified mapping=unverified");
         }
     }
 
@@ -162,6 +162,26 @@ public sealed class ProfessionFlowStudyTest
         report.Should().NotContain("9000123");
         report.Should().NotContain("137");
         report.Should().NotContain("301");
+    }
+
+    [Fact]
+    public void CharacterSelectionCannotProveAccountServerOwnership()
+    {
+        var study = new ProfessionFlowStudy();
+        study.Observe("ksc", Ksc());
+        study.Observe("ksb", Ksb(first: false));
+        string firstCharacter = study.Observe("ipz", Ipz());
+
+        study.Observe("ksc", Ksc());
+        study.Observe("ksb", Ksb());
+        string secondCharacter = study.Observe("ipz", Ipz());
+
+        // Both character paths can see identical account-level professions.
+        // Matching character candidates never confirm an account or server.
+        firstCharacter.Should().Be(secondCharacter);
+        secondCharacter.Should().Contain(
+            "scope=account-server account=unverified server=unverified");
+        secondCharacter.Should().Contain("mapping=unverified");
     }
 
     [Fact]
@@ -183,7 +203,7 @@ public sealed class ProfessionFlowStudyTest
             100, Frame(Any("ipz", Ipz())), now.AddSeconds(2))
             .Single(e => e.Kind == CharacterCaptureEventKind.Message);
         result.ProfessionFlowSummary.Should().Contain(
-            "selection-link=pending class-link=unavailable owner=unverified");
+            "selection-link=pending class-link=unavailable scope=account-server account=unverified server=unverified");
     }
 
     [Fact]
@@ -208,7 +228,7 @@ public sealed class ProfessionFlowStudyTest
         one.ProfessionFlowSummary.Should().Contain("p3a=ksc decoded=yes");
         two.ProfessionFlowSummary.Should().Contain("p3a=ksb decoded=yes selection-link=yes");
         three.ProfessionFlowSummary.Should().Contain(
-            "p3a=ipz decoded=yes rows=20 f5-unique=yes selection-link=yes class-link=yes owner=unverified");
+            "p3a=ipz decoded=yes rows=20 f5-unique=yes selection-link=yes class-link=yes scope=account-server account=unverified server=unverified");
         three.ProfessionFlowSummary.Should().NotContain("Sable-Ciel");
         three.ProfessionFlowSummary.Should().NotContain("9000123");
     }
@@ -232,7 +252,7 @@ public sealed class ProfessionFlowStudyTest
             1000, Frame(Any("ipz", Ipz())), now.AddSeconds(4))
             .Single(e => e.Kind == CharacterCaptureEventKind.Message);
         result.ProfessionFlowSummary.Should().Contain(
-            "selection-link=pending class-link=unavailable owner=unverified");
+            "selection-link=pending class-link=unavailable scope=account-server account=unverified server=unverified");
     }
 
     [Fact]

@@ -36,7 +36,7 @@
       "status": "confirmed-six-reference-threshold-matches"
     }
   ],
-  "note": "All twenty candidateProfessionId values have been associated with named profession level/cumulative-XP references in live ipz captures on client 3.6.11.15. Some values are also historically corroborated. professionId remains null pending validation of global identity and per-character session binding. Do not version personal XP, character IDs, TCP session details or payloads.",
+  "note": "All twenty candidateProfessionId values have been associated with named profession level/cumulative-XP references in live ipz captures on client 3.6.11.15. Some values are also historically corroborated. professionId remains null pending validation of global identity and per-character session binding. Do not version personal XP, character IDs, TCP session details or payloads. Confirmed game scope since DOFUS 3.3 is account plus server, not a single character. Actual account/server wire identity remains unverified.",
   "professions": [
     {
       "name": "Alchimiste",
@@ -213,5 +213,8 @@
       "build": "3.6.11.15",
       "detail": "20 rows, pairs=9/9, f5 unique across 20 rows, candidate-links=9/9. IDs observed: Bijoutier 16; Bricoleur 65; Cordonnier 15; Costumage 64; Façonneur 60; Forgeron 11; Mineur 24; Pêcheur 36; Sculpteur 13. No individual XP stored."
     }
-  ]
+  ],
+  "ownershipScope": "account-and-server-not-character",
+  "ownershipVerification": "account-and-server-identity-unverified",
+  "ownershipRule": "Professions are shared among characters of the same account on the same server; TCP and character-selection coherence alone cannot identify the account or server. Never attach ipz to a character."
 }

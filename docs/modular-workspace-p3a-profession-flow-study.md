@@ -1,4 +1,26 @@
-# P3a — Étude de parcours ksc → ksb → ipz (connexion TCP)
+# P3a — Étude des métiers par compte + serveur (diagnostic TCP)
+
+## Portée métier corrigée
+
+Depuis la mutualisation des métiers de DOFUS 3.3,
+les métiers sont partagés entre **tous les personnages
+d'un même compte sur un même serveur**. Ils ne sont
+pas une propriété individuelle d'un personnage et
+ne sont pas transférés avec un personnage sur un
+autre serveur.
+
+Sources publiques :
+- https://dofuspourlespros.com/mise-a-jour-303.html
+- https://support.ankama.com/hc/fr/articles/201165017--DOFUS-Transf%C3%A9rer-un-personnage-sur-un-autre-serveur
+- https://support.ankama.com/hc/fr/articles/214542118--DOFUS-WAKFU-Transf%C3%A9rer-un-personnage-sur-un-autre-compte
+
+Les messages `ksc` et `ksb` sont des événements de
+**chargement de personnage**, utiles pour retracer
+l'origine d'un `ipz`, mais ils n'identifient
+**ni le compte, ni le serveur**. Leur concordance
+ne doit donc jamais confirmer la propriété des
+métiers. Une connexion TCP est un périmètre
+transitoire de capture, pas un compte DOFUS.
 
 ## Situation
 
@@ -44,9 +66,13 @@ locale n'est demandé. N'envoyer que les lignes
 - `selection-link=unavailable` : fiche chargée sans
   `ksc` préalable ;
 - `selection-link=pending` : pas de `ksb` courant ;
-- `owner=unverified mapping=unverified` **toujours** :
-  l'ordre des paquets et l'égalité des fiches
-  ne constituent pas une preuve d'identité indépendante.
+- `scope=account-server account=unverified server=unverified
+  mapping=unverified` **toujours** : le périmètre
+  logique des métiers est bien compte + serveur,
+  mais ni le compte ni le serveur ne sont établis
+  par cette seule capture. L'ordre des paquets et
+  l'égalité des fiches ne constituent pas une
+  preuve d'identité de compte.
 
 Le diagnostic ne révèle jamais les valeurs `f5`,
 les XP ou identifiants candidats. Pas d'écriture
@@ -73,7 +99,8 @@ Le fichier `ProfessionFlowStudyTest.cs` couvre :
 
 - parcours complet `ksc → ksb → ipz` ;
 - `ipz` avant le chargement, ou `ksb` seul ;
-- alternance A → B → A ;
+- alternance A → B → A, sans création de propriétés
+  métiers par personnage ;
 - `ksb` erroné, classe contradictoire,
   identité absente de la sélection ;
 - `ipz` malformé, `f5` absent ou dupliqué ;
@@ -106,22 +133,48 @@ doivent encore être validés sur Windows.
    attendre `PROFESSION_FLOW=[p3a=ksc ...]`.
 3. Charger le personnage A et attendre `ksb`,
    puis `ipz` **dans cette même session TCP**.
-4. Quitter et charger un autre personnage B,
-   puis répéter pour A.
+4. Quitter et charger un autre personnage B **du
+   même compte et du même serveur**, puis répéter
+   pour A.
 5. Ne transmettre que `PROFESSION_FLOW`,
    sans aucune saisie ou trace contenant
    une donnée personnelle.
 
-Objectif : vérifier l'absence d'héritage d'une
-fiche A lors du chargement B et la réinitialisation
-sur nouvelles connexions. **Ce n'est pas encore
-une association automatique de métiers à un
-personnage BestCrush.**
+Objectif : vérifier la cohérence temporelle du
+flux métiers partagé au sein du compte + serveur,
+la remise à zéro de l'**observation de personnage**
+sur changement de session, et l'absence de
+confusion entre comptes simultanés.
+**Ce n'est pas une association automatique
+à un compte ni à un personnage dans BestCrush.**
+L'égalité de deux `ipz` entre personnages
+n'est pas, à elle seule, une preuve qu'ils
+appartiennent au même compte.
 
 ## Décision à ne pas anticiper
 
 La confirmation des identifiants globaux `f5`,
-et une preuve d'identité **sémantiquement indépendante**
-des deux familles `ksc` et `ksb`, restent
-nécessaires avant une attribution automatique
-de métier ou une persistance.
+une **identité de compte** fiable, un **serveur**
+identifié, et une politique de séparation
+multi-compte/multi-serveur sont nécessaires avant
+toute attribution ou persistance des métiers.
+
+### Dette d'architecture BestCrush
+
+`BestCrush/Services/CurrentCharacterState.cs`
+contient aujourd'hui `CharacterSessionProfile.ProfessionLevels`
+et `CharacterDataObservation.ProfessionLevels`,
+deux propriétés définies **par personnage**.
+Elles reflètent une hypothèse fonctionnelle
+désormais obsolète. À terme, déplacer ces données
+vers un état métier distinct, indexé sur la paire
+`(AccountKey, ServerKey)`, avec une identité de compte
+authentifiée et sans emprunt automatique au personnage
+courant.
+
+Le compte et le serveur ne doivent **jamais**
+être inférés à partir du seul numéro de session TCP,
+du nom de personnage ou du fait que `ksb` et
+`ipz` sont proches dans le temps. En attendant cette
+refonte, aucune modification du stockage ou des profils
+de production : ce mode P3a reste un diagnostic passif.

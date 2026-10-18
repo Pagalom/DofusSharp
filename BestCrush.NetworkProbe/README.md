@@ -35,7 +35,7 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
-### P3a : parcours personnage et métiers (sans attribution)
+### P3a : métiers partagés par compte + serveur (sans attribution)
 
 Pour observer `ksc → ksb → ipz` dans une même connexion
 TCP sans saisir le nom du personnage ni des références XP :
@@ -49,9 +49,15 @@ des compteurs et des indicateurs anonymisés : qualité de
 décodage, égalité des fiches candidates dans la session,
 présence et unicité des 20 IDs `f5` candidats.
 L'alternance A → B → A, les erreurs et FIN/RST révoquent
-les observations précédentes. **Toujours**
-`owner=unverified mapping=unverified` : aucun métier n'est
-encore attribué automatiquement ni persisté.
+l'observation du chargement du personnage, **pas les métiers
+du compte**. Les métiers sont partagés sur le couple
+**compte + serveur**, non stockés par personnage.
+**Toujours**
+`scope=account-server account=unverified server=unverified mapping=unverified` :
+le diagnostic TCP ne vérifie pas l'identité du compte
+ni du serveur et n'attribue ou persiste aucun métier.
+La structure `CurrentCharacterState.ProfessionLevels`
+par personnage reste une dette d'architecture à refondre.
 
 Voir `docs/modular-workspace-p3a-profession-flow-study.md`.
 

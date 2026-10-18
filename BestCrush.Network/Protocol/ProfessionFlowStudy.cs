@@ -3,7 +3,7 @@ namespace BestCrush.Network.Protocol;
 /// <summary>
 /// P3a research-only flow characterization. One instance per TCP connection.
 /// Values and candidate names never appear in emitted summaries, are never
-/// stored on disk, and are NOT account/character or profession ownership.
+/// stored on disk, and are NOT verified account/server identity or profession ownership.
 /// </summary>
 public sealed class ProfessionFlowStudy
 {
@@ -16,7 +16,7 @@ public sealed class ProfessionFlowStudy
         {
             case "ksc":
             {
-                // A new selection invalidates any previously loaded owner.
+                // A new selection invalidates the previously loaded character observation.
                 // Even a malformed new list must not reuse stale state.
                 _loaded = null;
                 _selectable = null;
@@ -49,7 +49,7 @@ public sealed class ProfessionFlowStudy
                     out ProfessionIpzSnapshot? snapshot) ||
                     snapshot is null)
                     return "p3a=ipz decoded=no " + DescribeLink() +
-                           " owner=unverified mapping=unverified";
+                           " scope=account-server account=unverified server=unverified mapping=unverified";
 
                 ulong[] f5 = snapshot.Rows
                     .Select(row => row.UnidentifiedVarints.TryGetValue(
@@ -62,10 +62,10 @@ public sealed class ProfessionFlowStudy
                        " f5-unique=" +
                        (globallyDistinctCandidateF5 ? "yes" : "no") +
                        " " + DescribeLink() +
-                       " owner=unverified mapping=unverified";
+                       " scope=account-server account=unverified server=unverified mapping=unverified";
             }
             default:
-                return "p3a=unsupported owner=unverified";
+                return "p3a=unsupported scope=account-server account=unverified server=unverified";
         }
     }
 
