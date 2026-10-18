@@ -193,3 +193,46 @@ connexion avant de modifier les règles d'attribution.
 Aucun identifiant ou nom privé, niveau, payload,
 adresse, jeton ni donnée de compte n'est ajouté à
 cette documentation.
+
+
+## Complément déterminant — séquence complète même session TCP
+
+Un relevé **métadonnées uniquement** (`--character-scan`),
+commencé alors que le personnage était déjà en jeu, montre
+la transition complète qui n'était pas visible dans les
+précédentes captures arrêtées à l'écran de sélection :
+
+- Session #1 : jeu actif, puis message `kmz` et fermeture ;
+- Session #3 : `knc`, `kod`, `ksc` à **18:25:40.845 UTC** ;
+- Session #3 : `kta` puis `ksb` à **18:26:01.322 UTC** ;
+- Session #3 : `ipg`, `ipz` à **18:26:01.323 UTC**.
+
+Soit environ **20,5 secondes** entre la sélection
+(`ksc`) et le chargement (`ksb`) sur **la même
+session TCP #3**. Cela concorde avec les actions
+décrites par l'opérateur, incluant 20–30 secondes
+d'attente après chaque changement.
+
+**Correction de l'interprétation antérieure :**
+l'absence de `ksb` sur les lignes précédemment
+transmises ne démontrait aucun défaut réseau :
+les relevés avaient été arrêtés avant le chargement
+suivant. La capture complète montre le parcours
+nominal. Aucun ajustement du suivi TCP n'est
+justifié par cette observation.
+
+**Ce que l'on peut conclure :** le protocole est
+observé sur une même connexion avec `ksc`, `ksb`
+et `ipz`. Cela ne prouve pas encore `class-link=yes`,
+car ce relevé est en mode `--character-scan`,
+sans le diagnostic `--identity-fields`. Cela
+ne constitue pas non plus une deuxième source
+sémantiquement indépendante d'identité.
+
+**Vérification suivante :** lancer
+`--identity-fields --expected-class-id 17` avant
+de retourner à la sélection, puis attendre le
+`ksc` et le `ksb` de la même connexion avant
+d'arrêter ; rechercher `p2j class-link=yes`.
+Conserver `ClassId=null`, `IdentityConfirmed=false`
+et l'association automatique des métiers désactivée.
