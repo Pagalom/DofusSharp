@@ -59,6 +59,8 @@ public sealed class CharacterCaptureFlowTracker
         internal CharacterIdentityFieldObservation? KsbFields;
         internal CharacterIdentityFieldObservation? KscFields;
         internal bool IdentityFieldsConflicted;
+        internal CharacterWireCandidateSnapshot? KsbDecodedCandidate;
+        internal CharacterWireCandidateSnapshot? KscDecodedCandidates;
     }
 
     private readonly object _gate = new();
@@ -343,6 +345,8 @@ public sealed class CharacterCaptureFlowTracker
                 }
                 catch (TcpReassemblyLimitExceededException)
                 {
+                    flow.KsbDecodedCandidate = null;
+                    flow.KscDecodedCandidates = null;
                     flow.Closed = true;
                     events.Add(new CharacterCaptureEvent(
                         observedAtUtc, flow.Number, direction,
@@ -354,6 +358,10 @@ public sealed class CharacterCaptureFlowTracker
             // Even with no payload, a FIN or RST invalidates the session.
             if (fin || rst)
             {
+                // Discard P2f names and candidate IDs immediately when the
+                // underlying TCP flow closes; nothing is persisted.
+                flow.KsbDecodedCandidate = null;
+                flow.KscDecodedCandidates = null;
                 flow.Closed = true;
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
@@ -393,6 +401,8 @@ public sealed class CharacterCaptureFlowTracker
                 flow.IdentityFieldsConflicted = true;
                 flow.KsbFields = null;
                 flow.KscFields = null;
+                flow.KsbDecodedCandidate = null;
+                flow.KscDecodedCandidates = null;
                 _candidateKsbF3BySession.Remove(flow.Number);
                 return "status=conflicted identity=unverified";
             }
@@ -407,11 +417,44 @@ public sealed class CharacterCaptureFlowTracker
             ? " " + ObserveKsbAcrossSessions(flow.Number, observation)
             : "";
 
+        // P2f is a separate versioned experimental decoder. Its values
+        // never leave this per-TCP-session object. No CharacterIdentityCorrelator
+        // or business service receives them.
+        string decoded = ObserveCandidateDecode(flow, opcode, body);
+
         if (flow.KsbFields is not null && flow.KscFields is not null)
             return report + " " + CharacterIdentityFieldStudy.Compare(
-                flow.KsbFields, flow.KscFields) + crossSession;
+                flow.KsbFields, flow.KscFields) + crossSession + " " + decoded;
 
-        return report + " same-session=pending identity=unverified" + crossSession;
+        return report + " same-session=pending identity=unverified" +
+               crossSession + " " + decoded;
+    }
+
+    private static string ObserveCandidateDecode(
+        Session flow, string opcode, byte[] body)
+    {
+        if (!CharacterWireCandidateDecoder.TryDecode(
+                opcode, body, out CharacterWireCandidateSnapshot? snapshot) ||
+            snapshot is null)
+            return "p2f=layout-rejected identity=unverified";
+
+        if (opcode == "ksb")
+            flow.KsbDecodedCandidate = snapshot;
+        else
+            flow.KscDecodedCandidates = snapshot;
+
+        string match = flow.KsbDecodedCandidate is not null &&
+                       flow.KscDecodedCandidates is not null
+            ? CharacterWireCandidateDecoder.HasMatchingCandidate(
+                flow.KsbDecodedCandidate, flow.KscDecodedCandidates)
+                ? "yes" : "no"
+            : "pending";
+
+        // ksc is a list, ksb is a loaded candidate. Wire equality
+        // is NOT independently corroborated semantic identity.
+        return "p2f=decoded candidates=" + snapshot.Candidates.Count +
+               " class=unknown candidate-link=" + match +
+               " identity=unverified";
     }
 
     private string ObserveKsbAcrossSessions(

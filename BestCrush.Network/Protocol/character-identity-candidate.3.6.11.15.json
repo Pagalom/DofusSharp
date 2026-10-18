@@ -1,0 +1,39 @@
+{
+  "clientBuild": "3.6.11.15",
+  "schemaStatus": "research-only-candidate-not-production-validated",
+  "sourceOpCodes": {
+    "ksb": {
+      "direction": "server-to-client",
+      "root": "f1.f1",
+      "candidateId": "f1.f1.f3",
+      "name": "f1.f1.f4.f6",
+      "level": "f1.f1.f4.f3",
+      "classId": null,
+      "semanticStatus": "loaded-character-hypothesis-unverified"
+    },
+    "ksc": {
+      "direction": "server-to-client",
+      "repeatedEntry": "f2",
+      "candidateId": "f2.f3",
+      "name": "f2.f4.f6",
+      "level": "f2.f4.f3",
+      "classId": null,
+      "semanticStatus": "character-selection-list-hypothesis-unverified"
+    }
+  },
+  "matchingPolicy": {
+    "sameTcpSessionRequired": true,
+    "identicalCandidateIdNameLevelRequired": true,
+    "distinctWireOpcodeIsNotIndependentSemanticEvidence": true,
+    "identityStatus": "unverified",
+    "classStatus": "unknown",
+    "automatedAttribution": false,
+    "persistCandidateIdentity": false
+  },
+  "notes": [
+    "This describes candidate wire layouts observed with Dofus 3.6.11.15, not verified production semantics.",
+    "Real observations: two distinct ksc entries; each selected candidate f3 agrees with same-session ksb; ksb f3 is stable across two sessions for a given character.",
+    "Class ID and independent identity corroboration remain unknown.",
+    "No actual character identifiers, names, levels or XP are stored in this mapping."
+  ]
+}

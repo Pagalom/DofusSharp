@@ -35,6 +35,18 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P2f : décodeur d'identité candidat (non confirmé)
+
+Le mode existant `--identity-fields` teste maintenant un
+décodeur strict et versionné pour `ksb`/`ksc`
+(Dofus 3.6.11.15). Il peut afficher
+`p2f=decoded candidates=N class=unknown candidate-link=yes/pending/no
+identity=unverified`, sans révéler de nom, niveau, identifiant,
+payload ou empreinte. Aucune attribution automatique n'est
+activée et la classe n'est pas encore décodée.
+
+Voir `docs/modular-workspace-p2f-candidate-identity-decoder.md`.
+
 ### P2b : comparer ksb et ksc sur la même connexion TCP
 
 ```powershell
