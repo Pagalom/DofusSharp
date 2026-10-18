@@ -221,3 +221,49 @@ Aucun code de production ni test d'isolation ajouté.
 
 Statut P3e.1 : **deux gains +16 contrôlés,
 message d'XP non identifié**.
+
+
+## P3e.2 — Capture non dédupliquée : deux réponses `ipz` après `kba`
+
+Capture `--character-scan` sur une session TCP,
+du 23:16:11 au 23:16:38 UTC, avec deux séquences
+comparables espacées d'environ 13 secondes.
+
+| Heure UTC | Requête C→S | Réponse S→C | Autres réponses S→C |
+| --- | --- | --- | --- |
+| 23:16:21.481–.483 | `kba` 4 octets | `ipz` 13 octets | `irx`×2, `kcx`×2, `irq`, `kco`, `ipa`, `jnj`, `iqq`, `krg` |
+| 23:16:34.581–.582 | `kba` 4 octets | `ipz` 14 octets | `irx`×2, `kcx`×2, `irq`, `kco`, `iqq` |
+
+Contrairement à P3e.1, **tous les messages** sont
+visibles sans déduplication. Aucun `kbf`,
+`kas`, `ith`, `lof` ou `jzx` n'apparaît
+sur cet intervalle, même si ces opcodes étaient
+présents dans la capture de fabrication P3e.0.
+
+**Hypothèse :** `kba` sollicite un ensemble
+d'informations contenant une réponse `ipz`
+mono-entrée. La corrélation est répétée deux fois
+avec un écart d'une milliseconde entre demande
+et réponse, mais l'origine fonctionnelle de
+`kba` reste non identifiée (consultation d'un
+panneau ? autre requête de jeu ?).
+
+La taille `ipz` augmente de 13 à 14 octets.
+Une variation de longueur seule n'établit
+ni la valeur ni le changement du compteur XP.
+Elle peut refléter différents champs ou longueurs
+de varints. Les valeurs exactes de niveau et XP
+lors de **cette** capture n'ont pas été
+communiquées ; ne pas lui attribuer les gains
+précédents sans confirmation.
+
+**Question expérimentale :** l'opérateur a-t-il
+ouvert la fenêtre métiers `J` aux deux instants
+`kba`, ou ces instants correspondent-ils aux
+fabrications ? Avant d'écrire un décodeur,
+distinguer consultation de métier, fabrication
+et transmission spontanée de progression.
+
+Statut : `ipz` mono-entrée lié
+temporellement à `kba` sur deux occurrences ;
+**XP sur le fil non validée.**
