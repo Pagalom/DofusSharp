@@ -7,16 +7,23 @@ Le relevé manuel du joueur, sur un métier suivi :
 
 | Mesure successive | Niveau | XP affichée |
 | --- | ---: | ---: |
-| initiale | 1 | 2 |
-| intermédiaire | 2 | 22 |
-| finale | 2 | 40 |
+| avant fabrication 1 | 1 | 2 |
+| après fabrication 1 | 2 | 22 |
+| après fabrication 2 | 2 | 40 |
 
-La différence affichée entre les deux relevés au
-niveau 2 est **+18**. La différence entre niveau 1
-et niveau 2 ne constitue pas encore une mesure
-de gain XP cumulé : le sens exact du compteur
-(avec ou sans remise à zéro selon le niveau)
-doit être vérifié avec l'interface du jeu.
+**Précision de l'opérateur : exactement DEUX
+fabrications, chacune annoncée comme rapportant
+20 XP.** Ne pas interpréter le nombre de messages
+réseau comme un nombre de fabrications.
+
+Le niveau 1 → 2 change entre les deux premiers
+relevés. Entre les deux relevés au niveau 2,
+l'affichage passe de 22 à 40, soit +18,
+alors que le gain annoncé pour la deuxième
+fabrication est de +20 : cet écart est **non
+expliqué**. Vérifier la signification exacte du
+compteur affiché (total, niveau, état transitoire,
+etc.) avant toute affirmation de validation XP.
 
 ## Capture P3e.0 — métadonnées uniquement
 
@@ -26,7 +33,7 @@ exécuté pendant des opérations de fabrication.
 
 Fenêtre principale suspecte : 23:00:15–20 UTC
 (timing de la capture, sans identification formelle
-des actions individuelles).
+des deux fabrications).
 
 - Six messages **`kbf` C→S** : trois de
   **7 octets**, puis trois de **8 octets** ;
@@ -41,12 +48,16 @@ des actions individuelles).
 - **`iqx` / `irx` S→C** alternent ;
   leurs rôles ne sont pas connus.
 
-Trois groupes `kbf` de 7 octets apparaissent
+Trois messages `kbf` de 7 octets apparaissent
 vers 23:00:15.893 (deux), 23:00:16.896 (un).
-Trois groupes `kbf` de 8 octets apparaissent
+Trois messages `kbf` de 8 octets apparaissent
 vers 23:00:18.906 (deux), 23:00:19.915 (un).
 
-Le passage 7→8 octets et 18→20 octets
+Il y a **six messages `kbf` pour deux fabrications**.
+Ces échanges pourraient correspondre à des requêtes
+répétées ou à des sous-opérations, mais aucune
+association un-pour-un ni trois-pour-un n'est
+établie. Le passage 7→8 octets et 18→20 octets
 est une **corrélation de tailles**, pas la preuve
 d'une augmentation de niveau ou d'XP. Il pourrait
 aussi provenir d'une recette, d'un objet,
@@ -63,11 +74,13 @@ déjà décodés en P3a/P3b. Le décodeur
 20 entrées, donc ne décode pas ces messages
 de 12 octets dans son mode actuel.
 
-**Conclusion :** un parcours de fabrication est
-fortement suggéré par `kbf` suivi de réponses
-répétées. Aucune famille de messages n'a encore
-été démontrée comme contenant l'XP métier,
-le métier concerné ou un changement de niveau.
+**Conclusion :** le parcours des deux fabrications
+est associé temporellement à six `kbf` et à des
+réponses répétées, mais la relation causale exacte
+reste à caractériser. Aucune famille de messages
+n'a encore été démontrée comme contenant l'XP
+métier, le métier concerné ou un changement de
+niveau. Ne pas assimiler six `kbf` à six crafts.
 
 ## Expérience suivante — étude des formes sans valeurs
 
