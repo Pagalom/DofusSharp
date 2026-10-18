@@ -124,3 +124,40 @@ Les CS8604 sont une dette de nettoyage non bloquante,
   donnée personnelle et rejeter les contradictions.
 - Ne jamais rattacher `ipz`, les inventaires ou les
   kamas à une identité non confirmée.
+
+
+## Observation réelle P2j — deux sessions distinctes
+
+Le dernier test local `--identity-fields --expected-class-id 17`,
+effectué avec une référence de personnage uniquement saisie en RAM,
+montre que le décodeur de classe candidate reconnaît les deux
+familles de messages sur le client 3.6.11.15 :
+
+- **Session TCP #1**, `ksb` : `match=unique`,
+  `p2i=reference-equal=yes`,
+  `p2j=class-candidate=all class-link=pending class=unverified`.
+- **Session TCP #3**, `ksc` : deux fiches distinctes,
+  `p2i=reference-equal=yes peers-differ=yes`,
+  `p2j=class-candidate=all class-link=pending class=unverified`.
+- Aucune ligne `ksb` n'a été observée après le `ksc`
+  sur la session TCP #3 avant l'arrêt du test.
+
+**Conclusion :** la lecture typée de `leaf.f5.f3` est
+effectivement exercée sur du trafic réel pour les deux
+familles, et correspond ici au code public attendu de la
+classe. La comparaison `class-link` reste `pending`
+parce que les deux messages viennent de **connexions TCP
+différentes**. C'est le comportement d'isolation souhaité,
+non un défaut de décodage ni une contradiction.
+
+**Contrôle suivant :** laisser le même probe actif,
+revenir à l'écran de sélection pour recevoir `ksc`,
+puis **charger le personnage correspondant dans cette
+même connexion TCP**. Chercher `class-link=yes` sur
+le `ksb` qui suit ; ne jamais comparer ces valeurs
+au travers de deux sessions distinctes.
+
+Aucune valeur de personnage, aucun identifiant, nom,
+niveau, contenu de réseau ni référence privée n'est
+ajouté au dépôt. `ClassId` reste `null` et
+`IdentityConfirmed` reste `false`.
