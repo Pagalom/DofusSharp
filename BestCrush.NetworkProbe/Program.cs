@@ -36,6 +36,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  (option explicite) --show-candidate-ids");
     Console.WriteLine("Pour identifier des métiers par leur niveau et XP totale uniquement :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-identify --show-candidate-ids");
+    Console.WriteLine("Pour comparer anonymement les métiers entre connexions TCP :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-continuity");
     Console.WriteLine("Pour suivre ksc → ksb → ipz par session TCP, sans référence privée :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-flow");
     Console.WriteLine("Pour rechercher localement le nom/niveau dans les messages candidats :");
@@ -63,8 +65,10 @@ Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceI
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
 if (options.CharacterScan)
 {
-    Console.WriteLine(options.ProfessionFlow
-        ? "Mode P3a : parcours ksc → ksb → ipz par connexion TCP, propriétaire NON vérifié."
+    Console.WriteLine(options.ProfessionContinuity
+        ? "Mode P3b : comparaison anonymisée des métiers avec le premier ipz de cette capture."
+        : options.ProfessionFlow
+        ? "Mode P3a : parcours ksc → ksb → ipz par connexion TCP, compte/serveur NON vérifiés."
         : options.IdentityFields
         ? "Mode P2b : étude des champs voisins du nom/niveau dans ksb et ksc, par connexion TCP."
         : options.IdentityName
@@ -83,7 +87,9 @@ if (options.CharacterScan)
     if (options.CharacterShape)
         Console.WriteLine("Op codes ciblés : " + string.Join(", ", options.ShapeKeys.OrderBy(x => x)));
     if (options.ProfessionFlow)
-        Console.WriteLine("Étude P3a en RAM seulement ; aucune référence privée, identité et mapping NON vérifiés.");
+        Console.WriteLine("Étude P3a en RAM seulement ; aucune référence privée, compte/serveur et mapping NON vérifiés.");
+    if (options.ProfessionContinuity)
+        Console.WriteLine("P3b : un seul client/compte/serveur à la fois. Égalité des métiers ≠ preuve d'identité ; aucune valeur enregistrée.");
     Console.WriteLine("Notes manuelles : connexion, caractéristiques, métiers (J), inventaire, banque, déconnexion.");
     if (options.IdentityName)
         Console.WriteLine("Recherche du nom exact en UTF-8 ; les chemins affichés ne prouvent pas l'identité du personnage.");
@@ -225,7 +231,8 @@ if (options.CharacterScan)
         options.IdentityName ? ProbeOptions.IdentityNameOpCodes : null,
         diagnosticReferences.FieldStudy,
         options.ExpectedClassId,
-        options.ProfessionFlow);
+        options.ProfessionFlow,
+        options.ProfessionContinuity);
 
     probe.Start();
     stop.Wait();
@@ -258,6 +265,7 @@ internal sealed record ProbeOptions(
     bool ShowCandidateJobIds,
     bool ProfessionIdentify,
     bool ProfessionFlow,
+    bool ProfessionContinuity,
     bool IdentityName,
     bool IdentityFields,
     int? ExpectedClassId)
@@ -288,6 +296,7 @@ internal sealed record ProbeOptions(
         bool professionStudy = false;
         bool professionIdentify = false;
         bool professionFlow = false;
+        bool professionContinuity = false;
         bool identityName = false;
         bool identityFields = false;
         int? expectedClassId = null;
@@ -331,6 +340,9 @@ internal sealed record ProbeOptions(
                 case "--profession-flow":
                     professionFlow = true;
                     break;
+                case "--profession-continuity":
+                    professionContinuity = true;
+                    break;
                 case "--identity-name":
                     identityName = true;
                     break;
@@ -373,6 +385,7 @@ internal sealed record ProbeOptions(
             (professionMatch ? 1 : 0) + (professionDecode ? 1 : 0) +
             (professionStudy ? 1 : 0) + (professionIdentify ? 1 : 0) +
             (professionFlow ? 1 : 0) +
+            (professionContinuity ? 1 : 0) +
             (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
             (identityFields ? 1 : 0);
         if (selectedModes > 1)
@@ -392,9 +405,11 @@ internal sealed record ProbeOptions(
             device, port, all, list,
             characterScan || characterShape || professionMatch ||
                 professionDecode || professionStudy || professionIdentify ||
-                professionFlow || identityName || identityFields,
+                professionFlow || professionContinuity ||
+                identityName || identityFields,
             characterShape, shapeKeys, professionMatch, professionDecode,
             professionStudy, showCandidateJobIds, professionIdentify,
-            professionFlow, identityName, identityFields, expectedClassId);
+            professionFlow, professionContinuity,
+            identityName, identityFields, expectedClassId);
     }
 }

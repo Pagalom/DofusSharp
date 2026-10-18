@@ -22,7 +22,8 @@ internal sealed class CharacterMetadataProbe(
     IReadOnlySet<string>? characterNameOpCodes = null,
     CharacterNameLevelReference? identityFieldsReference = null,
     int? expectedClassId = null,
-    bool studyProfessionFlow = false) : IDisposable
+    bool studyProfessionFlow = false,
+    bool studyProfessionContinuity = false) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterCaptureFlowTracker _flows = new(
@@ -34,7 +35,8 @@ internal sealed class CharacterMetadataProbe(
         characterNameOpCodes: characterNameOpCodes,
         identityFieldsReference: identityFieldsReference,
         expectedClassId: expectedClassId,
-        studyProfessionFlow: studyProfessionFlow);
+        studyProfessionFlow: studyProfessionFlow,
+        studyProfessionContinuity: studyProfessionContinuity);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;
@@ -43,6 +45,7 @@ internal sealed class CharacterMetadataProbe(
     private readonly bool _characterNameProbe = characterNameReference is not null;
     private readonly bool _identityFieldProbe = identityFieldsReference is not null;
     private readonly bool _professionFlowProbe = studyProfessionFlow;
+    private readonly bool _professionContinuityProbe = studyProfessionContinuity;
     private readonly Dictionary<(int Session, string Opcode), HashSet<string>>
         _reportedShapes = new();
 
@@ -132,6 +135,10 @@ internal sealed class CharacterMetadataProbe(
                 if (_professionFlowProbe && entry.Kind == CharacterCaptureEventKind.Message &&
                     entry.ProfessionFlowSummary is null)
                     continue;
+                if (_professionContinuityProbe &&
+                    entry.Kind == CharacterCaptureEventKind.Message &&
+                    entry.ProfessionContinuitySummary is null)
+                    continue;
 
                 if (_characterNameProbe && entry.Kind == CharacterCaptureEventKind.Message &&
                     entry.CharacterNameProbeSummary is null)
@@ -180,7 +187,8 @@ internal sealed class CharacterMetadataProbe(
                       (_identifyIpz ? $" IPZ_IDENTIFY=[{entry.ProfessionIdentifySummary}]" : "") +
                       (_characterNameProbe ? $" IDENTITY_NAME=[{entry.CharacterNameProbeSummary}]" : "") +
                       (_identityFieldProbe ? $" IDENTITY_FIELDS=[{entry.CharacterIdentityFieldSummary}]" : "") +
-                      (_professionFlowProbe ? $" PROFESSION_FLOW=[{entry.ProfessionFlowSummary}]" : "")
+                      (_professionFlowProbe ? $" PROFESSION_FLOW=[{entry.ProfessionFlowSummary}]" : "") +
+                      (_professionContinuityProbe ? $" PROFESSION_CONTINUITY=[{entry.ProfessionContinuitySummary}]" : "")
                     : entry.Kind.ToString().ToUpperInvariant();
 
                 Console.WriteLine(

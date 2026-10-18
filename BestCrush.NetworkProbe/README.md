@@ -35,6 +35,29 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3b : comparaison anonyme de la continuité des métiers
+
+Après validation P3a réelle A → B → A, le mode
+`--profession-continuity` compare les vingt identifiants
+`f5` candidats, les niveaux et les compteurs XP de
+chaque `ipz` à la **première capture valide** de cette
+exécution, uniquement en RAM.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-continuity
+```
+
+**Un seul client DOFUS à la fois, un même compte +
+serveur pour l'essai.** Le diagnostic affiche uniquement
+`PROFESSION_CONTINUITY` avec `yes/no/unavailable`,
+jamais d'identifiant, d'XP, de payload ou de hash.
+L'égalité des métiers n'établit **pas** l'identité
+du compte ; les résultats affichent toujours
+`account=unverified server=unverified mapping=unverified`.
+Aucun profil ni mapping n'est modifié.
+
+Voir `docs/modular-workspace-p3b-profession-continuity.md`.
+
 ### P3a : métiers partagés par compte + serveur (sans attribution)
 
 Pour observer `ksc → ksb → ipz` dans une même connexion

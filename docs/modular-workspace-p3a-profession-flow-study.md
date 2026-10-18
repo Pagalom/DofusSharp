@@ -178,3 +178,41 @@ du nom de personnage ou du fait que `ksb` et
 `ipz` sont proches dans le temps. En attendant cette
 refonte, aucune modification du stockage ou des profils
 de production : ce mode P3a reste un diagnostic passif.
+
+
+## Validation réelle P3a — trois reconnexions A → B → A
+
+Client `3.6.11.15`, diagnostic passif
+`--profession-flow`, une seule capture continue :
+
+| Connexion | Événements | Observation métier |
+| --- | --- | --- |
+| Session #3 | `ksc` → `ksb` → `ipz` | `decoded=yes rows=20 f5-unique=yes` |
+| Session #5 | `ksc` → `ksb` → `ipz` | `decoded=yes rows=20 f5-unique=yes` |
+| Session #7 | `ksc` → `ksb` → `ipz` | `decoded=yes rows=20 f5-unique=yes` |
+
+Chaque `ksb` présentait
+`selection-link=yes class-link=yes`.
+Chaque `ipz` présentait
+`scope=account-server account=unverified server=unverified mapping=unverified`.
+La fermeture de la connexion précédente a été
+observée entre les trois chargements.
+
+**Décision : P3a validé sur le parcours réel testé.**
+Aucun défaut de structure `ipz` ni de concordance
+`ksc`/`ksb` n'a été détecté. Les données
+présentées restent des candidates non attribuées.
+
+**Limite majeure :** les trois corps `ipz` ont
+la même taille (**294 octets**), mais cela n'établit
+ni l'égalité des identifiants métiers `f5`,
+ni celle des niveaux, des XP, du compte
+ou du serveur. Ce diagnostic ne compare pas
+les contenus de `ipz` d'une session à l'autre.
+
+Le contrôle suivant est l'étude P3b
+`--profession-continuity` (opt-in),
+qui compare des compteurs en RAM sans exposer
+les valeurs et sans inférer l'identité du compte.
+Aucun nom de joueur, ID réseau ou contenu brut
+n'est reproduit dans cette documentation.
