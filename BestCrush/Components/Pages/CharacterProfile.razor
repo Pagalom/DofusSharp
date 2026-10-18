@@ -50,6 +50,38 @@
                         <p class="small mb-2">
                             Banque : @(character.BankInventory is null ? "Non observée" : $"{character.BankInventory.Count} lignes")
                         </p>
+                        <section class="mb-3" aria-label="Métiers partagés du compte">
+                            <h3 class="h6">Métiers (compte + serveur)</h3>
+                            @if (CurrentAccountProfessionsState.ForCharacter(character) is { } sharedProfessions)
+                            {
+                                <table class="table table-sm">
+                                    <thead>
+                                        <tr>
+                                            <th scope="col">Métier</th>
+                                            <th scope="col">Niveau</th>
+                                            <th scope="col">XP cumulée</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (BestCrush.Services.AccountProfessionProgress profession in sharedProfessions.Professions.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase))
+                                        {
+                                            <tr>
+                                                <td>@profession.Name</td>
+                                                <td>@profession.Level</td>
+                                                <td>@profession.CumulativeExperience.ToString("N0")</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            }
+                            else
+                            {
+                                <p class="small text-secondary">
+                                    Non disponibles : compte et serveur non vérifiés.
+                                    Les métiers sont partagés, pas propres au personnage.
+                                </p>
+                            }
+                        </section>
                         <button class="btn btn-sm @(CurrentCharacterState.ActiveCharacterKey == character.Key ? "btn-secondary" : "btn-outline-primary")"
                                 type="button"
                                 disabled="@(!CurrentCharacterState.IsCharacterConnected(character.Key))"
@@ -61,47 +93,6 @@
             }
         </div>
     }
-
-    <section class="card mt-4" aria-label="Métiers du compte et du serveur">
-        <div class="card-body">
-            <h2 class="h5 card-title">Métiers — compte et serveur</h2>
-            @if (CurrentAccountProfessionsState.ActiveSnapshot is { } sharedProfessions &&
-                 CurrentCharacterState.ServerName is { } selectedServer &&
-                 string.Equals(sharedProfessions.Key.ServerName, selectedServer, StringComparison.OrdinalIgnoreCase))
-            {
-                <p class="text-secondary">
-                    @sharedProfessions.Professions.Count métiers pour le compte et le serveur vérifiés.
-                </p>
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th scope="col">Métier</th>
-                            <th scope="col">Niveau</th>
-                            <th scope="col">XP cumulée</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        @foreach (BestCrush.Services.AccountProfessionProgress profession in sharedProfessions.Professions.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase))
-                        {
-                            <tr>
-                                <td>@profession.Name</td>
-                                <td>@profession.Level</td>
-                                <td>@profession.CumulativeExperience.ToString("N0")</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            }
-            else
-            {
-                <p class="text-secondary mb-0">
-                    Non disponibles : l'identification du compte et du serveur
-                    et le mapping des métiers doivent encore être validés.
-                    Aucun métier n'est attribué automatiquement.
-                </p>
-            }
-        </div>
-    </section>
 
     <p class="text-secondary mt-4">
         La sélection automatique suivra la fenêtre Dofus ciblée après

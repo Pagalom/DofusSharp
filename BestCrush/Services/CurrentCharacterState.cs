@@ -27,7 +27,10 @@ public sealed record CharacterSessionProfile(
     long? PocketKamas = null,
     long? BankKamas = null,
     IReadOnlyList<CharacterInventoryItem>? Inventory = null,
-    IReadOnlyList<CharacterInventoryItem>? BankInventory = null);
+    IReadOnlyList<CharacterInventoryItem>? BankInventory = null,
+    // Link only after independent proof of account + server membership.
+    // Never infer this from character ID, selected server or TCP session.
+    AccountServerKey? VerifiedAccountServerKey = null);
 
 /// <summary>
 /// Proposed verified semantic data, not yet connected to the network decoder.
@@ -159,7 +162,9 @@ public sealed class CurrentCharacterState
                     PocketKamas = newConnection ? null : existing.PocketKamas,
                     BankKamas = newConnection ? null : existing.BankKamas,
                     Inventory = newConnection ? null : existing.Inventory,
-                    BankInventory = newConnection ? null : existing.BankInventory
+                    BankInventory = newConnection ? null : existing.BankInventory,
+                    // Reconnection requires new independent account proof.
+                    VerifiedAccountServerKey = newConnection ? null : existing.VerifiedAccountServerKey
                 };
             }
             else
@@ -271,6 +276,13 @@ public sealed class CurrentCharacterState
                 .Select(entry => entry.Key).ToArray())
             {
                 _scopes.Remove(key);
+                // Keep the ephemeral card, not an unverifiable account link.
+                if (_profiles.TryGetValue(key, out CharacterSessionProfile? profile) &&
+                    profile.VerifiedAccountServerKey is not null)
+                {
+                    _profiles[key] = profile with { VerifiedAccountServerKey = null };
+                    changed = true;
+                }
                 if (_active == key)
                 {
                     _active = null;

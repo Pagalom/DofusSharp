@@ -34,4 +34,32 @@ public sealed record AccountProfessionsSnapshot(
 public sealed class CurrentAccountProfessionsState
 {
     public AccountProfessionsSnapshot? ActiveSnapshot { get; private set; }
+
+    /// <summary>
+    /// Presentation lookup only. The owning account must have been verified
+    /// independently and linked explicitly to this character. Matching the
+    /// selected server or the active character alone must never be enough.
+    /// P3c remains pending and no writer sets either value today.
+    /// </summary>
+    public AccountProfessionsSnapshot? ForCharacter(
+        CharacterSessionProfile character)
+    {
+        ArgumentNullException.ThrowIfNull(character);
+
+        if (character.VerifiedAccountServerKey is not { } verified ||
+            string.IsNullOrWhiteSpace(verified.AccountIdentity) ||
+            string.IsNullOrWhiteSpace(verified.ServerName) ||
+            !string.Equals(character.Key.ServerName, verified.ServerName,
+                StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        AccountProfessionsSnapshot? snapshot = ActiveSnapshot;
+        return snapshot is not null &&
+            string.Equals(snapshot.Key.AccountIdentity, verified.AccountIdentity,
+                StringComparison.Ordinal) &&
+            string.Equals(snapshot.Key.ServerName, verified.ServerName,
+                StringComparison.OrdinalIgnoreCase)
+                ? snapshot
+                : null;
+    }
 }

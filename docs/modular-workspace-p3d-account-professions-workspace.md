@@ -3,8 +3,12 @@
 ## Objectif
 
 Les métiers sont partagés entre personnages d'un même
-**compte sur un même serveur**. Ils ne doivent donc
-jamais être rattachés à une fiche personnage.
+**compte sur un même serveur**.
+
+**Stockage : compte + serveur. Affichage : à l'intérieur de chaque
+fiche personnage concernée.** Il ne faut pas copier les
+métiers dans chaque profil, seulement consulter un snapshot commun
+après vérification explicite du rattachement du personnage à ce compte.
 L'étude réelle P3b a montré, dans le parcours
 A → B → A, les mêmes vingt candidats `f5`,
 niveaux et compteurs XP. La preuve d'identité du
@@ -26,13 +30,24 @@ reporté jusqu'à disponibilité d'un second compte).
   modèles en RAM, indépendants des personnages.
 - Enregistrer le nouveau service dans
   l'injection de dépendances MAUI.
-- Préparer dans `CharacterProfile.razor` un
-  encart **« Métiers — compte et serveur »**
-  distinct des cartes personnages. Il affiche
-  « Non disponibles » tant qu'aucune
-  vérification complète n'a eu lieu ; la
-  présentation du tableau métier/niveau/XP
-  est préparée pour un futur snapshot confirmé.
+- Conserver les métiers **dans la fiche de chaque personnage**
+  dans `CharacterProfile.razor`, sous la forme d'un
+  tableau métier / niveau / XP cumulée, sans propriété
+  `ProfessionLevels` propre au personnage.
+- Prévoir sur `CharacterSessionProfile` uniquement
+  une référence facultative `VerifiedAccountServerKey`,
+  initialement `null`, vers le couple compte + serveur
+  établi indépendamment : elle ne contient aucun métier.
+- `CurrentAccountProfessionsState.ForCharacter(character)`
+  n'affiche le snapshot partagé que si **compte et serveur
+  correspondent à cette référence vérifiée**, jamais sur
+  la base du seul serveur choisi dans BestCrush ou du
+  personnage actif.
+- Lors de la reconnexion ou de l'invalidation d'une session,
+  révoquer ce lien tant qu'il n'est pas à nouveau prouvé.
+- Afficher dans chaque carte « Non disponibles » tant
+  que P3c et le mapping des métiers ne sont pas validés.
+  Aucun état métier non vérifié n'est promu automatiquement.
 - Adapter les tests existants affectés par
   le retrait des champs personnages. Ajouter
   uniquement un contrôle simple de l'état
@@ -71,14 +86,39 @@ dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
 ```
 
 Ouvrir la page Profil de BestCrush :
-l'encart « Métiers — compte et serveur »
-doit être visible **même sans personnage identifié**,
-et afficher le statut « Non disponibles ».
-Chaque fiche personnage ne doit plus présenter
-de ligne métier.
+chaque **carte de personnage déjà identifié** doit contenir
+une section « Métiers (compte + serveur) » et afficher
+« Non disponibles » tant que l'identité de compte
+n'est pas confirmée. Le tableau détaillé devra apparaître
+dans cette même carte lorsqu'un snapshot partagé et
+un lien compte–personnage indépendant seront disponibles.
+Il ne doit plus y avoir de panneau métiers global
+séparé des fiches personnages.
+
+Aucun test d'isolation supplémentaire n'est demandé
+dans cette étape de correction de l'affichage.
 
 P3d sera techniquement validé après cette
 compilation et ce contrôle visuel Windows.
 L'identification du compte et du serveur reste
 à étudier ultérieurement, sans activation
 d'attribution automatique à ce stade.
+
+## Correction de conception P3d — stockage commun, affichage par personnage
+
+Le premier commit P3d avait déplacé **à tort** la section
+métiers hors des cartes personnages. Cette correction distingue
+les responsabilités sans retirer l'information du profil :
+
+- **source unique** : `AccountProfessionsSnapshot`
+  identifié par `AccountServerKey` ;
+- **association** : référence `VerifiedAccountServerKey`
+  depuis le personnage vers son compte/serveur, sans duplication
+  des niveaux/XP ;
+- **présentation** : liste des métiers dans **chaque fiche personnage**
+  qui dispose de cette association vérifiée ;
+- **sécurité** : pas de correspondance automatique par serveur,
+  nom, ID de personnage ou session TCP. Le lien reste absent à ce stade.
+
+Les tests d'isolation multicomptes demeurent reportés
+à la checklist P3c, conformément à la demande de l'utilisateur.
