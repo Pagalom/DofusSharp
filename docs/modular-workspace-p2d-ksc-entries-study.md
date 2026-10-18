@@ -125,3 +125,45 @@ avant toute attribution automatique.
 Aucun nom, niveau, identifiant de personnage ou XP réelle
 n'est conservé dans cette documentation ou dans un mapping
 de production. `professionId` reste à null.
+
+## P2e — Contrôle croisé avec deux personnages du même serveur
+
+Observation complémentaire : une capture de l'écran de sélection du
+client présente exactement **deux personnages distincts** sur le
+**même serveur**, appartenant à des classes et niveaux différents.
+Ceci corrobore le nombre de lignes observé dans `ksc`, sans, à lui
+seul, constituer une preuve du type du message.
+
+Lors du test expérimental suivant, l'opérateur a fourni une référence
+locale **correspondant au second personnage** (aucune valeur réelle
+n'est conservée ici), puis a effectué une connexion au premier et un
+changement vers le second :
+
+- **Session TCP #1**, `ksb` : `match=absent`, conforme au fait que
+  la référence locale ne désigne pas le premier personnage connecté.
+- **Session TCP #3**, `ksc` : `match=unique`,
+  `ksc-rows=[total=2 complete=2 names-distinct=true
+  f3-distinct=true selected-f3-unique=true semantic=unverified]`.
+- **Même session TCP #3**, `ksb` : `match=unique`,
+  `same-session=yes shared-equal-parent=[f3]` : l'entrée visée
+  dans `ksc` possède le même candidat f3 que le personnage chargé.
+- **Session TCP #5**, `ksc` : `match=unique` ; aucun nouveau `ksb`
+  n'a été fourni dans la trace, donc aucune conclusion sur une
+  connexion effective du personnage à ce stade.
+
+Le test antérieur sur le premier personnage avait montré la même
+concordance `ksc`/`ksb`, ainsi que la stabilité de f3 après
+reconnexion. Ces observations réelles sont donc compatibles avec
+`ksc.f2.f3` / `ksb.f1.f1.f3` comme **identifiant individuel
+stable du personnage**, et non une simple valeur commune au compte.
+
+**Statut : candidat d'identifiant fortement étayé**, mais non branché
+à BestCrush. Restent à valider : stabilité/versionnement du protocole,
+caractérisation du champ de classe, signification indépendante des
+sources `ksc` et `ksb`, association sûre au serveur/flux TCP,
+remise à zéro sur déconnexion et tests de non-mélange entre clients.
+
+La capture du diagnostic ne constitue pas une preuve d'exécution des
+builds/tests Windows. Aucun nom, niveau réel, XP, identifiant, payload
+ou donnée de session privée n'est versionné. Les métiers `ipz` ne
+sont pas attribués en production.
