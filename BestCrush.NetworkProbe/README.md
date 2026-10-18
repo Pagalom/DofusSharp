@@ -35,6 +35,26 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3a : parcours personnage et métiers (sans attribution)
+
+Pour observer `ksc → ksb → ipz` dans une même connexion
+TCP sans saisir le nom du personnage ni des références XP :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-flow
+```
+
+Ce mode autonome émet uniquement `PROFESSION_FLOW` avec
+des compteurs et des indicateurs anonymisés : qualité de
+décodage, égalité des fiches candidates dans la session,
+présence et unicité des 20 IDs `f5` candidats.
+L'alternance A → B → A, les erreurs et FIN/RST révoquent
+les observations précédentes. **Toujours**
+`owner=unverified mapping=unverified` : aucun métier n'est
+encore attribué automatiquement ni persisté.
+
+Voir `docs/modular-workspace-p3a-profession-flow-study.md`.
+
 ### P2j : décodage expérimental de la classe candidate
 
 Le décodeur de `ksb` et `ksc` extrait maintenant

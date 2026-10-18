@@ -37,7 +37,8 @@ public sealed record CharacterCaptureEvent(
     string? ProfessionStudySummary = null,
     string? ProfessionIdentifySummary = null,
     string? CharacterNameProbeSummary = null,
-    string? CharacterIdentityFieldSummary = null);
+    string? CharacterIdentityFieldSummary = null,
+    string? ProfessionFlowSummary = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -61,6 +62,7 @@ public sealed class CharacterCaptureFlowTracker
         internal bool IdentityFieldsConflicted;
         internal CharacterWireCandidateSnapshot? KsbDecodedCandidate;
         internal CharacterWireCandidateSnapshot? KscDecodedCandidates;
+        internal ProfessionFlowStudy? ProfessionFlow;
     }
 
     private readonly object _gate = new();
@@ -76,6 +78,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly CharacterNameLevelReference? _characterNameReference;
     private readonly CharacterNameLevelReference? _identityFieldsReference;
     private readonly int? _expectedClassId;
+    private readonly bool _studyProfessionFlow;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -97,7 +100,8 @@ public sealed class CharacterCaptureFlowTracker
         CharacterNameLevelReference? characterNameReference = null,
         IReadOnlySet<string>? characterNameOpCodes = null,
         CharacterNameLevelReference? identityFieldsReference = null,
-        int? expectedClassId = null)
+        int? expectedClassId = null,
+        bool studyProfessionFlow = false)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -202,6 +206,17 @@ public sealed class CharacterCaptureFlowTracker
                 "P2i expected class ID requires the exclusive P2b field study.",
                 nameof(expectedClassId));
         _expectedClassId = expectedClassId;
+
+        if (studyProfessionFlow &&
+            (shapeKeys is not null || professionReferences is not null ||
+             decodeIpz || studyReferences is not null ||
+             identifyReferences is not null || characterNameReference is not null ||
+             identityFieldsReference is not null || expectedClassId is not null ||
+             showCandidateJobIds || _characterNameOpCodes.Count > 0))
+            throw new ArgumentException(
+                "P3a is a standalone metadata-only diagnostic mode.",
+                nameof(studyProfessionFlow));
+        _studyProfessionFlow = studyProfessionFlow;
     }
 
     public int FlowCount
@@ -237,6 +252,7 @@ public sealed class CharacterCaptureFlowTracker
                 .Select(pair => pair.Key).ToArray())
             {
                 Session previous = _flows[expired];
+                previous.ProfessionFlow = null;
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, previous.Number, direction,
                     CharacterCaptureEventKind.Evicted));
@@ -252,6 +268,7 @@ public sealed class CharacterCaptureFlowTracker
                 {
                     KeyValuePair<CharacterCaptureFlowKey, Session> oldest =
                         _flows.MinBy(pair => pair.Value.LastSeenUtc);
+                    oldest.Value.ProfessionFlow = null;
                     events.Add(new CharacterCaptureEvent(
                         observedAtUtc, oldest.Value.Number, direction,
                         CharacterCaptureEventKind.Evicted));
@@ -267,6 +284,7 @@ public sealed class CharacterCaptureFlowTracker
             else if (syn && (flow.Closed || flow.HadPayload))
             {
                 // Reused socket 4-tuple: never share TCP frame state.
+                flow.ProfessionFlow = null;
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
                     CharacterCaptureEventKind.Closed));
@@ -346,6 +364,12 @@ public sealed class CharacterCaptureFlowTracker
                                     any.Key is "ksb" or "ksc"
                                         ? ObserveIdentityFields(
                                             flow, any.Key, any.Body, _identityFieldsReference.Value)
+                                        : null,
+                                    _studyProfessionFlow &&
+                                    direction == CharacterCaptureDirection.ServerToClient &&
+                                    any.Key is "ksb" or "ksc" or "ipz"
+                                        ? (flow.ProfessionFlow ??= new ProfessionFlowStudy())
+                                            .Observe(any.Key, any.Body)
                                         : null));
                             }
                         }
@@ -357,6 +381,7 @@ public sealed class CharacterCaptureFlowTracker
                 {
                     flow.KsbDecodedCandidate = null;
                     flow.KscDecodedCandidates = null;
+                    flow.ProfessionFlow = null;
                     flow.Closed = true;
                     events.Add(new CharacterCaptureEvent(
                         observedAtUtc, flow.Number, direction,
@@ -372,6 +397,7 @@ public sealed class CharacterCaptureFlowTracker
                 // underlying TCP flow closes; nothing is persisted.
                 flow.KsbDecodedCandidate = null;
                 flow.KscDecodedCandidates = null;
+                flow.ProfessionFlow = null;
                 flow.Closed = true;
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
