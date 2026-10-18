@@ -102,3 +102,67 @@ le terminal partagé ou dans les documents versionnés.
   ce modèle de production avant vérification.
 
 P3c est **ouvert mais non validé**.
+
+
+## Observation réelle P3c.1 — formes seules
+
+Client `3.6.11.15`, diagnostic opt-in `--character-shape`,
+opcodes ciblés `knc,kod,ksc,krg,ipg`.
+
+Sur trois retours à l'écran de sélection, connexions
+TCP **#3, #5 et #7** :
+
+- `knc` C→S : `root=[1:len 2:len]` à chaque fois ;
+- `kod` C→S : `root=[1:len]` à chaque fois ;
+- `ksc` S→C : `root=[2:lenx2]` à chaque fois,
+  puis échantillonnage des champs de fiches déjà
+  observés, notamment `f2.f3`, `f2.f4` ;
+- `krg` S→C : échantillonnage interne stable et
+  un unique champ longueur en racine, mais tailles
+  de message **815, 848, 815 octets**
+  respectivement en sessions **#1, #3, #5** ;
+- `ipg` S→C : 20 éléments `f1` et taille
+  **664 octets** à chacun des chargements observés.
+
+La session #7 s'est arrêtée après la sélection
+(`ksc`) : **aucun `krg` ni `ipg` sur cette
+session n'apparaît dans la trace soumise**.
+Les différences de taille de `krg` pourraient
+suivre le changement de personnage, mais il
+s'agit uniquement d'une corrélation temporelle ;
+elles ne démontrent ni un champ de classe, ni
+un champ de compte, ni un serveur.
+
+**Conclusion négative importante :** une structure
+identique n'implique pas des valeurs identiques
+et ne valide aucun identifiant. L'étude P3c
+n'a établi **aucune identité de compte ni
+de serveur** à ce stade.
+
+### Confidentialité et ciblage de l'étude suivante
+
+`knc` et `kod` sont des messages client → serveur
+du parcours de connexion. Leur contenu pourrait
+comporter des données d'authentification :
+**ne pas afficher, extraire, hacher ou comparer
+leurs valeurs**, ni chercher à créer une
+empreinte d'authentifiant, même éphémère.
+
+Pour chercher des preuves de compte et serveur,
+privilégier un diagnostic passif et borné des
+messages **serveur → client sans secret**,
+validé sur plusieurs scénarios contrôlés,
+avec uniquement des résultats catégoriels
+et des tests synthétiques. Ne pas assimiler
+`ipg` à `ipz` : les deux opcodes sont distincts,
+même si les deux peuvent contenir vingt lignes.
+
+**Avant d'implémenter une recherche comparative,**
+vérifier que l'opérateur dispose de scénarios
+négatifs utiles (au moins deux comptes distincts,
+idéalement sur un même serveur) ; sinon
+un simple candidat de compte corrélé risque
+d'être présenté prématurément comme fiable.
+Les clés de compte et de serveur demeurent
+`unverified` jusqu'à preuve sémantique
+et isolation multiclient.
