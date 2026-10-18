@@ -36,6 +36,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  (option explicite) --show-candidate-ids");
     Console.WriteLine("Pour identifier des métiers par leur niveau et XP totale uniquement :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-identify --show-candidate-ids");
+    Console.WriteLine("Pour rechercher un champ XP dans les réponses ipz mono-entrée après fabrication :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-xp-study");
     Console.WriteLine("Pour comparer anonymement les métiers entre connexions TCP :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-continuity");
     Console.WriteLine("Pour suivre ksc → ksb → ipz par session TCP, sans référence privée :");
@@ -65,7 +67,9 @@ Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceI
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
 if (options.CharacterScan)
 {
-    Console.WriteLine(options.ProfessionContinuity
+    Console.WriteLine(options.ProfessionXpStudy
+        ? "Mode P3e : étude locale des champs numériques des ipz mono-entrée, sans valeurs affichées."
+        : options.ProfessionContinuity
         ? "Mode P3b : comparaison anonymisée des métiers avec le premier ipz de cette capture."
         : options.ProfessionFlow
         ? "Mode P3a : parcours ksc → ksb → ipz par connexion TCP, compte/serveur NON vérifiés."
@@ -90,6 +94,8 @@ if (options.CharacterScan)
         Console.WriteLine("Étude P3a en RAM seulement ; aucune référence privée, compte/serveur et mapping NON vérifiés.");
     if (options.ProfessionContinuity)
         Console.WriteLine("P3b : un seul client/compte/serveur à la fois. Égalité des métiers ≠ preuve d'identité ; aucune valeur enregistrée.");
+    if (options.ProfessionXpStudy)
+        Console.WriteLine("P3e : un seul client à la fois ; deux fabrications, noter XP après chacune. Références demandées après Ctrl+C.");
     Console.WriteLine("Notes manuelles : connexion, caractéristiques, métiers (J), inventaire, banque, déconnexion.");
     if (options.IdentityName)
         Console.WriteLine("Recherche du nom exact en UTF-8 ; les chemins affichés ne prouvent pas l'identité du personnage.");
@@ -213,6 +219,11 @@ Console.CancelKeyPress += (_, e) =>
 
 if (options.CharacterScan)
 {
+    // A single opt-in in-RAM collector: only the first valid TCP session
+    // can contribute numeric fields. Local reference input is AFTER capture.
+    ProfessionXpWireStudy? xpWireStudy =
+        options.ProfessionXpStudy ? new ProfessionXpWireStudy() : null;
+
     // P2a and P2b accept the same local input, but only one diagnostic
     // receives it. Never supply both character identity references.
     CharacterIdentityDiagnosticReferences diagnosticReferences =
@@ -232,11 +243,38 @@ if (options.CharacterScan)
         diagnosticReferences.FieldStudy,
         options.ExpectedClassId,
         options.ProfessionFlow,
-        options.ProfessionContinuity);
+        options.ProfessionContinuity,
+        xpWireStudy);
 
     probe.Start();
     stop.Wait();
     probe.Stop();
+
+    if (xpWireStudy is not null)
+    {
+        Console.WriteLine();
+        Console.WriteLine($"P3e : {xpWireStudy.Count} ipz mono-entrée retenus en RAM sur la première session valide.");
+        if (xpWireStudy.Count >= 2)
+        {
+            Console.WriteLine("Saisir au moins DEUX références sous la forme index:niveau:XP-après-fabrication.");
+            Console.WriteLine("Associer l'index affiché PROFESSION_XP à chaque fabrication ; ignorer les ipz sans relevé.");
+            Console.WriteLine("Exemple fictif : 1:3:124,2:3:138");
+            Console.WriteLine("La saisie est comparée localement, jamais recopiée dans les résultats.");
+            Console.Write("Références P3e (Entrée pour passer) : ");
+            string? rawXpReferences = Console.ReadLine();
+            if (!string.IsNullOrWhiteSpace(rawXpReferences))
+            {
+                if (ProfessionXpReferenceInput.TryParse(
+                    rawXpReferences, out IReadOnlyList<ProfessionXpReference> refs))
+                    Console.WriteLine(xpWireStudy.Compare(refs));
+                else
+                    Console.WriteLine("P3e : format invalide ; aucun résultat de comparaison.");
+            }
+            rawXpReferences = null;
+        }
+        else
+            Console.WriteLine("P3e : au moins deux ipz mono-entrée sont requis pour comparer les champs XP.");
+    }
 }
 else
 {
@@ -266,6 +304,7 @@ internal sealed record ProbeOptions(
     bool ProfessionIdentify,
     bool ProfessionFlow,
     bool ProfessionContinuity,
+    bool ProfessionXpStudy,
     bool IdentityName,
     bool IdentityFields,
     int? ExpectedClassId)
@@ -297,6 +336,7 @@ internal sealed record ProbeOptions(
         bool professionIdentify = false;
         bool professionFlow = false;
         bool professionContinuity = false;
+        bool professionXpStudy = false;
         bool identityName = false;
         bool identityFields = false;
         int? expectedClassId = null;
@@ -343,6 +383,9 @@ internal sealed record ProbeOptions(
                 case "--profession-continuity":
                     professionContinuity = true;
                     break;
+                case "--profession-xp-study":
+                    professionXpStudy = true;
+                    break;
                 case "--identity-name":
                     identityName = true;
                     break;
@@ -386,6 +429,7 @@ internal sealed record ProbeOptions(
             (professionStudy ? 1 : 0) + (professionIdentify ? 1 : 0) +
             (professionFlow ? 1 : 0) +
             (professionContinuity ? 1 : 0) +
+            (professionXpStudy ? 1 : 0) +
             (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
             (identityFields ? 1 : 0);
         if (selectedModes > 1)
@@ -405,11 +449,11 @@ internal sealed record ProbeOptions(
             device, port, all, list,
             characterScan || characterShape || professionMatch ||
                 professionDecode || professionStudy || professionIdentify ||
-                professionFlow || professionContinuity ||
+                professionFlow || professionContinuity || professionXpStudy ||
                 identityName || identityFields,
             characterShape, shapeKeys, professionMatch, professionDecode,
             professionStudy, showCandidateJobIds, professionIdentify,
-            professionFlow, professionContinuity,
+            professionFlow, professionContinuity, professionXpStudy,
             identityName, identityFields, expectedClassId);
     }
 }

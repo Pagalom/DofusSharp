@@ -39,7 +39,8 @@ public sealed record CharacterCaptureEvent(
     string? CharacterNameProbeSummary = null,
     string? CharacterIdentityFieldSummary = null,
     string? ProfessionFlowSummary = null,
-    string? ProfessionContinuitySummary = null);
+    string? ProfessionContinuitySummary = null,
+    string? ProfessionXpStudySummary = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -81,6 +82,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly int? _expectedClassId;
     private readonly bool _studyProfessionFlow;
     private readonly ProfessionContinuityStudy? _professionContinuity;
+    private readonly ProfessionXpWireStudy? _professionXpStudy;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -104,7 +106,8 @@ public sealed class CharacterCaptureFlowTracker
         CharacterNameLevelReference? identityFieldsReference = null,
         int? expectedClassId = null,
         bool studyProfessionFlow = false,
-        bool studyProfessionContinuity = false)
+        bool studyProfessionContinuity = false,
+        ProfessionXpWireStudy? professionXpStudy = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -210,19 +213,22 @@ public sealed class CharacterCaptureFlowTracker
                 nameof(expectedClassId));
         _expectedClassId = expectedClassId;
 
-        if ((studyProfessionFlow || studyProfessionContinuity) &&
+        if ((studyProfessionFlow || studyProfessionContinuity || professionXpStudy is not null) &&
             (shapeKeys is not null || professionReferences is not null ||
              decodeIpz || studyReferences is not null ||
              identifyReferences is not null || characterNameReference is not null ||
              identityFieldsReference is not null || expectedClassId is not null ||
              showCandidateJobIds || _characterNameOpCodes.Count > 0 ||
-             (studyProfessionFlow && studyProfessionContinuity)))
+             (studyProfessionFlow && studyProfessionContinuity) ||
+             (professionXpStudy is not null &&
+              (studyProfessionFlow || studyProfessionContinuity))))
             throw new ArgumentException(
                 "P3 diagnostics are exclusive metadata-only modes.",
                 nameof(studyProfessionFlow));
         _studyProfessionFlow = studyProfessionFlow;
         _professionContinuity = studyProfessionContinuity
             ? new ProfessionContinuityStudy() : null;
+        _professionXpStudy = professionXpStudy;
     }
 
     public int FlowCount
@@ -381,6 +387,11 @@ public sealed class CharacterCaptureFlowTracker
                                     direction == CharacterCaptureDirection.ServerToClient &&
                                     string.Equals(any.Key, "ipz", StringComparison.Ordinal)
                                         ? _professionContinuity.Observe(any.Body)
+                                        : null,
+                                    _professionXpStudy is not null &&
+                                    direction == CharacterCaptureDirection.ServerToClient &&
+                                    string.Equals(any.Key, "ipz", StringComparison.Ordinal)
+                                        ? _professionXpStudy.Observe(flow.Number, any.Body)
                                         : null));
                             }
                         }

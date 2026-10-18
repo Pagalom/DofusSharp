@@ -234,6 +234,53 @@ statistiques des champs inconnus. Voir `docs/modular-workspace-p1d-ipz-professio
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-decode
 ```
 
+### Diagnostic XP métier mono-entrée (P3e — expérimental)
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-xp-study
+```
+
+Cette expérience est **opt-in** et indépendante de tous les autres
+modes. Elle conserve temporairement les champs `varint` d'un maximum
+de **16 messages `ipz` à une entrée**, reçus du serveur sur
+**la première session TCP valide**. Aucun autre opcode ou message
+client → serveur n'est étudié. Le snapshot `ipz` complet
+(20 métiers) est ignoré, pas réinterprété.
+
+1. Avant le diagnostic, noter le niveau et l'XP du métier.
+2. Lancer la commande, effectuer **deux fabrications seulement**
+   qui rapportent de l'XP, puis noter l'XP obtenue après chacune.
+3. Attendre quelques secondes entre les fabrications ; noter les
+   heures des actions. Ne pas ouvrir d'autres panneaux pendant l'essai.
+4. Terminer avec **Ctrl+C**. Le probe affiche
+   `PROFESSION_XP=[p3e=mono-ipz accepted=yes index=1 ...]`,
+   `index=2`, etc. L'index est **local à la capture**.
+5. Répondre à la question **après Ctrl+C**, en donnant les
+   références `index:niveau:XP` dans l'ordre des messages
+   `ipz` associés aux fabrications.
+   Exemple **fictif** : `1:3:124,2:3:138`.
+   Si un autre `ipz` non lié à une fabrication est présent,
+   sauter simplement son index.
+
+L'analyse compare les champs varint à **au moins deux XP distinctes**,
+puis affiche uniquement des chemins candidats
+(`xp-field-candidates=[f1.f2]`) ou `none`/`ambiguous`.
+Les niveaux sont contrôlés séparément. Les valeurs réseau, champs
+bruts, identifiants, hashes, contenus PCAP et références locales
+ne sont jamais recopiés dans le résultat ni enregistrés sur disque.
+La saisie locale peut rester visible dans ton propre terminal :
+**ne la partager qu'après anonymisation si nécessaire**.
+
+Il ne s'agit **pas** d'une validation sémantique du champ :
+le matching exact sur deux fabrications ne prouve pas
+l'identité d'un métier ni du compte. Le protocole et
+le mapping sont toujours `unverified`. **Aucun métier
+n'est injecté dans BestCrush**. Une seule session/client
+peut participer à la comparaison ; redémarrer le probe
+pour une nouvelle expérience.
+
+Voir `docs/modular-workspace-p3e-profession-xp-progression.md`.
+
 ### Analyse des structures protobuf (P1b — sans valeurs personnelles)
 
 ```powershell

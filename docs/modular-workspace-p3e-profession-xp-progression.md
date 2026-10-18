@@ -370,3 +370,72 @@ test d'isolation multi-compte à cette étape.
 
 Statut P3e.3 : **hypothèse de seuil varint
 corroborée**, sémantique XP encore à vérifier.
+
+
+## P3e.4 — Implémentation du diagnostic `--profession-xp-study`
+
+Le probe dispose désormais d'une comparaison
+expérimentale **exclusivement opt-in**, sans activation
+de la production BestCrush ni écriture dans
+`bestcrush.db` :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-xp-study
+```
+
+L'outil ne prend en compte que des `ipz`
+**serveur → client**, avec **une unique
+entrée `f1`** (sous-message Protobuf), en limitant
+la taille du message et à 16 événements issus
+d'une seule session TCP. Les instantanés à
+vingt métiers sont ignorés. Seuls les
+champs `varint` de ces réponses sont conservés
+temporairement en RAM pour comparaison.
+
+Chaque événement accepté donne
+`PROFESSION_XP=[p3e=mono-ipz accepted=yes index=N ...]`.
+Les événements sont **non dédupliqués**, à la
+différence de `--character-shape`.
+
+Après `Ctrl+C`, fournir les références
+`index:niveau:xp-après-fabrication`, par exemple
+**fictif** `1:3:124,2:3:138`. La saisie locale
+n'est pas réimprimée ni sauvegardée par le probe.
+Les références doivent représenter **au moins
+deux XP distinctes et croissantes**.
+En cas de messages `ipz` hors fabrication,
+omettre leurs index. Le résultat indique
+`xp-field-candidates=[f1.f2]` et
+`level-field-candidates=[f1.f1]` seulement
+si les champs correspondent aux références
+pour **chaque** observation choisie.
+Les chemins de champs restent des **candidats**,
+pas une validation du protocole.
+
+Précautions : ne pas extraire ou imprimer
+les autres champs sensibles du jeu, ne pas
+enregistrer les payloads, ne pas réutiliser
+un candidat de profession comme compte/serveur,
+ne pas faire de comparaison inter-client.
+`account=unverified server=unverified mapping=unverified`.
+Les tests ajoutés sont synthétiques,
+**pas** les tests d'isolation multi-comptes
+reportés dans P3c.
+
+### Vérification Windows demandée
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet build .\BestCrush\BestCrush.csproj -f net10.0-windows10.0.19041.0
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+L'exécutable NetworkProbe doit afficher le nouveau
+mode et accepter des références en fin de capture.
+Le contrôle réel n'est **pas encore validé**.
+Le champ XP ne sera déclaré identifié que
+lorsqu'une capture réelle indépendante
+confirmera les chemins candidats et que les
+hypothèses concurrentes seront éliminées.
