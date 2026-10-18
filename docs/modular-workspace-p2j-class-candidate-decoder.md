@@ -90,11 +90,27 @@ Le résultat recherché est `class-link=yes` lorsque
 connexion TCP. L'absence de `ksb` ne doit jamais être
 interprétée comme un échec de décodage de `ksc`.
 
-La dernière suite globale explicitement attestée par
-l'utilisateur est de **579/579**, avant la création
-des tests P2f/P2g/P2h/P2i/P2j. Le fait que les probes
-aient démarré atteste de la compilation du probe et
-des dépendances, pas du succès de la suite de tests.
+## Checkpoint Windows validé — 18 octobre 2026
+
+À la suite du correctif syntaxique du test P2j
+(`97f044a`), Windows confirme :
+
+- Suite complète `Tests.BestCrush` : **635 réussis, 0 échec,
+  0 ignoré** (20,6 s d'exécution des tests).
+- Build et restauration : **réussis avec 17 avertissements**,
+  comprenant le NU1701 connu sur OpenCvSharp4.WpfExtensions,
+  des avertissements Razor de nullabilité et trois
+  avertissements CS8604 dans des modules réseau expérimentaux
+  P2g/P2h/P2j.
+- Un message `git fetch` de mise à jour de référence distante
+  (`incorrect old value provided`) a été suivi par un
+  `git merge --ff-only FETCH_HEAD` effectué avec succès :
+  le correctif du test a été appliqué localement.
+
+**Ce checkpoint confirme les tests synthétiques P2j,
+pas encore le diagnostic P2j sur trames réelles.**
+Les CS8604 sont une dette de nettoyage non bloquante,
+à traiter séparément sans modifier le décodage observé.
 
 ## Bloqueurs pour la production
 
