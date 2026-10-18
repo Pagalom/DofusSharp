@@ -455,12 +455,31 @@ public sealed class CharacterCaptureFlowTracker
         else
             flow.KscDecodedCandidates = snapshot;
 
-        string match = flow.KsbDecodedCandidate is not null &&
-                       flow.KscDecodedCandidates is not null
+        bool haveBoth = flow.KsbDecodedCandidate is not null &&
+                        flow.KscDecodedCandidates is not null;
+        string match = haveBoth
             ? CharacterWireCandidateDecoder.HasMatchingCandidate(
-                flow.KsbDecodedCandidate, flow.KscDecodedCandidates)
+                flow.KsbDecodedCandidate!, flow.KscDecodedCandidates!)
                 ? "yes" : "no"
             : "pending";
+
+        // Both candidates are held in this TCP session only. The class
+        // check remains observational, never semantic confirmation.
+        string classCandidateLink = "pending";
+        if (haveBoth)
+        {
+            bool? equal = CharacterWireCandidateDecoder.CompareClassCandidates(
+                flow.KsbDecodedCandidate!, flow.KscDecodedCandidates!);
+            classCandidateLink = equal is null
+                ? "unavailable" : equal.Value ? "yes" : "no";
+        }
+        string candidatePresent = snapshot.Candidates.All(
+            c => c.ClassIdCandidate.HasValue) ? "all"
+            : snapshot.Candidates.Any(c => c.ClassIdCandidate.HasValue)
+                ? "partial" : "none";
+        string p2j = "p2j=class-candidate=" + candidatePresent +
+                     " class-link=" + classCandidateLink +
+                     " class=unverified";
 
         // ksc is a list, ksb is a loaded candidate. Wire equality
         // is NOT independently corroborated semantic identity.
@@ -475,7 +494,7 @@ public sealed class CharacterCaptureFlowTracker
         return "p2f=decoded candidates=" + snapshot.Candidates.Count +
                " class=unknown candidate-link=" + match +
                " identity=unverified " + classStudy + " " + appearanceStudy +
-               classReferenceStudy;
+               classReferenceStudy + " " + p2j;
     }
 
     private string ObserveKsbAcrossSessions(

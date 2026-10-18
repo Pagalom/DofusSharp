@@ -12,13 +12,17 @@ public sealed class CharacterWireCandidate
     public ulong CharacterIdCandidate { get; }
     public string Name { get; }
     public int Level { get; }
+    /// <summary>P2j exploratory f5.f3 value, not an authenticated class.</summary>
+    public int? ClassIdCandidate { get; }
     public int? ClassId => null;
 
-    internal CharacterWireCandidate(ulong id, string name, int level)
+    internal CharacterWireCandidate(
+        ulong id, string name, int level, int? classIdCandidate)
     {
         CharacterIdCandidate = id;
         Name = name;
         Level = level;
+        ClassIdCandidate = classIdCandidate;
     }
 
     public override string ToString() => "[character candidate: redacted]";
@@ -57,6 +61,7 @@ public static class CharacterWireCandidateDecoder
     private const int MaxBodyBytes = 8192;
     private const int MaxNodeFields = 256;
     private const int MaxSelectableRows = 16;
+    private const int MaxClassNodeBytes = 2048;
     private static readonly UTF8Encoding StrictUtf8 = new(false, true);
 
     public static bool TryDecode(
@@ -154,6 +159,31 @@ public static class CharacterWireCandidateDecoder
             person.Level == active.Level) == 1;
     }
 
+    /// <summary>
+    /// Structural equality of two class candidates on one previously matched
+    /// character entry. Null means unverified/absent, never a class ID.
+    /// TCP/session equivalence is enforced only by the calling tracker.
+    /// </summary>
+    public static bool? CompareClassCandidates(
+        CharacterWireCandidateSnapshot ksb,
+        CharacterWireCandidateSnapshot ksc)
+    {
+        if (!HasMatchingCandidate(ksb, ksc))
+            return null;
+
+        CharacterWireCandidate loaded = ksb.Candidates[0];
+        CharacterWireCandidate? listed = ksc.Candidates.SingleOrDefault(c =>
+            c.CharacterIdCandidate == loaded.CharacterIdCandidate &&
+            string.Equals(c.Name, loaded.Name, StringComparison.Ordinal) &&
+            c.Level == loaded.Level);
+
+        if (listed?.ClassIdCandidate is null ||
+            loaded.ClassIdCandidate is null)
+            return null;
+
+        return listed.ClassIdCandidate.Value == loaded.ClassIdCandidate.Value;
+    }
+
     private static bool TryDecodeRow(
         byte[] row, out CharacterWireCandidate? candidate)
     {
@@ -179,9 +209,30 @@ public static class CharacterWireCandidateDecoder
             name.Any(c => char.IsControl(c) || char.IsWhiteSpace(c)))
             return false;
 
+        // P2j: a separate, optional, unverified class hypothesis.
+        // Invalid, absent or duplicated f5/f5.f3 never supplies a class.
+        // Core ID/name/level observations remain research-only.
+        int? classIdCandidate = ReadClassCandidate(leaf);
         candidate = new CharacterWireCandidate(
-            characterId, name, (int)level);
+            characterId, name, (int)level, classIdCandidate);
         return true;
+    }
+
+    private static int? ReadClassCandidate(List<ProtoField> leaf)
+    {
+        ProtoField[] fields = leaf.Where(f => f.Number == 5).ToArray();
+        if (fields.Length != 1 ||
+            fields[0].WireType != ProtoWireType.LengthDelimited ||
+            fields[0].Bytes is not { Length: > 0 and <= MaxClassNodeBytes })
+            return null;
+
+        List<ProtoField>? nested = ReadNode(fields[0].Bytes);
+        if (nested is null ||
+            !TryGetSingleVarint(nested, 3, out ulong classCandidate) ||
+            classCandidate is < 1 or > 19)
+            return null;
+
+        return (int)classCandidate;
     }
 
     private static List<ProtoField>? ReadNode(byte[] bytes)

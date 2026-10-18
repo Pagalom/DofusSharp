@@ -35,6 +35,20 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P2j : décodage expérimental de la classe candidate
+
+Le décodeur de `ksb` et `ksc` extrait maintenant
+`ClassIdCandidate` depuis `leaf.f5.f3` lorsque
+le champ est présent et plausible, mais laisse
+`ClassId=null` et `IdentityConfirmed=false`.
+Dans une même connexion TCP, la sortie
+`p2j=class-candidate=all/partial/none class-link=yes/no/pending/unavailable class=unverified`
+permet de comparer la classe candidate entre les familles
+sans afficher sa valeur. Le routage métier et les fiches
+BestCrush restent inchangés.
+
+Voir `docs/modular-workspace-p2j-class-candidate-decoder.md`.
+
 ### P2i : comparer f5.f3 à une classe attendue
 
 Pour vérifier **localement** l'hypothèse que `leaf.f5.f3`
