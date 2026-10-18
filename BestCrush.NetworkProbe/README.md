@@ -35,6 +35,22 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P2b : comparer ksb et ksc sur la même connexion TCP
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --identity-fields
+```
+
+Fournir `NomDuPersonnage:Niveau` dans la console locale.
+Le diagnostic vérifie le nom exact et le niveau à leurs
+chemins protobuf P2a dans `ksb` et `ksc`, puis affiche
+uniquement les **numéros** de champs numériques égaux dans
+les deux messages, au sein de la même connexion. Il ne
+publie aucune valeur, ne mémorise rien sur disque et n'active
+aucune identité. Retirer la ligne d'entrée contenant le nom
+avant de partager les résultats. Voir
+`docs/modular-workspace-p2b-identity-sibling-fields.md`.
+
 ### P2a : exploration des champs d'identité, valeurs privées masquées
 
 ```powershell

@@ -36,7 +36,8 @@ public sealed record CharacterCaptureEvent(
     string? ProfessionIpzSummary = null,
     string? ProfessionStudySummary = null,
     string? ProfessionIdentifySummary = null,
-    string? CharacterNameProbeSummary = null);
+    string? CharacterNameProbeSummary = null,
+    string? CharacterIdentityFieldSummary = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -55,6 +56,9 @@ public sealed class CharacterCaptureFlowTracker
         internal DateTime LastSeenUtc = observedAtUtc;
         internal bool Closed;
         internal bool HadPayload;
+        internal CharacterIdentityFieldObservation? KsbFields;
+        internal CharacterIdentityFieldObservation? KscFields;
+        internal bool IdentityFieldsConflicted;
     }
 
     private readonly object _gate = new();
@@ -68,6 +72,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly bool _showCandidateJobIds;
     private readonly IReadOnlyList<ProfessionNamedReference>? _identifyReferences;
     private readonly CharacterNameLevelReference? _characterNameReference;
+    private readonly CharacterNameLevelReference? _identityFieldsReference;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -80,7 +85,8 @@ public sealed class CharacterCaptureFlowTracker
         bool showCandidateJobIds = false,
         IReadOnlyList<ProfessionNamedReference>? identifyReferences = null,
         CharacterNameLevelReference? characterNameReference = null,
-        IReadOnlySet<string>? characterNameOpCodes = null)
+        IReadOnlySet<string>? characterNameOpCodes = null,
+        CharacterNameLevelReference? identityFieldsReference = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -162,6 +168,21 @@ public sealed class CharacterCaptureFlowTracker
             (_characterNameReference is null && _characterNameOpCodes.Count > 0))
             throw new ArgumentException("Identity probe requires a local reference and up to 16 opcodes.",
                 nameof(characterNameOpCodes));
+
+        if (identityFieldsReference is not null)
+        {
+            if (characterNameReference is not null ||
+                _characterNameOpCodes.Count != 0 ||
+                decodeIpz || shapeKeys is not null ||
+                professionReferences is not null ||
+                studyReferences is not null || identifyReferences is not null ||
+                showCandidateJobIds)
+                throw new ArgumentException(
+                    "P2b field study is an exclusive diagnostic mode.",
+                    nameof(identityFieldsReference));
+            CharacterNameLevelReferenceInput.Validate(identityFieldsReference.Value);
+            _identityFieldsReference = identityFieldsReference;
+        }
     }
 
     public int FlowCount
@@ -300,6 +321,12 @@ public sealed class CharacterCaptureFlowTracker
                                     _characterNameOpCodes.Contains(any.Key)
                                         ? CharacterIdentityNameProbe.Describe(
                                             any.Body, _characterNameReference.Value)
+                                        : null,
+                                    _identityFieldsReference.HasValue &&
+                                    direction == CharacterCaptureDirection.ServerToClient &&
+                                    any.Key is "ksb" or "ksc"
+                                        ? ObserveIdentityFields(
+                                            flow, any.Key, any.Body, _identityFieldsReference.Value)
                                         : null));
                             }
                         }
@@ -328,6 +355,47 @@ public sealed class CharacterCaptureFlowTracker
 
             return events;
         }
+    }
+
+    private static string ObserveIdentityFields(
+        Session flow, string opcode, byte[] body, CharacterNameLevelReference reference)
+    {
+        if (flow.IdentityFieldsConflicted)
+            return "status=conflicted identity=unverified";
+
+        string report = CharacterIdentityFieldStudy.Observe(
+            opcode, body, reference, out CharacterIdentityFieldObservation? observation);
+
+        if (observation is null)
+            return report;
+
+        CharacterIdentityFieldObservation? previous = opcode == "ksb"
+            ? flow.KsbFields : flow.KscFields;
+
+        if (previous is not null)
+        {
+            if (previous.NumericSiblings.Count != observation.NumericSiblings.Count ||
+                previous.NumericSiblings.Any(pair =>
+                    !observation.NumericSiblings.TryGetValue(
+                        pair.Key, out ulong other) || pair.Value != other))
+            {
+                flow.IdentityFieldsConflicted = true;
+                flow.KsbFields = null;
+                flow.KscFields = null;
+                return "status=conflicted identity=unverified";
+            }
+        }
+
+        if (opcode == "ksb")
+            flow.KsbFields = observation;
+        else
+            flow.KscFields = observation;
+
+        if (flow.KsbFields is not null && flow.KscFields is not null)
+            return report + " " + CharacterIdentityFieldStudy.Compare(
+                flow.KsbFields, flow.KscFields);
+
+        return report + " same-session=pending identity=unverified";
     }
 
     private static string FormatIpz(

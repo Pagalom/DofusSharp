@@ -19,7 +19,8 @@ internal sealed class CharacterMetadataProbe(
     bool showCandidateJobIds = false,
     IReadOnlyList<ProfessionNamedReference>? identifyReferences = null,
     CharacterNameLevelReference? characterNameReference = null,
-    IReadOnlySet<string>? characterNameOpCodes = null) : IDisposable
+    IReadOnlySet<string>? characterNameOpCodes = null,
+    CharacterNameLevelReference? identityFieldsReference = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterCaptureFlowTracker _flows = new(
@@ -28,13 +29,15 @@ internal sealed class CharacterMetadataProbe(
         showCandidateJobIds: showCandidateJobIds,
         identifyReferences: identifyReferences,
         characterNameReference: characterNameReference,
-        characterNameOpCodes: characterNameOpCodes);
+        characterNameOpCodes: characterNameOpCodes,
+        identityFieldsReference: identityFieldsReference);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;
     private readonly bool _studyIpz = studyReferences is not null;
     private readonly bool _identifyIpz = identifyReferences is not null;
     private readonly bool _characterNameProbe = characterNameReference is not null;
+    private readonly bool _identityFieldProbe = identityFieldsReference is not null;
     private readonly Dictionary<(int Session, string Opcode), HashSet<string>>
         _reportedShapes = new();
 
@@ -124,13 +127,19 @@ internal sealed class CharacterMetadataProbe(
                 if (_characterNameProbe && entry.Kind == CharacterCaptureEventKind.Message &&
                     entry.CharacterNameProbeSummary is null)
                     continue;
+                if (_identityFieldProbe && entry.Kind == CharacterCaptureEventKind.Message &&
+                    entry.CharacterIdentityFieldSummary is null)
+                    continue;
 
-                if ((_shapeMode || _characterNameProbe) &&
+                if ((_shapeMode || _characterNameProbe || _identityFieldProbe) &&
                     entry.Kind == CharacterCaptureEventKind.Message)
                 {
                     // Shape scan shows only selected opcodes, no routine noise.
                     string? summary = _shapeMode
-                        ? entry.Shape : entry.CharacterNameProbeSummary;
+                        ? entry.Shape
+                        : _characterNameProbe
+                            ? entry.CharacterNameProbeSummary
+                            : entry.CharacterIdentityFieldSummary;
                     if (summary is null || entry.Opcode is null)
                         continue;
 
@@ -156,7 +165,8 @@ internal sealed class CharacterMetadataProbe(
                       (_decodeIpz ? $" IPZ=[{entry.ProfessionIpzSummary}]" : "") +
                       (_studyIpz ? $" IPZ_STUDY=[{entry.ProfessionStudySummary}]" : "") +
                       (_identifyIpz ? $" IPZ_IDENTIFY=[{entry.ProfessionIdentifySummary}]" : "") +
-                      (_characterNameProbe ? $" IDENTITY_NAME=[{entry.CharacterNameProbeSummary}]" : "")
+                      (_characterNameProbe ? $" IDENTITY_NAME=[{entry.CharacterNameProbeSummary}]" : "") +
+                      (_identityFieldProbe ? $" IDENTITY_FIELDS=[{entry.CharacterIdentityFieldSummary}]" : "")
                     : entry.Kind.ToString().ToUpperInvariant();
 
                 Console.WriteLine(

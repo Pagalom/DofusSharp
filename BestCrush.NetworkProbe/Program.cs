@@ -38,6 +38,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-identify --show-candidate-ids");
     Console.WriteLine("Pour rechercher localement le nom/niveau dans les messages candidats :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-name");
+    Console.WriteLine("Pour comparer localement les champs numériques ksb et ksc dans une même connexion :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields");
     Console.WriteLine("Pour les diagnostics historiques :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --all");
     return;
@@ -57,8 +59,10 @@ Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceI
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
 if (options.CharacterScan)
 {
-    Console.WriteLine(options.IdentityName
-        ? "Mode P2a : recherche locale du nom et niveau dans les messages ciblés ; valeurs privées masquées."
+    Console.WriteLine(options.IdentityFields
+        ? "Mode P2b : étude des champs voisins du nom/niveau dans ksb et ksc, par connexion TCP."
+        : options.IdentityName
+            ? "Mode P2a : recherche locale du nom et niveau dans les messages ciblés ; valeurs privées masquées."
         : options.ProfessionIdentify
             ? "Mode P1f : correspondance des métiers par niveau et XP totale, sans sauvegarde."
         : options.ProfessionStudy
@@ -75,6 +79,8 @@ if (options.CharacterScan)
     Console.WriteLine("Notes manuelles : connexion, caractéristiques, métiers (J), inventaire, banque, déconnexion.");
     if (options.IdentityName)
         Console.WriteLine("Recherche du nom exact en UTF-8 ; les chemins affichés ne prouvent pas l'identité du personnage.");
+    if (options.IdentityFields)
+        Console.WriteLine("ksb/ksc : recherche des champs égaux (sans leurs valeurs) dans une même session ; ID et identité NON vérifiés.");
     if (options.ProfessionMatch)
         Console.WriteLine("Seuls les chemins de deux couples niveau/XP concordants au minimum seront affichés.");
     if (options.ProfessionDecode)
@@ -163,13 +169,13 @@ if (options.ProfessionIdentify)
 }
 
 CharacterNameLevelReference? characterNameReference = null;
-if (options.IdentityName)
+if (options.IdentityName || options.IdentityFields)
 {
     Console.WriteLine();
     Console.WriteLine("Saisir localement NomDuPersonnage:Niveau (exemple fictif : Explorateur:137).");
     Console.WriteLine("Ne pas saisir de nom de compte, mot de passe, jeton ni ID.");
     Console.WriteLine("Ces valeurs restent uniquement en mémoire, elles ne figurent pas dans les journaux.");
-    Console.Write("Référence P2a : ");
+    Console.Write(options.IdentityFields ? "Référence P2b : " : "Référence P2a : ");
     string? inputIdentity = Console.ReadLine();
     if (!CharacterNameLevelReferenceInput.TryParse(
             inputIdentity, out CharacterNameLevelReference parsedIdentity))
@@ -200,7 +206,8 @@ if (options.CharacterScan)
         options.ShowCandidateJobIds,
         identifyReferences,
         characterNameReference,
-        options.IdentityName ? ProbeOptions.IdentityNameOpCodes : null);
+        options.IdentityName ? ProbeOptions.IdentityNameOpCodes : null,
+        options.IdentityFields ? characterNameReference : null);
 
     probe.Start();
     stop.Wait();
@@ -232,7 +239,8 @@ internal sealed record ProbeOptions(
     bool ProfessionStudy,
     bool ShowCandidateJobIds,
     bool ProfessionIdentify,
-    bool IdentityName)
+    bool IdentityName,
+    bool IdentityFields)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -260,6 +268,7 @@ internal sealed record ProbeOptions(
         bool professionStudy = false;
         bool professionIdentify = false;
         bool identityName = false;
+        bool identityFields = false;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
 
@@ -300,6 +309,9 @@ internal sealed record ProbeOptions(
                 case "--identity-name":
                     identityName = true;
                     break;
+                case "--identity-fields":
+                    identityFields = true;
+                    break;
                 case "--show-candidate-ids":
                     showCandidateJobIds = true;
                     break;
@@ -326,7 +338,8 @@ internal sealed record ProbeOptions(
         int selectedModes =
             (professionMatch ? 1 : 0) + (professionDecode ? 1 : 0) +
             (professionStudy ? 1 : 0) + (professionIdentify ? 1 : 0) +
-            (characterShape ? 1 : 0) + (identityName ? 1 : 0);
+            (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
+            (identityFields ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -339,9 +352,10 @@ internal sealed record ProbeOptions(
         return new ProbeOptions(
             device, port, all, list,
             characterScan || characterShape || professionMatch ||
-                professionDecode || professionStudy || professionIdentify || identityName,
+                professionDecode || professionStudy || professionIdentify ||
+                identityName || identityFields,
             characterShape, shapeKeys, professionMatch, professionDecode,
             professionStudy, showCandidateJobIds, professionIdentify,
-            identityName);
+            identityName, identityFields);
     }
 }
