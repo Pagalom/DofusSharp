@@ -76,6 +76,13 @@ public sealed class CharacterCaptureFlowTracker
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
+    // P2c research-only: retain at most 16 observed ksb parent f3
+    // values across anonymized TCP sessions, in RAM for this probe run.
+    // No hashes, values or identity conclusions leave this tracker.
+    private const int MaximumIdentityStudySessions = 16;
+    private readonly Dictionary<int, ulong> _candidateKsbF3BySession = [];
+    private readonly Queue<int> _candidateKsbSessionOrder = new();
+
     public CharacterCaptureFlowTracker(
         int maxFlows = 128, TimeSpan? idleTimeout = null,
         IReadOnlySet<string>? shapeKeys = null,
@@ -357,7 +364,7 @@ public sealed class CharacterCaptureFlowTracker
         }
     }
 
-    private static string ObserveIdentityFields(
+    private string ObserveIdentityFields(
         Session flow, string opcode, byte[] body, CharacterNameLevelReference reference)
     {
         if (flow.IdentityFieldsConflicted)
@@ -386,6 +393,7 @@ public sealed class CharacterCaptureFlowTracker
                 flow.IdentityFieldsConflicted = true;
                 flow.KsbFields = null;
                 flow.KscFields = null;
+                _candidateKsbF3BySession.Remove(flow.Number);
                 return "status=conflicted identity=unverified";
             }
         }
@@ -395,11 +403,50 @@ public sealed class CharacterCaptureFlowTracker
         else
             flow.KscFields = observation;
 
+        string crossSession = opcode == "ksb"
+            ? " " + ObserveKsbAcrossSessions(flow.Number, observation)
+            : "";
+
         if (flow.KsbFields is not null && flow.KscFields is not null)
             return report + " " + CharacterIdentityFieldStudy.Compare(
-                flow.KsbFields, flow.KscFields);
+                flow.KsbFields, flow.KscFields) + crossSession;
 
-        return report + " same-session=pending identity=unverified";
+        return report + " same-session=pending identity=unverified" + crossSession;
+    }
+
+    private string ObserveKsbAcrossSessions(
+        int sessionNumber, CharacterIdentityFieldObservation observation)
+    {
+        if (!observation.NumericParent.TryGetValue(3, out ulong candidate) ||
+            candidate == 0)
+            return "cross-session-f3=unavailable id=unverified";
+
+        // Observe only the ksb candidate for the exact locally supplied
+        // name and level. ksc may be a list of selectable characters;
+        // it does not independently establish an active character.
+        if (_candidateKsbF3BySession.TryGetValue(sessionNumber, out ulong existing))
+            return existing == candidate
+                ? "cross-session-f3=repeat id=unverified"
+                : "cross-session-f3=conflicted id=unverified";
+
+        bool hasBaseline = _candidateKsbF3BySession.Count > 0;
+        bool everyPreviousEquals = _candidateKsbF3BySession.Values
+            .All(previous => previous == candidate);
+
+        while (_candidateKsbSessionOrder.Count >= MaximumIdentityStudySessions)
+        {
+            int oldest = _candidateKsbSessionOrder.Dequeue();
+            _candidateKsbF3BySession.Remove(oldest);
+        }
+
+        _candidateKsbSessionOrder.Enqueue(sessionNumber);
+        _candidateKsbF3BySession.Add(sessionNumber, candidate);
+
+        string status = !hasBaseline ? "baseline"
+            : everyPreviousEquals ? "equal" : "different";
+        return "cross-session-f3=" + status +
+               " reference-sessions=" + _candidateKsbF3BySession.Count +
+               " id=unverified";
     }
 
     private static string FormatIpz(

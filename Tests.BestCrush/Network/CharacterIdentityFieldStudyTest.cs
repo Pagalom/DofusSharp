@@ -212,6 +212,137 @@ public sealed class CharacterIdentityFieldStudyTest
             .CharacterIdentityFieldSummary.Should().Be("status=conflicted identity=unverified");
     }
 
+
+    [Fact]
+    public void KsbParentCandidateRemainsEqualAcrossThreeDistinctTcpSessions()
+    {
+        var tracker = new CharacterCaptureFlowTracker(identityFieldsReference: Local);
+        var now = new DateTime(2026, 10, 18, 11, 0, 0, DateTimeKind.Utc);
+        var firstKey = new CharacterCaptureFlowKey("127.0.0.1", 40001, "10.0.0.1", 5555);
+        var secondKey = new CharacterCaptureFlowKey("127.0.0.1", 40002, "10.0.0.1", 5555);
+        var thirdKey = new CharacterCaptureFlowKey("127.0.0.1", 40003, "10.0.0.1", 5555);
+        byte[] first = Frame(Any("ksb", Ksb()));
+        byte[] selection = Frame(Any("ksc", Ksc()));
+
+        var a = tracker.Observe(firstKey, CharacterCaptureDirection.ServerToClient,
+            100, first, now).Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        a.CharacterIdentityFieldSummary.Should().Contain("cross-session-f3=baseline");
+        a.CharacterIdentityFieldSummary.Should().Contain("reference-sessions=1");
+
+        tracker.Observe(firstKey, CharacterCaptureDirection.ClientToServer,
+            0, [], now.AddSeconds(1), fin: true);
+
+        var b1 = tracker.Observe(secondKey, CharacterCaptureDirection.ServerToClient,
+            100, selection, now.AddSeconds(2))
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        b1.CharacterIdentityFieldSummary.Should().NotContain("cross-session-f3");
+
+        var b2 = tracker.Observe(secondKey, CharacterCaptureDirection.ServerToClient,
+            (uint)(100 + selection.Length), first, now.AddSeconds(3))
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        b2.CharacterIdentityFieldSummary.Should().Contain("same-session=yes");
+        b2.CharacterIdentityFieldSummary.Should().Contain("shared-equal-parent=[f3]");
+        b2.CharacterIdentityFieldSummary.Should().Contain("cross-session-f3=equal");
+        b2.CharacterIdentityFieldSummary.Should().Contain("reference-sessions=2");
+
+        var c = tracker.Observe(thirdKey, CharacterCaptureDirection.ServerToClient,
+            100, first, now.AddSeconds(4))
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        c.CharacterIdentityFieldSummary.Should().Contain("cross-session-f3=equal");
+        c.CharacterIdentityFieldSummary.Should().Contain("reference-sessions=3");
+        c.CharacterIdentityFieldSummary.Should().NotContain("9000123");
+        c.CharacterIdentityFieldSummary.Should().NotContain(Local.Name);
+    }
+
+    [Fact]
+    public void DifferentCandidateAcrossSessionsIsReportedWithoutRevealingItsValue()
+    {
+        var tracker = new CharacterCaptureFlowTracker(identityFieldsReference: Local);
+        var now = new DateTime(2026, 10, 18, 11, 0, 0, DateTimeKind.Utc);
+        var a = new CharacterCaptureFlowKey("127.0.0.1", 40001, "10.0.0.1", 5555);
+        var b = new CharacterCaptureFlowKey("127.0.0.1", 40002, "10.0.0.1", 5555);
+
+        byte[] original = Frame(Any("ksb", Ksb()));
+        byte[] different = Frame(Any("ksb", Ksb(9000555)));
+        tracker.Observe(a, CharacterCaptureDirection.ServerToClient,
+            100, original, now);
+
+        var changed = tracker.Observe(b, CharacterCaptureDirection.ServerToClient,
+            100, different, now.AddSeconds(1))
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        changed.CharacterIdentityFieldSummary.Should().Contain("cross-session-f3=different");
+        changed.CharacterIdentityFieldSummary.Should().Contain("id=unverified");
+        changed.CharacterIdentityFieldSummary.Should().NotContain("9000555");
+    }
+
+    [Fact]
+    public void KscOnlyOrWrongNameCannotEstablishCrossSessionBaseline()
+    {
+        var tracker = new CharacterCaptureFlowTracker(identityFieldsReference: Local);
+        var now = new DateTime(2026, 10, 18, 11, 0, 0, DateTimeKind.Utc);
+        var a = new CharacterCaptureFlowKey("127.0.0.1", 40001, "10.0.0.1", 5555);
+        var b = new CharacterCaptureFlowKey("127.0.0.1", 40002, "10.0.0.1", 5555);
+        var c = new CharacterCaptureFlowKey("127.0.0.1", 40003, "10.0.0.1", 5555);
+
+        tracker.Observe(a, CharacterCaptureDirection.ServerToClient,
+            100, Frame(Any("ksc", Ksc())), now);
+
+        var absent = tracker.Observe(b, CharacterCaptureDirection.ServerToClient,
+            100, Frame(Any("ksb", Ksb(name: "Another-Character"))), now.AddSeconds(1))
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        absent.CharacterIdentityFieldSummary.Should().Be("match=absent");
+
+        var first = tracker.Observe(c, CharacterCaptureDirection.ServerToClient,
+            100, Frame(Any("ksb", Ksb())), now.AddSeconds(2))
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        first.CharacterIdentityFieldSummary.Should().Contain("cross-session-f3=baseline");
+        first.CharacterIdentityFieldSummary.Should().Contain("reference-sessions=1");
+    }
+
+    [Fact]
+    public void ConflictInvalidatesKsbBaselineAndNeverPromotesIdentity()
+    {
+        var tracker = new CharacterCaptureFlowTracker(identityFieldsReference: Local);
+        var now = new DateTime(2026, 10, 18, 11, 0, 0, DateTimeKind.Utc);
+        var a = new CharacterCaptureFlowKey("127.0.0.1", 40001, "10.0.0.1", 5555);
+        var b = new CharacterCaptureFlowKey("127.0.0.1", 40002, "10.0.0.1", 5555);
+        byte[] first = Frame(Any("ksb", Ksb()));
+        byte[] conflicting = Frame(Any("ksb", Ksb(9000555)));
+
+        tracker.Observe(a, CharacterCaptureDirection.ServerToClient,
+            100, first, now);
+        var invalidated = tracker.Observe(a, CharacterCaptureDirection.ServerToClient,
+            (uint)(100 + first.Length), conflicting, now.AddSeconds(1))
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        invalidated.CharacterIdentityFieldSummary.Should().Be(
+            "status=conflicted identity=unverified");
+
+        var later = tracker.Observe(b, CharacterCaptureDirection.ServerToClient,
+            100, first, now.AddSeconds(2))
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        later.CharacterIdentityFieldSummary.Should().Contain("cross-session-f3=baseline");
+        later.CharacterIdentityFieldSummary.Should().Contain("reference-sessions=1");
+        later.CharacterIdentityFieldSummary.Should().NotContain("confirmed");
+    }
+
+    [Fact]
+    public void SameTcpEndpointsAfterSynStartANewDiagnosticSession()
+    {
+        var tracker = new CharacterCaptureFlowTracker(identityFieldsReference: Local);
+        var now = new DateTime(2026, 10, 18, 11, 0, 0, DateTimeKind.Utc);
+        var key = new CharacterCaptureFlowKey("127.0.0.1", 40001, "10.0.0.1", 5555);
+        byte[] packet = Frame(Any("ksb", Ksb()));
+
+        var first = tracker.Observe(key, CharacterCaptureDirection.ServerToClient,
+            100, packet, now).Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        var next = tracker.Observe(key, CharacterCaptureDirection.ServerToClient,
+            500, packet, now.AddSeconds(1), syn: true)
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        first.SessionNumber.Should().NotBe(next.SessionNumber);
+        first.CharacterIdentityFieldSummary.Should().Contain("cross-session-f3=baseline");
+        next.CharacterIdentityFieldSummary.Should().Contain("cross-session-f3=equal");
+    }
+
     [Fact]
     public void P2bCannotRunAlongsideP2aOrOtherModes()
     {
