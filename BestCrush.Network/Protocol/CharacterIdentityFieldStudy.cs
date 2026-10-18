@@ -131,10 +131,13 @@ public static class CharacterIdentityFieldStudy
 
             observation = new CharacterIdentityFieldObservation(
                 opcode, siblings, parentNumbers);
+            string kscRows = opcode == "ksc"
+                ? " " + DescribeKscRows(root, expectedName, reference.Level)
+                : "";
             return "match=unique numeric-siblings=[" +
                    FormatFields(siblings.Keys) +
                    "] parent-numeric=[" + FormatFields(parentNumbers.Keys) +
-                   "] identity=unverified";
+                   "] identity=unverified" + kscRows;
         }
         catch (OverflowException)
         {
@@ -144,6 +147,88 @@ public static class CharacterIdentityFieldStudy
         {
             return "rejected-layout";
         }
+    }
+
+    /// <summary>
+    /// Describe repeated f2 entries from the SAME ksc message. No names,
+    /// candidate IDs, hashes or value-derived identifiers are returned.
+    /// This is structural evidence only; it cannot establish that ksc
+    /// lists account characters without further semantic validation.
+    /// </summary>
+    private static string DescribeKscRows(
+        byte[] root, byte[] expectedName, int expectedLevel)
+    {
+        List<ProtoField>? rootFields = ProtoWire.ReadFields(root);
+        if (rootFields is null || rootFields.Count > MaxNodeFields)
+            return "ksc-rows=[layout=unverified]";
+
+        ProtoField[] rows = rootFields.Where(f => f.Number == 2 &&
+            f.WireType == ProtoWireType.LengthDelimited).ToArray();
+        if (rows.Length is < 1 or > 32)
+            return "ksc-rows=[layout=unverified]";
+
+        List<(ulong Id, byte[] Name, int Level)> observations = [];
+        foreach (ProtoField row in rows)
+        {
+            if (row.Bytes is not { Length: > 0 and <= MaxNodeBytes })
+                return "ksc-rows=[layout=unverified]";
+
+            List<ProtoField>? parent = ProtoWire.ReadFields(row.Bytes);
+            if (parent is null || parent.Count > MaxNodeFields)
+                return "ksc-rows=[layout=unverified]";
+
+            ProtoField[] ids = parent.Where(f => f.Number == 3 &&
+                f.WireType == ProtoWireType.Varint && f.Varint > 0).ToArray();
+            ProtoField[] leaves = parent.Where(f => f.Number == 4 &&
+                f.WireType == ProtoWireType.LengthDelimited).ToArray();
+            if (ids.Length != 1 || leaves.Length != 1 ||
+                leaves[0].Bytes is not { Length: > 0 and <= MaxNodeBytes })
+                return "ksc-rows=[layout=unverified]";
+
+            List<ProtoField>? leaf = ProtoWire.ReadFields(leaves[0].Bytes);
+            if (leaf is null || leaf.Count > MaxNodeFields)
+                return "ksc-rows=[layout=unverified]";
+
+            ProtoField[] names = leaf.Where(f => f.Number == 6 &&
+                f.WireType == ProtoWireType.LengthDelimited &&
+                f.Bytes is { Length: > 0 and <= 80 }).ToArray();
+            ProtoField[] levels = leaf.Where(f => f.Number == 3 &&
+                f.WireType == ProtoWireType.Varint &&
+                f.Varint is >= 1 and <= 200).ToArray();
+            if (names.Length != 1 || levels.Length != 1)
+                return "ksc-rows=[layout=unverified]";
+
+            observations.Add((ids[0].Varint, names[0].Bytes!,
+                (int)levels[0].Varint));
+        }
+
+        int matchingRows = observations.Count(r =>
+            r.Level == expectedLevel &&
+            r.Name.AsSpan().SequenceEqual(expectedName));
+        if (matchingRows != 1)
+            return "ksc-rows=[match=ambiguous]";
+
+        // Distinctness is calculated locally without leaking values.
+        bool namesDistinct = observations
+            .Select((record, index) => observations
+                .Skip(index + 1).All(other =>
+                    !record.Name.AsSpan().SequenceEqual(other.Name)))
+            .All(b => b);
+        bool idsDistinct = observations.Select(r => r.Id).Distinct().Count() ==
+            observations.Count;
+
+        ulong selectedF3 = observations.Single(r =>
+            r.Level == expectedLevel &&
+            r.Name.AsSpan().SequenceEqual(expectedName)).Id;
+        bool selectedF3Unique = observations.Count(r => r.Id == selectedF3) == 1;
+
+        return "ksc-rows=[total=" + rows.Length +
+               " complete=" + observations.Count +
+               " names-distinct=" + namesDistinct.ToString().ToLowerInvariant() +
+               " f3-distinct=" + idsDistinct.ToString().ToLowerInvariant() +
+               " selected-f3-unique=" +
+               selectedF3Unique.ToString().ToLowerInvariant() +
+               " semantic=unverified]";
     }
 
     private static Dictionary<int, ulong> UniqueVarints(

@@ -49,6 +49,80 @@ public sealed class CharacterIdentityFieldStudyTest
         report.Should().NotContain("9000123");
     }
 
+
+    [Fact]
+    public void KscStudyReportsTwoDistinctNamedRecordsAndTwoDistinctF3Values()
+    {
+        string summary = CharacterIdentityFieldStudy.Observe(
+            "ksc", Ksc(), Local, out var observation);
+
+        observation.Should().NotBeNull();
+        summary.Should().Contain(
+            "ksc-rows=[total=2 complete=2 names-distinct=true " +
+            "f3-distinct=true selected-f3-unique=true semantic=unverified]");
+        summary.Should().NotContain("Exemple-Ciel");
+        summary.Should().NotContain("Autre-Ciel");
+        summary.Should().NotContain("9000123");
+        summary.Should().NotContain("9000789");
+    }
+
+    [Fact]
+    public void KscDistinctNamesWithSharedF3CannotBeCalledDistinctCharacterIds()
+    {
+        byte[] rows = Message(
+            Bytes(2, Message(
+                Unsigned(3, 9000123),
+                Bytes(4, Person("Autre-Ciel", 9000123, 100)))),
+            Bytes(2, Message(
+                Unsigned(3, 9000123),
+                Bytes(4, Person("Exemple-Ciel", 9000123)))));
+
+        string summary = CharacterIdentityFieldStudy.Observe(
+            "ksc", rows, Local, out var observation);
+
+        observation.Should().NotBeNull();
+        summary.Should().Contain(
+            "ksc-rows=[total=2 complete=2 names-distinct=true " +
+            "f3-distinct=false selected-f3-unique=false semantic=unverified]");
+    }
+
+    [Fact]
+    public void KscDuplicateNameDifferentLevelIsNotTwoDistinctNames()
+    {
+        byte[] rows = Message(
+            Bytes(2, Message(
+                Unsigned(3, 9000789),
+                Bytes(4, Person("Exemple-Ciel", 9000789, 100)))),
+            Bytes(2, Message(
+                Unsigned(3, 9000123),
+                Bytes(4, Person("Exemple-Ciel", 9000123)))));
+
+        string summary = CharacterIdentityFieldStudy.Observe(
+            "ksc", rows, Local, out var observation);
+
+        observation.Should().NotBeNull();
+        summary.Should().Contain(
+            "ksc-rows=[total=2 complete=2 names-distinct=false " +
+            "f3-distinct=true selected-f3-unique=true semantic=unverified]");
+    }
+
+    [Fact]
+    public void KscRowMissingParentF3CannotSuggestDistinction()
+    {
+        byte[] rows = Message(
+            Bytes(2, Bytes(4, Person("Autre-Ciel", 9000789, 100))),
+            Bytes(2, Message(
+                Unsigned(3, 9000123),
+                Bytes(4, Person("Exemple-Ciel", 9000123)))));
+
+        string summary = CharacterIdentityFieldStudy.Observe(
+            "ksc", rows, Local, out var observation);
+
+        observation.Should().NotBeNull();
+        summary.Should().Contain("ksc-rows=[layout=unverified]");
+        summary.Should().NotContain("f3-distinct=true");
+    }
+
     [Fact]
     public void ChangedNumericValuesNeverCountAsEqual()
     {
