@@ -420,7 +420,7 @@ public sealed class CharacterCaptureFlowTracker
         // P2f is a separate versioned experimental decoder. Its values
         // never leave this per-TCP-session object. No CharacterIdentityCorrelator
         // or business service receives them.
-        string decoded = ObserveCandidateDecode(flow, opcode, body);
+        string decoded = ObserveCandidateDecode(flow, opcode, body, reference);
 
         if (flow.KsbFields is not null && flow.KscFields is not null)
             return report + " " + CharacterIdentityFieldStudy.Compare(
@@ -431,7 +431,8 @@ public sealed class CharacterCaptureFlowTracker
     }
 
     private static string ObserveCandidateDecode(
-        Session flow, string opcode, byte[] body)
+        Session flow, string opcode, byte[] body,
+        CharacterNameLevelReference reference)
     {
         if (!CharacterWireCandidateDecoder.TryDecode(
                 opcode, body, out CharacterWireCandidateSnapshot? snapshot) ||
@@ -452,9 +453,11 @@ public sealed class CharacterCaptureFlowTracker
 
         // ksc is a list, ksb is a loaded candidate. Wire equality
         // is NOT independently corroborated semantic identity.
+        string classStudy = CharacterClassWireShapeStudy.Describe(
+            opcode, body, reference);
         return "p2f=decoded candidates=" + snapshot.Candidates.Count +
                " class=unknown candidate-link=" + match +
-               " identity=unverified";
+               " identity=unverified " + classStudy;
     }
 
     private string ObserveKsbAcrossSessions(

@@ -35,6 +35,16 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P2g : structure des champs de classe possibles
+
+Le mode `--identity-fields` ajoute un relevé `p2g` limité
+aux types et chemins des champs protobuf des fiches
+`ksb`/`ksc`, ainsi qu'aux **chemins** dont les valeurs
+diffèrent entre deux entrées de `ksc`.
+Aucune valeur personnelle n'est publiée. La classe reste
+`unknown`, et l'identité reste `unverified`.
+Voir `docs/modular-workspace-p2g-class-field-shape.md`.
+
 ### P2f : décodeur d'identité candidat (non confirmé)
 
 Le mode existant `--identity-fields` teste maintenant un
