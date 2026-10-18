@@ -236,3 +236,54 @@ de retourner à la sélection, puis attendre le
 d'arrêter ; rechercher `p2j class-link=yes`.
 Conserver `ClassId=null`, `IdentityConfirmed=false`
 et l'association automatique des métiers désactivée.
+
+
+## Checkpoint réel P2j — même session TCP, concordance de classe
+
+Après les tests synthétiques **635/635** et les deux
+vérifications externes de classe (codes publics 6 et 17),
+une capture `--identity-fields` sur Dofus 3.6.11.15
+a enfin observé l'enchaînement complet sur la **session
+TCP #3** :
+
+- `20:09:39 UTC` — `ksc` : 2 fiches décodées,
+  `p2f candidate-link=pending`,
+  `p2j class-candidate=all class-link=pending` ;
+- `20:09:46 UTC` — `ksb` : `match=unique`,
+  `same-session=yes`, `p2f candidate-link=yes`,
+  `p2j class-candidate=all class-link=yes class=unverified`.
+
+La classe candidate correspond donc entre les
+deux formes de fiche pour le **même identifiant,
+nom et niveau candidats**, dans la **même connexion
+TCP**, conformément aux règles d'isolation.
+Cela valide l'observation de cohérence du champ
+`leaf.f5.f3` sans confirmer l'identité en production.
+
+L'option `--expected-class-id 17` désignait
+la classe Huppermage alors que la référence
+saisie localement correspondait à un personnage
+Écaflip. L'option P2i a donc correctement produit
+`reference-equal=no` dans `ksc` et `ksb`.
+**Ce n'est pas une contradiction de décodage** :
+le résultat P2j `class-link=yes` compare les
+deux valeurs du réseau entre elles, pas avec la
+classe attendue fournie en argument.
+
+Aucune valeur privée (nom, niveau, identifiant,
+serveur, compte, payload) n'est enregistrée
+dans ce rapport.
+
+### Décision de passage
+
+P2j : **validation expérimentale réelle obtenue**.
+La confirmation d'identité requiert encore une
+preuve **sémantiquement indépendante** de
+`ksc`/`ksb`. Aucune attribution automatique
+des métiers `ipz` ni aucune écriture de profils
+ne sont autorisées.
+
+Suite : caractériser puis tester le cycle de vie
+de la session (FIN/RST, erreurs de réassemblage,
+conflits, alternance personnage A → B → A,
+multi-client) avant tout branchement métier.
