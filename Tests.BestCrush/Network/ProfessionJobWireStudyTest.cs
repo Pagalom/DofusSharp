@@ -155,6 +155,28 @@ public sealed class ProfessionJobWireStudyTest
     }
 
     [Fact]
+    public void TypoAndUncapturedIndexMustBeCorrectableBeforeComparison()
+    {
+        // Fictional input: doubled separator must be rejected.
+        ProfessionJobReferenceInput.TryParse(
+            "1:Sculpteur:7:111,2:Sculpteur:7::121,3:Cordonnier:3:222,4:Cordonnier:3:233",
+            out _).Should().BeFalse();
+
+        // The input parser allows indexes up to 16, but the prompt must
+        // also verify that the given index was captured in this run.
+        ProfessionJobReferenceInput.TryParse(
+            "1:Sculpteur:7:111,2:Sculpteur:7:121,3:Cordonnier:3:222,9:Cordonnier:4:233",
+            out IReadOnlyList<ProfessionJobReference> references).Should().BeTrue();
+        ProfessionJobReferenceInput.Validate(references, 7).Should().BeFalse();
+
+        // The known captured indexes remain valid without a new capture.
+        ProfessionJobReferenceInput.TryParse(
+            "1:Sculpteur:7:111,2:Sculpteur:7:121,3:Cordonnier:3:222,4:Cordonnier:4:233",
+            out references).Should().BeTrue();
+        ProfessionJobReferenceInput.Validate(references, 7).Should().BeTrue();
+    }
+
+    [Fact]
     public void TwoCraftsPerProfessionAreMandatory()
     {
         ProfessionJobReference[] onlyOneJobObservedOnce =

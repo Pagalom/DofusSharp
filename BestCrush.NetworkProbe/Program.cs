@@ -272,17 +272,39 @@ if (options.CharacterScan)
                 Console.WriteLine("Exemple FICTIF : 1:Sculpteur:6:390,2:Bricoleur:12:875,3:Sculpteur:6:420,4:Bricoleur:12:900");
                 Console.WriteLine("Associer chaque index PROFESSION_JOB à sa fabrication, sans saisir de nom de personnage.");
                 Console.WriteLine("Les références restent locales et ne sont pas recopiées dans le résultat.");
-                Console.Write("Références P3f (Entrée pour passer) : ");
-                string? inputJobs = Console.ReadLine();
-                if (!string.IsNullOrWhiteSpace(inputJobs))
+                // A typo in a local reference must not discard the capture.
+                while (true)
                 {
-                    if (ProfessionJobReferenceInput.TryParse(
-                        inputJobs, out IReadOnlyList<ProfessionJobReference> refs))
-                        Console.WriteLine(xpWireStudy.CompareJobs(refs));
-                    else
-                        Console.WriteLine("P3f : références invalides ; aucune comparaison.");
+                    Console.Write("Références P3f (Entrée pour passer) : ");
+                    string? inputJobs = Console.ReadLine();
+                    if (string.IsNullOrWhiteSpace(inputJobs))
+                        break;
+
+                    if (!ProfessionJobReferenceInput.TryParse(
+                            inputJobs, out IReadOnlyList<ProfessionJobReference> refs) ||
+                        !ProfessionJobReferenceInput.Validate(refs, xpWireStudy.Count))
+                    {
+                        Console.WriteLine(
+                            $"P3f : saisie invalide. Format index:Métier:Niveau:XP ; " +
+                            $"indices existants : 1 à {xpWireStudy.Count} ; " +
+                            "au moins deux références par métier, XP croissante par métier. " +
+                            "Corriger ci-dessous sans relancer la capture.");
+                        continue;
+                    }
+
+                    string comparison = xpWireStudy.CompareJobs(refs);
+                    Console.WriteLine(comparison);
+                    if (comparison.StartsWith(
+                        "p3f=references-not-confirmed", StringComparison.Ordinal))
+                    {
+                        Console.WriteLine(
+                            "P3f : niveau ou XP non concordants. Vérifier les relevés " +
+                            "et les index ; une nouvelle saisie reste possible, " +
+                            "ou Entrée pour terminer.");
+                        continue;
+                    }
+                    break;
                 }
-                inputJobs = null;
             }
             else
                 Console.WriteLine("P3f : au moins quatre ipz mono-entrée sont requis pour comparer deux métiers.");
@@ -295,17 +317,29 @@ if (options.CharacterScan)
                 Console.WriteLine("Associer l'index affiché PROFESSION_XP à chaque fabrication ; ignorer les ipz sans relevé.");
                 Console.WriteLine("Exemple fictif : 1:3:124,2:3:138");
                 Console.WriteLine("La saisie est comparée localement, jamais recopiée dans les résultats.");
-                Console.Write("Références P3e (Entrée pour passer) : ");
-                string? rawXpReferences = Console.ReadLine();
-                if (!string.IsNullOrWhiteSpace(rawXpReferences))
+                // Keep ephemeral observations available after a typing error.
+                while (true)
                 {
-                    if (ProfessionXpReferenceInput.TryParse(
-                        rawXpReferences, out IReadOnlyList<ProfessionXpReference> refs))
-                        Console.WriteLine(xpWireStudy.Compare(refs));
-                    else
-                        Console.WriteLine("P3e : format invalide ; aucun résultat de comparaison.");
+                    Console.Write("Références P3e (Entrée pour passer) : ");
+                    string? rawXpReferences = Console.ReadLine();
+                    if (string.IsNullOrWhiteSpace(rawXpReferences))
+                        break;
+
+                    if (!ProfessionXpReferenceInput.TryParse(
+                            rawXpReferences, out IReadOnlyList<ProfessionXpReference> refs) ||
+                        refs.Any(r => r.Index > xpWireStudy.Count))
+                    {
+                        Console.WriteLine(
+                            $"P3e : saisie invalide. Format index:niveau:XP ; " +
+                            $"indices existants : 1 à {xpWireStudy.Count} ; " +
+                            "XP strictement croissante. " +
+                            "Corriger ci-dessous sans relancer la capture.");
+                        continue;
+                    }
+
+                    Console.WriteLine(xpWireStudy.Compare(refs));
+                    break;
                 }
-                rawXpReferences = null;
             }
             else
                 Console.WriteLine("P3e : au moins deux ipz mono-entrée sont requis pour comparer les champs XP.");

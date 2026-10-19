@@ -270,7 +270,12 @@ Les valeurs d'XP doivent progresser **pour chaque métier séparément**,
 pas nécessairement entre deux métiers différents. Au moins
 deux références par métier et au moins deux métiers sont requis.
 Les autres `ipz` sans fabrication peuvent être omis en sautant
-leur index. Les champs niveau (`f1.f1`) et XP (`f1.f2`) doivent
+leur index. **Attention : les indices ne peuvent pas dépasser le nombre
+de messages `ipz` capturés.** En cas de faute de frappe ou d'index
+inexistant, le programme **redemande les références sans perdre
+la capture**, tant que le processus est toujours actif. Appuyer sur
+Entrée sans rien saisir permet de quitter volontairement.
+Les champs niveau (`f1.f1`) et XP (`f1.f2`) doivent
 correspondre aux références pour **tous** les événements retenus ;
 sinon, aucun candidat de métier n'est déclaré.
 

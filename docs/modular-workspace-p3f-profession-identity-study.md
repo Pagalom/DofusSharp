@@ -225,3 +225,60 @@ confirmée par le lancement réussi du probe ;
 la suite Windows `dotnet test` n'a pas
 été communiquée. `account=unverified`,
 `server=unverified`, `mapping=unverified`.
+
+
+## P3f.2 — Capture Sculpteur/Cordonnier sans comparaison (erreur de saisie)
+
+Une session TCP réelle a produit **sept**
+messages `ipz` mono-entrée, de 10:20:19.844
+à 10:23:10.427 UTC :
+
+| Index | Taille `ipz` | Référence manuelle envisagée |
+| --- | ---: | --- |
+| 1 | 15 octets | Sculpteur, niveau 7, XP 475 |
+| 2 | 15 octets | Sculpteur, niveau 7, XP 516 |
+| 3 | 12 octets | Cordonnier, niveau 3, XP 78 |
+| 4 | 15 octets | Sculpteur, niveau 7, XP 557 |
+| 5 | 15 octets | Sculpteur, niveau 8, XP 598 |
+| 6 | 12 octets | Cordonnier, niveau 3, XP 114 |
+| 7 | 14 octets | non vérifié : possible Cordonnier niveau 4, XP 150 |
+
+Le probe a refusé la saisie locale, sans
+procéder au comparateur P3f, car :
+
+1. la deuxième référence contenait **deux
+   séparateurs `:` successifs** (au lieu
+   de quatre champs `index:Métier:Niveau:XP`) ;
+2. la dernière utilisait **l'index 9**,
+   alors que les événements capturés ne
+   dépassaient pas **l'index 7**.
+
+Il serait incorrect d'affirmer que l'index 7
+correspond à Cordonnier niveau 4, XP 150,
+sans confirmation de l'opérateur.
+Les six premières références auraient pu
+suffire à la comparaison, mais le probe
+a quitté après la saisie invalide et sa
+mémoire a été libérée.
+
+**Statut de cette capture : seulement
+collecte validée ; AUCUN résultat de
+correspondance `f1.f5` obtenu.** Ne pas
+comptabiliser P3f.2 comme preuve positive
+ou négative sur la discrimination Cordonnier.
+
+### Correctif de robustesse
+
+Le CLI P3e/P3f redemande désormais la saisie
+si elle est invalide. Il refuse également
+les références dont l'index dépasse le nombre
+de messages réellement capturés. Tant que le
+processus reste actif, l'utilisateur peut
+corriger les références en RAM **sans refaire
+ses fabrications**. Une ligne vide termine
+volontairement le diagnostic ; aucune saisie
+n'est enregistrée ni recopiée.
+
+Test synthétique ajouté pour le double
+séparateur, l'index non capturé et la saisie
+corrigée ; la suite Windows reste à lancer.
