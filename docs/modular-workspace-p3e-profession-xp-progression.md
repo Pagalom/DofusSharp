@@ -482,27 +482,83 @@ correspondance réelle sur deux observations**,
 et non encore d'une validation sémantique
 universelle du protocole.
 
-### Reste à démontrer
+### Statut du checkpoint P3e.4
 
-- Répéter lors d'une **troisième fabrication
-  indépendante**, pour renforcer la corrélation
-  `f1.f2` ↔ XP affichée.
-- Faire un **passage de niveau** et comparer
-  les références avant/après pour vérifier
-  que `f1.f1` suit effectivement le niveau,
-  et pas une constante égale à 4.
-- Vérifier que le `ipz` mono-entrée observé
-  n'est pas aussi émis dans d'autres contextes
-  et identifier le métier destinataire sans
-  confondre `f5` avec un identifiant global
-  confirmé.
-- **P3c inchangé** : compte/serveur non
-  vérifiés ; aucun raccordement automatique
-  aux profils, aucune écriture en base.
-- Tests d'isolation multi-comptes toujours
-  reportés conformément à la demande.
+Le changement de niveau et le troisième relevé
+étaient encore attendus à ce checkpoint. Ces
+deux objectifs sont **désormais couverts par
+P3e.5**, documenté ci-dessous. Le métier exact,
+le rattachement compte/serveur et le contexte
+de toutes les émissions mono-`ipz`
+restent à étudier. Aucun lien automatique
+avec les profils et aucune écriture en base.
+Tests d'isolation multi-comptes reportés
+conformément à la demande.
 
-**Statut :** P3e.4 exécuté en conditions
-réelles ; `f1.f2` **candidat XP très
-solidement étayé** ; `f1.f1` **candidat
-niveau**, à confirmer par passage de niveau.
+
+## P3e.5 — Champ de niveau et XP confirmés lors du passage au niveau 6
+
+Nouvelle capture réelle `--profession-xp-study`
+sur une unique session TCP, avec **trois**
+`ipz` serveur → client à une entrée :
+
+| Index | Heure UTC | Taille `ipz` | Niveau manuel | XP affichée | Gain XP |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 1 | 09:04:48.191 | 15 octets | 5 | 248 | non mesuré depuis une référence initiale |
+| 2 | 09:04:59.336 | 15 octets | 5 | 297 | **+49** |
+| 3 | 09:05:15.498 | 15 octets | 6 | 346 | **+49** |
+
+Références saisies en local après `Ctrl+C` :
+`1:5:248,2:5:297,3:6:346`.
+
+**Résultat du comparateur :**
+
+```text
+p3e=compared references=3 xp-field-candidates=[f1.f2] level-field-candidates=[f1.f1] xp-status=single-candidate account=unverified server=unverified mapping=unverified
+```
+
+Les valeurs réelles ont été comparées
+**localement en RAM**, sans exposer les champs
+du paquet. Les trois `ipz` gardent
+5 chemins numériques et une taille de 15 octets.
+Le niveau suit **5, 5, 6**, pendant que l'XP
+suit **248, 297, 346**. C'est la première
+validation réelle d'un **changement de niveau**
+dans le champ `f1.f1`.
+
+### Bilan technique P3e
+
+Pour les messages `ipz` mono-entrée étudiés,
+les correspondances sont maintenant
+**confirmées expérimentalement** :
+
+- `ipz → f1.f1` : **niveau du métier**,
+  évolution observée lors d'un passage de
+  niveau 5 → 6 ;
+- `ipz → f1.f2` : **compteur d'XP affiché**,
+  correspondance unique pour les trois
+  nouveaux relevés et deux relevés précédents.
+
+Ce résultat ne prouve pas que la même structure
+s'applique à toutes les versions et situations.
+Il ne valide **ni un identifiant de métier**,
+ni un ID de compte ou de serveur.
+`account=unverified server=unverified mapping=unverified`.
+
+### Suite possible : P3f, identifier le métier concerné
+
+Chercher quel champ du `ipz` mono-entrée
+permet de distinguer les métiers, en comparant
+**deux métiers différents** sur la même
+session, avec une référence locale de nom
+de métier/niveau/XP. Le champ `f5` observé
+précédemment est un **candidat**, sans
+preuve de mapping global. Construire, au besoin,
+un diagnostic opt-in anonymisé, sans imprimer
+ni mémoriser durablement de véritables IDs,
+sans raccorder aux cartes de personnages et
+sans débloquer les tests multi-comptes reportés.
+
+**Statut : P3e.5 validé sur capture réelle
+pour les champs niveau `f1.f1` et XP `f1.f2`.
+P3c identité et P3f métier restent ouverts.**
