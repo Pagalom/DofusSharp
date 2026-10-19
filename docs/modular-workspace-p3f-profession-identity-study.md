@@ -282,3 +282,57 @@ n'est enregistrée ni recopiée.
 Test synthétique ajouté pour le double
 séparateur, l'index non capturé et la saisie
 corrigée ; la suite Windows reste à lancer.
+
+
+## P3f.3 — Deuxième comparaison positive : Cordonnier / Sculpteur
+
+Le 19 octobre 2026, l'opérateur a exécuté
+`--profession-job-study` sous Windows avec
+Dofus 3.6.11.15, sur une session TCP unique.
+Quatre messages `ipz` mono-entrée serveur → client
+ont été collectés :
+
+| Index | Heure UTC | Taille `ipz` | Métier de référence | Niveau | XP affichée |
+| --- | --- | ---: | --- | ---: | ---: |
+| 1 | 17:35:48.028 | 15 octets | Cordonnier | 5 | 230 |
+| 2 | 17:36:27.162 | 15 octets | Sculpteur | 9 | 758 |
+| 3 | 17:37:12.293 | 15 octets | Cordonnier | 6 | 302 |
+| 4 | 17:38:38.160 | 15 octets | Sculpteur | 10 | 903 |
+
+Chaque message indiquait
+`varint-path-count=5` et `reference=pending`
+avant saisie locale. Les quatre couples
+niveau/XP ont été saisis manuellement après
+`Ctrl+C`, puis validés par le comparateur
+contre les observations conservées en RAM.
+
+- Cordonnier : +72 XP, niveau 5 → 6.
+- Sculpteur : +145 XP, niveau 9 → 10.
+- Les quatre références concordent avec
+  `f1.f1` pour le niveau et `f1.f2` pour l'XP.
+- Seul `f1.f5` reste stable à l'intérieur de
+  chaque métier et distinct entre ces deux métiers.
+
+Résultat anonymisé du probe :
+
+```text
+p3f=compared references=4 professions=2 level-match=yes xp-match=yes candidate-paths=[f1.f5] f1.f5-stable-distinct=yes candidate-status=single-candidate account=unverified server=unverified mapping=unverified
+```
+
+**Conclusion :** deuxième expérience indépendante
+positive (après P3f.1 Sculpteur/Bricoleur)
+sur trois noms de métiers distincts au total.
+P3f.2 demeure non concluante et n'est pas
+comptée comme preuve. Ces résultats renforcent
+la discrimination locale par `ipz.f1.f5`,
+mais ne prouvent ni la valeur d'un identifiant
+global, ni sa stabilité entre sessions, ni la
+correspondance ID ↔ nom de métier. Aucune valeur
+de `f1.f5` n'a été publiée ou persistée ;
+`account=unverified server=unverified mapping=unverified`.
+
+Le lancement réel du probe confirme sa compilation
+sur le poste Windows utilisé. Aucun résultat de la
+suite complète `dotnet test` n'a été fourni pour
+cette exécution. Ne pas déclencher de mapping
+automatique ni de tests multicomptes.
