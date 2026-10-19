@@ -439,3 +439,70 @@ Le champ XP ne sera déclaré identifié que
 lorsqu'une capture réelle indépendante
 confirmera les chemins candidats et que les
 hypothèses concurrentes seront éliminées.
+
+
+## P3e.4 — Première validation réelle du diagnostic mono-`ipz`
+
+**Exécution Windows réelle réussie** sur
+`--profession-xp-study` : le mode a démarré,
+a reçu les deux réponses ciblées, puis a accepté
+les deux références saisies après `Ctrl+C`.
+Cela confirme l'exécutabilité du probe, mais
+**le résultat détaillé de `dotnet test` n'a
+pas été fourni**.
+
+Observation, sur une unique session TCP :
+
+| Heure UTC | Message serveur → client | Référence manuelle | Résultat |
+| --- | --- | --- | --- |
+| 08:53:10.162 | `ipz` mono-entrée, 14 octets, index 1, 5 chemins numériques | niveau 4, XP 180 | candidat XP |
+| 08:53:20.284 | `ipz` mono-entrée, 14 octets, index 2, 5 chemins numériques | niveau 4, XP 194 | candidat XP |
+
+Deux fabrications ont eu lieu pendant ce diagnostic.
+La différence des XP affichées **180 → 194**
+est de **+14**, sans progression de niveau
+entre ces deux observations.
+
+Résultat anonymisé du comparateur :
+
+```text
+p3e=compared references=2 xp-field-candidates=[f1.f2] level-field-candidates=[f1.f1] xp-status=single-candidate account=unverified server=unverified mapping=unverified
+```
+
+**Conclusion limitée mais forte :**
+`f1.f2` est le **seul** champ varint commun aux
+deux observations dont les valeurs correspondent
+exactement aux deux XP de référence ;
+`f1.f1` correspond au niveau 4 dans ces
+deux observations. Contrairement aux corrélations
+de longueurs P3e.2–3, les valeurs ont cette
+fois été comparées localement, sans
+être exposées. Il s'agit d'une **validation de
+correspondance réelle sur deux observations**,
+et non encore d'une validation sémantique
+universelle du protocole.
+
+### Reste à démontrer
+
+- Répéter lors d'une **troisième fabrication
+  indépendante**, pour renforcer la corrélation
+  `f1.f2` ↔ XP affichée.
+- Faire un **passage de niveau** et comparer
+  les références avant/après pour vérifier
+  que `f1.f1` suit effectivement le niveau,
+  et pas une constante égale à 4.
+- Vérifier que le `ipz` mono-entrée observé
+  n'est pas aussi émis dans d'autres contextes
+  et identifier le métier destinataire sans
+  confondre `f5` avec un identifiant global
+  confirmé.
+- **P3c inchangé** : compte/serveur non
+  vérifiés ; aucun raccordement automatique
+  aux profils, aucune écriture en base.
+- Tests d'isolation multi-comptes toujours
+  reportés conformément à la demande.
+
+**Statut :** P3e.4 exécuté en conditions
+réelles ; `f1.f2` **candidat XP très
+solidement étayé** ; `f1.f1` **candidat
+niveau**, à confirmer par passage de niveau.
