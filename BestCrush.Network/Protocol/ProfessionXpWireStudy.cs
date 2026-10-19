@@ -65,6 +65,13 @@ public sealed class ProfessionXpWireStudy
     private readonly object _sync = new();
     private readonly List<IReadOnlyDictionary<int, ulong>> _observations = [];
     private int? _boundSession;
+    private readonly bool _checkPublicJobIds;
+    private ProfessionIpzSnapshot? _publicRoster;
+
+    public ProfessionXpWireStudy(bool checkPublicJobIds = false)
+    {
+        _checkPublicJobIds = checkPublicJobIds;
+    }
 
     public int Count
     {
@@ -75,11 +82,34 @@ public sealed class ProfessionXpWireStudy
     public string? Observe(int sessionNumber, ReadOnlySpan<byte> body)
     {
         if (sessionNumber <= 0 || body.IsEmpty ||
-            body.Length > MaximumRowBytes + 8)
+            body.Length > (_checkPublicJobIds ? 16 * 1024 : MaximumRowBytes + 8))
             return null;
 
-        // This shape is deliberately distinct from the existing 20-row
-        // ProfessionIpzDecoder and is never passed into that decoder.
+        // P3g is opt-in. A full 20-row roster is observed separately from
+        // the mono-row craft messages; no numeric values leave this process.
+        if (_checkPublicJobIds &&
+            ProfessionIpzDecoder.TryDecode(body, out ProfessionIpzSnapshot? roster) &&
+            roster is not null)
+        {
+            lock (_sync)
+            {
+                if (_boundSession.HasValue && _boundSession != sessionNumber)
+                    return null;
+
+                _boundSession ??= sessionNumber;
+                if (_publicRoster is not null)
+                    return null;
+
+                _publicRoster = roster;
+                return "p3g=roster-captured rows=" + roster.Rows.Count +
+                    " public-mapping=unverified account=unverified server=unverified";
+            }
+        }
+
+        if (body.Length > MaximumRowBytes + 8)
+            return null;
+
+        // Mono-row observations remain isolated from the full roster.
         Dictionary<int, ulong>? numeric = ParseSingleRow(body);
         if (numeric is null)
             return null;
@@ -222,6 +252,94 @@ public sealed class ProfessionXpWireStudy
                 " f1.f5-stable-distinct=" +
                 (candidates.Contains(5) ? "yes" : "no") +
                 " candidate-status=" + status +
+                " account=unverified server=unverified mapping=unverified";
+        }
+    }
+
+
+    /// <summary>
+    /// Verify the public f5 IDs against manually supplied job/level/XP
+    /// references, all from the SAME captured session. null means invalid
+    /// or unverified references; false is a genuine ID disagreement.
+    /// </summary>
+    public bool? MatchPublicJobIds(IReadOnlyList<ProfessionJobReference> references)
+    {
+        ArgumentNullException.ThrowIfNull(references);
+        if (!_checkPublicJobIds)
+            return null;
+
+        lock (_sync)
+        {
+            if (!ProfessionJobReferenceInput.Validate(references, _observations.Count))
+                return null;
+
+            foreach (ProfessionJobReference reference in references)
+            {
+                IReadOnlyDictionary<int, ulong> fields = _observations[reference.Index - 1];
+                if (!fields.TryGetValue(1, out ulong level) ||
+                    level != (ulong)reference.Level ||
+                    !fields.TryGetValue(2, out ulong xp) || xp != reference.Xp ||
+                    !ProfessionPublicJobIdReference.ByName.ContainsKey(reference.Profession))
+                    return null;
+            }
+
+            return references.All(reference =>
+                _observations[reference.Index - 1].TryGetValue(5, out ulong candidate) &&
+                candidate == ProfessionPublicJobIdReference.ByName[reference.Profession]);
+        }
+    }
+
+    /// <summary>
+    /// Roster completeness is a separate structural observation.
+    /// Names listed as missing/extra are PUBLIC profession labels only;
+    /// neither levels/XP nor observed f5 numbers are ever emitted.
+    /// </summary>
+    public string DescribePublicRoster(bool publicIdMatchConfirmed)
+    {
+        lock (_sync)
+        {
+            if (_publicRoster is null)
+                return "p3g=roster status=not-captured reference20=unverified" +
+                    " account=unverified server=unverified mapping=unverified";
+
+            if (!publicIdMatchConfirmed)
+                return "p3g=roster status=captured rows=" + _publicRoster.Rows.Count +
+                    " reference20=not-compared account=unverified server=unverified mapping=unverified";
+
+            ulong[] ids = _publicRoster.Rows
+                .Select(row => row.UnidentifiedVarints.TryGetValue(5, out ulong value)
+                    ? value : 0)
+                .ToArray();
+
+            HashSet<ulong> present = ids.Where(id => id != 0).ToHashSet();
+            HashSet<ulong> reference = ProfessionPublicJobIdReference.ReferenceTwenty.ToHashSet();
+            HashSet<ulong> known = ProfessionPublicJobIdReference.ByName.Values.ToHashSet();
+            ulong[] missing = reference.Except(present).OrderBy(id => id).ToArray();
+            ulong[] extras = present.Except(reference).OrderBy(id => id).ToArray();
+            Dictionary<ulong, string> labels = ProfessionPublicJobIdReference.ByName
+                .ToDictionary(pair => pair.Value, pair => pair.Key);
+
+            // All names printed below are from the static public list.
+            string missingNames = missing.Length == 0 ? "none" :
+                string.Join(",", missing.Select(id => labels[id]));
+            string publicExtraNames = string.Join(",",
+                extras.Where(known.Contains).Select(id => labels[id]));
+            if (publicExtraNames.Length == 0)
+                publicExtraNames = "none";
+
+            int unknown = extras.Count(id => !known.Contains(id));
+            int absentF5 = ids.Count(id => id == 0);
+            bool unique = absentF5 == 0 && ids.Distinct().Count() == ids.Length;
+            bool complete = missing.Length == 0 && extras.Length == 0 && unique;
+
+            return "p3g=roster status=" + (complete ? "reference20-complete" : "reference20-differs") +
+                " rows=" + ids.Length +
+                " unique-f5=" + (unique ? "yes" : "no") +
+                " reference20-present=" + (reference.Count - missing.Length) + "/20" +
+                " missing-public-names=[" + missingNames + "]" +
+                " extra-public-names=[" + publicExtraNames + "]" +
+                " unknown-id-count=" + unknown +
+                " missing-f5-count=" + absentF5 +
                 " account=unverified server=unverified mapping=unverified";
         }
     }

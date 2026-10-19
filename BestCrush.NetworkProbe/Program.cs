@@ -40,6 +40,7 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-xp-study");
     Console.WriteLine("Pour comparer deux métiers via les messages ipz mono-entrée :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-job-study");
+    Console.WriteLine("  (P3g) --profession-job-study --check-public-job-ids : vérification locale des IDs publics et roster 20 lignes");
     Console.WriteLine("Pour comparer anonymement les métiers entre connexions TCP :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-continuity");
     Console.WriteLine("Pour suivre ksc → ksb → ipz par session TCP, sans référence privée :");
@@ -102,6 +103,8 @@ if (options.CharacterScan)
         Console.WriteLine("P3e : un seul client à la fois ; deux fabrications, noter XP après chacune. Références demandées après Ctrl+C.");
     if (options.ProfessionJobStudy)
         Console.WriteLine("P3f : un seul client ; deux métiers, deux crafts par métier, puis références locales après Ctrl+C.");
+    if (options.CheckPublicJobIds)
+        Console.WriteLine("P3g : démarrer avant la connexion au personnage pour capturer ipz à 20 lignes ; comparaison des IDs publics uniquement après vérification manuelle.");
     Console.WriteLine("Notes manuelles : connexion, caractéristiques, métiers (J), inventaire, banque, déconnexion.");
     if (options.IdentityName)
         Console.WriteLine("Recherche du nom exact en UTF-8 ; les chemins affichés ne prouvent pas l'identité du personnage.");
@@ -229,7 +232,7 @@ if (options.CharacterScan)
     // can contribute numeric fields. Local reference input is AFTER capture.
     ProfessionXpWireStudy? xpWireStudy =
         options.ProfessionXpStudy || options.ProfessionJobStudy
-            ? new ProfessionXpWireStudy() : null;
+            ? new ProfessionXpWireStudy(options.CheckPublicJobIds) : null;
 
     // P2a and P2b accept the same local input, but only one diagnostic
     // receives it. Never supply both character identity references.
@@ -302,6 +305,15 @@ if (options.CharacterScan)
                             "et les index ; une nouvelle saisie reste possible, " +
                             "ou Entrée pour terminer.");
                         continue;
+                    }
+                    if (options.CheckPublicJobIds)
+                    {
+                        bool? idsMatch = xpWireStudy.MatchPublicJobIds(refs);
+                        Console.WriteLine("p3g=public-id-check match=" +
+                            (idsMatch is null ? "unavailable" : idsMatch.Value ? "yes" : "no") +
+                            " references=" + refs.Count +
+                            " account=unverified server=unverified mapping=unverified");
+                        Console.WriteLine(xpWireStudy.DescribePublicRoster(idsMatch == true));
                     }
                     break;
                 }
@@ -376,6 +388,7 @@ internal sealed record ProbeOptions(
     bool ProfessionContinuity,
     bool ProfessionXpStudy,
     bool ProfessionJobStudy,
+    bool CheckPublicJobIds,
     bool IdentityName,
     bool IdentityFields,
     int? ExpectedClassId)
@@ -409,6 +422,7 @@ internal sealed record ProbeOptions(
         bool professionContinuity = false;
         bool professionXpStudy = false;
         bool professionJobStudy = false;
+        bool checkPublicJobIds = false;
         bool identityName = false;
         bool identityFields = false;
         int? expectedClassId = null;
@@ -461,6 +475,9 @@ internal sealed record ProbeOptions(
                 case "--profession-job-study":
                     professionJobStudy = true;
                     break;
+                case "--check-public-job-ids":
+                    checkPublicJobIds = true;
+                    break;
                 case "--identity-name":
                     identityName = true;
                     break;
@@ -512,6 +529,9 @@ internal sealed record ProbeOptions(
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
 
+        if (checkPublicJobIds && !professionJobStudy)
+            throw new ArgumentException("--check-public-job-ids requires --profession-job-study.");
+
         if (showCandidateJobIds && !professionStudy && !professionIdentify)
             throw new ArgumentException(
                 "--show-candidate-ids requires --profession-study or --profession-identify.");
@@ -530,6 +550,6 @@ internal sealed record ProbeOptions(
             characterShape, shapeKeys, professionMatch, professionDecode,
             professionStudy, showCandidateJobIds, professionIdentify,
             professionFlow, professionContinuity, professionXpStudy,
-            professionJobStudy, identityName, identityFields, expectedClassId);
+            professionJobStudy, checkPublicJobIds, identityName, identityFields, expectedClassId);
     }
 }

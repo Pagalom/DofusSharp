@@ -336,3 +336,16 @@ sur le poste Windows utilisé. Aucun résultat de la
 suite complète `dotnet test` n'a été fourni pour
 cette exécution. Ne pas déclencher de mapping
 automatique ni de tests multicomptes.
+
+## P3g — Hypothèse de table publique, en attente de vérification réelle
+
+L'extension optionnelle `--profession-job-study --check-public-job-ids`
+compare en mémoire le champ `ipz.f1.f5` aux identifiants publics de
+`Jobs.json` (Frigost.dev, fichier indexé au 9 octobre 2026).
+La référence présente 23 IDs ; l'ancien roster de 20 métiers n'est
+pas supposé identique à toutes les versions Dofus.
+
+**Aucune validation réseau du mapping public n'est encore reçue.**
+L'observation P3f.3 ne montrait que la stabilité/distinction de `f1.f5`
+et ne permet pas de retrouver ses valeurs a posteriori.
+Voir `docs/modular-workspace-p3g-public-job-id-check.md`.

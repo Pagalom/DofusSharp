@@ -424,3 +424,34 @@ Les opcodes étant obfusqués et susceptibles de tourner entre builds, le reste 
 - pas encore de résolution UID -> DofusDbId pour le concassage ;
 - aucune écriture dans `bestcrush.db` ;
 - aucun remplacement de F8/F9/OCR à ce stade.
+
+
+### P3g : vérifier les identifiants publics des métiers et les 20 lignes ipz
+
+Ce diagnostic **opt-in** enrichit P3f sans toucher aux données BestCrush :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-job-study --check-public-job-ids
+```
+
+
+Démarrer le probe **avant** de connecter le personnage, afin de capter
+le `ipz` complet (20 lignes) ; conserver le même client et la même connexion
+TCP pour les deux métiers et au moins deux fabrications XP par métier.
+Après Ctrl+C, saisir `index:Métier:Niveau:XP` comme dans P3f.
+
+Le contrôle P3g compare localement `f1.f5` à une table **publique et
+non encore validée pour Dofus 3.6.11.15** (Frigost.dev, `Jobs.json`,
+9 octobre 2026). Il affiche seulement `match=yes/no/unavailable`.
+Si et seulement si le résultat est `yes`, il examine le roster complet
+et indique combien des **20 métiers de référence** y figurent, les
+éventuels noms publics absents/ajoutés et la présence de doublons.
+La source contient **23** ID (notamment Base, Bestiologue, Éleveur) ;
+20 lignes de capture ne prouvent pas à elles seules que les 20 ID de
+référence sont présents. Le roster peut être `not-captured`.
+
+Les valeurs numériques observées sur le réseau, niveaux, XP, noms de
+personnages, adresses et paquets ne sont pas affichés ou persistés.
+Résultat positif = concordance **locale**, pas preuve d'identité
+compte/serveur ni activation du mapping de production.
+Voir `docs/modular-workspace-p3g-public-job-id-check.md`.
