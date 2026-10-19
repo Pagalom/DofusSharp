@@ -148,6 +148,84 @@ public sealed class ProfessionXpWireStudy
         }
     }
 
+    /// <summary>
+    /// P3f: verify two different professions, each observed at least twice.
+    /// The matching fields must track the operator's level and XP across
+    /// *all* references before we compare stable candidate job fields.
+    /// No profession names, values or identifiers are returned or persisted.
+    /// </summary>
+    public string CompareJobs(IReadOnlyList<ProfessionJobReference> references)
+    {
+        ArgumentNullException.ThrowIfNull(references);
+        lock (_sync)
+        {
+            if (!ProfessionJobReferenceInput.Validate(references, _observations.Count))
+                return "p3f=invalid-local-references mapping=unverified";
+
+            var groups = references.GroupBy(r => r.Profession,
+                    StringComparer.OrdinalIgnoreCase).ToArray();
+
+            bool levelMatches = references.All(r =>
+                _observations[r.Index - 1].TryGetValue(1, out ulong value) &&
+                value == (ulong)r.Level);
+            bool xpMatches = references.All(r =>
+                _observations[r.Index - 1].TryGetValue(2, out ulong value) &&
+                value == r.Xp);
+
+            if (!levelMatches || !xpMatches)
+                return "p3f=references-not-confirmed" +
+                    " level-match=" + (levelMatches ? "yes" : "no") +
+                    " xp-match=" + (xpMatches ? "yes" : "no") +
+                    " candidate-paths=[none]" +
+                    " account=unverified server=unverified mapping=unverified";
+
+            IReadOnlyDictionary<int, ulong> first =
+                _observations[references[0].Index - 1];
+
+            int[] candidates = first.Keys
+                // f1.f1 (level) and f1.f2 (XP) are already characterized,
+                // so neither can establish a stable job identifier.
+                .Where(field => field is >= 3 and <= 64)
+                .Where(field => references.All(r =>
+                    _observations[r.Index - 1].ContainsKey(field)))
+                .Where(field =>
+                {
+                    ulong[] valuesPerJob = [];
+                    foreach (var group in groups)
+                    {
+                        ulong[] values = group
+                            .Select(r => _observations[r.Index - 1][field])
+                            .Distinct().ToArray();
+                        if (values.Length != 1)
+                            return false;
+                        valuesPerJob = [.. valuesPerJob, values[0]];
+                    }
+
+                    return valuesPerJob.Distinct().Count() == groups.Length;
+                })
+                .OrderBy(field => field)
+                .ToArray();
+
+            string fields = candidates.Length == 0 ? "none" :
+                string.Join(",", candidates.Select(n => "f1.f" + n));
+            string status = candidates.Length switch
+            {
+                0 => "none",
+                1 => "single-candidate",
+                _ => "ambiguous"
+            };
+
+            return "p3f=compared references=" + references.Count +
+                " professions=" + groups.Length +
+                " level-match=yes xp-match=yes" +
+                " candidate-paths=[" + fields + "]" +
+                " f1.f5-stable-distinct=" +
+                (candidates.Contains(5) ? "yes" : "no") +
+                " candidate-status=" + status +
+                " account=unverified server=unverified mapping=unverified";
+        }
+    }
+
     private static Dictionary<int, ulong>? ParseSingleRow(ReadOnlySpan<byte> body)
     {
         try
@@ -185,5 +263,99 @@ public sealed class ProfessionXpWireStudy
         {
             return null;
         }
+    }
+}
+
+
+/// <summary>
+/// One operator observation after a craft. Job names are a validated public
+/// profession taxonomy, NOT personal character or account identifiers.
+/// </summary>
+public readonly record struct ProfessionJobReference(
+    int Index, string Profession, int Level, ulong Xp)
+{
+    public override string ToString() => "[local profession reference: redacted]";
+}
+
+/// <summary>
+/// P3f uses its own input validation: XP values can jump between professions
+/// and must increase only within the *same* named profession.
+/// </summary>
+public static class ProfessionJobReferenceInput
+{
+    public static bool TryParse(
+        string? input, out IReadOnlyList<ProfessionJobReference> references)
+    {
+        references = [];
+        if (string.IsNullOrWhiteSpace(input) || input.Length > 900)
+            return false;
+
+        string[] parts = input.Split(',', StringSplitOptions.TrimEntries);
+        if (parts.Length is < 4 or > 16)
+            return false;
+
+        List<ProfessionJobReference> found = [];
+        foreach (string part in parts)
+        {
+            string[] columns = part.Split(':', StringSplitOptions.TrimEntries);
+            if (columns.Length != 4 ||
+                !int.TryParse(columns[0], NumberStyles.None,
+                    CultureInfo.InvariantCulture, out int index) ||
+                !ProfessionStudyReferenceInput.IsKnownName(columns[1]) ||
+                !int.TryParse(columns[2], NumberStyles.None,
+                    CultureInfo.InvariantCulture, out int level) ||
+                !ulong.TryParse(columns[3], NumberStyles.None,
+                    CultureInfo.InvariantCulture, out ulong xp))
+                return false;
+
+            found.Add(new ProfessionJobReference(
+                index, columns[1], level, xp));
+        }
+
+        if (!Validate(found, 16))
+            return false;
+
+        references = found.AsReadOnly();
+        return true;
+    }
+
+    public static bool Validate(
+        IReadOnlyList<ProfessionJobReference> references, int availableCount)
+    {
+        if (references.Count is < 4 or > 16)
+            return false;
+
+        int previousIndex = 0;
+        foreach (ProfessionJobReference r in references)
+        {
+            if (r.Index <= previousIndex || r.Index > availableCount ||
+                r.Level is < 1 or > 200 || r.Xp > 1_000_000_000_000 ||
+                !ProfessionStudyReferenceInput.IsKnownName(r.Profession))
+                return false;
+
+            previousIndex = r.Index;
+        }
+
+        var groups = references
+            .GroupBy(r => r.Profession, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        if (groups.Length is < 2 or > 5 || groups.Any(g => g.Count() < 2))
+            return false;
+
+        foreach (var group in groups)
+        {
+            ProfessionJobReference? previous = null;
+            foreach (ProfessionJobReference current in group)
+            {
+                if (previous.HasValue &&
+                    (current.Level < previous.Value.Level ||
+                     current.Xp <= previous.Value.Xp))
+                    return false;
+                previous = current;
+            }
+        }
+
+        return true;
     }
 }

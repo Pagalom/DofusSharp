@@ -24,7 +24,8 @@ internal sealed class CharacterMetadataProbe(
     int? expectedClassId = null,
     bool studyProfessionFlow = false,
     bool studyProfessionContinuity = false,
-    ProfessionXpWireStudy? professionXpStudy = null) : IDisposable
+    ProfessionXpWireStudy? professionXpStudy = null,
+    bool professionJobStudy = false) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterCaptureFlowTracker _flows = new(
@@ -49,6 +50,7 @@ internal sealed class CharacterMetadataProbe(
     private readonly bool _professionFlowProbe = studyProfessionFlow;
     private readonly bool _professionContinuityProbe = studyProfessionContinuity;
     private readonly bool _professionXpProbe = professionXpStudy is not null;
+    private readonly bool _professionJobProbe = professionJobStudy;
     private readonly Dictionary<(int Session, string Opcode), HashSet<string>>
         _reportedShapes = new();
 
@@ -196,7 +198,8 @@ internal sealed class CharacterMetadataProbe(
                       (_identityFieldProbe ? $" IDENTITY_FIELDS=[{entry.CharacterIdentityFieldSummary}]" : "") +
                       (_professionFlowProbe ? $" PROFESSION_FLOW=[{entry.ProfessionFlowSummary}]" : "") +
                       (_professionContinuityProbe ? $" PROFESSION_CONTINUITY=[{entry.ProfessionContinuitySummary}]" : "") +
-                      (_professionXpProbe ? $" PROFESSION_XP=[{entry.ProfessionXpStudySummary}]" : "")
+                      (_professionXpProbe
+                          ? $" {(_professionJobProbe ? "PROFESSION_JOB" : "PROFESSION_XP")}=[{entry.ProfessionXpStudySummary}]" : "")
                     : entry.Kind.ToString().ToUpperInvariant();
 
                 Console.WriteLine(

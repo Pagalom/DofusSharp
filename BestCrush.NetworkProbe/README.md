@@ -234,6 +234,60 @@ statistiques des champs inconnus. Voir `docs/modular-workspace-p1d-ipz-professio
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-decode
 ```
 
+### Étude comparative des métiers (P3f — expérimental)
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --profession-job-study
+```
+
+**Ne pas utiliser `--profession-xp-study` pour comparer deux métiers :**
+ce mode P3e impose que les XP augmentent globalement, ce qui
+n'est pas vrai lorsqu'on change de métier.
+
+Le mode **P3f** est indépendant et **opt-in**.
+Il conserve temporairement les champs numériques de 16 messages
+`ipz` mono-entrée au maximum, dans la première session TCP
+observée. Ni contenu brut, ni identifiant de métier, ni ID de compte
+ne sont affichés ou enregistrés.
+
+Protocole conseillé sur un seul compte/client et serveur :
+
+1. Choisir deux métiers, par exemple **Sculpteur** et **Bricoleur**.
+   Pour chaque métier, connaître le niveau et l'XP affichés
+   **après la fabrication**. Noter l'index `PROFESSION_JOB` associé.
+2. Effectuer **deux fabrications donnant de l'XP par métier**,
+   idéalement dans l'ordre Sculpteur → Bricoleur → Sculpteur →
+   Bricoleur. Deux fabrications consécutives de chaque métier
+   sont aussi acceptées si les ateliers sont éloignés.
+3. Arrêter avec **Ctrl+C** puis renseigner :
+   `index:Métier:Niveau:XP`, index croissants. Exemple **fictif** :
+
+   ```text
+   1:Sculpteur:6:390,2:Bricoleur:12:875,3:Sculpteur:6:420,4:Bricoleur:12:900
+   ```
+
+Les valeurs d'XP doivent progresser **pour chaque métier séparément**,
+pas nécessairement entre deux métiers différents. Au moins
+deux références par métier et au moins deux métiers sont requis.
+Les autres `ipz` sans fabrication peuvent être omis en sautant
+leur index. Les champs niveau (`f1.f1`) et XP (`f1.f2`) doivent
+correspondre aux références pour **tous** les événements retenus ;
+sinon, aucun candidat de métier n'est déclaré.
+
+Le résultat `p3f=compared` contient uniquement les **chemins**
+des champs stables au sein de chaque métier et distincts entre métiers,
+ainsi que `f1.f5-stable-distinct=yes/no`. Un résultat
+`candidate-status=ambiguous` est normal : les seuils d'XP
+peuvent également être stables pour un métier. Même
+`candidate-status=single-candidate` ne prouve pas un ID
+de métier global ; un autre métier, plusieurs niveaux
+ou une nouvelle session devront servir de contrôles.
+
+**Aucun mapping n'est créé** dans BestCrush ; compte et serveur
+non vérifiés. Les tests d'isolation multi-comptes restent
+reportés. Voir
+`docs/modular-workspace-p3f-profession-identity-study.md`.
+
 ### Diagnostic XP métier mono-entrée (P3e — expérimental)
 
 ```powershell
