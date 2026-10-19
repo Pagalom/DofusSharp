@@ -3,10 +3,10 @@ using System.Collections.ObjectModel;
 namespace BestCrush.Network.Protocol;
 
 /// <summary>
-/// PUBLIC, UNVERIFIED reference list for the opt-in P3g network probe ONLY.
+/// PUBLIC name-ID reference used by the opt-in P3g probe ONLY.
 /// Source: https://www.frigost.dev/API/Dofus%203.0/Data/Jobs.json
 /// (directory dated 2026-10-09). This is not the runtime BestCrush mapping.
-/// The source lists 23 IDs, but historical ipz captures contain 20 rows.
+/// The source lists 23 IDs. P3g.1 observed 20 distinct known IDs in ipz.
 /// </summary>
 public static class ProfessionPublicJobIdReference
 {
@@ -40,13 +40,15 @@ public static class ProfessionPublicJobIdReference
             });
 
     /// <summary>
-    /// Historical twenty-job reference, NOT a proven Dofus 3.6.11.15 roster.
-    /// Base, Bestiologue and Éleveur are tracked as public extras.
+    /// Twenty IDs observed together in an anonymized Dofus 3.6.11.15
+    /// ipz roster (P3g.1, 2026-10-19 UTC). Name associations beyond
+    /// the directly tested jobs still rely on the public reference.
+    /// Base, Bestiologue and Parchomage remain public extras.
     /// </summary>
     public static IReadOnlyList<ulong> ReferenceTwenty { get; } =
         Array.AsReadOnly(new ulong[]
         {
             2, 11, 13, 15, 16, 24, 26, 27, 28, 36,
-            41, 44, 48, 60, 62, 63, 64, 65, 74, 75
+            41, 44, 48, 60, 62, 63, 64, 65, 74, 79
         });
 }

@@ -455,3 +455,12 @@ personnages, adresses et paquets ne sont pas affichés ou persistés.
 Résultat positif = concordance **locale**, pas preuve d'identité
 compte/serveur ni activation du mapping de production.
 Voir `docs/modular-workspace-p3g-public-job-id-check.md`.
+
+
+**P3g.1 (capture 2026-10-19 UTC)** : `match=yes` sur Cordonnier=15
+et Sculpteur=13. La capture complète a donné vingt ID distincts, tous
+connus, mais l'ancienne liste de test P3g attendait Parchomage=75
+et non Éleveur=79 : d'où 19/20. Le nouveau jeu de 20 valeurs
+reprend celui déjà décrit dans le mapping versionné de recherche.
+Les associations des autres métiers ne sont pas individuellement
+revalidées par P3g.1. L'attribution à compte/serveur reste bloquée.

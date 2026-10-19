@@ -64,3 +64,54 @@ dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
 Tests synthétiques de conformité des ID, désaccord de niveau/XP,
 roster complet/incomplet, isolation TCP et absence d'ID réseau
 dans les sorties. Ne pas mener de tests multicomptes.
+
+
+## P3g.1 — Capture réelle, 20 ID connus, 2 correspondances directes
+
+**Date : 19 octobre 2026 UTC (20 octobre, heure de Paris).**
+Dofus 3.6.11.15 ; première session TCP valide ; capture démarrée
+avant la connexion au personnage ; `ipz` complet de 303 octets,
+20 lignes, suivi de quatre messages mono-entrée de 15 octets chacun.
+
+Le comparateur local a confirmé : `level-match=yes xp-match=yes`,
+`candidate-paths=[f1.f5]` et `candidate-status=single-candidate`.
+La vérification des ID publics a rendu `p3g=public-id-check match=yes`
+sur **Cordonnier (15) et Sculpteur (13)**, deux observations de
+progression XP par métier. Aucun niveau ni compteur d'XP privé
+n'est conservé dans ce document.
+
+Le roster complet a rendu, relativement à **l'ancienne référence P3g** :
+
+```text
+rows=20 unique-f5=yes reference20-present=19/20 missing-public-names=[Parchomage] extra-public-names=[Éleveur] unknown-id-count=0 missing-f5-count=0
+```
+
+
+Ces vingt identifiants sont tous distincts et tous présents dans la
+nomenclature publique de 23 ID. Le jeu de 20 ID observé est
+**exactement** l'ensemble de référence après remplacement de
+Parchomage (75) par Éleveur (79), déjà indiqué dans le fichier
+versionné `ipz-profession-mapping.3.6.11.15.json`.
+
+Le référentiel d'essai P3g a été corrigé en conséquence.
+**Le résultat historique 19/20 n'était pas un échec de capture** :
+c'était une divergence entre l'ancienne liste de test et
+les 20 ID effectivement présents.
+
+**Portée de la validation :**
+- deux correspondances directes nom ↔ valeur `f1.f5` pendant cette session ;
+- la présence des 20 valeurs publiques attendues sur le réseau ;
+- les 18 autres noms s'appuient sur la nomenclature publique et les
+  corrélations P1 antérieures documentées dans le dépôt, sans
+  nouvelle comparaison de craft individuelle en P3g.1.
+
+Aucune identité compte/serveur n'a été validée. On ne lie pas les
+données de métiers à un personnage. Aucun mapping runtime de BestCrush
+n'est activé et `professionId` reste nul dans le fichier
+de recherche jusqu'à autorisation et qualification de l'usage ciblé.
+
+La ligne partagée par l'opérateur concaténait textuellement
+`unknown-id-count=0missing-f5-count=0`, mais le code examiné
+contient déjà un espace entre les deux champs. Un test protège
+maintenant ce séparateur ; sans reproduction, aucune cause
+technique n'est attribuée.

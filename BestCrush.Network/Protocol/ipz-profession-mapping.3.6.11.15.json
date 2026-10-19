@@ -3,7 +3,7 @@
   "opcode": "ipz",
   "direction": "server-to-client",
   "rowPath": "f1",
-  "schemaStatus": "research-only-twenty-observed-candidates-awaiting-global-and-character-validation",
+  "schemaStatus": "research-only-20-public-f5-ids-observed-direct-id-correlation-for-two-jobs-ownership-unverified",
   "fields": [
     {
       "path": "f1.f1",
@@ -28,7 +28,7 @@
     {
       "path": "f1.f5",
       "hypothesis": "profession-global-id",
-      "status": "twenty-observed-unambiguous-profession-correlations-in-ipz-global-identity-unverified"
+      "status": "20-distinct-public-ids-observed-direct-public-id-match-for-two-jobs-ownership-unverified"
     },
     {
       "path": "f1.f6",
@@ -36,7 +36,7 @@
       "status": "confirmed-six-reference-threshold-matches"
     }
   ],
-  "note": "All twenty candidateProfessionId values have been associated with named profession level/cumulative-XP references in live ipz captures on client 3.6.11.15. Some values are also historically corroborated. professionId remains null pending validation of global identity and per-character session binding. Do not version personal XP, character IDs, TCP session details or payloads. Confirmed game scope since DOFUS 3.3 is account plus server, not a single character. Actual account/server wire identity remains unverified.",
+  "note": "The protocol reference already lists exactly the 20 distinct public IDs present in the P3g.1 2026-10-19 UTC capture, including Eleveur 79 and not Parchomage 75. The craft comparisons directly verified Cordonnier 15 and Sculpteur 13, with matching level and cumulative XP. Other profession labels are supported by earlier live correlations and public reference, not individually re-tested by P3g.1. professionId remains null: no account/server wire identity established, no character or account attribution, and no runtime promotion. Never store player names, XP, TCP session details, or payloads.",
   "professions": [
     {
       "name": "Alchimiste",
@@ -212,6 +212,13 @@
       "scope": "nine-remaining-professions-unambiguous",
       "build": "3.6.11.15",
       "detail": "20 rows, pairs=9/9, f5 unique across 20 rows, candidate-links=9/9. IDs observed: Bijoutier 16; Bricoleur 65; Cordonnier 15; Costumage 64; Façonneur 60; Forgeron 11; Mineur 24; Pêcheur 36; Sculpteur 13. No individual XP stored."
+    },
+    {
+      "kind": "live-ipz-p3g-public-id-check",
+      "scope": "one TCP session; two named professions; twenty-entry roster",
+      "build": "3.6.11.15",
+      "observedUtc": "2026-10-19",
+      "detail": "Mono-ipz: 4/4 level and XP references match; f1.f5 alone discriminates; f1.f5 equals Cordonnier 15 and Sculpteur 13 from the public table. Full ipz: 20 distinct IDs, all known; P3g initial 19/20 baseline omitted Eleveur 79 and expected absent Parchomage 75. Reference now aligns with historical mapping file. No account or server identity confirmed."
     }
   ],
   "ownershipScope": "account-and-server-not-character",

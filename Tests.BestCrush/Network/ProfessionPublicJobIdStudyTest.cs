@@ -43,6 +43,7 @@ public sealed class ProfessionPublicJobIdStudyTest
         ProfessionPublicJobIdReference.ByName["Sculpteur"].Should().Be(13);
         ProfessionPublicJobIdReference.ByName["Cordonnier"].Should().Be(15);
         ProfessionPublicJobIdReference.ByName["Bricoleur"].Should().Be(65);
+        ProfessionPublicJobIdReference.ReferenceTwenty.Should().Contain(79).And.NotContain(75);
     }
 
     [Fact]
@@ -84,6 +85,7 @@ public sealed class ProfessionPublicJobIdStudyTest
         summary.Should().Contain("status=reference20-complete")
             .And.Contain("reference20-present=20/20")
             .And.Contain("unique-f5=yes")
+            .And.Contain("unknown-id-count=0 missing-f5-count=0")
             .And.NotContain(" 13 ").And.NotContain(" 15 ");
     }
 
@@ -92,14 +94,14 @@ public sealed class ProfessionPublicJobIdStudyTest
     {
         ProfessionXpWireStudy study = new(checkPublicJobIds: true);
         ulong[] ids = [.. ProfessionPublicJobIdReference.ReferenceTwenty];
-        ids[0] = 79; // public extra Éleveur, replaces Bûcheron
+        ids[0] = 75; // public extra Parchomage, replaces Bûcheron
         study.Observe(1, Roster(ids));
         string summary = study.DescribePublicRoster(true);
         summary.Should().Contain("status=reference20-differs")
             .And.Contain("reference20-present=19/20")
             .And.Contain("missing-public-names=[Bûcheron]")
-            .And.Contain("extra-public-names=[Éleveur]")
-            .And.NotContain(" 79 ");
+            .And.Contain("extra-public-names=[Parchomage]")
+            .And.NotContain(" 75 ");
     }
 
     [Fact]
