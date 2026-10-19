@@ -145,6 +145,83 @@ entre métiers, constance/distinction de
 rejet de faux contrôles, sécurité des
 résultats et respect des sens TCP.
 
-**Statut :** code de diagnostic créé ;
-compilation et validation sur trafic
-réel **en attente du checkpoint Windows**.
+**Statut initial :** code du diagnostic créé.
+L'exécution Windows réelle est documentée dans
+le checkpoint P3f.1 ci-dessous ; le résultat
+séparé de la suite `dotnet test` reste à obtenir.
+
+
+## P3f.1 — Première comparaison réelle de deux métiers
+
+L'opérateur a lancé avec succès le mode
+`--profession-job-study` sous Windows, sur
+une session TCP unique de Dofus 3.6.11.15.
+
+Quatre réponses `ipz` mono-entrée ont été
+observées à 10:10:48.564, 10:11:44.045,
+10:12:15.334 et 10:12:49.680 UTC.
+
+| Index | Métier de référence | Niveau | XP affichée | Taille `ipz` |
+| --- | --- | ---: | ---: | ---: |
+| 1 | Sculpteur | 6 | 390 | 15 octets |
+| 2 | Bricoleur | 2 | 58 | 12 octets |
+| 3 | Sculpteur | 7 | 434 | 15 octets |
+| 4 | Bricoleur | 3 | 85 | 12 octets |
+
+Les valeurs sont des références **manuellement
+saisies** et comparées **uniquement en RAM**
+aux champs numériques du réseau.
+
+- Sculpteur : **+44 XP**, niveau **6 → 7**.
+- Bricoleur : **+27 XP**, niveau **2 → 3**.
+- Le contrôle niveau `f1.f1` est validé
+  sur les quatre références.
+- Le contrôle XP `f1.f2` est validé
+  sur les quatre références.
+- Seul `f1.f5` reste stable par métier
+  tout en différant entre les deux métiers.
+
+Résultat du probe (anonymisé) :
+
+```text
+p3f=compared references=4 professions=2 level-match=yes xp-match=yes candidate-paths=[f1.f5] f1.f5-stable-distinct=yes candidate-status=single-candidate account=unverified server=unverified mapping=unverified
+```
+
+**Conclusion :** l'hypothèse
+`ipz.f1.f5 = identifiant de métier` est
+désormais fortement étayée par une expérience
+réelle à deux métiers, chacun avec changement
+de niveau, au-delà des comparaisons de taille
+et de l'XP déjà réalisées en P3e. Le probe
+ne révèle pas les valeurs de `f1.f5` et
+ne crée **aucune table de correspondance**
+entre ces valeurs et les noms de métiers.
+L'unicité d'un champ candidat sur quatre
+observations ne constitue pas encore
+une preuve d'identifiant global.
+
+La même trace a été fournie deux fois par
+l'opérateur ; la compter **une seule fois**,
+pas comme une répétition indépendante.
+
+### Suite expérimentale envisagée
+
+Réaliser un contrôle avec un **troisième métier**
+(Cordonnier, Forgemage ou Sculptemage) et
+un métier témoin déjà étudié, à deux
+fabrications par métier. Si `f1.f5` reste
+le seul champ stable et discriminant malgré
+des changements de niveau, confirmer
+une nouvelle fois l'hypothèse. Ensuite
+concevoir un mapping **local, explicitement
+validé**, si nécessaire, sans attribution
+automatique à un compte tant que P3c
+ne fournit pas une identité vérifiée.
+
+**Statut P3f.1 : validation réelle positive**
+pour la discrimination Sculpteur/Bricoleur
+par `f1.f5`. Compilation implicite
+confirmée par le lancement réussi du probe ;
+la suite Windows `dotnet test` n'a pas
+été communiquée. `account=unverified`,
+`server=unverified`, `mapping=unverified`.
