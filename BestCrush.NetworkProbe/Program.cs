@@ -69,7 +69,7 @@ ProtocolMap map = ProtocolMap.Load(mapPath);
 
 Console.WriteLine(options.WindowFlowLink
     ? "BestCrush Network Probe — P3k lien Windows/Npcap (sans decodage metier)"
-    : $"BestCrush Network Probe — Dofus {map.ClientBuild}");
+    : $"BestCrush Network Probe — mapping de référence {map.ClientBuild} (build réel du jeu non vérifié)");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
 if (options.WindowFlowLink)

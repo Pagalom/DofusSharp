@@ -132,4 +132,83 @@ public sealed class LiveDofusClientNetworkBindingsTest
         state.Observe(A, 1, [], [WindowA]).Should().BeFalse();
         state.IsLinked(WindowA).Should().BeFalse();
     }
+    [Fact]
+    public void TwoVerifiedTcpConnectionsGetDifferentLocalWindowContexts()
+    {
+        LiveDofusClientNetworkBindings state = new();
+        TcpSocketOwner[] sockets = [new(A, 1201), new(B, 1202)];
+        DofusClientWindowKey[] windows = [WindowA, WindowB];
+        state.Observe(A, 31, sockets, windows).Should().BeTrue();
+        state.Observe(B, 31, sockets, windows).Should().BeTrue();
+
+        state.ResolveConnection(A, 31, 11).Should().Be(WindowA);
+        state.ResolveConnection(B, 31, 12).Should().Be(WindowB);
+        state.IsCurrentConnection(A, 31, 11, WindowA).Should().BeTrue();
+        state.IsCurrentConnection(31, 11, WindowA).Should().BeTrue();
+        state.IsCurrentConnection(A, 31, 11, WindowB).Should().BeFalse();
+        state.IsCurrentConnection(B, 31, 12, WindowB).Should().BeTrue();
+    }
+
+    [Fact]
+    public void StaleLogicalConnectionCannotReclaimSameReusedTcpSocket()
+    {
+        LiveDofusClientNetworkBindings state = new();
+        state.Observe(A, 31, [new(A, 1201)], [WindowA]).Should().BeTrue();
+
+        state.ResolveConnection(A, 31, 11).Should().Be(WindowA);
+        state.ResolveConnection(A, 31, 12).Should().Be(WindowA);
+        state.IsCurrentConnection(A, 31, 11, WindowA).Should().BeFalse();
+        state.IsCurrentConnection(31, 11, WindowA).Should().BeFalse();
+        state.ResolveConnection(A, 31, 11).Should().BeNull();
+        state.IsCurrentConnection(A, 31, 12, WindowA).Should().BeTrue();
+    }
+
+    [Fact]
+    public void MissingOrUnlinkedSocketNeverGetsClientContext()
+    {
+        LiveDofusClientNetworkBindings state = new();
+        state.ResolveConnection(A, 31, 11).Should().BeNull();
+        state.Observe(A, 31, [new(B, 1201)], [WindowA]).Should().BeFalse();
+        state.ResolveConnection(A, 31, 11).Should().BeNull();
+        state.ResolveConnection(B, 31, 0).Should().BeNull();
+        state.IsCurrentConnection(A, 31, 11, WindowA).Should().BeFalse();
+    }
+
+    [Fact]
+    public void WindowClosureOrNewCaptureRevokesAlreadyAssociatedMessageContext()
+    {
+        LiveDofusClientNetworkBindings state = new();
+        state.Observe(A, 31, [new(A, 1201)], [WindowA]).Should().BeTrue();
+        state.ResolveConnection(A, 31, 11).Should().Be(WindowA);
+
+        state.RemoveMissingWindows([]);
+        state.IsCurrentConnection(A, 31, 11, WindowA).Should().BeFalse();
+        state.IsCurrentConnection(31, 11, WindowA).Should().BeFalse();
+        state.ResolveConnection(A, 31, 11).Should().BeNull();
+
+        state.Reset(32);
+        state.Observe(A, 32, [new(A, 1201)], [WindowA]).Should().BeTrue();
+        state.ResolveConnection(A, 32, 12).Should().Be(WindowA);
+        state.IsCurrentConnection(A, 31, 11, WindowA).Should().BeFalse();
+        state.IsCurrentConnection(31, 11, WindowA).Should().BeFalse();
+        state.IsCurrentConnection(A, 32, 12, WindowA).Should().BeTrue();
+        state.IsCurrentConnection(32, 12, WindowA).Should().BeTrue();
+    }
+
+    [Fact]
+    public void CandidateWindowOnWireMessageIsNotCharacterIdentity()
+    {
+        var message = new DofusWireMessage(
+            "S→C", "ipz", [], DateTime.UtcNow,
+            new NetworkCaptureLease("ExampleServer", 1),
+            CaptureEpoch: 31,
+            ConnectionId: 11,
+            CandidateWindow: WindowA);
+
+        message.CandidateWindow.Should().Be(WindowA);
+        message.ConnectionId.Should().Be(11);
+        new CurrentCharacterState().Characters.Should().BeEmpty();
+        new CurrentAccountProfessionsState().ActiveSnapshot.Should().BeNull();
+    }
+
 }

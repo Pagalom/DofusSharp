@@ -543,12 +543,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
             if (tcp.PayloadData.Length == 0)
                 return;
 
-            // Research-only local OS link, not account or profile ownership.
-            ObserveLiveDofusClient(
-                ip.SourceAddress, tcp.SourcePort,
-                ip.DestinationAddress, tcp.DestinationPort,
-                captureEpoch);
-
             NetworkCaptureLease? lease =
                 _currentServerState.GetCaptureLease();
 
@@ -580,6 +574,13 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     flow, lease.Value, now,
                     static () => new TcpReassembler());
             }
+
+            // The 4-tuple and opaque logical TCP connection ID must BOTH
+            // match before we attach a window to the in-memory message.
+            DofusClientWindowKey? candidateWindow = ObserveLiveDofusClient(
+                ip.SourceAddress, tcp.SourcePort,
+                ip.DestinationAddress, tcp.DestinationPort,
+                captureEpoch, connectionId);
 
             try
             {
@@ -630,7 +631,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                         DateTime.UtcNow,
                                         lease,
                                         captureEpoch,
-                                        ConnectionId: connectionId));
+                                        ConnectionId: connectionId,
+                                        CandidateWindow: candidateWindow));
                             }
                         }
                     }
@@ -663,20 +665,21 @@ public sealed class DofusNetworkCaptureService : IDisposable
         }
     }
 
-    private void ObserveLiveDofusClient(
+    private DofusClientWindowKey? ObserveLiveDofusClient(
         System.Net.IPAddress source, int sourcePort,
         System.Net.IPAddress destination, int destinationPort,
-        long captureEpoch)
+        long captureEpoch, long connectionId)
     {
         if (_clientBindings is null || _dofusWindowService is null ||
-            !_started || captureEpoch != Interlocked.Read(ref _captureEpoch))
-            return;
+            !_started || captureEpoch != Interlocked.Read(ref _captureEpoch) ||
+            connectionId <= 0)
+            return null;
 
         TcpSocketTuple? candidate = TcpSocketTuple.FromPacket(
             source, sourcePort, destination, destinationPort, DofusPort);
         if (candidate is not { } tuple ||
             source.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
-            return;
+            return null;
 
         try
         {
@@ -699,9 +702,13 @@ public sealed class DofusNetworkCaptureService : IDisposable
                         captureEpoch, _clientSockets, _clientWindows);
                 }
 
-                if (_started && captureEpoch == Interlocked.Read(ref _captureEpoch))
+                if (_started && captureEpoch == Interlocked.Read(ref _captureEpoch) &&
                     _clientBindings.Observe(
-                        tuple, captureEpoch, _clientSockets, _clientWindows);
+                        tuple, captureEpoch, _clientSockets, _clientWindows))
+                {
+                    return _clientBindings.ResolveConnection(
+                        tuple, captureEpoch, connectionId);
+                }
             }
         }
         catch (Exception ex)
@@ -711,6 +718,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 "Association fenetre/flux indisponible : {Reason}.",
                 ex.GetType().Name);
         }
+        return null;
     }
 
     private async Task ProcessMessagesAsync(
@@ -730,10 +738,22 @@ public sealed class DofusNetworkCaptureService : IDisposable
                         message.CaptureEpoch ==
                             Interlocked.Read(ref _captureEpoch))
                     {
+                        // Queued packet metadata must be revalidated:
+                        // a closed window or recycled TCP token cannot
+                        // silently become another client's identity.
+                        DofusWireMessage routed = message;
+                        if (message.CandidateWindow is { } client &&
+                            (_clientBindings is null ||
+                             !_clientBindings.IsCurrentConnection(
+                                 message.CaptureEpoch, message.ConnectionId, client)))
+                        {
+                            routed = message with { CandidateWindow = null };
+                        }
+
                         await _messageProcessor
                             .ProcessMessageAsync(
                                 _map,
-                                message,
+                                routed,
                                 cancellationToken);
                     }
 
