@@ -254,6 +254,12 @@
                         foreground is null ? null :
                             new DofusClientWindowKey(
                                 foreground.Handle.ToInt64(), foreground.ProcessId));
+
+                    // A closed window must lose its network marker even if
+                    // its TCP connection produces no more captured packets.
+                    LiveClientNetworkBindings.RemoveMissingWindows(
+                        CurrentDofusClientsState.Clients
+                            .Select(client => client.Key).ToArray());
                 });
             }
             while (await timer.WaitForNextTickAsync(cancellationToken));
