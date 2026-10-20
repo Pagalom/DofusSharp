@@ -27,8 +27,14 @@ public sealed class CharacterIdentityPairStudy
     {
         CharacterNameLevelReferenceInput.Validate(first);
         CharacterNameLevelReferenceInput.Validate(second);
-        if (string.Equals(first.Name, second.Name, StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("References must name two different characters.");
+        // Names are NOT globally unique: homonyms on different servers
+        // (or with different levels) are valid characters. However two
+        // identical Name+Level references cannot be disambiguated by this
+        // research-only decoder, regardless of client/window selection.
+        if (string.Equals(first.Name, second.Name, StringComparison.OrdinalIgnoreCase) &&
+            first.Level == second.Level)
+            throw new ArgumentException(
+                "Identical name and level references are ambiguous without a verified server/character identity.");
         _references = [first, second];
     }
 

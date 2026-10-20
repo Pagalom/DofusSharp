@@ -31,8 +31,14 @@ dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- -
 ```
 
 
-Saisir **deux noms de personnages différents**, avec leur niveau
-actuel, uniquement dans les deux invites de la console locale :
+Saisir **deux références nom+niveau différentes**, avec leur niveau
+actuel, uniquement dans les deux invites de la console locale.
+Les personnages peuvent porter le **même nom** : dans ce cas,
+leurs **niveaux doivent différer** pour être discriminables par
+ce diagnostic. Si nom et niveau sont identiques, le mode refuse
+la comparaison, même si les personnages jouent sur deux serveurs
+différents. Il faudra alors une preuve de serveur et d'identifiant
+de personnage validée indépendamment du nom :
 
 ```text
 Référence personnage A : NomA:NiveauA
@@ -68,8 +74,11 @@ conclusion en leur présence.
 
 ### Conditions exactes d'une comparaison
 
+- Le nom n'est **jamais un identifiant global** ; il peut être partagé
+  par plusieurs personnages, particulièrement entre serveurs.
 - Chaque référence doit être trouvée **exactement une fois**, par
-  correspondance locale du nom ET du niveau.
+  correspondance locale du nom ET du niveau. Une paire nom+niveau
+  ne suffit pas non plus à prouver l'identité en production.
 - Sur une même session TCP, la référence doit être retrouvée
   dans **deux familles différentes : ksc et ksb**.
 - Dans les deux messages, le parent numérique f3 doit être
@@ -109,7 +118,7 @@ dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
 
 
 Ne lancer le nouvel essai que si le build et les tests réussissent.
-Neuf nouveaux tests synthétiques examinent notamment : f3 différent
+Onze nouveaux tests synthétiques examinent notamment : f3 différent
 ou égal, concordance ksc/ksb, famille manquante, contradiction,
 changement de valeur pour un même personnage, deux références
 partageant une session, confidentialité et intégration avec le

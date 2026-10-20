@@ -110,12 +110,50 @@ public sealed class CharacterIdentityPairStudyTest
     }
 
     [Fact]
-    public void RejectDuplicateNamesRegardlessOfDifferentLevels()
+    public void HomonymsWithDifferentLevelsAreValidReferencesAndStaySeparated()
+    {
+        CharacterNameLevelReference first = new("SameName", 99);
+        CharacterNameLevelReference second = new("SameName", 120);
+        CharacterIdentityPairStudy study = new(first, second);
+
+        byte[] roster = Message(Ksc(first, 111), Ksc(second, 222));
+        study.Observe(2, "ksc", roster)
+            .Should().Contain("confirmed=0/2");
+        study.Observe(2, "ksb", Ksb(first, 111))
+            .Should().Contain("confirmed=1/2");
+        study.Observe(4, "ksc", roster)
+            .Should().Contain("confirmed=1/2");
+        study.Observe(4, "ksb", Ksb(second, 222))
+            .Should().Be("p3m3=pair-complete f3=distinct semantic=unverified");
+    }
+
+    [Fact]
+    public void HomonymsWithSameLevelFailClosedEvenOnSeparateServers()
     {
         Action action = () => new CharacterIdentityPairStudy(
-            new CharacterNameLevelReference("SameName", 99),
+            new CharacterNameLevelReference("SameName", 120),
             new CharacterNameLevelReference("samename", 120));
-        action.Should().Throw<ArgumentException>();
+
+        action.Should().Throw<ArgumentException>()
+            .WithMessage("*ambiguous*");
+    }
+
+    [Fact]
+    public void HomonymsAreNotIdentifiedByNameAlone()
+    {
+        CharacterNameLevelReference first = new("SameName", 99);
+        CharacterNameLevelReference second = new("SameName", 120);
+        CharacterIdentityPairStudy study = new(first, second);
+
+        study.Observe(2, "ksc", Ksc(first, 111))
+            .Should().Contain("confirmed=0/2");
+        study.Observe(2, "ksb", Ksb(first, 111))
+            .Should().Contain("confirmed=1/2");
+        // A ksb for the same name but the wrong level cannot substitute B.
+        study.Observe(4, "ksc", Ksc(first, 222))
+            .Should().Contain("confirmed=1/2");
+        study.Observe(4, "ksb", Ksb(first, 222))
+            .Should().Be("p3m3=conflicted comparison=unverified");
     }
 
     [Fact]

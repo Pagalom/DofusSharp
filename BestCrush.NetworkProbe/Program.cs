@@ -220,7 +220,8 @@ CharacterIdentityPairStudy? identityPairStudy = null;
 if (options.IdentityPair)
 {
     Console.WriteLine();
-    Console.WriteLine("Saisir localement deux personnages DIFFERENTS, sous la forme Nom:Niveau.");
+    Console.WriteLine("Saisir deux références Nom:Niveau. Les noms peuvent être identiques si les niveaux diffèrent.");
+    Console.WriteLine("Même nom ET même niveau : diagnostic impossible sans identité serveur/personnage vérifiée.");
     Console.WriteLine("Les noms, niveaux et valeurs candidates restent en RAM et ne sont jamais affichés.");
     Console.Write("Référence personnage A : ");
     string? rawA = Console.ReadLine();
@@ -229,9 +230,10 @@ if (options.IdentityPair)
 
     if (!CharacterNameLevelReferenceInput.TryParse(rawA, out var first) ||
         !CharacterNameLevelReferenceInput.TryParse(rawB, out var second) ||
-        string.Equals(first.Name, second.Name, StringComparison.OrdinalIgnoreCase))
+        (string.Equals(first.Name, second.Name, StringComparison.OrdinalIgnoreCase) &&
+         first.Level == second.Level))
     {
-        Console.Error.WriteLine("Références invalides : saisir deux noms distincts et niveaux de 1 à 200.");
+        Console.Error.WriteLine("Références invalides : Nom:Niveau valide requis ; deux couples nom+niveau identiques sont indiscernables.");
         return;
     }
 
