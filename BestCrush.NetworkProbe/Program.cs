@@ -49,6 +49,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-flow");
     Console.WriteLine("Pour rechercher localement le nom/niveau dans les messages candidats :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-name");
+    Console.WriteLine("Pour comparer anonymement f3 entre deux personnages, dans deux connexions :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-pair");
     Console.WriteLine("Pour comparer localement les champs numériques ksb et ksc dans une même connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields");
     Console.WriteLine("Pour vérifier le candidat de classe f5.f3 (comparaison anonymisée seulement) :");
@@ -89,6 +91,8 @@ else if (options.CharacterScan)
         ? "Mode P3b : comparaison anonymisée des métiers avec le premier ipz de cette capture."
         : options.ProfessionFlow
         ? "Mode P3a : parcours ksc → ksb → ipz par connexion TCP, compte/serveur NON vérifiés."
+        : options.IdentityPair
+        ? "Mode P3m.3 : comparaison de f3 pour deux personnages, sans valeurs affichées."
         : options.IdentityFields
         ? "Mode P2b : étude des champs voisins du nom/niveau dans ksb et ksc, par connexion TCP."
         : options.IdentityName
@@ -121,6 +125,8 @@ else if (options.CharacterScan)
         Console.WriteLine("Recherche du nom exact en UTF-8 ; les chemins affichés ne prouvent pas l'identité du personnage.");
     if (options.IdentityFields)
         Console.WriteLine("ksb/ksc : recherche des champs égaux (sans leurs valeurs) dans une même session ; ID et identité NON vérifiés.");
+    if (options.IdentityPair)
+        Console.WriteLine("P3m.3 : deux références locales distinctes, deux sessions TCP et deux familles ksc/ksb par personnage. Ne jamais envoyer les références.");
     if (options.ExpectedClassId.HasValue)
         Console.WriteLine("P2i : comparaison locale de f5.f3 à la classe attendue ; aucune valeur réseau affichée, classe NON vérifiée.");
     if (options.ProfessionMatch)
@@ -210,6 +216,31 @@ if (options.ProfessionIdentify)
     Console.WriteLine("Références chargées. Connecter maintenant le personnage.");
 }
 
+CharacterIdentityPairStudy? identityPairStudy = null;
+if (options.IdentityPair)
+{
+    Console.WriteLine();
+    Console.WriteLine("Saisir localement deux personnages DIFFERENTS, sous la forme Nom:Niveau.");
+    Console.WriteLine("Les noms, niveaux et valeurs candidates restent en RAM et ne sont jamais affichés.");
+    Console.Write("Référence personnage A : ");
+    string? rawA = Console.ReadLine();
+    Console.Write("Référence personnage B : ");
+    string? rawB = Console.ReadLine();
+
+    if (!CharacterNameLevelReferenceInput.TryParse(rawA, out var first) ||
+        !CharacterNameLevelReferenceInput.TryParse(rawB, out var second) ||
+        string.Equals(first.Name, second.Name, StringComparison.OrdinalIgnoreCase))
+    {
+        Console.Error.WriteLine("Références invalides : saisir deux noms distincts et niveaux de 1 à 200.");
+        return;
+    }
+
+    identityPairStudy = new CharacterIdentityPairStudy(first, second);
+    rawA = null;
+    rawB = null;
+    Console.WriteLine("Deux références locales chargées. Connecter A, fermer complètement Dofus, puis connecter B, sans interrompre le probe.");
+}
+
 CharacterNameLevelReference? characterNameReference = null;
 if (options.IdentityName || options.IdentityFields)
 {
@@ -274,7 +305,8 @@ else if (options.CharacterScan)
         options.ProfessionFlow,
         options.ProfessionContinuity,
         xpWireStudy,
-        options.ProfessionJobStudy);
+        options.ProfessionJobStudy,
+        identityPairStudy);
 
     probe.Start();
     stop.Wait();
@@ -411,6 +443,7 @@ internal sealed record ProbeOptions(
     bool WindowFlowLink,
     bool IdentityName,
     bool IdentityFields,
+    bool IdentityPair,
     int? ExpectedClassId)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
@@ -446,6 +479,7 @@ internal sealed record ProbeOptions(
         bool windowFlowLink = false;
         bool identityName = false;
         bool identityFields = false;
+        bool identityPair = false;
         int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
@@ -508,6 +542,9 @@ internal sealed record ProbeOptions(
                 case "--identity-fields":
                     identityFields = true;
                     break;
+                case "--identity-pair":
+                    identityPair = true;
+                    break;
                 case "--expected-class-id" when i + 1 < args.Length &&
                     int.TryParse(args[i + 1], out int parsedClassId):
                     i++;
@@ -548,7 +585,8 @@ internal sealed record ProbeOptions(
             (professionXpStudy ? 1 : 0) +
             (professionJobStudy ? 1 : 0) +
             (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
-            (identityFields ? 1 : 0) + (windowFlowLink ? 1 : 0);
+            (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
+            (windowFlowLink ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -570,11 +608,11 @@ internal sealed record ProbeOptions(
             characterScan || characterShape || professionMatch ||
                 professionDecode || professionStudy || professionIdentify ||
                 professionFlow || professionContinuity || professionXpStudy ||
-                professionJobStudy || identityName || identityFields,
+                professionJobStudy || identityName || identityFields || identityPair,
             characterShape, shapeKeys, professionMatch, professionDecode,
             professionStudy, showCandidateJobIds, professionIdentify,
             professionFlow, professionContinuity, professionXpStudy,
             professionJobStudy, checkPublicJobIds, windowFlowLink,
-            identityName, identityFields, expectedClassId);
+            identityName, identityFields, identityPair, expectedClassId);
     }
 }

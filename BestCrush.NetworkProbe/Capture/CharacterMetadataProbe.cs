@@ -25,7 +25,8 @@ internal sealed class CharacterMetadataProbe(
     bool studyProfessionFlow = false,
     bool studyProfessionContinuity = false,
     ProfessionXpWireStudy? professionXpStudy = null,
-    bool professionJobStudy = false) : IDisposable
+    bool professionJobStudy = false,
+    CharacterIdentityPairStudy? identityPairStudy = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterCaptureFlowTracker _flows = new(
@@ -39,14 +40,16 @@ internal sealed class CharacterMetadataProbe(
         expectedClassId: expectedClassId,
         studyProfessionFlow: studyProfessionFlow,
         studyProfessionContinuity: studyProfessionContinuity,
-        professionXpStudy: professionXpStudy);
+        professionXpStudy: professionXpStudy,
+        identityPairStudy: identityPairStudy);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;
     private readonly bool _studyIpz = studyReferences is not null;
     private readonly bool _identifyIpz = identifyReferences is not null;
     private readonly bool _characterNameProbe = characterNameReference is not null;
-    private readonly bool _identityFieldProbe = identityFieldsReference is not null;
+    private readonly bool _identityFieldProbe = identityFieldsReference is not null ||
+        identityPairStudy is not null;
     private readonly bool _professionFlowProbe = studyProfessionFlow;
     private readonly bool _professionContinuityProbe = studyProfessionContinuity;
     private readonly bool _professionXpProbe = professionXpStudy is not null;

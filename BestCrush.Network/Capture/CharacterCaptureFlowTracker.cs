@@ -83,6 +83,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly bool _studyProfessionFlow;
     private readonly ProfessionContinuityStudy? _professionContinuity;
     private readonly ProfessionXpWireStudy? _professionXpStudy;
+    private readonly CharacterIdentityPairStudy? _identityPairStudy;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -107,7 +108,8 @@ public sealed class CharacterCaptureFlowTracker
         int? expectedClassId = null,
         bool studyProfessionFlow = false,
         bool studyProfessionContinuity = false,
-        ProfessionXpWireStudy? professionXpStudy = null)
+        ProfessionXpWireStudy? professionXpStudy = null,
+        CharacterIdentityPairStudy? identityPairStudy = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -212,6 +214,17 @@ public sealed class CharacterCaptureFlowTracker
                 "P2i expected class ID requires the exclusive P2b field study.",
                 nameof(expectedClassId));
         _expectedClassId = expectedClassId;
+
+        if (identityPairStudy is not null &&
+            (characterNameReference is not null || identityFieldsReference is not null ||
+             expectedClassId is not null || shapeKeys is not null ||
+             professionReferences is not null || studyReferences is not null ||
+             identifyReferences is not null || decodeIpz || showCandidateJobIds ||
+             _characterNameOpCodes.Count != 0 || studyProfessionFlow ||
+             studyProfessionContinuity || professionXpStudy is not null))
+            throw new ArgumentException("Pair identity study must run exclusively.",
+                nameof(identityPairStudy));
+        _identityPairStudy = identityPairStudy;
 
         if ((studyProfessionFlow || studyProfessionContinuity || professionXpStudy is not null) &&
             (shapeKeys is not null || professionReferences is not null ||
@@ -371,11 +384,16 @@ public sealed class CharacterCaptureFlowTracker
                                         ? CharacterIdentityNameProbe.Describe(
                                             any.Body, _characterNameReference.Value)
                                         : null,
-                                    _identityFieldsReference.HasValue &&
                                     direction == CharacterCaptureDirection.ServerToClient &&
                                     any.Key is "ksb" or "ksc"
-                                        ? ObserveIdentityFields(
-                                            flow, any.Key, any.Body, _identityFieldsReference.Value)
+                                        ? _identityPairStudy is not null
+                                            ? _identityPairStudy.Observe(
+                                                flow.Number, any.Key, any.Body)
+                                            : _identityFieldsReference.HasValue
+                                                ? ObserveIdentityFields(
+                                                    flow, any.Key, any.Body,
+                                                    _identityFieldsReference.Value)
+                                                : null
                                         : null,
                                     _studyProfessionFlow &&
                                     direction == CharacterCaptureDirection.ServerToClient &&
