@@ -118,13 +118,13 @@ public sealed class NetworkFlowCacheTest
     {
         System.Net.IPAddress local = System.Net.IPAddress.Parse("192.0.2.10");
         System.Net.IPAddress server = System.Net.IPAddress.Parse("198.51.100.20");
-        var outbound = BestCrush.Network.Protocol.TcpSocketTuple.FromPacket(
+        var outbound = global::BestCrush.Network.Protocol.TcpSocketTuple.FromPacket(
             local, 48123, server, 5555, 5555);
-        var inbound = BestCrush.Network.Protocol.TcpSocketTuple.FromPacket(
+        var inbound = global::BestCrush.Network.Protocol.TcpSocketTuple.FromPacket(
             server, 5555, local, 48123, 5555);
 
         outbound.Should().Be(inbound);
-        NetworkFlowCache<BestCrush.Network.Protocol.TcpSocketTuple, long> cache =
+        NetworkFlowCache<global::BestCrush.Network.Protocol.TcpSocketTuple, long> cache =
             new(capacity: 4);
         long next = 0;
         long first = cache.GetOrCreate(
