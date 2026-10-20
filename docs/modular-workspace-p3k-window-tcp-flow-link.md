@@ -76,3 +76,26 @@ Aucune modification de main, release, migration, mapping de métier,
 carte de personnage, ou attribution réseau de production. Le
 sélecteur multiclient reste une prochaine étape conditionnelle
 à la validation réelle du diagnostic.
+
+
+## Observation réelle P3k — deux clients, 20 octobre 2026
+
+Le mode `--window-flow-link` a été exécuté avec deux clients
+Dofus visibles et chacun une connexion TCP/5555.
+
+La sortie anonymisée montre :
+
+```text
+p3k=flow flow-index=1 status=matched window-index=2 account=unverified server=unverified
+p3k=flow flow-index=2 status=matched window-index=1 account=unverified server=unverified
+p3k=summary windows=2 sockets-5555=2 flows-seen=2 flow-matched=2 unique-windows-linked=2 status=two-client-links-candidate account=unverified server=unverified
+```
+
+
+**P3k validé pour ce scénario réel à deux clients :** chaque flux
+observé est lié à un socket Windows unique puis à une fenêtre
+différente. Cette validation concerne le lien réseau local
+et ne valide ni un identifiant de compte, ni le serveur, ni l'usage
+des professions sur le client Dofus 3.7.12.12.
+La compilation du probe est attestée par son exécution;
+le résultat de la suite de tests complète n'a pas été fourni ici.

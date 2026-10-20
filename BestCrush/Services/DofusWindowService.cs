@@ -6,6 +6,33 @@ namespace BestCrush.Services;
 
 public sealed class DofusWindowService
 {
+    /// <summary>
+    /// All currently visible Dofus windows. Order reflects Win32 Z-order,
+    /// NOT the moment of process or window creation.
+    /// </summary>
+    public IReadOnlyList<DofusWindowInfo> ListVisibleDofusWindows()
+    {
+#if WINDOWS
+        return GetDofusWindows();
+#else
+        return [];
+#endif
+    }
+
+    /// <summary>
+    /// Strictly the foreground Dofus window, or null if another app has
+    /// focus. Never fall back to an arbitrary window for client selection.
+    /// </summary>
+    public DofusWindowInfo? GetForegroundDofusWindow()
+    {
+#if WINDOWS
+        IntPtr foreground = GetForegroundWindow();
+        return GetDofusWindows().FirstOrDefault(window => window.Handle == foreground);
+#else
+        return null;
+#endif
+    }
+
     public DofusWindowInfo? GetActiveDofusWindow()
     {
 #if WINDOWS
@@ -88,7 +115,7 @@ public sealed class DofusWindowService
                             rect.Top,
                             rect.Right - rect.Left,
                             rect.Bottom - rect.Top
-                        )
+                        ) { ProcessId = (int)processId }
                     );
                 }
                 catch
@@ -196,4 +223,7 @@ public sealed record DofusWindowInfo(
     int Y,
     int Width,
     int Height
-);
+)
+{
+    public int ProcessId { get; init; }
+}

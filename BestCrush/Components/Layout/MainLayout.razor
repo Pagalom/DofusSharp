@@ -2,12 +2,15 @@
 @using DofusSharp.Dofocus.ApiClients.Models.Servers
 @using Microsoft.AspNetCore.Components.Routing
 @inherits LayoutComponentBase
-@implements IDisposable
+@implements IAsyncDisposable
+@using BestCrush.Services
 @inject ServersService ServersService
 @inject IWorkspacePreferences WorkspacePreferences
 @inject NavigationManager NavigationManager
 @inject BestCrush.Services.CurrentServerState CurrentServerState
 @inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
+@inject BestCrush.Services.CurrentDofusClientsState CurrentDofusClientsState
+@inject BestCrush.Services.DofusWindowService DofusWindowService
 
 <div class="min-vh-100 container-fluid px-3 px-xl-4 d-flex flex-column" data-bs-theme="@_theme">
     <header class="d-flex align-items-center justify-content-between gap-3 py-2">
@@ -46,29 +49,50 @@
             }
 
             <div class="d-flex align-items-center gap-1"
-                 role="group" aria-label="Personnages détectés cette session">
-                @foreach (BestCrush.Services.CharacterSessionProfile character in CurrentCharacterState.Characters)
+                 role="group" aria-label="Fenêtres Dofus détectées cette session">
+                @if (CurrentDofusClientsState.Clients.Count > 0)
                 {
-                    <button type="button"
-                            class="character-avatar @(CurrentCharacterState.ActiveCharacterKey == character.Key ? "active" : "")"
-                            title="@($"{character.Name} — {character.Key.ServerName}")"
-                            aria-label="@($"Cibler {character.Name}")"
-                            aria-pressed="@(CurrentCharacterState.ActiveCharacterKey == character.Key)"
-                            disabled="@(!CurrentCharacterState.IsCharacterConnected(character.Key))"
-                            @onclick="() => SelectCharacter(character.Key)">
-                        <span class="character-avatar-face" aria-hidden="true">👤</span>
-                        <span class="character-avatar-initial" aria-hidden="true">
-                            @(string.IsNullOrWhiteSpace(character.Name) ? "?" : character.Name[..1].ToUpperInvariant())
-                        </span>
-                    </button>
+                    @foreach (DofusClientWindow client in CurrentDofusClientsState.Clients)
+                    {
+                        <button @key="client.Key"
+                                type="button"
+                                class="character-avatar @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "active" : "")"
+                                title="@($"{client.DisplayName}{(client.ClassName is null ? "" : $" — {client.ClassName}")} — fenêtre Dofus (liaison compte non vérifiée)")"
+                                aria-label="@($"Cibler la fenêtre de {client.DisplayName}")"
+                                aria-pressed="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
+                                @onclick="() => SelectDofusClient(client.Key)">
+                            <span class="character-avatar-face" aria-hidden="true">👤</span>
+                            <span class="character-avatar-initial" aria-hidden="true">
+                                @(client.HasCharacterTitle ? client.DisplayName[..1].ToUpperInvariant() : "?")
+                            </span>
+                        </button>
+                    }
+                }
+                else
+                {
+                    @foreach (CharacterSessionProfile character in CurrentCharacterState.Characters)
+                    {
+                        <button type="button"
+                                class="character-avatar @(CurrentCharacterState.ActiveCharacterKey == character.Key ? "active" : "")"
+                                title="@($"{character.Name} — {character.Key.ServerName}")"
+                                aria-label="@($"Cibler {character.Name}")"
+                                aria-pressed="@(CurrentCharacterState.ActiveCharacterKey == character.Key)"
+                                disabled="@(!CurrentCharacterState.IsCharacterConnected(character.Key))"
+                                @onclick="() => SelectCharacter(character.Key)">
+                            <span class="character-avatar-face" aria-hidden="true">👤</span>
+                            <span class="character-avatar-initial" aria-hidden="true">
+                                @(string.IsNullOrWhiteSpace(character.Name) ? "?" : character.Name[..1].ToUpperInvariant())
+                            </span>
+                        </button>
+                    }
                 }
             </div>
 
             <a class="btn btn-outline-secondary"
                href="@KnownRoutes.Profile()"
-               title="Personnages détectés dans cette session"
+               title="Afficher les fiches personnages (données réseau attribuées uniquement après vérification)"
                aria-label="Ouvrir les fiches des personnages">
-                @(CurrentCharacterState.ActiveProfile?.Name ?? "Personnages")
+                @(CurrentDofusClientsState.SelectedClient?.DisplayName ?? CurrentCharacterState.ActiveProfile?.Name ?? "Personnages")
             </a>
 
             @if (_currentServer is not null)
@@ -118,6 +142,8 @@
 
     private IReadOnlyCollection<DofocusServer>? _servers;
     private DofocusServer? _currentServer;
+    private CancellationTokenSource? _clientPollingCancellation;
+    private Task? _clientPollingTask;
 
     private string? ActiveTab =>
         WorkspaceModules.ActiveSlug(
@@ -172,7 +198,14 @@
 
         CurrentCharacterState.SelectServer(_currentServer?.Name);
         CurrentCharacterState.Changed += OnCharacterChanged;
+        CurrentDofusClientsState.Changed += OnDofusClientChanged;
         GuardLegacyRoute();
+
+        if (OperatingSystem.IsWindows())
+        {
+            _clientPollingCancellation = new CancellationTokenSource();
+            _clientPollingTask = PollDofusClientsAsync(_clientPollingCancellation.Token);
+        }
     }
 
     private void OnLocationChanged(
@@ -193,6 +226,41 @@
 
     private void OnCharacterChanged() =>
         _ = InvokeAsync(StateHasChanged);
+
+    private void SelectDofusClient(DofusClientWindowKey key) =>
+        CurrentDofusClientsState.SelectWindow(key);
+
+    private void OnDofusClientChanged() =>
+        _ = InvokeAsync(StateHasChanged);
+
+    private async Task PollDofusClientsAsync(CancellationToken cancellationToken)
+    {
+        using PeriodicTimer timer = new(TimeSpan.FromSeconds(1));
+        try
+        {
+            do
+            {
+                await InvokeAsync(() =>
+                {
+                    IReadOnlyList<DofusWindowInfo> windows =
+                        DofusWindowService.ListVisibleDofusWindows();
+                    DofusWindowInfo? foreground =
+                        DofusWindowService.GetForegroundDofusWindow();
+
+                    CurrentDofusClientsState.Update(
+                        windows,
+                        foreground is null ? null :
+                            new DofusClientWindowKey(
+                                foreground.Handle.ToInt64(), foreground.ProcessId));
+                });
+            }
+            while (await timer.WaitForNextTickAsync(cancellationToken));
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Layout disposed; stop polling without retaining client metadata.
+        }
+    }
 
     private async Task SelectServer(DofocusServer server)
     {
@@ -215,9 +283,18 @@
             StateHasChanged();
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
         CurrentCharacterState.Changed -= OnCharacterChanged;
+        CurrentDofusClientsState.Changed -= OnDofusClientChanged;
+
+        if (_clientPollingCancellation is { } cancellation)
+        {
+            await cancellation.CancelAsync();
+            if (_clientPollingTask is { } task)
+                await task;
+            cancellation.Dispose();
+        }
     }
 }
