@@ -90,3 +90,48 @@ appartenir au même compte : une fenêtre n'est pas égale à un compte.
 
 Aucune persistance de profil. Ne pas toucher à `main`,
 ne pas merger/publier, ne pas supprimer les garde-fous multiclients.
+
+
+## Essai 1 — observation réelle (20 octobre 2026, heure de Paris)
+
+Le test de 30 secondes a été exécuté avec **un seul client Dofus**.
+Aucune fenêtre n'existait au démarrage du probe, puis une fenêtre
+est apparue et est restée associée à un même PID et HWND pendant
+les transitions de son titre.
+
+Chronologie locale confirmée, **sans recopier le nom du personnage,
+PID ou HWND** :
+
+```text
+aucune fenêtre → apparition: "Dofus"
+→ "Dofus 3.7.12.12 - Release"
+→ "[nom personnage] - Ecaflip - 3.7.12.12 - Release"
+```
+
+
+Le focus sur la fenêtre Dofus a été détecté, perdu lors d'un passage
+sur une autre application, puis détecté à nouveau sur la même
+fenêtre. Les événements de focus sont donc cohérents avec l'usage
+observé. **La lecture du titre et le suivi du focus sont validés
+pour ce scénario à fenêtre unique.**
+
+Restent **non testés** :
+- plusieurs clients simultanés et le basculement entre leurs fenêtres ;
+- le changement de personnage dans une même fenêtre ;
+- le rattachement sécurisé des flux réseau à chaque HWND/PID ;
+- le statut compte/serveur, toujours non vérifié.
+
+**Changement de build observé : `3.7.12.12`** alors que les
+études de protocole et de mapping `ipz` utilisaient
+`3.6.11.15`. Les résultats de P3f/P3g ne constituent
+pas à eux seuls une validation du décodage des métiers sur ce nouveau
+build. Un contrôle de compatibilité distinct sera nécessaire avant
+de brancher le décodage réseau sur des données de production.
+
+**Décision de conception :** le titre apporte un indice local
+nom/classe/build et le HWND identifie une fenêtre vivante dans son
+cycle courant. Aucun de ces éléments n'est un identifiant de compte
+et aucun ne garantit l'origine d'un message réseau. Le sélecteur
+en haut à droite peut s'appuyer sur les fenêtres pour l'UX, mais
+les données de métier, d'inventaire et de kamas attendront une
+attribution réseau ↔ client vérifiée.
