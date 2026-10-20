@@ -117,6 +117,39 @@ public sealed class LiveDofusClientNetworkBindings
     }
 
     /// <summary>
+    /// Revoke closed windows even when no new TCP packets arrive.
+    /// Does not attempt to infer the owner of any remaining socket.
+    /// </summary>
+    public void RemoveMissingWindows(IReadOnlyList<DofusClientWindowKey> windows)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        bool changed = false;
+        lock (_sync)
+        {
+            HashSet<DofusClientWindowKey> live = windows.ToHashSet();
+            foreach ((TcpSocketTuple tuple, DofusClientWindowKey owner) in _flows.ToArray())
+            {
+                if (!live.Contains(owner))
+                {
+                    _flows.Remove(tuple);
+                    _conflicts.Add(tuple);
+                }
+            }
+            DofusClientWindowKey[] next = _flows.Values
+                .Distinct()
+                .OrderBy(key => key.ProcessId)
+                .ThenBy(key => key.Handle)
+                .ToArray();
+            if (!_linkedClients.SequenceEqual(next))
+            {
+                changed = true;
+                _linkedClients = next;
+            }
+        }
+        if (changed) Changed?.Invoke();
+    }
+
+    /// <summary>
     /// Called on each OS socket inventory refresh, and on window refreshes.
     /// A binding is revoked if the socket no longer exists or the window
     /// identity (HWND + PID) is no longer visible.
@@ -141,10 +174,18 @@ public sealed class LiveDofusClientNetworkBindings
             HashSet<DofusClientWindowKey> alive = windows.ToHashSet();
             foreach ((TcpSocketTuple tuple, DofusClientWindowKey key) in _flows.ToArray())
             {
-                if (!alive.Contains(key) ||
-                    TcpSocketOwnerMatcher.FindUniqueOwner(tuple, sockets) != key.ProcessId ||
-                    windows.Count(w => w.ProcessId == key.ProcessId) != 1)
+                int? owner = TcpSocketOwnerMatcher.FindUniqueOwner(tuple, sockets);
+                bool sameWindowVisible = alive.Contains(key) &&
+                    windows.Count(w => w.ProcessId == key.ProcessId) == 1;
+                if (owner != key.ProcessId || !sameWindowVisible)
+                {
                     _flows.Remove(tuple);
+                    // If Windows still reports the socket but its owner or
+                    // window changed, quarantine this tuple until restart.
+                    // A reconnect cannot inherit a previous client's state.
+                    if (owner.HasValue && (owner != key.ProcessId || !sameWindowVisible))
+                        _conflicts.Add(tuple);
+                }
             }
 
             DofusClientWindowKey[] next = _flows.Values
