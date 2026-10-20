@@ -10,6 +10,7 @@
 @inject BestCrush.Services.CurrentServerState CurrentServerState
 @inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
 @inject BestCrush.Services.CurrentDofusClientsState CurrentDofusClientsState
+@inject BestCrush.Services.LiveDofusClientNetworkBindings LiveClientNetworkBindings
 @inject BestCrush.Services.DofusWindowService DofusWindowService
 
 <div class="min-vh-100 container-fluid px-3 px-xl-4 d-flex flex-column" data-bs-theme="@_theme">
@@ -56,7 +57,7 @@
                     {
                         <button @key="client.Key"
                                 type="button"
-                                class="character-avatar @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "active" : "")"
+                                class="character-avatar @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "active" : "") @(LiveClientNetworkBindings.IsLinked(client.Key) ? "network-linked" : "")"
                                 title="@($"{client.DisplayName}{(client.ClassName is null ? "" : $" — {client.ClassName}")} — fenêtre Dofus (flux TCP {(LiveClientNetworkBindings.IsLinked(client.Key) ? "relié" : "non relié")}, compte non vérifié)")"
                                 aria-label="@($"Cibler la fenêtre de {client.DisplayName}")"
                                 aria-pressed="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
@@ -199,6 +200,7 @@
         CurrentCharacterState.SelectServer(_currentServer?.Name);
         CurrentCharacterState.Changed += OnCharacterChanged;
         CurrentDofusClientsState.Changed += OnDofusClientChanged;
+        LiveClientNetworkBindings.Changed += OnDofusClientChanged;
         GuardLegacyRoute();
 
         if (OperatingSystem.IsWindows())
@@ -288,6 +290,7 @@
         NavigationManager.LocationChanged -= OnLocationChanged;
         CurrentCharacterState.Changed -= OnCharacterChanged;
         CurrentDofusClientsState.Changed -= OnDofusClientChanged;
+        LiveClientNetworkBindings.Changed -= OnDofusClientChanged;
 
         if (_clientPollingCancellation is { } cancellation)
         {
