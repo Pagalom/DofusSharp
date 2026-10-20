@@ -40,6 +40,9 @@ internal sealed class NetworkFlowCache<TKey, TReader>
 
     internal void Clear() => _entries.Clear();
 
+    // A new TCP handshake must not reuse a previous semantic correlation.
+    internal bool Remove(TKey key) => _entries.Remove(key);
+
     // Avoid evicting a newer assembler if this flow was already replaced
     // by an expiry, a lease change or another capture callback.
     internal bool RemoveIfSame(TKey key, TReader reader)

@@ -113,4 +113,43 @@ public sealed class NetworkFlowCacheTest
         cache.Clear();
         cache.Count.Should().Be(0);
     }
+    [Fact]
+    public void BidirectionalSocketSharesOneOpaqueConnectionToken()
+    {
+        System.Net.IPAddress local = System.Net.IPAddress.Parse("192.0.2.10");
+        System.Net.IPAddress server = System.Net.IPAddress.Parse("198.51.100.20");
+        var outbound = BestCrush.Network.Protocol.TcpSocketTuple.FromPacket(
+            local, 48123, server, 5555, 5555);
+        var inbound = BestCrush.Network.Protocol.TcpSocketTuple.FromPacket(
+            server, 5555, local, 48123, 5555);
+
+        outbound.Should().Be(inbound);
+        NetworkFlowCache<BestCrush.Network.Protocol.TcpSocketTuple, long> cache =
+            new(capacity: 4);
+        long next = 0;
+        long first = cache.GetOrCreate(
+            outbound!.Value, ServerA, T0, () => ++next);
+        long second = cache.GetOrCreate(
+            inbound!.Value, ServerA, T0.AddSeconds(1), () => ++next);
+
+        first.Should().Be(second);
+        next.Should().Be(1);
+    }
+
+    [Fact]
+    public void TcpHandshakeRemovalForcesFreshTokenForReusedFourTuple()
+    {
+        NetworkFlowCache<string, long> cache = new();
+        long next = 0;
+        long old = cache.GetOrCreate("socket", ServerA, T0, () => ++next);
+
+        cache.Remove("socket").Should().BeTrue();
+        cache.Remove("socket").Should().BeFalse();
+
+        long current = cache.GetOrCreate(
+            "socket", ServerA, T0.AddSeconds(1), () => ++next);
+        current.Should().NotBe(old);
+        cache.Count.Should().Be(1);
+    }
+
 }

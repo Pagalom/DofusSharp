@@ -764,6 +764,103 @@ public sealed class DofusNetworkRoutingTest
     }
 
     [Fact]
+    public async Task TwoClientsCannotSharePendingPurchaseEvenForSameOfferId()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        // A issues a request. B receives the matching offer but did
+        // not request anything. The offer must NOT be persisted.
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt, connectionId: 11);
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(100, 601, 15, 140),
+            ObservedAt.AddSeconds(1), connectionId: 22);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .Should().BeEmpty();
+
+        // A still owns its request; response on A succeeds.
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(100, 601, 15, 140),
+            ObservedAt.AddSeconds(2), connectionId: 11);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .OrderBy(price => price.Quantity)
+            .Select(price => (price.Quantity, price.Price))
+            .Should().Equal((1, 15L), (10, 140L));
+    }
+
+    [Fact]
+    public async Task OtherClientReceiptCannotClearPendingPurchase()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt, connectionId: 11);
+        await harness.ReplayAsync(
+            "kbd", PurchaseReceipt(1, 601),
+            ObservedAt.AddSeconds(1), connectionId: 22);
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(100, 601, 15, 140),
+            ObservedAt.AddSeconds(2), connectionId: 11);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task SameItemUidOnAnotherClientCannotResolveCrush()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        // Even an identical item UID is not sufficient across clients.
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42),
+            ObservedAt, connectionId: 11);
+
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022491, 1.615723f,
+                    CurrentCrushRune(100, 6))),
+            ObservedAt.AddSeconds(1), connectionId: 22);
+
+        harness.Crushes.Should().BeEmpty();
+        (await harness.ReadCoefficientsAsync(42)).Should().BeEmpty();
+
+        // The owner client still retains its own UID mapping.
+        await harness.ReplayAsync(
+            "kag", CurrentCrush(
+                CurrentCrushRow(9022491, 1.615723f,
+                    CurrentCrushRune(100, 6))),
+            ObservedAt.AddSeconds(2), connectionId: 11);
+
+        harness.Crushes.Should().ContainSingle();
+        harness.Crushes.Single().Lines.Single()
+            .EquipmentDofusDbId.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task MissingFlowIdentityNeverPersistsMarketData()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync(
+            "jzn",
+            Market(200, MarketOffer(501, 200, 25)),
+            ObservedAt, connectionId: 0);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200))
+            .Should().BeEmpty();
+        harness.Notifications.Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task KefRefreshesRuneLikeOtherStackableObjects()
     {
         await using RoutingHarness harness =
@@ -1890,12 +1987,14 @@ public sealed class DofusNetworkRoutingTest
         public Task ReplayAsync(
             string key,
             byte[] body,
-            DateTime observedAtUtc) =>
+            DateTime observedAtUtc,
+            long connectionId = 1) =>
             Service.ReplayMessageAsync(
                 "TEST",
                 key,
                 body,
-                observedAtUtc);
+                observedAtUtc,
+                connectionId: connectionId);
 
         public async Task<
             IReadOnlyList<

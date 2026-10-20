@@ -11,16 +11,44 @@ internal sealed class DofusNetworkMessageProcessor(
     NetworkDebugWriter debugWriter,
     CurrentServerState currentServerState)
 {
-    private readonly RecentItemDetailsCache _itemDetails = new();
+    // Single ordered worker; state is scoped to one opaque, bidirectional
+    // TCP connection ID. Never use a selected window or character name as
+    // evidence that two messages belong to the same connection.
+    private const int MaximumCorrelationFlows = 64;
+    private static readonly TimeSpan CorrelationIdleTimeout = TimeSpan.FromHours(1);
 
+    private sealed class FlowCorrelation
+    {
+        internal readonly RecentItemDetailsCache ItemDetails = new();
+        internal PurchaseRequestObservation? PendingPurchaseRequest;
+        internal DateTime PendingPurchaseRequestAtUtc;
+        internal DateTime LastSeenUtc;
+    }
+
+    private readonly Dictionary<long, FlowCorrelation> _correlations = [];
     private NetworkCaptureLease? _lastLease;
     private long? _lastCaptureEpoch;
 
-    private PurchaseRequestObservation?
-        _pendingPurchaseRequest;
+    private FlowCorrelation CorrelationFor(long connectionId, DateTime seenAtUtc)
+    {
+        if (_correlations.TryGetValue(connectionId, out FlowCorrelation? existing))
+        {
+            existing.LastSeenUtc = seenAtUtc;
+            return existing;
+        }
 
-    private DateTime
-        _pendingPurchaseRequestAtUtc;
+        foreach (long stale in _correlations
+            .Where(pair => seenAtUtc - pair.Value.LastSeenUtc >= CorrelationIdleTimeout)
+            .Select(pair => pair.Key).ToArray())
+            _correlations.Remove(stale);
+
+        if (_correlations.Count >= MaximumCorrelationFlows)
+            _correlations.Remove(_correlations.MinBy(pair => pair.Value.LastSeenUtc).Key);
+
+        FlowCorrelation created = new() { LastSeenUtc = seenAtUtc };
+        _correlations.Add(connectionId, created);
+        return created;
+    }
 
     internal async Task ProcessMessageAsync(
         ProtocolMap? map,
@@ -30,18 +58,22 @@ internal sealed class DofusNetworkMessageProcessor(
         if (_lastLease != message.CaptureLease ||
             _lastCaptureEpoch != message.CaptureEpoch)
         {
-            // UID and purchase caches cannot cross a server selection or
-            // an Npcap Stop/Start cycle.
-            _itemDetails.Clear();
-            _pendingPurchaseRequest = null;
-            _pendingPurchaseRequestAtUtc = default;
+            // No UID or purchase state survives server selection / Stop+Start.
+            _correlations.Clear();
             _lastLease = message.CaptureLease;
             _lastCaptureEpoch = message.CaptureEpoch;
         }
 
-        if (message.CaptureLease is not { } lease ||
+        // All live packets must have an explicit per-connection token.
+        // Replay tests default to their own synthetic token (1).
+        if (message.ConnectionId <= 0 ||
+            message.CaptureLease is not { } lease ||
             !currentServerState.IsCaptureLeaseActive(lease))
             return;
+
+        FlowCorrelation correlation =
+            CorrelationFor(message.ConnectionId, message.ObservedAtUtc);
+        RecentItemDetailsCache itemDetails = correlation.ItemDetails;
 
         await debugWriter.WriteWireDebugAsync(
             message,
@@ -72,7 +104,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (item is not null)
             {
-                _itemDetails.Remember(item);
+                itemDetails.Remember(item);
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
@@ -100,7 +132,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (item is not null)
             {
-                _itemDetails.Remember(item);
+                itemDetails.Remember(item);
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
@@ -128,7 +160,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (item is not null)
             {
-                _itemDetails.Remember(item);
+                itemDetails.Remember(item);
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
@@ -156,7 +188,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (result is not null)
             {
-                _itemDetails.Remember(result.Item);
+                itemDetails.Remember(result.Item);
 
                 await observationWriter.RememberLastEquipmentAsync(
                     result.Item.ItemId,
@@ -185,10 +217,10 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (purchase is not null)
             {
-                _pendingPurchaseRequest =
+                correlation.PendingPurchaseRequest =
                     purchase;
 
-                _pendingPurchaseRequestAtUtc =
+                correlation.PendingPurchaseRequestAtUtc =
                     message.ObservedAtUtc;
 
                 await debugWriter.WriteEventDebugAsync(
@@ -212,11 +244,11 @@ internal sealed class DofusNetworkMessageProcessor(
 
             bool matchesRecentPurchase =
                 offer is not null &&
-                _pendingPurchaseRequest is not null &&
+                correlation.PendingPurchaseRequest is not null &&
                 offer.OfferId ==
-                    _pendingPurchaseRequest.OfferId &&
+                    correlation.PendingPurchaseRequest.OfferId &&
                 message.ObservedAtUtc -
-                    _pendingPurchaseRequestAtUtc <=
+                    correlation.PendingPurchaseRequestAtUtc <=
                         TimeSpan.FromSeconds(5);
 
             if (offer is not null &&
@@ -268,17 +300,17 @@ internal sealed class DofusNetworkMessageProcessor(
                     body);
 
             if (receipt is not null &&
-                _pendingPurchaseRequest is not null &&
+                correlation.PendingPurchaseRequest is not null &&
                 receipt.OfferId ==
-                    _pendingPurchaseRequest.OfferId)
+                    correlation.PendingPurchaseRequest.OfferId)
             {
                 await debugWriter.WriteEventDebugAsync(
                     message.ObservedAtUtc,
-                    $"[PURCHASE-CONFIRMED] offer={receipt.OfferId} x{_pendingPurchaseRequest.Quantity} price={_pendingPurchaseRequest.Price} K",
+                    $"[PURCHASE-CONFIRMED] offer={receipt.OfferId} x{correlation.PendingPurchaseRequest.Quantity} price={correlation.PendingPurchaseRequest.Price} K",
                     cancellationToken);
 
-                _pendingPurchaseRequest = null;
-                _pendingPurchaseRequestAtUtc = default;
+                correlation.PendingPurchaseRequest = null;
+                correlation.PendingPurchaseRequestAtUtc = default;
             }
 
             return;
@@ -427,7 +459,7 @@ internal sealed class DofusNetworkMessageProcessor(
             {
                 foreach (CrushLineObservation line in crush.Lines)
                 {
-                    _itemDetails.TryGetValue(
+                    itemDetails.TryGetValue(
                         line.ItemUid,
                         out ItemDetailObservation? knownItem);
 
@@ -441,7 +473,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
                 await observationWriter.PersistCrushAsync(
                     crush,
-                    _itemDetails.Items,
+                    itemDetails.Items,
                     message.ObservedAtUtc,
                     lease,
                     cancellationToken);

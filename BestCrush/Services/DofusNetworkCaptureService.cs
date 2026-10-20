@@ -171,6 +171,11 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly List<ICaptureDevice> _devices = [];
     private readonly NetworkFlowCache<TcpFlowKey, TcpReassembler>
         _streams = new();
+    // One opaque session ID per bidirectional TCP socket and capture lease.
+    // The addresses and ports live in memory only and are never logged.
+    private readonly NetworkFlowCache<TcpSocketTuple, long>
+        _connectionScopes = new();
+    private long _nextConnectionId;
     private readonly Channel<DofusWireMessage> _messages =
         Channel.CreateUnbounded<DofusWireMessage>(
             new UnboundedChannelOptions
@@ -198,7 +203,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
         // Drop partial frames when the user selects another server.
         lock (_streamLock)
+        {
             _streams.Clear();
+            _connectionScopes.Clear();
+        }
 
         _clientBindings?.Reset(Interlocked.Read(ref _captureEpoch));
     }
@@ -365,7 +373,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
             _devices.Clear();
 
             lock (_streamLock)
+            {
                 _streams.Clear();
+                _connectionScopes.Clear();
+            }
         }
 #endif
     }
@@ -422,7 +433,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
         DateTime observedAtUtc,
         CancellationToken cancellationToken = default,
         NetworkCaptureLease? recordedLease = null,
-        long? recordedCaptureEpoch = null)
+        long? recordedCaptureEpoch = null,
+        long connectionId = 1)
     {
         if (_map is null ||
             _worker is null)
@@ -453,7 +465,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     observedAtUtc,
                     lease,
                     captureEpoch,
-                    completion)))
+                    completion,
+                    connectionId)))
         {
             throw new InvalidOperationException(
                 "Le canal réseau n'accepte plus de messages.");
@@ -489,12 +502,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
             IPPacket? ip = packet.Extract<IPPacket>();
             TcpPacket? tcp = packet.Extract<TcpPacket>();
 
-            if (ip is null ||
-                tcp is null ||
-                tcp.PayloadData.Length == 0)
-            {
+            if (ip is null || tcp is null)
                 return;
-            }
 
             if (tcp.SourcePort != DofusPort &&
                 tcp.DestinationPort != DofusPort)
@@ -502,18 +511,43 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 return;
             }
 
-            // Research-only P3m: exact OS socket ownership linked to a
-            // visible client window. No protocol payload is attributed to
-            // any account, profile or window by this observation.
-            ObserveLiveDofusClient(
+            TcpSocketTuple? oriented = TcpSocketTuple.FromPacket(
                 ip.SourceAddress, tcp.SourcePort,
-                ip.DestinationAddress, tcp.DestinationPort,
-                captureEpoch);
+                ip.DestinationAddress, tcp.DestinationPort, DofusPort);
+            if (oriented is not { } connection)
+                return;
 
             string deviceName =
                 sender is ICaptureDevice captureDevice
                     ? captureDevice.Name
                     : "unknown";
+
+            if (tcp.Synchronize || tcp.Reset)
+            {
+                lock (_streamLock)
+                {
+                    // Handshake or hard reset invalidates previous correlation,
+                    // even if the TCP control packet has zero payload.
+                    _connectionScopes.Remove(connection);
+                    _streams.Remove(new TcpFlowKey(
+                        deviceName,
+                        ip.SourceAddress.ToString(), tcp.SourcePort,
+                        ip.DestinationAddress.ToString(), tcp.DestinationPort));
+                    _streams.Remove(new TcpFlowKey(
+                        deviceName,
+                        ip.DestinationAddress.ToString(), tcp.DestinationPort,
+                        ip.SourceAddress.ToString(), tcp.SourcePort));
+                }
+            }
+
+            if (tcp.PayloadData.Length == 0)
+                return;
+
+            // Research-only local OS link, not account or profile ownership.
+            ObserveLiveDofusClient(
+                ip.SourceAddress, tcp.SourcePort,
+                ip.DestinationAddress, tcp.DestinationPort,
+                captureEpoch);
 
             NetworkCaptureLease? lease =
                 _currentServerState.GetCaptureLease();
@@ -530,16 +564,20 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     tcp.DestinationPort);
 
             TcpReassembler stream;
+            long connectionId;
 
             lock (_streamLock)
             {
                 if (!_currentServerState.IsCaptureLeaseActive(lease.Value))
                     return;
 
+                // Control-packet invalidation was handled above.
+                DateTime now = DateTime.UtcNow;
+                connectionId = _connectionScopes.GetOrCreate(
+                    connection, lease.Value, now, () => ++_nextConnectionId);
+
                 stream = _streams.GetOrCreate(
-                    flow,
-                    lease.Value,
-                    DateTime.UtcNow,
+                    flow, lease.Value, now,
                     static () => new TcpReassembler());
             }
 
@@ -591,7 +629,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                         any.Body,
                                         DateTime.UtcNow,
                                         lease,
-                                        captureEpoch));
+                                        captureEpoch,
+                                        ConnectionId: connectionId));
                             }
                         }
                     }
@@ -604,12 +643,16 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 // other flows, already decoded messages and SQLite
                 // observations remain untouched.
                 lock (_streamLock)
+                {
                     _streams.RemoveIfSame(flow, stream);
+                    // A discarded frame parser must not reuse the old
+                    // connection's UID or pending-purchase correlations.
+                    _connectionScopes.Remove(connection);
+                }
 
                 logger.LogWarning(
                     ex,
-                    "Flux TCP Dofus abandonné après dépassement de limite de réassemblage : {Flow}.",
-                    flow);
+                    "Flux TCP Dofus abandonné après dépassement de limite de réassemblage.");
             }
         }
         catch (Exception ex)
