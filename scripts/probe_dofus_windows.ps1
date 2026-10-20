@@ -145,6 +145,11 @@ function Show-Window([string]$Event, $Window) {
 }
 
 
+# Stable, local-only slot assignments for the TCP ownership report.
+# EnumWindows follows Z-order, which may change when focus changes.
+$script:TcpWindowSlots = @{}
+$script:NextTcpWindowSlot = 0
+
 # Independent Windows OS socket-owner check, never packet inspection.
 # PID ownership can suggest which Dofus process owns a TCP socket;
 # it is NOT an account/server identity or a verified Npcap flow binding.
@@ -176,6 +181,12 @@ function Show-TcpOwnership([string]$Phase, $WindowList) {
         $Phase, $windowListArray.Count, $(if ($pidDistinct) { "yes" } else { "no" }))
 
     foreach ($window in $windowListArray) {
+        $handleKey = [string]$window.Handle
+        if (-not $script:TcpWindowSlots.ContainsKey($handleKey)) {
+            $script:NextTcpWindowSlot++
+            $script:TcpWindowSlots[$handleKey] = $script:NextTcpWindowSlot
+        }
+        $slot = $script:TcpWindowSlots[$handleKey]
         $matching = @($connections | Where-Object {
             [int]$_.OwningProcess -eq [int]$window.ProcessId
         })
@@ -185,7 +196,7 @@ function Show-TcpOwnership([string]$Phase, $WindowList) {
         # Public ordinal only. No character names, PID, HWND, addresses,
         # local ports, or remote endpoints are emitted by this check.
         Write-Host ("tcp-owner window-index={0} socket-count={1} status={2}" -f
-            $window.Order, $count, $status)
+            $slot, $count, $status)
     }
 
     $association = if ($exactlyOneEach) { "candidate" } else { "unverified" }
