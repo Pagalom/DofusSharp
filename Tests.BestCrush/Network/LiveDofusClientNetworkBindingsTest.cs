@@ -61,9 +61,13 @@ public sealed class LiveDofusClientNetworkBindingsTest
 
         state.Reconcile(1, [new(A, 1201)], []);
         state.IsLinked(WindowA).Should().BeFalse();
+        // Reappearing under the same socket while the old capture lives
+        // cannot silently recover the revoked window.
+        state.Observe(A, 1, [new(A, 1201)], [WindowA]).Should().BeFalse();
 
-        state.Observe(A, 1, [new(A, 1201)], [WindowA]).Should().BeTrue();
-        state.Reconcile(1, [], [WindowA]);
+        state.Reset(2);
+        state.Observe(A, 2, [new(A, 1201)], [WindowA]).Should().BeTrue();
+        state.Reconcile(2, [], [WindowA]);
         state.IsLinked(WindowA).Should().BeFalse();
     }
 
@@ -95,6 +99,29 @@ public sealed class LiveDofusClientNetworkBindingsTest
         state.LinkedClients.Should().BeEmpty();
         state.IsLinked(WindowA).Should().BeFalse();
         new LiveDofusClientNetworkBindings().LinkedClients.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SocketOwnerChangeDuringInventoryRefreshStaysQuarantined()
+    {
+        LiveDofusClientNetworkBindings state = new();
+        state.Observe(A, 1, [new(A, 1201)], [WindowA]).Should().BeTrue();
+
+        state.Reconcile(1, [new(A, 1202)], [WindowA, WindowB]);
+        state.IsLinked(WindowA).Should().BeFalse();
+        state.Observe(A, 1, [new(A, 1202)], [WindowA, WindowB])
+            .Should().BeFalse();
+    }
+
+    [Fact]
+    public void ClosedWindowIsRevokedEvenIfNoNewNetworkPacketArrives()
+    {
+        LiveDofusClientNetworkBindings state = new();
+        state.Observe(A, 1, [new(A, 1201)], [WindowA]).Should().BeTrue();
+        state.RemoveMissingWindows([WindowB]);
+        state.LinkedClients.Should().BeEmpty();
+        state.Observe(A, 1, [new(A, 1201)], [WindowA])
+            .Should().BeFalse();
     }
 
     [Fact]
