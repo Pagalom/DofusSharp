@@ -29,6 +29,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
     private readonly CurrentServerState _currentServerState;
     private readonly LastNetworkEquipmentState _lastNetworkEquipmentState;
+#if WINDOWS
+    private readonly LiveDofusClientNetworkBindings? _clientBindings;
+    private readonly DofusWindowService? _dofusWindowService;
+#endif
 
 #if WINDOWS
     private readonly NetworkDebugWriter
@@ -46,6 +50,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
         NpcapPrerequisiteService npcapPrerequisiteService,
         BestCrushSettingsService settings,
         MarketDataChangeNotifier marketDataChangeNotifier,
+        LiveDofusClientNetworkBindings clientBindings,
+        DofusWindowService dofusWindowService,
         ILogger<DofusNetworkCaptureService> logger)
         : this(
             serviceScopeFactory,
@@ -61,7 +67,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     serverName,
                     cancellationToken),
             marketDataChangeNotifier,
-            logger)
+            logger,
+            clientBindings,
+            dofusWindowService)
     {
     }
 
@@ -88,7 +96,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
             keepDebugArtifacts ?? (() => false),
             applyNetworkCrushAsync,
             marketDataChangeNotifier,
-            logger)
+            logger,
+            null,
+            null)
     {
     }
 
@@ -106,7 +116,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
             CancellationToken,
             Task> applyNetworkCrushAsync,
         MarketDataChangeNotifier marketDataChangeNotifier,
-        ILogger<DofusNetworkCaptureService> logger)
+        ILogger<DofusNetworkCaptureService> logger,
+        LiveDofusClientNetworkBindings? clientBindings,
+        DofusWindowService? dofusWindowService)
     {
         this.npcapPrerequisiteService =
             npcapPrerequisiteService;
@@ -115,6 +127,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
         _lastNetworkEquipmentState = lastNetworkEquipmentState;
 
 #if WINDOWS
+        _clientBindings = clientBindings;
+        _dofusWindowService = dofusWindowService;
         _networkDebugWriter =
             new NetworkDebugWriter(
                 currentServerState,
@@ -148,6 +162,11 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
     private readonly object _captureLock = new();
     private readonly object _streamLock = new();
+    private readonly object _clientBindingsRefreshLock = new();
+    private DateTime _clientBindingsLastRefreshUtc = DateTime.MinValue;
+    private IReadOnlyList<TcpSocketOwner> _clientSockets = [];
+    private IReadOnlyList<DofusClientWindowKey> _clientWindows = [];
+
 
     private readonly List<ICaptureDevice> _devices = [];
     private readonly NetworkFlowCache<TcpFlowKey, TcpReassembler>
@@ -180,6 +199,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
         // Drop partial frames when the user selects another server.
         lock (_streamLock)
             _streams.Clear();
+
+        _clientBindings?.Reset(Interlocked.Read(ref _captureEpoch));
     }
 
 #endif
@@ -236,7 +257,14 @@ public sealed class DofusNetworkCaptureService : IDisposable
                         ProcessMessagesAsync(
                             _cancellation.Token));
 
-            Interlocked.Increment(ref _captureEpoch);
+            long epoch = Interlocked.Increment(ref _captureEpoch);
+            _clientBindings?.Reset(epoch);
+            lock (_clientBindingsRefreshLock)
+            {
+                _clientBindingsLastRefreshUtc = DateTime.MinValue;
+                _clientSockets = [];
+                _clientWindows = [];
+            }
             _started = true;
 
             foreach (
@@ -290,7 +318,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             if (_devices.Count == 0)
             {
                 _started = false;
-                Interlocked.Increment(ref _captureEpoch);
+                _clientBindings?.Reset(Interlocked.Increment(ref _captureEpoch));
 
                 logger.LogWarning(
                     "Aucune interface réseau n'a pu être ouverte pour Dofus.");
@@ -308,7 +336,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 return;
 
             _started = false;
-            Interlocked.Increment(ref _captureEpoch);
+            _clientBindings?.Reset(Interlocked.Increment(ref _captureEpoch));
 
             // Do not complete the shared channel or cancel the worker here:
             // Start() must be able to reactivate this service.
@@ -474,6 +502,14 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 return;
             }
 
+            // Research-only P3m: exact OS socket ownership linked to a
+            // visible client window. No protocol payload is attributed to
+            // any account, profile or window by this observation.
+            ObserveLiveDofusClient(
+                ip.SourceAddress, tcp.SourcePort,
+                ip.DestinationAddress, tcp.DestinationPort,
+                captureEpoch);
+
             string deviceName =
                 sender is ICaptureDevice captureDevice
                     ? captureDevice.Name
@@ -581,6 +617,56 @@ public sealed class DofusNetworkCaptureService : IDisposable
             logger.LogDebug(
                 ex,
                 "Paquet Dofus ignoré après erreur de décodage.");
+        }
+    }
+
+    private void ObserveLiveDofusClient(
+        System.Net.IPAddress source, int sourcePort,
+        System.Net.IPAddress destination, int destinationPort,
+        long captureEpoch)
+    {
+        if (_clientBindings is null || _dofusWindowService is null ||
+            !_started || captureEpoch != Interlocked.Read(ref _captureEpoch))
+            return;
+
+        TcpSocketTuple? candidate = TcpSocketTuple.FromPacket(
+            source, sourcePort, destination, destinationPort, DofusPort);
+        if (candidate is not { } tuple ||
+            source.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+            return;
+
+        try
+        {
+            lock (_clientBindingsRefreshLock)
+            {
+                DateTime now = DateTime.UtcNow;
+                if (now - _clientBindingsLastRefreshUtc >= TimeSpan.FromSeconds(1))
+                {
+                    // OS snapshots are inspected locally, never written to
+                    // logs or persisted. A missing snapshot fails closed.
+                    _clientBindingsLastRefreshUtc = now;
+                    _clientSockets = WindowsTcpSocketTableReader.ReadEstablishedIPv4(DofusPort);
+                    _clientWindows = _dofusWindowService.ListVisibleDofusWindows()
+                        .Where(window => window.ProcessId > 0 && window.Handle != IntPtr.Zero)
+                        .Select(window => new DofusClientWindowKey(
+                            window.Handle.ToInt64(), window.ProcessId))
+                        .Distinct().ToArray();
+
+                    _clientBindings.Reconcile(
+                        captureEpoch, _clientSockets, _clientWindows);
+                }
+
+                if (_started && captureEpoch == Interlocked.Read(ref _captureEpoch))
+                    _clientBindings.Observe(
+                        tuple, captureEpoch, _clientSockets, _clientWindows);
+            }
+        }
+        catch (Exception ex)
+        {
+            // Never include private socket endpoints or a stack trace.
+            logger.LogDebug(
+                "Association fenetre/flux indisponible : {Reason}.",
+                ex.GetType().Name);
         }
     }
 

@@ -57,7 +57,7 @@
                         <button @key="client.Key"
                                 type="button"
                                 class="character-avatar @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "active" : "")"
-                                title="@($"{client.DisplayName}{(client.ClassName is null ? "" : $" — {client.ClassName}")} — fenêtre Dofus (liaison compte non vérifiée)")"
+                                title="@($"{client.DisplayName}{(client.ClassName is null ? "" : $" — {client.ClassName}")} — fenêtre Dofus (flux TCP {(LiveClientNetworkBindings.IsLinked(client.Key) ? "relié" : "non relié")}, compte non vérifié)")"
                                 aria-label="@($"Cibler la fenêtre de {client.DisplayName}")"
                                 aria-pressed="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
                                 @onclick="() => SelectDofusClient(client.Key)">

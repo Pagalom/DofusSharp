@@ -95,3 +95,16 @@
     font-weight: 700;
     line-height: 1.1;
 }
+
+/* A network status marker, NOT a verified account or server identity. */
+.character-avatar.network-linked::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 9px;
+    height: 9px;
+    border: 2px solid #f0e8d7;
+    border-radius: 50%;
+    background: #32866c;
+}

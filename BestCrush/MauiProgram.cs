@@ -51,6 +51,7 @@ public static class MauiProgram
             builder.Services.AddSingleton<IWorkspacePreferences, MauiWorkspacePreferences>();
             builder.Services.AddSingleton<CurrentCharacterState>();
             builder.Services.AddSingleton<CurrentDofusClientsState>();
+            builder.Services.AddSingleton<LiveDofusClientNetworkBindings>();
             builder.Services.AddSingleton<CurrentAccountProfessionsState>();
             builder.Services.AddSingleton<ServersService>();
             builder.Services.AddSingleton<RunesService>();
