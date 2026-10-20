@@ -41,6 +41,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("Pour comparer deux métiers via les messages ipz mono-entrée :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-job-study");
     Console.WriteLine("  (P3g) --profession-job-study --check-public-job-ids : vérification locale des IDs publics et roster 20 lignes");
+    Console.WriteLine("Pour comparer exactement une fenetre Dofus et son flux Npcap :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --window-flow-link");
     Console.WriteLine("Pour comparer anonymement les métiers entre connexions TCP :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-continuity");
     Console.WriteLine("Pour suivre ksc → ksb → ipz par session TCP, sans référence privée :");
@@ -65,10 +67,19 @@ if (options.DeviceIndex < 0 || options.DeviceIndex >= devices.Count)
 string mapPath = Path.Combine(AppContext.BaseDirectory, "protocol-map.json");
 ProtocolMap map = ProtocolMap.Load(mapPath);
 
-Console.WriteLine($"BestCrush Network Probe — Dofus {map.ClientBuild}");
+Console.WriteLine(options.WindowFlowLink
+    ? "BestCrush Network Probe — P3k lien Windows/Npcap (sans decodage metier)"
+    : $"BestCrush Network Probe — Dofus {map.ClientBuild}");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
-if (options.CharacterScan)
+if (options.WindowFlowLink)
+{
+    Console.WriteLine("P3k : quatre champs TCP compares localement aux sockets Windows et HWND/PID.");
+    Console.WriteLine("Deux clients connectes, activite reseau sur chacun, puis Ctrl+C.");
+    Console.WriteLine("Aucun titre, IP, port local, ou contenu de jeu dans les sorties.");
+    Console.WriteLine("Compte/serveur restent non verifies; aucune hypothese sur le build du jeu.");
+}
+else if (options.CharacterScan)
 {
     Console.WriteLine(options.ProfessionJobStudy
         ? "Mode P3f : étude locale des champs candidats métiers, sans affichage de valeurs."
@@ -226,7 +237,15 @@ Console.CancelKeyPress += (_, e) =>
     stop.Set();
 };
 
-if (options.CharacterScan)
+if (options.WindowFlowLink)
+{
+    using WindowTcpFlowLinkProbe probe = new(devices[options.DeviceIndex.Value], options.Port);
+    probe.Start();
+    stop.Wait();
+    probe.Stop();
+    probe.WriteSummary();
+}
+else if (options.CharacterScan)
 {
     // A single opt-in in-RAM collector: only the first valid TCP session
     // can contribute numeric fields. Local reference input is AFTER capture.
@@ -389,6 +408,7 @@ internal sealed record ProbeOptions(
     bool ProfessionXpStudy,
     bool ProfessionJobStudy,
     bool CheckPublicJobIds,
+    bool WindowFlowLink,
     bool IdentityName,
     bool IdentityFields,
     int? ExpectedClassId)
@@ -423,6 +443,7 @@ internal sealed record ProbeOptions(
         bool professionXpStudy = false;
         bool professionJobStudy = false;
         bool checkPublicJobIds = false;
+        bool windowFlowLink = false;
         bool identityName = false;
         bool identityFields = false;
         int? expectedClassId = null;
@@ -478,6 +499,9 @@ internal sealed record ProbeOptions(
                 case "--check-public-job-ids":
                     checkPublicJobIds = true;
                     break;
+                case "--window-flow-link":
+                    windowFlowLink = true;
+                    break;
                 case "--identity-name":
                     identityName = true;
                     break;
@@ -524,7 +548,7 @@ internal sealed record ProbeOptions(
             (professionXpStudy ? 1 : 0) +
             (professionJobStudy ? 1 : 0) +
             (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
-            (identityFields ? 1 : 0);
+            (identityFields ? 1 : 0) + (windowFlowLink ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -550,6 +574,7 @@ internal sealed record ProbeOptions(
             characterShape, shapeKeys, professionMatch, professionDecode,
             professionStudy, showCandidateJobIds, professionIdentify,
             professionFlow, professionContinuity, professionXpStudy,
-            professionJobStudy, checkPublicJobIds, identityName, identityFields, expectedClassId);
+            professionJobStudy, checkPublicJobIds, windowFlowLink,
+            identityName, identityFields, expectedClassId);
     }
 }

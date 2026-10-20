@@ -464,3 +464,23 @@ et non Éleveur=79 : d'où 19/20. Le nouveau jeu de 20 valeurs
 reprend celui déjà décrit dans le mapping versionné de recherche.
 Les associations des autres métiers ne sont pas individuellement
 revalidées par P3g.1. L'attribution à compte/serveur reste bloquée.
+
+
+### P3k — fenêtre Dofus ↔ socket TCP ↔ flux Npcap
+
+~~~powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --window-flow-link
+~~~
+
+Avec deux clients connectés, ouvrir l'inventaire sur chacun
+pour déclencher du trafic, puis arrêter avec Ctrl+C.
+Le diagnostic compare le quadruplet TCP de la capture Npcap
+au socket IPv4 Windows propriétaire et à sa fenêtre Dofus.
+Les seuls résultats sont des index anonymes et des indicateurs
+matched/not-confirmed ; aucun contenu du jeu ni identifiant
+personnel n'est conservé.
+
+Un statut two-client-links-candidate démontre deux liens
+fenêtre/socket/capture candidats indépendants, pas l'identité
+du compte ni du serveur. Voir
+docs/modular-workspace-p3k-window-tcp-flow-link.md.
