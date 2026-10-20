@@ -65,6 +65,6 @@ et vérifier la remise à zéro des liens. La présence d'un voyant
 représente seulement le lien réseau local, PAS la vérification
 des données métiers, de compte ou de serveur.
 
-Sept nouveaux tests unitaires synthétiques vérifient isolation,
+Neuf nouveaux tests unitaires synthétiques vérifient isolation,
 absence de propriétaire, collision, fermeture de socket/fenêtre,
 changement interdit de propriétaire, redémarrage et réinitialisation.
