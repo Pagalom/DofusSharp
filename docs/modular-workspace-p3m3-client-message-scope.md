@@ -65,6 +65,51 @@ Arrêter puis relancer le probe avec une nouvelle référence locale. Répéter 
 
 La vérification `--profession-job-study --check-public-job-ids` (roster `ipz` et références de crafts) ne commencera qu'après validation des résultats précédents. Les équivalences entre IDs publics et métiers sont **hypothétiques** hors métiers directement testés ; 3.7.12.12 n'est pas validée par extrapolation.
 
+## Observation P3m.3b — premier essai réel sur le build affiché 3.7.12.12 (20/10/2026)
+
+L'utilisateur a exécuté `--identity-fields` avec une seule référence
+locale nom/niveau. Les données personnelles et valeurs candidates sont
+exclues de ce compte rendu.
+
+- Trois sessions TCP ont été ouvertes successivement ; **ksc et ksb**
+  ont été capturés dans la **même session #3**.
+- `ksc` : 173 octets, correspondance nom/niveau **unique**,
+  `parent-numeric=[f3]` ; 2 entrées complètes distinctes,
+  `f3-distinct=true`, `selected-f3-unique=true`,
+  `semantic=unverified`.
+- `ksb` : 162 octets, correspondance nom/niveau **unique**,
+  `parent-numeric=[f3]`.
+- Comparaison interne `ksb`/`ksc` :
+  `same-session=yes shared-equal-parent=[f3]`,
+  `p2f candidate-link=yes`, `identity=unverified`.
+- Classe : `class=unknown` et `class-link=pending`.
+- Comparaison d'une seconde connexion du **même personnage** :
+  **pas encore effectuée** (`cross-session-f3=baseline`,
+  `reference-sessions=1`).
+
+**Conclusion circonscrite :** les chemins candidats de `ksb`/`ksc`
+sont encore présents dans cette capture, mais ce seul essai ne prouve
+ni la sémantique du champ f3, ni son unicité intercomptes, ni le serveur,
+ni le niveau de confiance requis pour `CharacterIdentityCorrelator`.
+
+### Suite conseillée, sans changement de code
+
+Recommencer **une seule exécution de `--identity-fields` avec la
+référence du même personnage**, démarrer la connexion une première fois,
+puis **fermer totalement le client de jeu sans arrêter le probe**, le
+rouvrir et reconnecter le **même** personnage. Ne conclure à une
+répétition sur nouvelle connexion que si la console produit un
+**nouveau numéro de session TCP** et
+`cross-session-f3=equal reference-sessions=2` (ou davantage). Une
+simple répétition au sein de la même session ne valide pas ce critère.
+
+Ensuite, lancer un **autre probe indépendant** avec une référence
+nom/niveau d'un deuxième personnage, pour vérifier la structure
+`ksb`/`ksc` sur ce personnage. Le second probe ne permet PAS de
+comparer les valeurs f3 entre ces deux exécutions ; pour démontrer
+une différence interpersonnage sans dévoiler les valeurs, prévoir
+un protocole comparatif interne dédié et testé.
+
 ## Sécurité et limites
 
 - Aucun profil persistant ; reconstruction exclusivement en mémoire.
