@@ -135,3 +135,65 @@ et aucun ne garantit l'origine d'un message réseau. Le sélecteur
 en haut à droite peut s'appuyer sur les fenêtres pour l'UX, mais
 les données de métier, d'inventaire et de kamas attendront une
 attribution réseau ↔ client vérifiée.
+
+
+## Essai 2 — deux fenêtres en parallèle (20 octobre 2026)
+
+Capture réelle anonymisée de 45 secondes, lancée alors que **deux
+clients Dofus** étaient déjà ouverts. Le diagnostic a trouvé :
+
+- **deux fenêtres visibles**, chacune avec son propre PID et son propre HWND ;
+- deux titres initialement de **25 caractères**, devenus
+  respectivement **39** et **40 caractères** après chargement ;
+- alternance répétée du focus entre les deux fenêtres, puis retour
+  depuis une application tierce, sans confusion du client actif ;
+- aucune sauvegarde de profil et aucune capture réseau.
+
+**Résultat :** la détection des fenêtres, leur distinction par processus
+et fenêtre, les transitions de titre et la sélection du focus sont
+**validées pour deux clients simultanés**. Les PID, HWND et titres
+individuels ne sont pas recopiés ici.
+
+**Non démontré par ce test :** l'existence d'une identité de compte
+différente pour chacun, un identifiant réseau de compte/serveur,
+ou la correspondance Npcap ↔ fenêtre. L'identification des comptes
+ne peut pas être déduite du seul titre.
+
+## Essai 3 — vérifier le propriétaire Windows des sockets TCP (P3j)
+
+Un paramètre facultatif ajoute une lecture **locale de la table TCP
+de Windows**, sans paquets, sans adresses imprimées et sans données
+personnelles persistées :
+
+```powershell
+powershell -NoProfile -File .\scripts\probe_dofus_windows.ps1 -WatchSeconds 30 -RedactTitles -CheckTcpOwners
+```
+
+
+À exécuter avec **deux personnages connectés en jeu**.
+Le script utilise `Get-NetTCPConnection -State Established` et filtre
+sur le **port distant 5555**, déjà ciblé par le diagnostic Npcap.
+Il imprime, pour chaque index ordinal de fenêtre, le **nombre de
+sockets appartenant au PID** ; jamais les ports éphémères,
+adresses, noms ou identifiants réseau. Un relevé a lieu au lancement
+puis à la fin de la surveillance.
+
+- `socket-count=1` pour chaque client, avec PID distinct :
+  **candidat** d'association fenêtre ↔ processus ↔ socket TCP ;
+- `socket-count=0` : aucun propriétaire TCP correspondant,
+  ce qui peut indiquer un autre processus/socket ou un port changé
+  dans le build Dofus 3.7.12.12 ;
+- `socket-count>1` : attribution ambiguë, chercher un moyen
+  de distinguer les flux plutôt que choisir arbitrairement.
+
+Même un résultat `pid-socket-association=candidate` ne prouve pas
+que l'IP/port capturé par Npcap appartient au même socket : la
+correspondance des 4-tuples reste à tester localement, sans afficher
+ces derniers. Ce test n'autorise pas non plus à attribuer un compte
+ou serveur. `Get-NetTCPConnection` dépend de la disponibilité
+du module Windows `NetTCPIP`.
+
+Le sélecteur de portraits pourra utiliser la distinction HWND/PID
+pour proposer les clients, mais l'attribution des données économiques
+ou des métiers restera bloquée tant que le lien flux ↔ client
+n'aura pas été établi.

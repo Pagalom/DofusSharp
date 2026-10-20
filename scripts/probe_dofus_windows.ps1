@@ -11,12 +11,15 @@
   powershell -NoProfile -File .\scripts\probe_dofus_windows.ps1
 .EXAMPLE
   powershell -NoProfile -File .\scripts\probe_dofus_windows.ps1 -RedactTitles
+.EXAMPLE
+  powershell -NoProfile -File .\scripts\probe_dofus_windows.ps1 -RedactTitles -CheckTcpOwners
 #>
 [CmdletBinding()]
 param(
     [ValidateRange(3, 180)]
     [int]$WatchSeconds = 30,
-    [switch]$RedactTitles
+    [switch]$RedactTitles,
+    [switch]$CheckTcpOwners
 )
 
 if ($env:OS -ne 'Windows_NT') {
@@ -141,6 +144,54 @@ function Show-Window([string]$Event, $Window) {
         $Event, $Window.ProcessId, $Window.Handle, $focusMark, $title)
 }
 
+
+# Independent Windows OS socket-owner check, never packet inspection.
+# PID ownership can suggest which Dofus process owns a TCP socket;
+# it is NOT an account/server identity or a verified Npcap flow binding.
+function Show-TcpOwnership([string]$Phase, $WindowList) {
+    if (-not $CheckTcpOwners) { return }
+
+    if (-not (Get-Command Get-NetTCPConnection -ErrorAction SilentlyContinue)) {
+        Write-Host "tcp-owner phase=$Phase status=unavailable reason=NetTCPIP-module-missing"
+        return
+    }
+
+    try {
+        # OS-supplied process owners, addresses and ephemeral ports remain RAM-only.
+        # Do NOT write, echo or persist the connection objects.
+        $connections = @(Get-NetTCPConnection -State Established -ErrorAction Stop |
+            Where-Object { $_.RemotePort -eq 5555 })
+    }
+    catch {
+        Write-Host "tcp-owner phase=$Phase status=unavailable reason=socket-table-inaccessible"
+        return
+    }
+
+    $windowListArray = @($WindowList)
+    $distinctPids = @($windowListArray | Select-Object -ExpandProperty ProcessId -Unique)
+    $pidDistinct = $distinctPids.Count -eq $windowListArray.Count
+    $exactlyOneEach = $windowListArray.Count -gt 0 -and $pidDistinct
+
+    Write-Host ("tcp-owner phase={0} windows={1} distinct-processes={2} candidate-remote-port=5555" -f
+        $Phase, $windowListArray.Count, $(if ($pidDistinct) { "yes" } else { "no" }))
+
+    foreach ($window in $windowListArray) {
+        $matching = @($connections | Where-Object {
+            [int]$_.OwningProcess -eq [int]$window.ProcessId
+        })
+        $count = $matching.Count
+        if ($count -ne 1) { $exactlyOneEach = $false }
+        $status = if ($count -eq 0) { "none" } elseif ($count -eq 1) { "one" } else { "multiple" }
+        # Public ordinal only. No character names, PID, HWND, addresses,
+        # local ports, or remote endpoints are emitted by this check.
+        Write-Host ("tcp-owner window-index={0} socket-count={1} status={2}" -f
+            $window.Order, $count, $status)
+    }
+
+    $association = if ($exactlyOneEach) { "candidate" } else { "unverified" }
+    Write-Host "tcp-owner phase=$Phase pid-socket-association=$association account=unverified server=unverified"
+}
+
 Write-Host "Diagnostic Dofus (aucune ecriture disque, aucune capture reseau)."
 Write-Host "Le titre peut contenir ton nom de personnage : ne le partage pas tel quel."
 Write-Host ""
@@ -149,6 +200,7 @@ Write-Host "Fenetres visibles Dofus au lancement : $($first.Length)"
 foreach ($window in $first) {
     Show-Window "fenetre#$($window.Order)" $window
 }
+Show-TcpOwnership "debut" $first
 
 if ($first.Length -eq 0) {
     Write-Host "Aucune fenetre reconnue : verifier que Dofus est lance."
@@ -196,6 +248,7 @@ while ($timer.Elapsed.TotalSeconds -lt $WatchSeconds) {
         $lastFocus = $currentFocus
     }
 }
+Show-TcpOwnership "fin" ([BestCrushDofusWindowProbe]::Scan())
 Write-Host ""
 Write-Host "Fin du diagnostic. Rien n'a ete enregistre."
 Write-Host "Pour partager le rapport, masquer les noms de personnages contenus dans les titres."
