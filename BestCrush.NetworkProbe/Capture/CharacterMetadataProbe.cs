@@ -27,10 +27,12 @@ internal sealed class CharacterMetadataProbe(
     ProfessionXpWireStudy? professionXpStudy = null,
     bool professionJobStudy = false,
     CharacterIdentityPairStudy? identityPairStudy = null,
-    CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null) : IDisposable
+    CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null,
+    ServerRouteTransitionStudy? serverRouteStudy = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
+    private readonly ServerRouteTransitionStudy? _serverRouteStudy = serverRouteStudy;
     private readonly CharacterCaptureFlowTracker _flows = new(
         shapeKeys: shapeKeys, professionReferences: professionReferences,
         decodeIpz: decodeIpz, studyReferences: studyReferences,
@@ -151,9 +153,17 @@ internal sealed class CharacterMetadataProbe(
             // Count before mode-specific filtering and duplicate suppression,
             // so missing 'ksc' can be distinguished from a silent interface.
             _traffic.EventsObserved(events);
+            _serverRouteStudy?.Observe(key, events);
 
             foreach (CharacterCaptureEvent entry in events)
             {
+                // P3m.5 shows only session lifecycle + the two marker
+                // opcodes; never dump other messages or their contents.
+                if (_serverRouteStudy is not null &&
+                    entry.Kind == CharacterCaptureEventKind.Message &&
+                    entry.Opcode is not ("ksc" or "ksb"))
+                    continue;
+
                 if (_professionMode && entry.Kind == CharacterCaptureEventKind.Message &&
                     entry.ProfessionCandidates is null)
                     continue;

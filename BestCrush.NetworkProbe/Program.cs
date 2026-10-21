@@ -1,3 +1,4 @@
+using BestCrush.Network.Capture;
 using BestCrush.NetworkProbe.Capture;
 using BestCrush.Network.Protocol;
 using SharpPcap;
@@ -53,6 +54,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-pair");
     Console.WriteLine("Pour chercher f3 dans d'autres familles réseau (candidats non vérifiés) :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --identity-cross-opcodes");
+    Console.WriteLine("Pour étudier une transition de serveurs A → B → A (routes uniquement) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --server-route-study");
     Console.WriteLine("Pour comparer localement les champs numériques ksb et ksc dans une même connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields");
     Console.WriteLine("Pour vérifier le candidat de classe f5.f3 (comparaison anonymisée seulement) :");
@@ -76,6 +79,11 @@ Console.WriteLine(options.WindowFlowLink
     : $"BestCrush Network Probe — mapping de référence {map.ClientBuild} (build réel du jeu non vérifié)");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
+if (options.ServerRouteStudy)
+{
+    Console.WriteLine("P3m.5 : protocole manuel A-B-A, destinations TCP anonymisées, serveur logique NON vérifié.");
+    Console.WriteLine("Une instance Dofus à la fois. Chaque phase débute avant l'ouverture du client.");
+}
 if (options.WindowFlowLink)
 {
     Console.WriteLine("P3k : quatre champs TCP compares localement aux sockets Windows et HWND/PID.");
@@ -301,6 +309,35 @@ if (options.WindowFlowLink)
     probe.Stop();
     probe.WriteSummary();
 }
+else if (options.ServerRouteStudy)
+{
+    ServerRouteTransitionStudy routeStudy = new();
+    using CharacterMetadataProbe probe = new(
+        devices[options.DeviceIndex.Value], options.Port,
+        serverRouteStudy: routeStudy);
+    probe.Start();
+    Console.WriteLine("P3m.5 : capture ouverte. Aucune IP, port local, nom de compte ou serveur n'est affiché.");
+    for (int stage = 0; stage < 3; stage++)
+    {
+        if (!routeStudy.StartStage(stage))
+            break;
+        Console.WriteLine(stage switch
+        {
+            0 => "PHASE A1 : connecter un personnage sur le serveur A, puis fermer Dofus complètement.",
+            1 => "PHASE B : connecter un personnage sur le serveur B, puis fermer Dofus complètement.",
+            _ => "PHASE A2 : reconnecter un personnage sur le serveur A, puis fermer Dofus complètement."
+        });
+        Console.WriteLine("Une fois le client fermé, appuyer sur Entrée pour terminer cette phase (Ctrl+C pour arrêter).");
+        Task<string?> nextLine = Task.Run(() => Console.ReadLine());
+        while (!nextLine.IsCompleted && !stop.Wait(TimeSpan.FromMilliseconds(100))) { }
+        if (stop.IsSet || (nextLine.IsCompleted && nextLine.Result is null))
+            break;
+    }
+    probe.Stop();
+    Console.WriteLine("P3m.5 : résultat des destinations, sans preuve de serveur logique :");
+    foreach (string line in routeStudy.Summarize())
+        Console.WriteLine(line);
+}
 else if (options.CharacterScan)
 {
     // A single opt-in in-RAM collector: only the first valid TCP session
@@ -488,6 +525,7 @@ internal sealed record ProbeOptions(
     bool IdentityFields,
     bool IdentityPair,
     bool IdentityCrossOpcodes,
+    bool ServerRouteStudy,
     int? ExpectedClassId)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
@@ -525,6 +563,7 @@ internal sealed record ProbeOptions(
         bool identityFields = false;
         bool identityPair = false;
         bool identityCrossOpcodes = false;
+        bool serverRouteStudy = false;
         int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
@@ -593,6 +632,9 @@ internal sealed record ProbeOptions(
                 case "--identity-cross-opcodes":
                     identityCrossOpcodes = true;
                     break;
+                case "--server-route-study":
+                    serverRouteStudy = true;
+                    break;
                 case "--expected-class-id" when i + 1 < args.Length &&
                     int.TryParse(args[i + 1], out int parsedClassId):
                     i++;
@@ -634,7 +676,8 @@ internal sealed record ProbeOptions(
             (professionJobStudy ? 1 : 0) +
             (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
-            (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0);
+            (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
+            (serverRouteStudy ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -663,6 +706,6 @@ internal sealed record ProbeOptions(
             professionFlow, professionContinuity, professionXpStudy,
             professionJobStudy, checkPublicJobIds, windowFlowLink,
             identityName, identityFields, identityPair,
-            identityCrossOpcodes, expectedClassId);
+            identityCrossOpcodes, serverRouteStudy, expectedClassId);
     }
 }

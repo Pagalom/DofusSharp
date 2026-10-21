@@ -35,6 +35,33 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.5 : transition serveur A → B → A (destination réseau uniquement)
+
+P3m.4 a trouvé un candidat f3 stable après reconnexion, mais
+**aucune correspondance f3 dans les autres messages ciblés**
+(8 messages examinés par session, 2 sessions valides).
+Cela n'invalide pas f3, mais n'apporte pas une troisième
+famille de preuve.
+
+Pour étudier le routage réseau **sans attribuer de serveur**,
+le nouveau mode expérimental compare en RAM les destinations
+TCP de trois connexions, annoncées manuellement A → B → A :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --server-route-study
+```
+
+Une seule fenêtre Dofus à la fois. Fermer complètement le
+client, puis **appuyer sur Entrée** entre chaque phase. La
+capture doit reconnaître `ksc` et `ksb` dans une session TCP
+clôturée par phase pour produire des comparaisons
+`equal/different`, jamais d'IP, ni de port local, ni de
+nom de serveur. Les résultats `A-B-A`, `same-all` ou
+`other` portent exclusivement sur les destinations TCP et
+**ne vérifient pas le serveur logique Dofus**.
+
+Voir `docs/modular-workspace-p3m5-server-route-transition.md`.
+
 ### P3m.4 : recherche exploratoire d'un troisième opcode contenant f3
 
 Les essais réels ont montré que le candidat `parent.f3` est
