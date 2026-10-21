@@ -43,6 +43,44 @@ les routages et les plages d'hébergement. Cela **ne constitue
 toujours pas une preuve du serveur logique**. Les payloads,
 jetons et identifiants de compte restent exclus du diagnostic.
 
+## Deuxième essai réel P3m.5 — 21 octobre 2026, destinations visibles
+
+Nouvelle capture après affichage des IP/ports de destination :
+trois phases A1 → B → A2, avec une seule session TCP de jeu
+complète et clôturée par phase.
+
+| Phase | Session | ksc (octets) | ksb (octets) | Destination |
+| --- | ---: | ---: | ---: | --- |
+| A1 | #2 | 220 | 138 | `34.252.214.29:5555` |
+| B | #6 | 90 | 153 | `54.77.100.255:5555` |
+| A2 | #10 | 220 | 138 | `34.252.214.29:5555` |
+
+- Phases A1 et A2 : `tcp-sessions=2` et `4`,
+  `ksc-ksb-sessions=1 closed-complete=1 comparable=yes`.
+- Phase B : `tcp-sessions=4 ksc-ksb-sessions=1 closed-complete=1 comparable=yes`.
+- Résultat final :
+  `p3m5=summary destination-pattern=A-B-A A1-vs-A2=equal
+  A1-vs-B=different B-vs-A2=different server=unverified meaning=route-only`.
+- Des sessions intermédiaires ont émis seulement `ksc`
+  (notamment #4 et #8) : elles ne sont pas retenues comme sessions
+  de jeu complètes par le diagnostic.
+
+**Interprétation :** le routage A → B → A est reproductible
+au sein de **cette** exécution. L'expérience précédente avait
+donné des destinations différentes pour A1 et A2.
+L'association IP↔serveur logique n'est donc pas
+démontrée comme stable au fil des exécutions ; l'origine
+précise de la variation reste inconnue. Les tailles `ksc`
+et `ksb` différentes selon les phases sont des indices
+de contenu différent, pas des identifiants fiables de serveur.
+
+**Décision :** conserver les destinations comme informations
+diagnostiques, ne pas les utiliser comme clé primaire de serveur,
+ne pas considérer `server=unverified` comme levé. Prochaine
+investigation : identifier un champ explicite du serveur logique
+dans un échange protocolaire lié à la sélection/connexion
+et le vérifier par alternance A → B → A.
+
 ## But et limites de P3m.5
 
 Étudier la transition manuelle entre deux **serveurs logiques**
