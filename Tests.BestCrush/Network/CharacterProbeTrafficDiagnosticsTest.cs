@@ -96,6 +96,9 @@ public sealed class CharacterProbeTrafficDiagnosticsTest
     public void CounterOnlyUsesServerToClientIdentityMessages()
     {
         CharacterProbeTrafficDiagnostics d = new();
+        // An observed decoded message implies the probe received TCP payload.
+        d.PacketArrived();
+        d.DofusTcpPacket(100);
         d.EventsObserved([
             new CharacterCaptureEvent(T0, 1,
                 CharacterCaptureDirection.ClientToServer,
@@ -116,6 +119,9 @@ public sealed class CharacterProbeTrafficDiagnosticsTest
     public void BothMessageFamiliesOnlyPointToCandidateMatchingNotConfirmedIdentity()
     {
         CharacterProbeTrafficDiagnostics d = new();
+        // An observed decoded message implies the probe received TCP payload.
+        d.PacketArrived();
+        d.DofusTcpPacket(100);
         d.EventsObserved([
             new CharacterCaptureEvent(T0, 2,
                 CharacterCaptureDirection.ServerToClient,
