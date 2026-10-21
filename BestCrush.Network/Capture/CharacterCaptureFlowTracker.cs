@@ -88,6 +88,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly ServerWireTransitionStudy? _serverWireStudy;
     private readonly KtaFieldScopeStudy? _ktaScopeStudy;
     private readonly KtaSelectedCharacterStudy? _ktaCharacterStudy;
+    private readonly ServerNameWireStudy? _serverNameStudy;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -117,7 +118,8 @@ public sealed class CharacterCaptureFlowTracker
         CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null,
         ServerWireTransitionStudy? serverWireStudy = null,
         KtaFieldScopeStudy? ktaScopeStudy = null,
-        KtaSelectedCharacterStudy? ktaCharacterStudy = null)
+        KtaSelectedCharacterStudy? ktaCharacterStudy = null,
+        ServerNameWireStudy? serverNameStudy = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -288,6 +290,21 @@ public sealed class CharacterCaptureFlowTracker
                 nameof(ktaCharacterStudy));
         _ktaCharacterStudy = ktaCharacterStudy;
 
+        if (serverNameStudy is not null &&
+            (ktaCharacterStudy is not null || ktaScopeStudy is not null ||
+             characterNameReference is not null || identityFieldsReference is not null ||
+             identityPairStudy is not null || crossOpcodeStudy is not null ||
+             serverWireStudy is not null || expectedClassId is not null ||
+             shapeKeys is not null || professionReferences is not null ||
+             studyReferences is not null || identifyReferences is not null ||
+             decodeIpz || showCandidateJobIds || _characterNameOpCodes.Count != 0 ||
+             studyProfessionFlow || studyProfessionContinuity ||
+             professionXpStudy is not null))
+            throw new ArgumentException(
+                "Server-name discovery must run exclusively.",
+                nameof(serverNameStudy));
+        _serverNameStudy = serverNameStudy;
+
         if ((studyProfessionFlow || studyProfessionContinuity || professionXpStudy is not null) &&
             (shapeKeys is not null || professionReferences is not null ||
              decodeIpz || studyReferences is not null ||
@@ -419,6 +436,8 @@ public sealed class CharacterCaptureFlowTracker
                                 _ktaScopeStudy?.ObserveMessage(
                                     flow.Number, key, direction, any.Key, any.Body);
                                 _ktaCharacterStudy?.ObserveMessage(
+                                    flow.Number, direction, any.Key, any.Body);
+                                _serverNameStudy?.ObserveMessage(
                                     flow.Number, direction, any.Key, any.Body);
 
                                 events.Add(new CharacterCaptureEvent(

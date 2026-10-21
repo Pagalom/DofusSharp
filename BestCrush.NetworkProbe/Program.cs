@@ -62,6 +62,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --kta-f1-control");
     Console.WriteLine("Pour comparer kta.f1 à l'ID candidat du personnage chargé ksb/ksc :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --kta-character-compare");
+    Console.WriteLine("Pour rechercher les noms des serveurs dans les messages de connexion (A-B-A) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --server-name-study");
     Console.WriteLine("Pour comparer localement les champs numériques ksb et ksc dans une même connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields");
     Console.WriteLine("Pour vérifier le candidat de classe f5.f3 (comparaison anonymisée seulement) :");
@@ -85,6 +87,12 @@ Console.WriteLine(options.WindowFlowLink
     : $"BestCrush Network Probe — mapping de référence {map.ClientBuild} (build réel du jeu non vérifié)");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
+if (options.ServerNameStudy)
+{
+    Console.WriteLine("P3m.9 : recherche bornée de deux noms publics de serveurs dans les messages TCP/5555.");
+    Console.WriteLine("Les noms seront demandés en local ; aucun contenu de paquet ne sera affiché.");
+    Console.WriteLine("Détection d'un nom ≠ preuve de serveur sélectionné ou du protocole de sélection.");
+}
 if (options.KtaCharacterCompare)
 {
     Console.WriteLine("P3m.8 : contrôle expérimental kta.f1 versus ksb/ksc parent.f3, même serveur.");
@@ -326,6 +334,54 @@ if (options.WindowFlowLink)
     stop.Wait();
     probe.Stop();
     probe.WriteSummary();
+}
+else if (options.ServerNameStudy)
+{
+    Console.Write("Nom exact du serveur A : ");
+    string? serverA = Console.ReadLine();
+    Console.Write("Nom exact du serveur B (différent de A) : ");
+    string? serverB = Console.ReadLine();
+    ServerNameWireStudy study;
+    try
+    {
+        study = new ServerNameWireStudy(serverA ?? "", serverB ?? "");
+    }
+    catch (ArgumentException ex)
+    {
+        Console.Error.WriteLine("P3m.9 : " + ex.Message);
+        return;
+    }
+    serverA = serverB = null;
+    ServerRouteTransitionStudy route = new();
+    using CharacterMetadataProbe probe = new(
+        devices[options.DeviceIndex.Value], options.Port,
+        serverRouteStudy: route,
+        serverNameStudy: study);
+    probe.Start();
+    Console.WriteLine("P3m.9 : capture active. Dofus doit être fermé au début de chaque étape.");
+    for (int stage = 0; stage < 3; stage++)
+    {
+        if (!study.StartStage(stage) || !route.StartStage(stage))
+            break;
+        Console.WriteLine(stage switch
+        {
+            0 => "PHASE A1 : se connecter sur le serveur A.",
+            1 => "PHASE B : se connecter sur le serveur B.",
+            _ => "PHASE A2 : se reconnecter sur le serveur A."
+        });
+        Console.WriteLine("Attendre le chargement du personnage, fermer complètement Dofus, puis Entrée (Ctrl+C pour arrêter).");
+        Task<string?> nextLine = Task.Run(() => Console.ReadLine());
+        while (!nextLine.IsCompleted && !stop.Wait(TimeSpan.FromMilliseconds(100))) { }
+        if (stop.IsSet || (nextLine.IsCompleted && nextLine.Result is null))
+            break;
+    }
+    probe.Stop();
+    Console.WriteLine("P3m.5 : destinations réseau des connexions de jeu observées :");
+    foreach (string line in route.Summarize())
+        Console.WriteLine(line);
+    Console.WriteLine("P3m.9 : présence des noms A/B par opcode et chemin textuel (aucun ID vérifié) :");
+    foreach (string line in study.Summarize())
+        Console.WriteLine(line);
 }
 else if (options.KtaCharacterCompare)
 {
@@ -615,6 +671,7 @@ internal sealed record ProbeOptions(
     bool ServerWireStudy,
     bool KtaF1Control,
     bool KtaCharacterCompare,
+    bool ServerNameStudy,
     int? ExpectedClassId)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
@@ -656,6 +713,7 @@ internal sealed record ProbeOptions(
         bool serverWireStudy = false;
         bool ktaF1Control = false;
         bool ktaCharacterCompare = false;
+        bool serverNameStudy = false;
         int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
@@ -736,6 +794,9 @@ internal sealed record ProbeOptions(
                 case "--kta-character-compare":
                     ktaCharacterCompare = true;
                     break;
+                case "--server-name-study":
+                    serverNameStudy = true;
+                    break;
                 case "--expected-class-id" when i + 1 < args.Length &&
                     int.TryParse(args[i + 1], out int parsedClassId):
                     i++;
@@ -779,7 +840,8 @@ internal sealed record ProbeOptions(
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
             (serverRouteStudy ? 1 : 0) + (serverWireStudy ? 1 : 0) +
-            (ktaF1Control ? 1 : 0) + (ktaCharacterCompare ? 1 : 0);
+            (ktaF1Control ? 1 : 0) + (ktaCharacterCompare ? 1 : 0) +
+            (serverNameStudy ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -809,6 +871,7 @@ internal sealed record ProbeOptions(
             professionJobStudy, checkPublicJobIds, windowFlowLink,
             identityName, identityFields, identityPair,
             identityCrossOpcodes, serverRouteStudy, serverWireStudy,
-            ktaF1Control, ktaCharacterCompare, expectedClassId);
+            ktaF1Control, ktaCharacterCompare, serverNameStudy,
+            expectedClassId);
     }
 }

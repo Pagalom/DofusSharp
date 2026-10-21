@@ -35,6 +35,35 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.9 : détecter les noms des serveurs Dofus en connexion
+
+Le nom du serveur pourrait être transmis directement, soit dans
+un message de sélection, soit dans une liste qui le relie aux
+personnages. Les essais antérieurs cherchaient surtout des
+**nombres**, et P3m.9 cherche **deux noms publics connus**
+dans les champs texte des messages décodés sur TCP/5555.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --server-name-study
+```
+
+Saisir les noms des serveurs A et B, puis reproduire
+**A1 → B → A2**, une fenêtre Dofus à la fois. Fermer
+complètement le jeu avant d'appuyer sur Entrée à chaque phase.
+
+La sortie `p3m9=` donne direction/opcode/chemin de champ et
+indique si le nom A ou B apparaît dans le message. Elle
+distingue également les cas où **les deux noms apparaissent
+dans une liste commune**, ce qui ne prouve pas la sélection.
+
+**Limite :** uniquement les corps de messages Ankama décodés
+sur TCP/5555 ; la sélection peut avoir lieu sur un autre
+canal. Aucun `ServerId` n'est déclaré validé et le serveur
+choisi manuellement dans BestCrush reste autoritaire.
+P3m.8 est conservé mais reporté.
+
+Voir `docs/modular-workspace-p3m9-server-name-wire-study.md`.
+
 ### P3m.8 : vérifier si `kta.f1` désigne le personnage sélectionné
 
 P3m.7 a montré que `kta.f1` **change entre deux personnages
