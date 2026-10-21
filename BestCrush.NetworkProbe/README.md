@@ -35,6 +35,35 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.6 : découverte de chemins réseau candidats pour le serveur logique
+
+Le test A → B → A a donné une reconnexion au serveur A via
+`34.252.214.29:5555` et la connexion B via
+`54.77.100.255:5555`, **sans preuve sémantique du serveur**.
+
+Le mode expérimental suivant recherche, dans les messages
+protocole **TCP/5555 avant le chargement du personnage**,
+des champs numériques qui suivent un motif **A1 = A2 ≠ B**.
+Il n'affiche que les directions, opcodes et chemins de champs,
+jamais leurs valeurs réseau, et n'active aucune attribution.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --server-wire-study
+```
+
+Exécuter sur un seul compte et une seule fenêtre Dofus,
+en suivant les trois phases affichées : connexion A1,
+fermeture puis Entrée, connexion B, fermeture puis Entrée,
+retour au **même personnage** A2, fermeture puis Entrée.
+
+**Attention :** le motif peut tout autant provenir d'un
+identifiant de **personnage** que d'un serveur : les résultats
+sont `semantic=unverified server=unverified`. Dofus pourrait
+choisir un serveur via un autre port ou protocole non écouté.
+La capture de production, les fiches et la base sont inchangées.
+
+Voir `docs/modular-workspace-p3m6-server-wire-candidates.md`.
+
 ### P3m.5 : transition serveur A → B → A (destination réseau uniquement)
 
 P3m.4 a trouvé un candidat f3 stable après reconnexion, mais

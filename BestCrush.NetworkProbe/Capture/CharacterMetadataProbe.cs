@@ -28,11 +28,13 @@ internal sealed class CharacterMetadataProbe(
     bool professionJobStudy = false,
     CharacterIdentityPairStudy? identityPairStudy = null,
     CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null,
-    ServerRouteTransitionStudy? serverRouteStudy = null) : IDisposable
+    ServerRouteTransitionStudy? serverRouteStudy = null,
+    ServerWireTransitionStudy? serverWireStudy = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
     private readonly ServerRouteTransitionStudy? _serverRouteStudy = serverRouteStudy;
+    private readonly ServerWireTransitionStudy? _serverWireStudy = serverWireStudy;
     private readonly CharacterCaptureFlowTracker _flows = new(
         shapeKeys: shapeKeys, professionReferences: professionReferences,
         decodeIpz: decodeIpz, studyReferences: studyReferences,
@@ -46,7 +48,8 @@ internal sealed class CharacterMetadataProbe(
         studyProfessionContinuity: studyProfessionContinuity,
         professionXpStudy: professionXpStudy,
         identityPairStudy: identityPairStudy,
-        crossOpcodeStudy: crossOpcodeStudy);
+        crossOpcodeStudy: crossOpcodeStudy,
+        serverWireStudy: serverWireStudy);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;
@@ -154,10 +157,11 @@ internal sealed class CharacterMetadataProbe(
             // so missing 'ksc' can be distinguished from a silent interface.
             _traffic.EventsObserved(events);
             _serverRouteStudy?.Observe(key, events);
+            _serverWireStudy?.ObserveEvents(events);
 
             foreach (CharacterCaptureEvent entry in events)
             {
-                // P3m.5 shows only session lifecycle + the two marker
+                // P3m.5/6 show only session lifecycle + the two marker
                 // opcodes; never dump other messages or their contents.
                 if (_serverRouteStudy is not null &&
                     entry.Kind == CharacterCaptureEventKind.Message &&

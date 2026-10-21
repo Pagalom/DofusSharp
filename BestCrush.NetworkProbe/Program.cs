@@ -56,6 +56,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --identity-cross-opcodes");
     Console.WriteLine("Pour étudier une transition de serveurs A → B → A (routes uniquement) :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --server-route-study");
+    Console.WriteLine("Pour étudier les chemins protobuf candidats d'un serveur logique (A-B-A) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --server-wire-study");
     Console.WriteLine("Pour comparer localement les champs numériques ksb et ksc dans une même connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields");
     Console.WriteLine("Pour vérifier le candidat de classe f5.f3 (comparaison anonymisée seulement) :");
@@ -79,9 +81,11 @@ Console.WriteLine(options.WindowFlowLink
     : $"BestCrush Network Probe — mapping de référence {map.ClientBuild} (build réel du jeu non vérifié)");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
-if (options.ServerRouteStudy)
+if (options.ServerRouteStudy || options.ServerWireStudy)
 {
-    Console.WriteLine("P3m.5 : protocole manuel A-B-A, IP et ports TCP de jeu affichés ; serveur logique NON vérifié.");
+    Console.WriteLine(options.ServerWireStudy
+        ? "P3m.6 : comparaison des champs numériques TCP/5555 lors de A-B-A ; aucune identité de serveur vérifiée."
+        : "P3m.5 : protocole manuel A-B-A, IP et ports TCP de jeu affichés ; serveur logique NON vérifié.");
     Console.WriteLine("Une instance Dofus à la fois. Chaque phase débute avant l'ouverture du client.");
 }
 if (options.WindowFlowLink)
@@ -309,17 +313,23 @@ if (options.WindowFlowLink)
     probe.Stop();
     probe.WriteSummary();
 }
-else if (options.ServerRouteStudy)
+else if (options.ServerRouteStudy || options.ServerWireStudy)
 {
     ServerRouteTransitionStudy routeStudy = new();
+    ServerWireTransitionStudy? wireStudy = options.ServerWireStudy
+        ? new ServerWireTransitionStudy() : null;
     using CharacterMetadataProbe probe = new(
         devices[options.DeviceIndex.Value], options.Port,
-        serverRouteStudy: routeStudy);
+        serverRouteStudy: routeStudy,
+        serverWireStudy: wireStudy);
     probe.Start();
-    Console.WriteLine("P3m.5 : capture ouverte. Destinations du jeu affichées à la fin ; aucun jeton ni payload.");
+    Console.WriteLine(options.ServerWireStudy
+        ? "P3m.6 : capture ouverte. Comparaison numérique en RAM sans afficher les valeurs."
+        : "P3m.5 : capture ouverte. Destinations du jeu affichées à la fin ; aucun jeton ni payload.");
     for (int stage = 0; stage < 3; stage++)
     {
-        if (!routeStudy.StartStage(stage))
+        if (!routeStudy.StartStage(stage) ||
+            (wireStudy is not null && !wireStudy.StartStage(stage)))
             break;
         Console.WriteLine(stage switch
         {
@@ -337,6 +347,12 @@ else if (options.ServerRouteStudy)
     Console.WriteLine("P3m.5 : destinations IP:port de jeu observées (sans preuve de serveur logique) :");
     foreach (string line in routeStudy.Summarize())
         Console.WriteLine(line);
+    if (wireStudy is not null)
+    {
+        Console.WriteLine("P3m.6 : candidats de champs numériques préchargement, sens NON vérifié :");
+        foreach (string line in wireStudy.Summarize())
+            Console.WriteLine(line);
+    }
 }
 else if (options.CharacterScan)
 {
@@ -526,6 +542,7 @@ internal sealed record ProbeOptions(
     bool IdentityPair,
     bool IdentityCrossOpcodes,
     bool ServerRouteStudy,
+    bool ServerWireStudy,
     int? ExpectedClassId)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
@@ -564,6 +581,7 @@ internal sealed record ProbeOptions(
         bool identityPair = false;
         bool identityCrossOpcodes = false;
         bool serverRouteStudy = false;
+        bool serverWireStudy = false;
         int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
@@ -635,6 +653,9 @@ internal sealed record ProbeOptions(
                 case "--server-route-study":
                     serverRouteStudy = true;
                     break;
+                case "--server-wire-study":
+                    serverWireStudy = true;
+                    break;
                 case "--expected-class-id" when i + 1 < args.Length &&
                     int.TryParse(args[i + 1], out int parsedClassId):
                     i++;
@@ -677,7 +698,7 @@ internal sealed record ProbeOptions(
             (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
-            (serverRouteStudy ? 1 : 0);
+            (serverRouteStudy ? 1 : 0) + (serverWireStudy ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -706,6 +727,7 @@ internal sealed record ProbeOptions(
             professionFlow, professionContinuity, professionXpStudy,
             professionJobStudy, checkPublicJobIds, windowFlowLink,
             identityName, identityFields, identityPair,
-            identityCrossOpcodes, serverRouteStudy, expectedClassId);
+            identityCrossOpcodes, serverRouteStudy, serverWireStudy,
+            expectedClassId);
     }
 }

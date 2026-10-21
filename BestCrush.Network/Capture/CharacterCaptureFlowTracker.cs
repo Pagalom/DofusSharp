@@ -85,6 +85,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly ProfessionXpWireStudy? _professionXpStudy;
     private readonly CharacterIdentityPairStudy? _identityPairStudy;
     private readonly CharacterCrossOpcodeFieldStudy? _crossOpcodeStudy;
+    private readonly ServerWireTransitionStudy? _serverWireStudy;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -111,7 +112,8 @@ public sealed class CharacterCaptureFlowTracker
         bool studyProfessionContinuity = false,
         ProfessionXpWireStudy? professionXpStudy = null,
         CharacterIdentityPairStudy? identityPairStudy = null,
-        CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null)
+        CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null,
+        ServerWireTransitionStudy? serverWireStudy = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -241,6 +243,20 @@ public sealed class CharacterCaptureFlowTracker
                 nameof(crossOpcodeStudy));
         _crossOpcodeStudy = crossOpcodeStudy;
 
+        if (serverWireStudy is not null &&
+            (characterNameReference is not null ||
+             identityFieldsReference is not null || identityPairStudy is not null ||
+             crossOpcodeStudy is not null || expectedClassId is not null ||
+             shapeKeys is not null || professionReferences is not null ||
+             studyReferences is not null || identifyReferences is not null ||
+             decodeIpz || showCandidateJobIds ||
+             _characterNameOpCodes.Count != 0 || studyProfessionFlow ||
+             studyProfessionContinuity || professionXpStudy is not null))
+            throw new ArgumentException(
+                "Server-wire study must run exclusively.",
+                nameof(serverWireStudy));
+        _serverWireStudy = serverWireStudy;
+
         if ((studyProfessionFlow || studyProfessionContinuity || professionXpStudy is not null) &&
             (shapeKeys is not null || professionReferences is not null ||
              decodeIpz || studyReferences is not null ||
@@ -364,6 +380,11 @@ public sealed class CharacterCaptureFlowTracker
                                 AnkamaAny? any = AnkamaFrameDecoder.FindAny(frame);
                                 if (any is null)
                                     continue;
+
+                                // P3m.6 receives bounded decoded fields only,
+                                // never a raw TCP stream or persisted packet.
+                                _serverWireStudy?.ObserveMessage(
+                                    flow.Number, direction, any.Key, any.Body);
 
                                 events.Add(new CharacterCaptureEvent(
                                     observedAtUtc, flow.Number, direction,
