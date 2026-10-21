@@ -27,6 +27,45 @@ d'une association compte+serveur ou un autre entier stable.
 La variation des IP pour un même serveur logique entre les
 essais P3m.5 et P3m.6 confirme qu'**IP != ServerId**.
 
+## Résultat réel P3m.7 — 22 octobre 2026
+
+Quatre phases **sur le même compte** déclarées par l'opérateur,
+avec un personnage X puis Y sur serveur A, Z sur serveur B,
+et retour à X sur A. Une seule session de jeu `ksc` + `ksb`
+clôturée par phase, et exactement un message C→S `kta`
+avec une seule valeur `f1` par phase :
+
+| Phase | Session jeu | Destination TCP | kta | Valeurs f1 |
+| --- | ---: | --- | ---: | ---: |
+| A-X1 | #2 | `54.216.176.68:5555` | 1 | 1 |
+| A-Y | #4 | `54.216.176.68:5555` | 1 | 1 |
+| B-Z | #8 | `34.243.47.91:5555` | 1 | 1 |
+| A-X2 | #12 | `34.252.214.29:5555` | 1 | 1 |
+
+Résumé transmis :
+
+```text
+p3m7=summary comparable=yes reconnect-X=equal same-server-X-vs-Y=different cross-server-X-vs-Z=different kta-f1-scope=character-or-selection-candidate semantic=unverified server=unverified
+```
+
+**Conséquence :** `kta:f1` diffère entre deux personnages
+distincts du **même serveur** et du **même compte**, tandis que
+la reconnexion du **même personnage** conserve `kta:f1`,
+**même quand sa destination IP change**. Ce comportement
+contredit une valeur uniquement fonction du serveur logique
+dans les conditions testées. Le champ est un bon candidat
+d'identifiant **de personnage ou de sélection de personnage**,
+non validé sémantiquement.
+
+**Étape logique suivante :** comparer numériquement, sur
+deux personnages distincts, le candidat `kta.f1` envoyé par
+le client avec `parent.f3` du personnage chargé dans
+`ksb`, et vérifier sa présence dans la liste `ksc`.
+Cette comparaison doit être strictement limitée à une même
+phase/connexion, sans noms ni valeurs dans la sortie.
+Elle ne requiert **aucune validation obligatoire du serveur**
+dans l'application : le choix utilisateur reste autoritaire.
+
 ## Pourquoi P3m.7 ?
 
 L'exploration non ciblée de P3m.6 couvre beaucoup de messages
