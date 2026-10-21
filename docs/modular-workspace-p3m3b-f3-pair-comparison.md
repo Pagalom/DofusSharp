@@ -48,17 +48,43 @@ le diagnostic ; la classe, l'account ID et le serveur officiel restent
 non vérifiés. Le statut `semantic=unverified` doit être conservé.
 Aucune attribution de profil en production n'est activée.
 
-### Suite expérimentale suggérée
+## Second essai — deux personnages du même compte et du même serveur
 
-Le test de discrimination le plus utile consiste à comparer
-deux personnages dont l'opérateur sait **localement** qu'ils partagent
-le **même compte et le même serveur** (avec des références nom+niveau
-distinguables). Deux valeurs f3 différentes dans ce scénario
-renforceraient la nature *par personnage* et affaibliraient
-l'hypothèse d'un identifiant uniquement *par compte* ou *par serveur*.
-Ne pas afficher, sauvegarder ni transmettre leurs identités ou leurs
-valeurs candidates. Cela reste une observation, pas une preuve de
-sémantique formelle.
+L'opérateur indique avoir suivi le protocole de comparaison de **deux
+personnages distincts d'un même compte et d'un même serveur** ; le probe
+ne dispose pas encore d'une preuve réseau indépendante du compte ou du
+serveur. Les noms, niveaux et valeurs candidates ne sont pas repris ici.
+
+Observations transmises (21/10/2026, interface Npcap Ethernet GUID
+`545E92A4-567E-4539-88A6-39BE852836A7`, index courant 6) :
+
+- A : connexion TCP **#2**, `ksc` (173 octets) puis
+  `ksb` (162 octets), `confirmed=1/2` ;
+- B : connexion TCP **#4**, `ksc` (173 octets) puis
+  `ksb` (137 octets),
+  `p3m3=pair-complete f3=distinct semantic=unverified` ;
+- résumé final : `filtered-packets=350`,
+  `payload-packets=225`, `decoded=313`, `ksc=2`, `ksb=2`,
+  `errors=0`.
+
+**Conclusion expérimentale :** sous la condition déclarée et
+contrôlée manuellement « même compte / même serveur », f3 diffère
+entre deux personnages. Cela contredit l'hypothèse d'une simple
+valeur f3 constante par compte ou par serveur **dans cette observation**,
+et renforce l'interprétation d'un identifiant propre au personnage.
+Ce n'est **pas** une preuve du nom sémantique officiel du champ et
+aucune identité compte/serveur n'a été vérifiée par le protocole.
+
+### Étape suivante
+
+Avant de connecter `parent.f3` à `CurrentCharacterState` en
+production, prouver le **champ serveur** (en particulier en
+multicompte/multiserveur) et corroborer f3 avec une autre famille
+de messages sémantiquement identifiée, ou une autre source de
+preuve indépendante. Conserver le verrou `semantic=unverified`,
+ne jamais créer/mettre à jour de fiche personnage sur une seule
+référence `Nom:Niveau`, préserver les isolations par connexion,
+et ne pas persister les profils au-delà de la session.
 
 ## Pourquoi un nouveau mode opt-in ?
 
@@ -71,7 +97,7 @@ exécution du probe**.
 ## Mode P3m.3b : `--identity-pair`
 
 ```powershell
-dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --identity-pair
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --identity-pair
 ```
 
 
