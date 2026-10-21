@@ -35,6 +35,40 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.4 : recherche exploratoire d'un troisième opcode contenant f3
+
+Les essais réels ont montré que le candidat `parent.f3` est
+stable après reconnexion, concordant entre `ksc` et `ksb` et
+différent entre deux personnages d'un même compte/serveur
+(selon l'observation locale de l'opérateur). Cela **ne prouve pas
+sa sémantique officielle** ; `ksc` et `ksb` partagent une
+structure proche.
+
+Le mode expérimental suivant inspecte une liste fermée de
+messages serveur de connexion afin de rechercher des chemins
+numériques où la valeur est égale à ce candidat dans la
+**même session TCP**. Aucun nombre, nom, niveau ni payload
+n'est affiché ou enregistré. Une égalité dans un autre opcode
+n'est qu'une piste, pas une confirmation indépendante.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --identity-cross-opcodes
+```
+
+Saisir une seule référence locale `Nom:Niveau` et connecter
+ce personnage deux fois, sans arrêter le probe entre les
+connexions. Terminer par `Ctrl+C` et consulter les seules
+lignes `p3m4=` anonymisées. L'index 6 correspond à l'interface
+Ethernet du poste étudié le 21/10/2026 ; vérifier `--list`
+s'il change.
+
+La **preuve du serveur réseau** nécessite une étude séparée :
+ni l'interface Npcap, ni le PID, ni l'IP du serveur, ni le serveur
+sélectionné manuellement dans BestCrush ne la démontrent.
+Aucune attribution automatique de personnage/profil.
+
+Voir `docs/modular-workspace-p3m4-cross-opcode-field-study.md`.
+
 ### P3b : comparaison anonyme de la continuité des métiers
 
 Après validation P3a réelle A → B → A, le mode

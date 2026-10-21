@@ -84,6 +84,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly ProfessionContinuityStudy? _professionContinuity;
     private readonly ProfessionXpWireStudy? _professionXpStudy;
     private readonly CharacterIdentityPairStudy? _identityPairStudy;
+    private readonly CharacterCrossOpcodeFieldStudy? _crossOpcodeStudy;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -109,7 +110,8 @@ public sealed class CharacterCaptureFlowTracker
         bool studyProfessionFlow = false,
         bool studyProfessionContinuity = false,
         ProfessionXpWireStudy? professionXpStudy = null,
-        CharacterIdentityPairStudy? identityPairStudy = null)
+        CharacterIdentityPairStudy? identityPairStudy = null,
+        CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -225,6 +227,19 @@ public sealed class CharacterCaptureFlowTracker
             throw new ArgumentException("Pair identity study must run exclusively.",
                 nameof(identityPairStudy));
         _identityPairStudy = identityPairStudy;
+
+        if (crossOpcodeStudy is not null &&
+            (characterNameReference is not null ||
+             identityFieldsReference is not null || identityPairStudy is not null ||
+             expectedClassId is not null || shapeKeys is not null ||
+             professionReferences is not null || studyReferences is not null ||
+             identifyReferences is not null || decodeIpz || showCandidateJobIds ||
+             _characterNameOpCodes.Count != 0 || studyProfessionFlow ||
+             studyProfessionContinuity || professionXpStudy is not null))
+            throw new ArgumentException(
+                "Cross-opcode identity study must run exclusively.",
+                nameof(crossOpcodeStudy));
+        _crossOpcodeStudy = crossOpcodeStudy;
 
         if ((studyProfessionFlow || studyProfessionContinuity || professionXpStudy is not null) &&
             (shapeKeys is not null || professionReferences is not null ||
@@ -384,15 +399,19 @@ public sealed class CharacterCaptureFlowTracker
                                         ? CharacterIdentityNameProbe.Describe(
                                             any.Body, _characterNameReference.Value)
                                         : null,
-                                    direction == CharacterCaptureDirection.ServerToClient &&
-                                    any.Key is "ksb" or "ksc"
-                                        ? _identityPairStudy is not null
-                                            ? _identityPairStudy.Observe(
-                                                flow.Number, any.Key, any.Body)
-                                            : _identityFieldsReference.HasValue
-                                                ? ObserveIdentityFields(
-                                                    flow, any.Key, any.Body,
-                                                    _identityFieldsReference.Value)
+                                    direction == CharacterCaptureDirection.ServerToClient
+                                        ? _crossOpcodeStudy is not null
+                                            ? _crossOpcodeStudy.Observe(
+                                                flow.Number, direction, any.Key, any.Body)
+                                            : any.Key is "ksb" or "ksc"
+                                                ? _identityPairStudy is not null
+                                                    ? _identityPairStudy.Observe(
+                                                        flow.Number, any.Key, any.Body)
+                                                    : _identityFieldsReference.HasValue
+                                                        ? ObserveIdentityFields(
+                                                            flow, any.Key, any.Body,
+                                                            _identityFieldsReference.Value)
+                                                        : null
                                                 : null
                                         : null,
                                     _studyProfessionFlow &&

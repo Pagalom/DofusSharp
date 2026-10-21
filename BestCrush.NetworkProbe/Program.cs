@@ -51,6 +51,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-name");
     Console.WriteLine("Pour comparer anonymement f3 entre deux personnages, dans deux connexions :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-pair");
+    Console.WriteLine("Pour chercher f3 dans d'autres familles réseau (candidats non vérifiés) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --identity-cross-opcodes");
     Console.WriteLine("Pour comparer localement les champs numériques ksb et ksc dans une même connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields");
     Console.WriteLine("Pour vérifier le candidat de classe f5.f3 (comparaison anonymisée seulement) :");
@@ -93,6 +95,8 @@ else if (options.CharacterScan)
         ? "Mode P3a : parcours ksc → ksb → ipz par connexion TCP, compte/serveur NON vérifiés."
         : options.IdentityPair
         ? "Mode P3m.3 : comparaison de f3 pour deux personnages, sans valeurs affichées."
+        : options.IdentityCrossOpcodes
+        ? "Mode P3m.4 : recherche de chemins varint égaux à f3 dans d'autres opcodes (non vérifiés)."
         : options.IdentityFields
         ? "Mode P2b : étude des champs voisins du nom/niveau dans ksb et ksc, par connexion TCP."
         : options.IdentityName
@@ -127,6 +131,8 @@ else if (options.CharacterScan)
         Console.WriteLine("ksb/ksc : recherche des champs égaux (sans leurs valeurs) dans une même session ; ID et identité NON vérifiés.");
     if (options.IdentityPair)
         Console.WriteLine("P3m.3 : deux références locales distinctes, deux sessions TCP et deux familles ksc/ksb par personnage. Ne jamais envoyer les références.");
+    if (options.IdentityCrossOpcodes)
+        Console.WriteLine("P3m.4 : une référence locale; observation numérique dans des messages ciblés, aucun ID ni serveur vérifié.");
     if (options.ExpectedClassId.HasValue)
         Console.WriteLine("P2i : comparaison locale de f5.f3 à la classe attendue ; aucune valeur réseau affichée, classe NON vérifiée.");
     if (options.ProfessionMatch)
@@ -214,6 +220,23 @@ if (options.ProfessionIdentify)
     identifyReferences = parsedIdentify;
     rawIdentify = null;
     Console.WriteLine("Références chargées. Connecter maintenant le personnage.");
+}
+
+CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null;
+if (options.IdentityCrossOpcodes)
+{
+    Console.WriteLine();
+    Console.WriteLine("Référence locale exacte Nom:Niveau du personnage à connecter :");
+    Console.Write("Référence P3m.4 : ");
+    string? rawCross = Console.ReadLine();
+    if (!CharacterNameLevelReferenceInput.TryParse(rawCross, out var parsedCross))
+    {
+        Console.Error.WriteLine("Saisie invalide : référence Nom:Niveau requise.");
+        return;
+    }
+    crossOpcodeStudy = new CharacterCrossOpcodeFieldStudy(parsedCross);
+    rawCross = null;
+    Console.WriteLine("Référence chargée en RAM. Se connecter puis se reconnecter au même personnage sans arrêter le probe.");
 }
 
 CharacterIdentityPairStudy? identityPairStudy = null;
@@ -308,7 +331,8 @@ else if (options.CharacterScan)
         options.ProfessionContinuity,
         xpWireStudy,
         options.ProfessionJobStudy,
-        identityPairStudy);
+        identityPairStudy,
+        crossOpcodeStudy);
 
     probe.Start();
     if (options.IdentityPair)
@@ -324,6 +348,12 @@ else if (options.CharacterScan)
 
     if (options.IdentityPair)
         probe.WriteTrafficStatus("final");
+    if (crossOpcodeStudy is not null)
+    {
+        Console.WriteLine("P3m.4 : pistes numériques sur la même connexion (égalité seule, sens inconnu) :");
+        foreach (string line in crossOpcodeStudy.Summarize())
+            Console.WriteLine(line);
+    }
 
     if (xpWireStudy is not null)
     {
@@ -457,6 +487,7 @@ internal sealed record ProbeOptions(
     bool IdentityName,
     bool IdentityFields,
     bool IdentityPair,
+    bool IdentityCrossOpcodes,
     int? ExpectedClassId)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
@@ -493,6 +524,7 @@ internal sealed record ProbeOptions(
         bool identityName = false;
         bool identityFields = false;
         bool identityPair = false;
+        bool identityCrossOpcodes = false;
         int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
@@ -558,6 +590,9 @@ internal sealed record ProbeOptions(
                 case "--identity-pair":
                     identityPair = true;
                     break;
+                case "--identity-cross-opcodes":
+                    identityCrossOpcodes = true;
+                    break;
                 case "--expected-class-id" when i + 1 < args.Length &&
                     int.TryParse(args[i + 1], out int parsedClassId):
                     i++;
@@ -599,7 +634,7 @@ internal sealed record ProbeOptions(
             (professionJobStudy ? 1 : 0) +
             (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
-            (windowFlowLink ? 1 : 0);
+            (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -621,11 +656,13 @@ internal sealed record ProbeOptions(
             characterScan || characterShape || professionMatch ||
                 professionDecode || professionStudy || professionIdentify ||
                 professionFlow || professionContinuity || professionXpStudy ||
-                professionJobStudy || identityName || identityFields || identityPair,
+                professionJobStudy || identityName || identityFields ||
+                identityPair || identityCrossOpcodes,
             characterShape, shapeKeys, professionMatch, professionDecode,
             professionStudy, showCandidateJobIds, professionIdentify,
             professionFlow, professionContinuity, professionXpStudy,
             professionJobStudy, checkPublicJobIds, windowFlowLink,
-            identityName, identityFields, identityPair, expectedClassId);
+            identityName, identityFields, identityPair,
+            identityCrossOpcodes, expectedClassId);
     }
 }

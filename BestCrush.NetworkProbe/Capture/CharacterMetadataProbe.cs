@@ -26,7 +26,8 @@ internal sealed class CharacterMetadataProbe(
     bool studyProfessionContinuity = false,
     ProfessionXpWireStudy? professionXpStudy = null,
     bool professionJobStudy = false,
-    CharacterIdentityPairStudy? identityPairStudy = null) : IDisposable
+    CharacterIdentityPairStudy? identityPairStudy = null,
+    CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
@@ -42,7 +43,8 @@ internal sealed class CharacterMetadataProbe(
         studyProfessionFlow: studyProfessionFlow,
         studyProfessionContinuity: studyProfessionContinuity,
         professionXpStudy: professionXpStudy,
-        identityPairStudy: identityPairStudy);
+        identityPairStudy: identityPairStudy,
+        crossOpcodeStudy: crossOpcodeStudy);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;
@@ -50,7 +52,7 @@ internal sealed class CharacterMetadataProbe(
     private readonly bool _identifyIpz = identifyReferences is not null;
     private readonly bool _characterNameProbe = characterNameReference is not null;
     private readonly bool _identityFieldProbe = identityFieldsReference is not null ||
-        identityPairStudy is not null;
+        identityPairStudy is not null || crossOpcodeStudy is not null;
     private readonly bool _professionFlowProbe = studyProfessionFlow;
     private readonly bool _professionContinuityProbe = studyProfessionContinuity;
     private readonly bool _professionXpProbe = professionXpStudy is not null;
