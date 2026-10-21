@@ -60,6 +60,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --server-wire-study");
     Console.WriteLine("Pour contrôler kta:f1 sur différents personnages et serveurs :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --kta-f1-control");
+    Console.WriteLine("Pour comparer kta.f1 à l'ID candidat du personnage chargé ksb/ksc :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --kta-character-compare");
     Console.WriteLine("Pour comparer localement les champs numériques ksb et ksc dans une même connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields");
     Console.WriteLine("Pour vérifier le candidat de classe f5.f3 (comparaison anonymisée seulement) :");
@@ -83,6 +85,11 @@ Console.WriteLine(options.WindowFlowLink
     : $"BestCrush Network Probe — mapping de référence {map.ClientBuild} (build réel du jeu non vérifié)");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
+if (options.KtaCharacterCompare)
+{
+    Console.WriteLine("P3m.8 : contrôle expérimental kta.f1 versus ksb/ksc parent.f3, même serveur.");
+    Console.WriteLine("Deux personnages distincts du même compte, une fenêtre à la fois ; valeur non affichée.");
+}
 if (options.KtaF1Control)
 {
     Console.WriteLine("P3m.7 : contrôle ciblé C→S kta:f1 sur 4 étapes, même compte ; valeur non affichée.");
@@ -319,6 +326,32 @@ if (options.WindowFlowLink)
     stop.Wait();
     probe.Stop();
     probe.WriteSummary();
+}
+else if (options.KtaCharacterCompare)
+{
+    KtaSelectedCharacterStudy study = new();
+    using CharacterMetadataProbe probe = new(
+        devices[options.DeviceIndex.Value], options.Port,
+        ktaCharacterStudy: study);
+    probe.Start();
+    Console.WriteLine("P3m.8 : comparer deux personnages du MEME SERVEUR / MEME COMPTE.");
+    for (int stage = 0; stage < 2; stage++)
+    {
+        if (!study.StartStage(stage))
+            break;
+        Console.WriteLine(stage == 0
+            ? "PHASE X : connecter le personnage X, attendre le chargement, fermer entièrement Dofus."
+            : "PHASE Y : connecter le personnage Y DIFFERENT, même compte et même serveur, puis fermer Dofus.");
+        Console.WriteLine("Une fois le client totalement fermé, appuyer sur Entrée (Ctrl+C pour arrêter).");
+        Task<string?> nextLine = Task.Run(() => Console.ReadLine());
+        while (!nextLine.IsCompleted && !stop.Wait(TimeSpan.FromMilliseconds(100))) { }
+        if (stop.IsSet || (nextLine.IsCompleted && nextLine.Result is null))
+            break;
+    }
+    probe.Stop();
+    Console.WriteLine("P3m.8 : correspondances numériques candidates (jamais une preuve sémantique) :");
+    foreach (string line in study.Summarize())
+        Console.WriteLine(line);
 }
 else if (options.KtaF1Control)
 {
@@ -581,6 +614,7 @@ internal sealed record ProbeOptions(
     bool ServerRouteStudy,
     bool ServerWireStudy,
     bool KtaF1Control,
+    bool KtaCharacterCompare,
     int? ExpectedClassId)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
@@ -621,6 +655,7 @@ internal sealed record ProbeOptions(
         bool serverRouteStudy = false;
         bool serverWireStudy = false;
         bool ktaF1Control = false;
+        bool ktaCharacterCompare = false;
         int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
@@ -698,6 +733,9 @@ internal sealed record ProbeOptions(
                 case "--kta-f1-control":
                     ktaF1Control = true;
                     break;
+                case "--kta-character-compare":
+                    ktaCharacterCompare = true;
+                    break;
                 case "--expected-class-id" when i + 1 < args.Length &&
                     int.TryParse(args[i + 1], out int parsedClassId):
                     i++;
@@ -741,7 +779,7 @@ internal sealed record ProbeOptions(
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
             (serverRouteStudy ? 1 : 0) + (serverWireStudy ? 1 : 0) +
-            (ktaF1Control ? 1 : 0);
+            (ktaF1Control ? 1 : 0) + (ktaCharacterCompare ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -771,6 +809,6 @@ internal sealed record ProbeOptions(
             professionJobStudy, checkPublicJobIds, windowFlowLink,
             identityName, identityFields, identityPair,
             identityCrossOpcodes, serverRouteStudy, serverWireStudy,
-            ktaF1Control, expectedClassId);
+            ktaF1Control, ktaCharacterCompare, expectedClassId);
     }
 }

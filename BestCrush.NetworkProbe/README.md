@@ -35,6 +35,35 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.8 : vérifier si `kta.f1` désigne le personnage sélectionné
+
+P3m.7 a montré que `kta.f1` **change entre deux personnages
+du même serveur et du même compte**, mais reste stable
+pour un même personnage après reconnexion, y compris
+lorsque l'adresse IP du jeu change.
+
+Un nouveau diagnostic expérimental compare `kta.f1`
+(client→serveur) au candidat `parent.f3` du personnage
+chargé dans `ksb`, après contrôle de présence de
+ce personnage dans la liste `ksc`. Les données
+sont isolées par connexion TCP et par étape utilisateur.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --kta-character-compare
+```
+
+Fermer Dofus puis lancer une connexion pour **X**,
+fermer le jeu et appuyer sur Entrée, puis faire de même
+pour **Y, autre personnage du même compte et du même serveur**.
+Transmettre uniquement les lignes `p3m8=`.
+
+Cette égalité, si observée, resterait
+`identity=unverified` jusqu'à corroboration. Aucune
+validation obligatoire du serveur ni intégration
+de l'identité au routage de production.
+
+Voir `docs/modular-workspace-p3m8-kta-selected-character.md`.
+
 ### P3m.7 : contrôle ciblé `kta:f1` — personnage ou serveur ?
 
 P3m.6 a relevé un seul candidat `C-S:kta:f1` suivant
