@@ -16,6 +16,50 @@ a été capturée deux fois dans **une seule exécution P2b** :
 Il s'agit d'une observation de **stabilité du champ candidat pour une
 référence locale**, non d'une preuve définitive de CharacterId.
 
+## Résultat du comparatif réel — 21/10/2026
+
+**P3m.3b validé sur le poste Windows, capture Dofus 3.7.12.12.**
+
+Après correction de l'index Npcap (l'ancienne interface réseau
+Ethernet passe de l'index 3 à **6**, mais conserve le même GUID), le
+probe `--identity-pair` a observé **deux références locales ayant le
+même nom et des niveaux différents** :
+
+- Première référence : `ksc` puis `ksb`, session TCP **#2**,
+  statut `confirmed=1/2`.
+- Seconde référence : `ksc` puis `ksb`, session TCP **#4**,
+  statut final `p3m3=pair-complete f3=distinct semantic=unverified`.
+- Total : **399 paquets filtrés**, **338 messages décodés**,
+  **2 ksc**, **2 ksb**, **0 erreur de capture**.
+- La capture antérieure P2b du **même personnage** a déjà obtenu
+  `cross-session-f3=equal reference-sessions=2` après fermeture puis
+  reconnexion.
+
+**Portée confirmée :** le candidat `parent.f3` est stable au cours
+de deux connexions du même personnage (test antérieur), identique
+entre ses messages `ksc` et `ksb` dans chacune des captures,
+et différent entre deux personnages homonymes de niveaux distincts
+dans l'essai P3m.3b.
+
+**Portée non confirmée :** ces observations ne prouvent pas encore
+que f3 est le **CharacterId** sémantique : la relation entre les
+deux personnages et les **comptes/serveurs** n'a pas été établie dans
+le diagnostic ; la classe, l'account ID et le serveur officiel restent
+non vérifiés. Le statut `semantic=unverified` doit être conservé.
+Aucune attribution de profil en production n'est activée.
+
+### Suite expérimentale suggérée
+
+Le test de discrimination le plus utile consiste à comparer
+deux personnages dont l'opérateur sait **localement** qu'ils partagent
+le **même compte et le même serveur** (avec des références nom+niveau
+distinguables). Deux valeurs f3 différentes dans ce scénario
+renforceraient la nature *par personnage* et affaibliraient
+l'hypothèse d'un identifiant uniquement *par compte* ou *par serveur*.
+Ne pas afficher, sauvegarder ni transmettre leurs identités ou leurs
+valeurs candidates. Cela reste une observation, pas une preuve de
+sémantique formelle.
+
 ## Pourquoi un nouveau mode opt-in ?
 
 Deux exécutions distinctes de `--identity-fields` ne peuvent
