@@ -29,12 +29,14 @@ internal sealed class CharacterMetadataProbe(
     CharacterIdentityPairStudy? identityPairStudy = null,
     CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null,
     ServerRouteTransitionStudy? serverRouteStudy = null,
-    ServerWireTransitionStudy? serverWireStudy = null) : IDisposable
+    ServerWireTransitionStudy? serverWireStudy = null,
+    KtaFieldScopeStudy? ktaScopeStudy = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
     private readonly ServerRouteTransitionStudy? _serverRouteStudy = serverRouteStudy;
     private readonly ServerWireTransitionStudy? _serverWireStudy = serverWireStudy;
+    private readonly KtaFieldScopeStudy? _ktaScopeStudy = ktaScopeStudy;
     private readonly CharacterCaptureFlowTracker _flows = new(
         shapeKeys: shapeKeys, professionReferences: professionReferences,
         decodeIpz: decodeIpz, studyReferences: studyReferences,
@@ -49,7 +51,8 @@ internal sealed class CharacterMetadataProbe(
         professionXpStudy: professionXpStudy,
         identityPairStudy: identityPairStudy,
         crossOpcodeStudy: crossOpcodeStudy,
-        serverWireStudy: serverWireStudy);
+        serverWireStudy: serverWireStudy,
+        ktaScopeStudy: ktaScopeStudy);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;
@@ -158,12 +161,13 @@ internal sealed class CharacterMetadataProbe(
             _traffic.EventsObserved(events);
             _serverRouteStudy?.Observe(key, events);
             _serverWireStudy?.ObserveEvents(events);
+            _ktaScopeStudy?.ObserveEvents(key, events);
 
             foreach (CharacterCaptureEvent entry in events)
             {
                 // P3m.5/6 show only session lifecycle + the two marker
                 // opcodes; never dump other messages or their contents.
-                if (_serverRouteStudy is not null &&
+                if ((_serverRouteStudy is not null || _ktaScopeStudy is not null) &&
                     entry.Kind == CharacterCaptureEventKind.Message &&
                     entry.Opcode is not ("ksc" or "ksb"))
                     continue;

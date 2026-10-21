@@ -16,6 +16,32 @@
   pour A1 et A2. **L'adresse réseau n'est pas une preuve
   du serveur logique.**
 
+## Résultat réel P3m.6 (capture A → B → A)
+
+- TCP jeu A1 : session **#2**, `34.252.214.29:5555`.
+- TCP jeu B : session **#6**, `54.77.100.255:5555`.
+- TCP jeu A2 : session **#10**, `18.202.11.172:5555`.
+- `completed-game=1` pour chaque phase ; observation complète
+  des connexions de jeu, mais `truncated=yes` pour chaque
+  phase dans la **recherche numérique générale**.
+- `early-messages=16/29/29` et
+  `numeric-paths=23/24/24` pour A1/B/A2.
+- **Seul chemin candidat : `C-S:kta:f1`**,
+  `candidate-count=1 coverage=partial
+  semantic=unverified server=unverified`.
+
+Il s'agit du champ numérique racine `f1` du message
+**client → serveur** de type `kta`, pas d'une preuve
+de la signification de cette valeur. La condition
+A1 = A2 ≠ B peut découler du choix de personnage,
+du serveur, du compte ou d'autres éléments.
+
+**Décision** : ne pas relancer l'exploration générale
+pour l'instant. Nouvelle étude **P3m.7** uniquement
+sur `kta:f1`, avec changement de personnage **à serveur
+constant**, puis changement de serveur. Voir
+`docs/modular-workspace-p3m7-kta-f1-control.md`.
+
 ## Hypothèse expérimentale et portée
 
 Chercher, parmi les premiers messages sur **TCP/5555**,

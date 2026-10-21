@@ -35,6 +35,37 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.7 : contrôle ciblé `kta:f1` — personnage ou serveur ?
+
+P3m.6 a relevé un seul candidat `C-S:kta:f1` suivant
+`A1=A2≠B`, avec `coverage=partial` dans l'exploration
+générale. Son sens reste **inconnu** : ID de personnage,
+compte/serveur, sélection ou autre entier.
+
+P3m.7 lit **uniquement** le `f1` varint de `kta`
+sur les premières connexions et le compare sur
+**quatre étapes**, toujours sur le même compte et
+avec une seule fenêtre Dofus :
+
+1. serveur A, personnage X ;
+2. même serveur A, personnage Y différent ;
+3. serveur B, personnage Z ;
+4. serveur A, **retour au personnage X**.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --kta-f1-control
+```
+
+Fermer complètement Dofus avant d'appuyer sur Entrée
+à chaque étape. À la fin, recopier les lignes `p3m7=`.
+
+Le diagnostic affiche l'IP/port de la session jeu et les
+comparaisons `equal/different`, jamais la valeur de `kta:f1`.
+Les résultats demeurent `semantic=unverified server=unverified`.
+Aucune attribution au moteur métier.
+
+Voir `docs/modular-workspace-p3m7-kta-f1-control.md`.
+
 ### P3m.6 : découverte de chemins réseau candidats pour le serveur logique
 
 Le test A → B → A a donné une reconnexion au serveur A via

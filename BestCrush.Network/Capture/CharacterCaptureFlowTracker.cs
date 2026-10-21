@@ -86,6 +86,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly CharacterIdentityPairStudy? _identityPairStudy;
     private readonly CharacterCrossOpcodeFieldStudy? _crossOpcodeStudy;
     private readonly ServerWireTransitionStudy? _serverWireStudy;
+    private readonly KtaFieldScopeStudy? _ktaScopeStudy;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -113,7 +114,8 @@ public sealed class CharacterCaptureFlowTracker
         ProfessionXpWireStudy? professionXpStudy = null,
         CharacterIdentityPairStudy? identityPairStudy = null,
         CharacterCrossOpcodeFieldStudy? crossOpcodeStudy = null,
-        ServerWireTransitionStudy? serverWireStudy = null)
+        ServerWireTransitionStudy? serverWireStudy = null,
+        KtaFieldScopeStudy? ktaScopeStudy = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -257,6 +259,19 @@ public sealed class CharacterCaptureFlowTracker
                 nameof(serverWireStudy));
         _serverWireStudy = serverWireStudy;
 
+        if (ktaScopeStudy is not null &&
+            (characterNameReference is not null ||
+             identityFieldsReference is not null || identityPairStudy is not null ||
+             crossOpcodeStudy is not null || serverWireStudy is not null ||
+             expectedClassId is not null || shapeKeys is not null ||
+             professionReferences is not null || studyReferences is not null ||
+             identifyReferences is not null || decodeIpz || showCandidateJobIds ||
+             _characterNameOpCodes.Count != 0 || studyProfessionFlow ||
+             studyProfessionContinuity || professionXpStudy is not null))
+            throw new ArgumentException("Kta scope study must run exclusively.",
+                nameof(ktaScopeStudy));
+        _ktaScopeStudy = ktaScopeStudy;
+
         if ((studyProfessionFlow || studyProfessionContinuity || professionXpStudy is not null) &&
             (shapeKeys is not null || professionReferences is not null ||
              decodeIpz || studyReferences is not null ||
@@ -385,6 +400,8 @@ public sealed class CharacterCaptureFlowTracker
                                 // never a raw TCP stream or persisted packet.
                                 _serverWireStudy?.ObserveMessage(
                                     flow.Number, direction, any.Key, any.Body);
+                                _ktaScopeStudy?.ObserveMessage(
+                                    flow.Number, key, direction, any.Key, any.Body);
 
                                 events.Add(new CharacterCaptureEvent(
                                     observedAtUtc, flow.Number, direction,

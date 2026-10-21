@@ -58,6 +58,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --server-route-study");
     Console.WriteLine("Pour étudier les chemins protobuf candidats d'un serveur logique (A-B-A) :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --server-wire-study");
+    Console.WriteLine("Pour contrôler kta:f1 sur différents personnages et serveurs :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --kta-f1-control");
     Console.WriteLine("Pour comparer localement les champs numériques ksb et ksc dans une même connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields");
     Console.WriteLine("Pour vérifier le candidat de classe f5.f3 (comparaison anonymisée seulement) :");
@@ -81,6 +83,11 @@ Console.WriteLine(options.WindowFlowLink
     : $"BestCrush Network Probe — mapping de référence {map.ClientBuild} (build réel du jeu non vérifié)");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
+if (options.KtaF1Control)
+{
+    Console.WriteLine("P3m.7 : contrôle ciblé C→S kta:f1 sur 4 étapes, même compte ; valeur non affichée.");
+    Console.WriteLine("A/X → A/Y → B/Z → A/X, une fenêtre Dofus à la fois ; sémantique non vérifiée.");
+}
 if (options.ServerRouteStudy || options.ServerWireStudy)
 {
     Console.WriteLine(options.ServerWireStudy
@@ -313,6 +320,36 @@ if (options.WindowFlowLink)
     probe.Stop();
     probe.WriteSummary();
 }
+else if (options.KtaF1Control)
+{
+    KtaFieldScopeStudy study = new();
+    using CharacterMetadataProbe probe = new(
+        devices[options.DeviceIndex.Value], options.Port,
+        ktaScopeStudy: study);
+    probe.Start();
+    Console.WriteLine("P3m.7 : capture active sur quatre connexions successives. Conserver le même compte.");
+    for (int stage = 0; stage < 4; stage++)
+    {
+        if (!study.StartStage(stage))
+            break;
+        Console.WriteLine(stage switch
+        {
+            0 => "PHASE A-X1 : serveur A, personnage X (référence).",
+            1 => "PHASE A-Y : même serveur A, personnage Y différent de X.",
+            2 => "PHASE B-Z : serveur B, personnage Z, même compte.",
+            _ => "PHASE A-X2 : serveur A, reprendre EXACTEMENT le personnage X initial."
+        });
+        Console.WriteLine("Se connecter, attendre le chargement, fermer complètement Dofus, puis Entrée (Ctrl+C pour arrêter).");
+        Task<string?> nextLine = Task.Run(() => Console.ReadLine());
+        while (!nextLine.IsCompleted && !stop.Wait(TimeSpan.FromMilliseconds(100))) { }
+        if (stop.IsSet || (nextLine.IsCompleted && nextLine.Result is null))
+            break;
+    }
+    probe.Stop();
+    Console.WriteLine("P3m.7 : contrôle ciblé kta:f1 (non identifié sémantiquement) :");
+    foreach (string line in study.Summarize())
+        Console.WriteLine(line);
+}
 else if (options.ServerRouteStudy || options.ServerWireStudy)
 {
     ServerRouteTransitionStudy routeStudy = new();
@@ -543,6 +580,7 @@ internal sealed record ProbeOptions(
     bool IdentityCrossOpcodes,
     bool ServerRouteStudy,
     bool ServerWireStudy,
+    bool KtaF1Control,
     int? ExpectedClassId)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
@@ -582,6 +620,7 @@ internal sealed record ProbeOptions(
         bool identityCrossOpcodes = false;
         bool serverRouteStudy = false;
         bool serverWireStudy = false;
+        bool ktaF1Control = false;
         int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
@@ -656,6 +695,9 @@ internal sealed record ProbeOptions(
                 case "--server-wire-study":
                     serverWireStudy = true;
                     break;
+                case "--kta-f1-control":
+                    ktaF1Control = true;
+                    break;
                 case "--expected-class-id" when i + 1 < args.Length &&
                     int.TryParse(args[i + 1], out int parsedClassId):
                     i++;
@@ -698,7 +740,8 @@ internal sealed record ProbeOptions(
             (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
-            (serverRouteStudy ? 1 : 0) + (serverWireStudy ? 1 : 0);
+            (serverRouteStudy ? 1 : 0) + (serverWireStudy ? 1 : 0) +
+            (ktaF1Control ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -728,6 +771,6 @@ internal sealed record ProbeOptions(
             professionJobStudy, checkPublicJobIds, windowFlowLink,
             identityName, identityFields, identityPair,
             identityCrossOpcodes, serverRouteStudy, serverWireStudy,
-            expectedClassId);
+            ktaF1Control, expectedClassId);
     }
 }
