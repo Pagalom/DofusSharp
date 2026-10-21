@@ -29,6 +29,7 @@ internal sealed class CharacterMetadataProbe(
     CharacterIdentityPairStudy? identityPairStudy = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
+    private readonly CharacterProbeTrafficDiagnostics _traffic = new();
     private readonly CharacterCaptureFlowTracker _flows = new(
         shapeKeys: shapeKeys, professionReferences: professionReferences,
         decodeIpz: decodeIpz, studyReferences: studyReferences,
@@ -87,8 +88,29 @@ internal sealed class CharacterMetadataProbe(
         device.OnPacketArrival -= OnPacketArrival;
     }
 
+    /// <summary>
+    /// Counts only. The Windows OS socket count is limited to IPv4 and
+    /// remote port; it does not identify the owner or prove Dofus identity.
+    /// </summary>
+    public void WriteTrafficStatus(string phase)
+    {
+        int sockets;
+        try
+        {
+            sockets = WindowsTcpSocketTableReader.ReadEstablishedIPv4(port).Count;
+        }
+        catch
+        {
+            // OS socket inventory is supporting context only and must
+            // never stop an otherwise functioning passive capture.
+            sockets = -1;
+        }
+        Console.WriteLine(_traffic.Snapshot().Format(phase, sockets));
+    }
+
     private void OnPacketArrival(object sender, PacketCapture capture)
     {
+        _traffic.PacketArrived();
         try
         {
             RawCapture raw = capture.GetPacket();
@@ -99,6 +121,8 @@ internal sealed class CharacterMetadataProbe(
             if (ip is null || tcp is null ||
                 (tcp.SourcePort != port && tcp.DestinationPort != port))
                 return;
+
+            _traffic.DofusTcpPacket(tcp.PayloadData.Length);
 
             // No address or port is ever included in emitted metadata.
             bool incoming = tcp.SourcePort == port;
@@ -121,6 +145,10 @@ internal sealed class CharacterMetadataProbe(
                 syn: tcp.Synchronize,
                 fin: tcp.Finished,
                 rst: tcp.Reset);
+
+            // Count before mode-specific filtering and duplicate suppression,
+            // so missing 'ksc' can be distinguished from a silent interface.
+            _traffic.EventsObserved(events);
 
             foreach (CharacterCaptureEvent entry in events)
             {
@@ -220,6 +248,7 @@ internal sealed class CharacterMetadataProbe(
         }
         catch (Exception ex)
         {
+            _traffic.PacketError();
             // Deliberately never print packet data, exceptions' captured
             // byte contents, TCP endpoint details, or stack traces.
             Console.Error.WriteLine(

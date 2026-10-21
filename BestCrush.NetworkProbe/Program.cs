@@ -311,8 +311,19 @@ else if (options.CharacterScan)
         identityPairStudy);
 
     probe.Start();
-    stop.Wait();
+    if (options.IdentityPair)
+    {
+        Console.WriteLine("P3m.3 : capture démarrée, diagnostic TCP actif ; Ctrl+C pour arrêter.");
+        Console.WriteLine("P3m.3 : un bilan anonyme sera affiché toutes les 10 secondes.");
+        while (!stop.Wait(TimeSpan.FromSeconds(10)))
+            probe.WriteTrafficStatus("live");
+    }
+    else
+        stop.Wait();
     probe.Stop();
+
+    if (options.IdentityPair)
+        probe.WriteTrafficStatus("final");
 
     if (xpWireStudy is not null)
     {
