@@ -46,8 +46,13 @@ public sealed class ServerRouteTransitionStudyTest
             .And.Contain("A1-vs-B=different")
             .And.Contain("meaning=route-only")
             .And.Contain("server=unverified");
-        report.Should().NotContain("198.51.100");
-        report.Should().NotContain("49002");
+        // Destination IP and server TCP port are useful operator metadata.
+        // Do not include the local ephemeral port or an unverified server name.
+        report.Should().Contain("stage-A1 tcp-sessions=1")
+            .And.Contain("game-session=2 destination=198.51.100.12:5555")
+            .And.Contain("game-session=4 destination=198.51.100.34:5555")
+            .And.Contain("game-session=6 destination=198.51.100.12:5555")
+            .And.NotContain("49002");
     }
 
     [Fact]
@@ -83,6 +88,7 @@ public sealed class ServerRouteTransitionStudyTest
 
         string report = string.Join("\n", study.Summarize());
         report.Should().Contain("p3m5=stage-A1 tcp-sessions=1 ksc-ksb-sessions=0")
+            .And.Contain("comparable=no game-session=unavailable destination=unavailable")
             .And.Contain("destination-pattern=unavailable");
     }
 
@@ -176,6 +182,44 @@ public sealed class ServerRouteTransitionStudyTest
         string report = string.Join("\n", study.Summarize());
         report.Should().Contain("stage-A1 tcp-sessions=1 ksc-ksb-sessions=1 closed-complete=0")
             .And.Contain("destination-pattern=unavailable");
+    }
+
+    [Fact]
+    public void ThreeDifferentDestinationsStayDistinctIncludingReturnToServerA()
+    {
+        ServerRouteTransitionStudy study = new();
+        study.StartStage(0);
+        Complete(study, "198.51.100.12", 2);
+        study.StartStage(1);
+        Complete(study, "198.51.100.34", 4);
+        study.StartStage(2);
+        Complete(study, "198.51.100.56", 6);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain("destination-pattern=other")
+            .And.Contain("A1-vs-A2=different")
+            .And.Contain("A1-vs-B=different")
+            .And.Contain("B-vs-A2=different");
+        report.Should().Contain("destination=198.51.100.12:5555")
+            .And.Contain("destination=198.51.100.34:5555")
+            .And.Contain("destination=198.51.100.56:5555");
+    }
+
+    [Fact]
+    public void IPv6EndpointIsClearlyBracketedWithoutAssumingServerIdentity()
+    {
+        ServerRouteTransitionStudy study = new();
+        study.StartStage(0);
+        Complete(study, "2001:db8::12", 2);
+        study.StartStage(1);
+        Complete(study, "2001:db8::34", 4);
+        study.StartStage(2);
+        Complete(study, "2001:db8::12", 6);
+        string report = string.Join("\n", study.Summarize());
+
+        report.Should().Contain("destination=[2001:db8::12]:5555")
+            .And.Contain("destination=[2001:db8::34]:5555")
+            .And.Contain("server=unverified");
     }
 
     [Fact]

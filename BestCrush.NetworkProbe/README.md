@@ -55,8 +55,9 @@ Une seule fenêtre Dofus à la fois. Fermer complètement le
 client, puis **appuyer sur Entrée** entre chaque phase. La
 capture doit reconnaître `ksc` et `ksb` dans une session TCP
 clôturée par phase pour produire des comparaisons
-`equal/different`, jamais d'IP, ni de port local, ni de
-nom de serveur. Les résultats `A-B-A`, `same-all` ou
+`equal/different`, ainsi que **l'IP et le port serveur**
+des sessions de jeu reconnues. Aucun jeton ni contenu de
+paquet n'est affiché. Les résultats `A-B-A`, `same-all` ou
 `other` portent exclusivement sur les destinations TCP et
 **ne vérifient pas le serveur logique Dofus**.
 

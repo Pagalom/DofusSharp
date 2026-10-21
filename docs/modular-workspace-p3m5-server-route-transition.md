@@ -14,6 +14,35 @@ message : l'étude ne couvrait qu'un sous-ensemble de messages,
 de tailles et de profondeurs. L'étude exploratoire f3 est
 suspendue ; son attribution de production demeure désactivée.
 
+## Résultat réel P3m.5 — 21 octobre 2026
+
+L'opérateur a réalisé A1 → B → A2. Les trois phases comportent
+exactement une session de jeu avec `ksc`, `ksb` et `CLOSED` :
+A1 **#2**, B **#6**, A2 **#10**. Le résultat :
+`destination-pattern=other A1-vs-A2=different A1-vs-B=different
+B-vs-A2=different server=unverified`.
+
+**Même la reconnexion au serveur logique A emprunte une destination
+TCP différente.** Ces résultats excluent l'hypothèse d'une destination
+unique et stable pour le serveur logique A dans ces essais. Ils ne
+montrent pas pourquoi ce routage change.
+
+Les adresses IP n'avaient pas été affichées ni persistées :
+elles ne sont **pas récupérables** à partir des journaux fournis.
+
+### Évolution des sorties
+
+Une session TCP de jeu reconnue de manière univoque
+(`ksc` + `ksb`, terminée normalement) produit désormais :
+`game-session=N destination=IP:port`. IPv6 est affiché sous
+la forme `[IPv6]:port`. Les phases ambiguës/incomplètes
+produisent `game-session=unavailable destination=unavailable`.
+
+Afficher ces métadonnées réseau techniques est utile pour étudier
+les routages et les plages d'hébergement. Cela **ne constitue
+toujours pas une preuve du serveur logique**. Les payloads,
+jetons et identifiants de compte restent exclus du diagnostic.
+
 ## But et limites de P3m.5
 
 Étudier la transition manuelle entre deux **serveurs logiques**
@@ -63,8 +92,8 @@ aucun autre lancement du jeu durant l'étude.
 4. `PHASE A2` : relancer sur **le serveur A**, attendre le
    chargement, fermer complètement la fenêtre puis appuyer sur
    **Entrée**.
-5. Le probe s'arrête et affiche les trois observations
-   anonymisées, sans nom/IP/port/PID/session privée.
+5. Le probe s'arrête et affiche les trois sessions de jeu
+   avec leurs **IP et ports de destination**.
    `Ctrl+C` pendant l'une des phases provoque un arrêt
    anticipé, généralement marqué `unavailable`.
 
@@ -83,9 +112,9 @@ ne sélectionnent pas de destination finale.
 Exemple fictif :
 
 ```text
-p3m5=stage-A1 tcp-sessions=2 ksc-ksb-sessions=1 closed-complete=1 comparable=yes server=unverified
-p3m5=stage-B tcp-sessions=2 ksc-ksb-sessions=1 closed-complete=1 comparable=yes server=unverified
-p3m5=stage-A2 tcp-sessions=2 ksc-ksb-sessions=1 closed-complete=1 comparable=yes server=unverified
+p3m5=stage-A1 tcp-sessions=2 ksc-ksb-sessions=1 closed-complete=1 comparable=yes game-session=2 destination=198.51.100.12:5555 server=unverified
+p3m5=stage-B tcp-sessions=2 ksc-ksb-sessions=1 closed-complete=1 comparable=yes game-session=4 destination=198.51.100.34:5555 server=unverified
+p3m5=stage-A2 tcp-sessions=2 ksc-ksb-sessions=1 closed-complete=1 comparable=yes game-session=6 destination=198.51.100.12:5555 server=unverified
 p3m5=summary destination-pattern=A-B-A A1-vs-A2=equal A1-vs-B=different B-vs-A2=different server=unverified meaning=route-only
 ```
 
@@ -105,15 +134,16 @@ l'identité du compte ou du personnage.
 
 - Destinations conservées **en RAM** uniquement, jusqu'à
   24 sessions TCP de cette exécution.
-- Aucune IP, adresse de socket, port local, nom de serveur,
-  compte, personnage, jeton, payload, hash ou ID n'est affiché.
+- Les IP/ports des destinations des sessions de jeu reconnues
+  sont affichés. Aucun port client éphémère, nom de compte,
+  nom de personnage, jeton ni payload n'est affiché.
 - Comparaisons effectuées sur IP/port en mémoire, résultats
-  `equal/different` uniquement.
+  `equal/different` accompagnés des destinations retenues.
 - Le programme utilise le tracker de flux existant avec ses
   invalidations de sockets et aucune création de fiche.
 - Aucun enregistrement en base, aucun changement au routage
   métier, aucune validation de serveur de production.
-- 9 tests synthétiques couvrent A-B-A, destination commune,
+- 11 tests synthétiques couvrent A-B-A, destination commune,
   fermeture absente, éviction, sessions ambiguës, événements tardifs,
   transitions invalides et absence de phase.
 

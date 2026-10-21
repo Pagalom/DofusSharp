@@ -81,7 +81,7 @@ Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceI
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
 if (options.ServerRouteStudy)
 {
-    Console.WriteLine("P3m.5 : protocole manuel A-B-A, destinations TCP anonymisées, serveur logique NON vérifié.");
+    Console.WriteLine("P3m.5 : protocole manuel A-B-A, IP et ports TCP de jeu affichés ; serveur logique NON vérifié.");
     Console.WriteLine("Une instance Dofus à la fois. Chaque phase débute avant l'ouverture du client.");
 }
 if (options.WindowFlowLink)
@@ -316,7 +316,7 @@ else if (options.ServerRouteStudy)
         devices[options.DeviceIndex.Value], options.Port,
         serverRouteStudy: routeStudy);
     probe.Start();
-    Console.WriteLine("P3m.5 : capture ouverte. Aucune IP, port local, nom de compte ou serveur n'est affiché.");
+    Console.WriteLine("P3m.5 : capture ouverte. Destinations du jeu affichées à la fin ; aucun jeton ni payload.");
     for (int stage = 0; stage < 3; stage++)
     {
         if (!routeStudy.StartStage(stage))
@@ -334,7 +334,7 @@ else if (options.ServerRouteStudy)
             break;
     }
     probe.Stop();
-    Console.WriteLine("P3m.5 : résultat des destinations, sans preuve de serveur logique :");
+    Console.WriteLine("P3m.5 : destinations IP:port de jeu observées (sans preuve de serveur logique) :");
     foreach (string line in routeStudy.Summarize())
         Console.WriteLine(line);
 }

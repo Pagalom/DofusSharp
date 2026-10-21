@@ -3,7 +3,8 @@ namespace BestCrush.Network.Capture;
 /// <summary>
 /// P3m.5: opt-in, observation-only A/B/A comparison of TCP destinations.
 /// Server stages are user-declared, never protocol-verified.
-/// No IP, port, account, character or server name is printed or persisted.
+/// Emits game-session destination IP/port for operator diagnostics only.
+/// Never stores results on disk or infers logical server identity.
 /// </summary>
 public sealed class ServerRouteTransitionStudy
 {
@@ -12,8 +13,9 @@ public sealed class ServerRouteTransitionStudy
     private readonly Dictionary<int, Session> _sessions = [];
     private int _stage = -1;
 
-    private sealed class Session(int stage, string remoteAddress, int remotePort)
+    private sealed class Session(int number, int stage, string remoteAddress, int remotePort)
     {
+        internal readonly int Number = number;
         internal readonly int Stage = stage;
         internal readonly string RemoteAddress = remoteAddress;
         internal readonly int RemotePort = remotePort;
@@ -57,7 +59,7 @@ public sealed class ServerRouteTransitionStudy
                         continue;
 
                     _sessions.TryAdd(entry.SessionNumber, new Session(
-                        _stage, key.ServerAddress, key.ServerPort));
+                        entry.SessionNumber, _stage, key.ServerAddress, key.ServerPort));
                     continue;
                 }
 
@@ -103,11 +105,24 @@ public sealed class ServerRouteTransitionStudy
                 if (complete.Length == 1 && usable.Length == 1)
                     stages[index] = usable[0];
 
+                // Only report an endpoint when exactly one closed and
+                // unconflicted ksc+ksb TCP session exists in this stage.
+                // Otherwise an authentication/front-end TCP connection
+                // could be mistaken for the in-game destination.
+                Session? game = stages[index];
+                string address = game is null ? "unavailable"
+                    : game.RemoteAddress.Contains(':')
+                        ? "[" + game.RemoteAddress + "]:" + game.RemotePort
+                        : game.RemoteAddress + ":" + game.RemotePort;
+
                 output.Add("p3m5=stage-" + (index == 1 ? "B" : "A" + (index == 0 ? "1" : "2")) +
                     " tcp-sessions=" + all.Length +
                     " ksc-ksb-sessions=" + complete.Length +
                     " closed-complete=" + usable.Length +
-                    " comparable=" + (stages[index] is null ? "no" : "yes") +
+                    " comparable=" + (game is null ? "no" : "yes") +
+                    " game-session=" + (game is null ? "unavailable" :
+                        game.Number.ToString()) +
+                    " destination=" + address +
                     " server=unverified");
             }
 
