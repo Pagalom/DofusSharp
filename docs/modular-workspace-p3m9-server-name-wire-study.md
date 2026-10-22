@@ -117,6 +117,44 @@ automatiquement le serveur du personnage ; il faudra
 vérifier le sens du champ. **Aucune sortie n'a
 `server=verified`.**
 
+## Résultat réel P3m.9 — 22 octobre 2026
+
+L'opérateur a déclaré A = **Draconiros** et B = **Tylezia**.
+Le diagnostic `--server-name-study`, interface Npcap index 3
+(même interface Ethernet dont l'index avait été 6), a suivi
+trois phases A1 → B → A2. Une session de jeu complète
+`ksc`+`ksb` terminée par phase.
+
+| Phase | Connexions TCP | Messages décodés et étudiés | Correspondances texte | Destination jeu |
+| --- | ---: | ---: | ---: | --- |
+| A1 Draconiros | 4 | 32 | 0 | `34.252.214.29:5555` |
+| B Tylezia | 5 | 32 | 0 | `34.243.47.91:5555` |
+| A2 Draconiros | 4 | 32 | 0 | `34.252.214.29:5555` |
+
+L'exécution n'a signalé aucune troncature de messages
+(`truncated=no` pour les trois phases) ; l'analyse reste
+**bornée** aux corps de messages Ankama décodés sur
+**TCP/5555**, au parcours de connexion avant `ksb`,
+avec les limites de profondeur, taille et de type UTF-8.
+
+```text
+p3m9=summary comparable=yes any-name-match=no scoped-candidate-count=0 scoped-candidate-paths=[none] output-truncated=no coverage=bounded semantic=unverified server=unverified
+```
+
+**Conclusion négative circonscrite** : aucun nom `Draconiros`
+ou `Tylezia` n'a été rencontré dans le périmètre
+effectivement scruté. Cela n'exclut pas un **ServerId**
+numérique, un catalogue local, ni un échange distinct dans
+le launcher ou sur un autre port/protocole.
+
+**Décision** : clore cette recherche ciblée sur TCP/5555
+et ouvrir P3m.10 — observation des destinations TCP,
+tous ports, appartenant aux processus Dofus/Ankama,
+durant A1 → B → A2. Aucun payload ni contenu TLS
+ne sera déchiffré.
+
+Voir `docs/modular-workspace-p3m10-upstream-tcp-endpoints.md`.
+
 ## Limites de production
 
 - Pas de modification au `CurrentServerState`, au

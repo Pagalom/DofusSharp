@@ -35,6 +35,35 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.10 : relever les autres connexions TCP du client / launcher
+
+P3m.9 a observé **96 messages Ankama décodés** (32 par
+connexion A1/B/A2) sur TCP/5555, sans rencontrer aucun
+des deux noms publics `Draconiros` ou `Tylezia`.
+La capture était `coverage=bounded` et non exhaustive
+du trafic hors de ce port.
+
+Ce nouveau script Windows recense en RAM les sockets
+TCP des processus contenant `dofus` ou `ankama`
+sur **tous les ports** pendant A1 → B → A2. Il affiche
+leur **processus, IP et port distants** ; aucun payload.
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\probe_dofus_all_ports.ps1
+```
+
+Fermer Dofus avant le début et entre les phases, puis
+appuyer sur Entrée après chaque fermeture complète.
+Transmettre les lignes `p3m10=`.
+
+**Limites** : sondage de sockets Windows (500 ms par
+défaut), pas de capture de toutes les ouvertures,
+pas de preuve de serveur ; d'autres processus, UDP/QUIC,
+TLS ou des connexions très courtes peuvent échapper
+à ce contrôle. P3m.8 est toujours reporté.
+
+Voir `docs/modular-workspace-p3m10-upstream-tcp-endpoints.md`.
+
 ### P3m.9 : détecter les noms des serveurs Dofus en connexion
 
 Le nom du serveur pourrait être transmis directement, soit dans
