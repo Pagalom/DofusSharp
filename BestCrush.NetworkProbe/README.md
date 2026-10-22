@@ -35,6 +35,30 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### Validation réelle P3m.13b — deux fenêtres Draconiros / Kourial
+
+Le 22 octobre 2026, un nouveau test a abouti
+avec les **deux comptes simultanément ouverts**
+et les connexions Game encore actives :
+
+```text
+p3m13=loaded window-index=1 connection-session=3 game-session=4 reference=Draconiros match=community-candidate account=unverified server=unverified
+p3m13=loaded window-index=2 connection-session=1 game-session=2 reference=Kourial match=community-candidate account=unverified server=unverified
+p3m13=summary flows=4 windows-linked=2 windows-ready=2 loaded-pairs=2 references-matched=2 owner-missing=0 window-missing=0 conflicts=0 overflow=no status=two-window-links-candidate account=unverified server=unverified
+```
+
+**Validation expérimentale en condition réelle :**
+deux connexions Connection ont été reliées
+à deux connexions Game et à **deux fenêtres
+différentes**, sans conflit ni propriétaire
+manquant, grâce au quadruplet TCP/PID/HWND.
+Cela ne vérifie pas l'identité Ankama ni
+les cas de reconnexion ou changement de
+serveur. Aucune attribution automatique
+du serveur dans BestCrush.
+
+Voir `docs/modular-workspace-p3m13-window-server-link.md`.
+
 ### P3m.13b : diagnostiquer les connexions Game encore ouvertes
 
 La première exécution à **deux comptes**, Draconiros
