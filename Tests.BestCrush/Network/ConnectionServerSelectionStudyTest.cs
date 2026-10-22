@@ -636,6 +636,7 @@ public sealed class ConnectionServerSelectionStudyTest
             E(2, CharacterCaptureEventKind.Closed)
         ]);
         study.ObserveEvents(Key(3), [
+            E(3, CharacterCaptureEventKind.Opened),
             E(3, CharacterCaptureEventKind.Message, "ksc"),
             E(3, CharacterCaptureEventKind.Message, "ksb"),
             E(3, CharacterCaptureEventKind.Closed)
