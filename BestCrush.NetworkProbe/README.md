@@ -35,6 +35,31 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.13e — Capture réelle : polling sans relevé utile
+
+Nouvel essai Draconiros/Kourial après la
+reconnexion du personnage :
+
+```text
+p3m13=unbound session=5 role=selection reason=owner-missing selection-candidates=1 account=unverified server=unverified
+p3m13=unbound-hypothesis selection-session=5 candidate-reference=Draconiros adjacent-loaded-game-session=6 adjacent-game-window-index=1 matches-previous-loaded-selection=yes meaning=sequence-only linked=no account=unverified server=unverified
+p3m13=owner-polling samples=0 matches=0 active-at-stop=3 interval-ms=25 meaning=exact-tuple-only account=unverified server=unverified
+```
+
+Le polling n'interroge la table OS que quand
+un tuple toujours actif attend un PID au
+moment du passage dans la boucle. Ici, aucune
+lecture n'a été déclenchée ; on ne peut
+pas conclure que Windows a refusé le PID.
+
+**Suite proposée : P3m.14** est une étude
+événementielle ETW TCP Connect (PID + tuple),
+exclusivement opt-in et séparée de
+BestCrush. Elle est **documentée mais
+non implémentée**.
+
+Voir `docs/modular-workspace-p3m13-window-server-link.md`.
+
 ### P3m.13e : capture propriétaire TCP par sondage périodique
 
 Le dernier essai retrouve encore une sélection
