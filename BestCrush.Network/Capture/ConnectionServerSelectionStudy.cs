@@ -14,8 +14,10 @@ namespace BestCrush.Network.Capture;
 public sealed class ConnectionServerSelectionStudy
 {
     private const int MaxSessions = 24;
-    private const int MaxFramesPerSession = 192;
+    private const int MaxNonGameFramesPerSession = 256;
     private const int MaxFrameBytes = 8192;
+    private const int MaxShapesPerSession = 12;
+    private const int MaxShapesPerStageOutput = 8;
     private readonly object _gate = new();
     private readonly Dictionary<int, Session> _sessions = [];
     private bool _capacityExceeded;
@@ -30,7 +32,13 @@ public sealed class ConnectionServerSelectionStudy
         internal readonly HashSet<int> SelectedIds = [];
         internal int Frames;
         internal int NonGameFrames;
+        internal int ClientNonGameFrames;
+        internal int ServerNonGameFrames;
         internal int SelectMessages;
+        // Structural metadata only: field numbers and wire types.
+        // No field values, sizes, names, UUIDs or tokens.
+        internal readonly Dictionary<string, int> ClientShapes = new(StringComparer.Ordinal);
+        internal bool ShapesOverflow;
         internal bool Truncated;
         internal bool Ksc;
         internal bool Ksb;
@@ -58,17 +66,33 @@ public sealed class ConnectionServerSelectionStudy
             if (session is null || session.Closed || session.Evicted)
                 return;
 
-            if (++session.Frames > MaxFramesPerSession ||
+            // Previous P3m.11 limited ALL Game frames to 192, causing
+            // truncation as soon as the initial world-load burst began.
+            // Game frames do not consume the Connection research budget.
+            if (session.Ksb)
+                return;
+            session.Frames++;
+            if (hasGameAny)
+                return;
+            if (++session.NonGameFrames > MaxNonGameFramesPerSession ||
                 frame.Length > MaxFrameBytes)
             {
                 session.Truncated = true;
                 return;
             }
-            if (hasGameAny)
+            if (direction == CharacterCaptureDirection.ServerToClient)
+            {
+                session.ServerNonGameFrames++;
                 return;
-            session.NonGameFrames++;
-            if (session.Ksb || direction != CharacterCaptureDirection.ClientToServer)
-                return;
+            }
+            session.ClientNonGameFrames++;
+            string shape = DescribeNonGameFrameShape(frame);
+            if (session.ClientShapes.TryGetValue(shape, out int count))
+                session.ClientShapes[shape] = count + 1;
+            else if (session.ClientShapes.Count < MaxShapesPerSession)
+                session.ClientShapes.Add(shape, 1);
+            else
+                session.ShapesOverflow = true;
 
             if (TryGetSelectedServerCandidate(frame, out int value))
             {
@@ -107,6 +131,60 @@ public sealed class ConnectionServerSelectionStudy
                     if (evt.Opcode == "ksb") s.Ksb = true;
                 }
             }
+        }
+    }
+
+    /// <summary>
+    /// Only protobuf field numbers and wire types are exposed.
+    /// Nested text, numeric values and lengths never enter the signature.
+    /// </summary>
+    public static string DescribeNonGameFrameShape(ReadOnlySpan<byte> frame)
+    {
+        if (frame.IsEmpty || frame.Length > MaxFrameBytes)
+            return "invalid";
+        try
+        {
+            List<ProtoField>? root = ProtoWire.ReadFields(frame);
+            if (root is null)
+                return "invalid";
+
+            static string Describe(List<ProtoField> fields)
+            {
+                if (fields.Count is < 1 or > 32)
+                    return "unclassified";
+                return string.Join(".", fields.Take(8).Select(f =>
+                    "f" + f.Number + ":" + (f.WireType switch
+                    {
+                        ProtoWireType.Varint => "V",
+                        ProtoWireType.LengthDelimited => "L",
+                        ProtoWireType.Fixed32 => "F32",
+                        ProtoWireType.Fixed64 => "F64",
+                        _ => "?"
+                    }))) + (fields.Count > 8 ? ".more" : "");
+            }
+
+            string signature = "root(" + Describe(root) + ")";
+            if (root.Count != 1 || root[0].Number != 1 ||
+                root[0].WireType != ProtoWireType.LengthDelimited ||
+                root[0].Bytes is not { Length: > 0 and <= 2048 } nested)
+                return signature;
+
+            List<ProtoField>? inner = ProtoWire.ReadFields(nested);
+            if (inner is null)
+                return signature + "/f1(invalid)";
+            signature += "/f1(" + Describe(inner) + ")";
+            ProtoField? selection = inner.FirstOrDefault(f =>
+                f.Number == 4 && f.WireType == ProtoWireType.LengthDelimited);
+            if (selection?.Bytes is not { Length: > 0 and <= 128 } selectedBytes)
+                return signature;
+
+            List<ProtoField>? last = ProtoWire.ReadFields(selectedBytes);
+            return signature + "/f4(" + (last is null
+                ? "invalid" : Describe(last)) + ")";
+        }
+        catch (Exception ex) when (ex is OverflowException or ArgumentOutOfRangeException)
+        {
+            return "invalid";
         }
     }
 
@@ -205,6 +283,8 @@ public sealed class ConnectionServerSelectionStudy
                     " completed-game=" + game.Length +
                     " frames=" + sessions.Sum(s => s.Frames) +
                     " non-game-frames=" + sessions.Sum(s => s.NonGameFrames) +
+                    " non-game-c2s=" + sessions.Sum(s => s.ClientNonGameFrames) +
+                    " non-game-s2c=" + sessions.Sum(s => s.ServerNonGameFrames) +
                     " select-candidates=" + sessions.Sum(s => s.SelectMessages) +
                     " distinct-values=" + values.Count +
                     " selector-session=" + (selectedSession is null
@@ -212,6 +292,33 @@ public sealed class ConnectionServerSelectionStudy
                     " selector-destination=" + destination +
                     " truncated=" + (stagePartial ? "yes" : "no") +
                     " server=unverified");
+
+                // A bounded per-socket view preserves the origin of Connection
+                // candidates and reveals whether the root envelope differs.
+                foreach (Session session in sessions.Where(s => s.ClientNonGameFrames > 0)
+                    .OrderBy(s => s.Number))
+                {
+                    string socketDestination = session.Address.Contains(':')
+                        ? "[" + session.Address + "]:" + session.Port
+                        : session.Address + ":" + session.Port;
+                    string shapes = string.Join(",",
+                        session.ClientShapes.OrderByDescending(p => p.Value)
+                            .ThenBy(p => p.Key, StringComparer.Ordinal)
+                            .Take(MaxShapesPerStageOutput)
+                            .Select(p => p.Key + "*" + p.Value));
+
+                    lines.Add("p3m11=socket stage=" + labels[stage] +
+                        " session=" + session.Number +
+                        " destination=" + socketDestination +
+                        " non-game-c2s=" + session.ClientNonGameFrames +
+                        " select-candidates=" + session.SelectMessages +
+                        " shapes=[" + (shapes.Length == 0 ? "none" : shapes) + "]" +
+                        " shapes-truncated=" +
+                        (session.ShapesOverflow ||
+                         session.ClientShapes.Count > MaxShapesPerStageOutput
+                            ? "yes" : "no") +
+                        " server=unverified");
+                }
             }
 
             if (!comparable)

@@ -35,6 +35,35 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.11b : distinguer les trames de connexion des trames de jeu
+
+P3m.11 : trois phases A1/B/A2 valides,
+`non-game-frames=43/52/50` mais
+`select-candidates=0` et
+`truncated=yes` aux trois phases.
+
+Un défaut du mode faisait consommer le quota de
+192 trames par session par les **trames Game**.
+Le correctif exclut ces trames du quota Connection
+et produit de nouvelles lignes
+`p3m11=socket` : destination TCP et **structure
+protobuf des messages C→S hors Game**, sans jamais
+afficher les valeurs de champs ou les jetons.
+
+Même commande après mise à jour :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --connection-selection-study
+```
+
+La sortie `p3m11=socket` indiquera uniquement
+les numéros de champs et leurs types (`L`, `V`,
+etc.). Elle doit nous permettre d'identifier
+l'enveloppe pertinente avant toute attribution
+de `ServerId` en production.
+
+Voir `docs/modular-workspace-p3m11-connection-select.md`.
+
 ### P3m.11 : recherche du message de sélection numérique `SelectServer`
 
 P3m.10 montre plusieurs connexions Dofus en TCP/5555

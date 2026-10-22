@@ -208,6 +208,86 @@ public sealed class ConnectionServerSelectionStudyTest
     }
 
     [Fact]
+    public void P3m11bDescribesOnlyFieldNumbersAndWireTypes()
+    {
+        byte[] payload = Select(938274, "sensitive-uuid-test");
+        string shape = ConnectionServerSelectionStudy
+            .DescribeNonGameFrameShape(payload);
+
+        shape.Should().Be("root(f1:L)/f1(f1:L.f4:L)/f4(f1:V)")
+            .And.NotContain("sensitive-uuid-test")
+            .And.NotContain("938274");
+    }
+
+    [Fact]
+    public void NonGameClientFramesAreReportedPerSocketWithoutValues()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        CharacterCaptureFlowKey key = Key(1);
+        study.ObserveFrame(1, key, CharacterCaptureDirection.ClientToServer,
+            Select(871265, "some-uuid"), hasGameAny: false);
+        study.ObserveFrame(1, key, CharacterCaptureDirection.ServerToClient,
+            Message(Unsigned(2, 11)), hasGameAny: false);
+
+        string[] lines = study.Summarize().ToArray();
+        lines[0].Should().Contain("non-game-c2s=1 non-game-s2c=1");
+        string raw = lines.Single(x => x.StartsWith("p3m11=socket stage=A1"));
+        raw.Should().Contain("session=1 destination=198.51.100.4:5555")
+            .And.Contain("root(f1:L)/f1(f1:L.f4:L)/f4(f1:V)*1")
+            .And.NotContain("871265")
+            .And.NotContain("some-uuid");
+    }
+
+    [Fact]
+    public void WorldLoadGameBurstNoLongerExhaustsConnectionFramesBudget()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        var key = Key(1);
+        for (int i = 0; i < 300; i++)
+            study.ObserveFrame(1, key, CharacterCaptureDirection.ServerToClient,
+                Message(Unsigned(1, 25)), hasGameAny: true);
+        study.ObserveFrame(1, key, CharacterCaptureDirection.ClientToServer,
+            Select(77), hasGameAny: false);
+        string stage = study.Summarize()[0];
+        stage.Should().Contain("frames=301 non-game-frames=1")
+            .And.Contain("select-candidates=1")
+            .And.Contain("truncated=no");
+    }
+
+    [Fact]
+    public void AfterKsbPacketsDoNotConsumeConnectionBudget()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        var key = Key(1);
+        study.ObserveEvents(key, [
+            E(1, CharacterCaptureEventKind.Opened),
+            E(1, CharacterCaptureEventKind.Message, "ksc"),
+            E(1, CharacterCaptureEventKind.Message, "ksb")
+        ]);
+        for (int i = 0; i < 350; i++)
+            study.ObserveFrame(1, key, CharacterCaptureDirection.ClientToServer,
+                Select(71), hasGameAny: false);
+        study.Summarize()[0].Should().Contain("frames=0 non-game-frames=0")
+            .And.Contain("truncated=no");
+    }
+
+    [Fact]
+    public void ConnectionRawFrameBudgetStillCapsActualNonGameFlood()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        var key = Key(1);
+        for (int i = 0; i < 257; i++)
+            study.ObserveFrame(1, key, CharacterCaptureDirection.ServerToClient,
+                Message(Unsigned(1, 55)), hasGameAny: false);
+        study.Summarize()[0].Should().Contain("truncated=yes")
+            .And.Contain("non-game-frames=257");
+    }
+
+    [Fact]
     public void ExclusiveModeRejectsUnrelatedMetadataCollection()
     {
         Action make = () => new CharacterCaptureFlowTracker(

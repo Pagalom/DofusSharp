@@ -72,7 +72,7 @@ Le mode `--connection-selection-study` :
 - ignore les trames possédant une enveloppe `AnkamaAny`
   (elles sont traitées par le pipeline Game habituel) ;
 - examine uniquement les trames **client→serveur**,
-  au maximum **192 trames par session, 8 Kio/trame**,
+  au maximum **256 trames sans enveloppe Game par session, 8 Kio/trame**,
   24 sessions dans l'étude ;
 - vérifie une structure stricte : racine protobuf
   avec un seul `f1` (message), sous-message ayant
@@ -159,6 +159,69 @@ autre enmarquage de trames, d'une nouvelle
 structure Protobuf, d'un canal TLS ou du
 fait que le client choisit le serveur sans
 réémettre ce message à chaque connexion.
+
+## Résultat terrain P3m.11 — 22 octobre 2026
+
+L'opérateur a exécuté `--connection-selection-study` avec
+Draconiros (A1), Tylezia (B), Draconiros (A2), sur
+l'interface Ethernet Npcap index 3.
+
+| Phase | Connexions TCP | Session de jeu complète | Trames comptées | Trames sans Any | Candidates | Limite |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| A1 | 2 | #2 | 192 | 43 | 0 | oui |
+| B | 4 | #6 | 172 | 52 | 0 | oui |
+| A2 | 4 | #10 | 197 | 50 | 0 | oui |
+
+Les connexions jeu avaient toutes été reconnues
+et clôturées ; leurs destinations étaient respectivement
+`54.216.176.68:5555`,
+`54.246.90.95:5555` et
+`54.216.176.68:5555`.
+
+```text
+p3m11=summary comparable=no reason=missing-ambiguous-or-incomplete-phase meaning=structural-candidate-only server=unverified
+```
+
+**Interprétation** : aucun candidat `root.f1.f4.f1`
+n'a été détecté, mais le diagnostic a signalé des
+limites atteintes dans les trois phases.
+Le quota **192 trames par session comptabilisait
+également les trames Game**, ce qui constituait un
+défaut de conception du diagnostic :
+il pouvait tronquer le parcours utile à l'étude
+Connection pendant les rafales de chargement.
+
+**Correctif P3m.11b** : conserver l'exécution
+`--connection-selection-study` mais :
+
+- ne plus consommer le budget Connection avec
+  les trames reconnues comme `type.ankama.com` ;
+- arrêter la collecte d'une session après `ksb` ;
+- limiter séparément les trames sans Any à **256
+  par session**, avec **8192 octets** maximum par trame ;
+- distinguer `non-game-c2s` et `non-game-s2c` ;
+- afficher des lignes `p3m11=socket` donnant
+  pour chaque connexion TCP concernée **IP:port**,
+  nombre de trames client→serveur hors protocole Game,
+  ainsi que **les seuls numéros de champs Protobuf
+  et leurs wire types** dans la racine et les
+  sous-messages `f1` et `f4`.
+  Exemples : `root(f1:L)/f1(f1:L.f4:L)/f4(f1:V)`
+  ou `invalid` (forme non protobuf).
+- conserver uniquement un **histogramme de
+  signatures**, sans valeurs numériques, longueurs,
+  UUID, caractères privés ou contenu texte.
+  Au maximum 12 signatures par connexion, 8 imprimées.
+
+Une signature dont la structure ressemble à
+`f1.f4.f1` ne démontre pas sa sémantique.
+En l'absence de match strict, les signatures
+nous diront si le client utilise une autre
+enveloppe ou si les candidats sont absents du
+flux réellement observé.
+
+Aucun nouveau serveur logique n'est déclaré vérifié,
+aucune base/profil/overlay n'est modifiée.
 
 ## Suite
 
