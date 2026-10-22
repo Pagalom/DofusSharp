@@ -498,6 +498,98 @@ public sealed class ConnectionServerSelectionStudy
         }
     }
 
+    /// <summary>
+    /// P3m.12: compare the selected candidate of the *loaded* game
+    /// against separately sourced server IDs, supplied by caller.
+    /// Community references are not proof of Ankama's current protocol.
+    /// Never reveal live IDs, and never write an application server state.
+    /// </summary>
+    public IReadOnlyList<string> SummarizeReferenceChecks(
+        int expectedServerA, int expectedServerB)
+    {
+        if (expectedServerA <= 0 || expectedServerB <= 0 ||
+            expectedServerA == expectedServerB)
+            throw new ArgumentException("Expected server IDs must be positive and distinct.");
+
+        lock (_gate)
+        {
+            List<string> lines = [];
+            bool allComplete = _stage == 2 && !_capacityExceeded;
+            bool allMatched = true;
+            string[] labels = ["A1", "B", "A2"];
+
+            for (int stage = 0; stage < 3; stage++)
+            {
+                Session[] sessions = _sessions.Values.Where(s => s.Stage == stage)
+                    .OrderBy(s => s.Number).ToArray();
+                Session[] game = sessions.Where(s => s.Ksc).ToArray();
+                bool ambiguous = sessions.Any(s =>
+                    s.Evicted || s.Truncated || (s.Ksb && !s.Ksc));
+                int selectionCount = sessions.Sum(s => s.SelectMessages);
+                int linkedCount = 0;
+                int loadedCount = 0;
+                int? loadedSelection = null;
+
+                foreach (Session candidateGame in game)
+                {
+                    if (!candidateGame.Closed || candidateGame.Evicted)
+                    {
+                        ambiguous = true;
+                        continue;
+                    }
+
+                    // Re-use P3m.11d's bounded, one-to-one adjacency rule.
+                    if (!_sessions.TryGetValue(candidateGame.Number - 1,
+                            out Session? selector) ||
+                        selector.Stage != stage || !selector.Closed ||
+                        selector.Evicted || selector.Truncated ||
+                        selector.Ksc || selector.Ksb ||
+                        selector.SelectMessages != 1 ||
+                        selector.SelectedIds.Count != 1)
+                    {
+                        ambiguous = true;
+                        continue;
+                    }
+                    linkedCount++;
+                    if (candidateGame.Ksb)
+                    {
+                        loadedCount++;
+                        loadedSelection = selector.SelectedIds.Single();
+                    }
+                }
+
+                bool valid = !ambiguous && game.Length > 0 &&
+                    linkedCount == game.Length &&
+                    linkedCount == selectionCount &&
+                    loadedCount == 1 && loadedSelection.HasValue;
+                if (!valid)
+                    allComplete = false;
+
+                int expected = stage == 1 ? expectedServerB : expectedServerA;
+                bool equal = valid && loadedSelection == expected;
+                if (!equal)
+                    allMatched = false;
+
+                lines.Add("p3m12=stage-" + labels[stage] +
+                    " reference=" + (stage == 1 ? "Tylezia" : "Draconiros") +
+                    " game-attempts=" + game.Length +
+                    " selections-linked=" + linkedCount +
+                    " loaded=" + loadedCount +
+                    " comparable=" + (valid ? "yes" : "no") +
+                    " matches-reference=" + (valid
+                        ? (equal ? "yes" : "no") : "unavailable") +
+                    " provenance=community server=unverified");
+            }
+
+            lines.Add("p3m12=summary comparable=" + (allComplete ? "yes" : "no") +
+                " all-loaded-match=" + (!allComplete ? "unavailable"
+                    : allMatched ? "yes" : "no") +
+                " reference-ids=community-not-official" +
+                " semantic=unverified server=unverified");
+            return lines;
+        }
+    }
+
     private Session? GetOrCreate(int number, CharacterCaptureFlowKey key)
     {
         if (_sessions.TryGetValue(number, out Session? found))

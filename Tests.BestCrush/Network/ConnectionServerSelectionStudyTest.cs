@@ -576,6 +576,94 @@ public sealed class ConnectionServerSelectionStudyTest
     }
 
     [Fact]
+    public void P3m12ReferenceChecksOnlyLoadedAttemptWithMatchingCommunityIds()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        Attempt(study, 1, 2, 295, loaded: true);
+        study.StartStage(1);
+        Attempt(study, 3, 4, 295, loaded: false);
+        Attempt(study, 5, 6, 293, loaded: true);
+        study.StartStage(2);
+        Attempt(study, 7, 8, 293, loaded: false);
+        Attempt(study, 9, 10, 295, loaded: true);
+
+        string result = string.Join("\n",
+            study.SummarizeReferenceChecks(295, 293));
+        result.Should().Contain(
+                "stage-A1 reference=Draconiros game-attempts=1 selections-linked=1 loaded=1 comparable=yes matches-reference=yes")
+            .And.Contain(
+                "stage-B reference=Tylezia game-attempts=2 selections-linked=2 loaded=1 comparable=yes matches-reference=yes")
+            .And.Contain(
+                "stage-A2 reference=Draconiros game-attempts=2 selections-linked=2 loaded=1 comparable=yes matches-reference=yes")
+            .And.Contain("p3m12=summary comparable=yes all-loaded-match=yes")
+            .And.Contain("semantic=unverified server=unverified")
+            .And.NotContain("id=295").And.NotContain("id=293");
+    }
+
+    [Fact]
+    public void P3m12RejectsDifferentLoadedSelectionDespitePerfectAtoBtoA()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        Attempt(study, 1, 2, 12, loaded: true);
+        study.StartStage(1);
+        Attempt(study, 3, 4, 12, loaded: false);
+        Attempt(study, 5, 6, 13, loaded: true);
+        study.StartStage(2);
+        Attempt(study, 7, 8, 13, loaded: false);
+        Attempt(study, 9, 10, 12, loaded: true);
+
+        study.SummarizeLinkedAttempts().Last().Should()
+            .Contain("loaded-pattern=A-B-A");
+        string report = string.Join("\n",
+            study.SummarizeReferenceChecks(295, 293));
+        report.Should().Contain("summary comparable=yes all-loaded-match=no")
+            .And.Contain("matches-reference=no");
+    }
+
+    [Fact]
+    public void P3m12FailsClosedIfSelectorIsNotAdjacent()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        var key = Key(1);
+        study.ObserveFrame(1, key, CharacterCaptureDirection.ClientToServer,
+            Select(295), false);
+        study.ObserveEvents(key, [E(1, CharacterCaptureEventKind.Closed)]);
+        study.ObserveEvents(Key(2), [
+            E(2, CharacterCaptureEventKind.Opened),
+            E(2, CharacterCaptureEventKind.Closed)
+        ]);
+        study.ObserveEvents(Key(3), [
+            E(3, CharacterCaptureEventKind.Message, "ksc"),
+            E(3, CharacterCaptureEventKind.Message, "ksb"),
+            E(3, CharacterCaptureEventKind.Closed)
+        ]);
+        study.StartStage(1);
+        Attempt(study, 4, 5, 293, loaded: true);
+        study.StartStage(2);
+        Attempt(study, 6, 7, 295, loaded: true);
+
+        string report = string.Join("\n", study.SummarizeReferenceChecks(295, 293));
+        report.Should().Contain("stage-A1 reference=Draconiros game-attempts=1 selections-linked=0")
+            .And.Contain("matches-reference=unavailable")
+            .And.Contain("summary comparable=no all-loaded-match=unavailable");
+    }
+
+    [Fact]
+    public void P3m12RejectsInvalidReferenceMapping()
+    {
+        ConnectionServerSelectionStudy study = new();
+        Action same = () => study.SummarizeReferenceChecks(295, 295);
+        Action zero = () => study.SummarizeReferenceChecks(0, 293);
+        Action negative = () => study.SummarizeReferenceChecks(-1, 293);
+        same.Should().Throw<ArgumentException>();
+        zero.Should().Throw<ArgumentException>();
+        negative.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
     public void ExclusiveModeRejectsUnrelatedMetadataCollection()
     {
         Action make = () => new CharacterCaptureFlowTracker(

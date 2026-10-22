@@ -375,6 +375,10 @@ else if (options.ConnectionSelectionStudy)
     Console.WriteLine("P3m.11d : corrélation expérimentale par tentative TCP adjacente :");
     foreach (string line in study.SummarizeLinkedAttempts())
         Console.WriteLine(line);
+    Console.WriteLine("P3m.12 : comparaison aux références communautaires de serveurs (295/293) :");
+    foreach (string line in study.SummarizeReferenceChecks(
+        expectedServerA: 295, expectedServerB: 293))
+        Console.WriteLine(line);
 }
 else if (options.ServerNameStudy)
 {

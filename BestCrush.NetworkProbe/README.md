@@ -35,6 +35,37 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.12 : comparer les valeurs candidates aux références 295 / 293
+
+P3m.11d a fourni
+`loaded-pattern=A-B-A`,
+`B-did-not-load-vs-A1-loaded=equal` et
+`A2-did-not-load-vs-B-loaded=equal`.
+Ces trois critères corroborent la sélection d'un
+serveur numérique, indépendamment de l'IP du
+serveur de jeu.
+
+Deux listes publiques indépendantes donnent
+**Draconiros=295** et **Tylezia=293**.
+P3m.12 compare ces références à la sélection
+associée au **chargement complet** de chacune
+des trois phases, et non à la tentative initiale
+sans `ksb` en cas de changement de serveur.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --connection-selection-study
+```
+
+Les lignes `p3m12=` donnent uniquement
+`matches-reference=yes/no/unavailable` ;
+les valeurs réellement capturées ne sont pas
+affichées, ni persistées. Les références
+proviennent de communautés ; aucun serveur
+de BestCrush ne fait l'objet d'une vérification
+réseau obligatoire.
+
+Voir `docs/modular-workspace-p3m11-connection-select.md`.
+
 ### P3m.11d : corréler chaque sélection TCP à son chargement
 
 P3m.11c a reconnu un candidat numérique sur

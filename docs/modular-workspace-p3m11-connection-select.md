@@ -391,6 +391,95 @@ aux `ServerId` officiels Draconiros/Tylezia,
 sans se limiter à l'égalité. Ce diagnostic ne
 fournit pas encore cette validation.
 
+## Résultat réel P3m.11d — corroboration A-B-A
+
+L'exécution Draconiros → Tylezia → Draconiros
+du **22 octobre 2026** a produit :
+
+```text
+p3m11=linked-stage-A1 game-attempts=1 adjacency-linked=1 loaded=1 did-not-load=0 comparable=yes server=unverified
+p3m11=linked-stage-B game-attempts=2 adjacency-linked=2 loaded=1 did-not-load=1 comparable=yes server=unverified
+p3m11=linked-stage-A2 game-attempts=2 adjacency-linked=2 loaded=1 did-not-load=1 comparable=yes server=unverified
+p3m11=linked-summary comparable=yes loaded-A1-vs-A2=equal loaded-A1-vs-B=different loaded-pattern=A-B-A B-did-not-load-vs-A1-loaded=equal A2-did-not-load-vs-B-loaded=equal meaning=sequence-only semantic=unverified server=unverified
+```
+
+Les deux tentatives sans `ksb` conservent exactement
+la valeur candidate associée au personnage chargé
+dans la phase **précédente**. La tentative suivante
+sélectionne une autre valeur et charge un personnage
+dans le serveur déclaré de la nouvelle phase.
+
+**Conclusion** : comportement compatible avec le
+fait que Dofus tente d'abord le serveur précédent
+puis celui demandé ; la capture prouve le motif de
+**sélections numériques**, pas la sémantique du
+champ par elle-même. Les IP de jeu, qui varient,
+ne sont toujours pas une clé stable.
+
+## P3m.12 — Vérification des références numériques communautaires
+
+Deux projets indépendants publient les mêmes IDs
+numériques de serveur utilisés dans leurs listes :
+
+- **Draconiros** → `295` ;
+- **Tylezia** → `293`.
+
+Sources consultées le 22 octobre 2026 :
+
+- [DofusGuide — liste annoncée issue des filtres du ladder Ankama](https://github.com/Pierre-ZACHARY/dofusguideweb/blob/main/src/dofus/servers.ts)
+- [Dofus-Craft — correspondance aux identifiants Huzounet](https://github.com/Fronne/Dofus-Craft/blob/main/worker/src/servers.ts)
+
+Ce sont des **références communautaires concordantes**.
+Nous n'avons pas encore vérifié directement que ce
+sont les IDs officiels attendus par la version
+actuellement installée du client Dofus.
+
+Le mode `--connection-selection-study` ajoute les
+lignes `p3m12=stage-A1`, `stage-B`, `stage-A2`
+et `p3m12=summary`.
+
+L'étude :
+
+1. conserve la corrélation prudente : une sélection
+   candidate sur la session N, clôturée, immédiatement
+   suivie de la session jeu N+1, **dans la même phase** ;
+2. exige exactement un chargement complet
+   `ksc`+`ksb` dans chaque phase ainsi que
+   l'absence de tentatives non appariées,
+   troncatures et évictions ;
+3. compare **uniquement la valeur numérique associée
+   au chargement complet** de chaque phase à
+   la référence attendue (A1/A2 = 295, B = 293) ;
+4. ne compare pas l'essai intermédiaire sans `ksb`
+   à l'ID attendu du nouveau serveur ;
+5. n'affiche pas les valeurs capturées,
+   les UUID, les jetons ou les caractères privés ;
+6. affiche pour chaque phase
+   `matches-reference=yes/no/unavailable`
+   et un résumé `all-loaded-match=yes/no/unavailable`,
+   toujours `provenance=community` et
+   `semantic=unverified server=unverified`.
+
+**Aucune attribution réseau automatique en production.**
+Le serveur que l'utilisateur choisit dans BestCrush
+reste autoritaire, sans validation obligatoire.
+
+Exécution Windows (après `dotnet test`) :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --connection-selection-study
+```
+
+Parcours A1 Draconiros → B Tylezia → A2 Draconiros,
+avec Dofus complètement fermé entre les phases.
+Envoyer les lignes `p3m11=linked-*` et `p3m12=`.
+
+Un `all-loaded-match=yes` serait une **corroboration
+numérique forte**, mais ne prouverait ni
+l'authenticité absolue du schéma Unity 3.6.11.15,
+ni la fiabilité d'une association en situation
+multicomptes simultanée.
+
 ## Suite
 
 Si A1=A2≠B est observé : déchiffrer
