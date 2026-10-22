@@ -35,6 +35,37 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.11d : corréler chaque sélection TCP à son chargement
+
+P3m.11c a reconnu un candidat numérique sur
+Draconiros (A1), **deux** sur Tylezia (B)
+et **deux** sur Draconiros (A2), sans aucune
+troncature. Les sessions jeu correspondantes
+étaient A1 #2 `ksc`+`ksb`,
+B #4 `ksc` seul puis #6 `ksc`+`ksb`,
+A2 #8 `ksc` seul puis #10 `ksc`+`ksb`.
+
+La nouvelle sortie `p3m11=linked-*` associe,
+uniquement pour l'étude et une instance Dofus,
+une sélection candidate de session N à
+une connexion jeu **N+1 de même phase**.
+Elle compare exclusivement les candidats liés
+à un chargement complet, et indique si les
+tentatives incomplètes ressemblent à une
+réutilisation de la sélection précédente.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --connection-selection-study
+```
+
+Reproduire A1/B/A2, recopier en particulier
+`p3m11=linked-pair`, `linked-stage` et
+`linked-summary`. Le résultat ne prouve
+ni la sémantique du `ServerId`, ni une
+association fiable multicomptes.
+
+Voir `docs/modular-workspace-p3m11-connection-select.md`.
+
 ### P3m.11c : structure Connection trouvée dans les connexions d'amorçage
 
 L'essai P3m.11b réel n'était plus tronqué et a identifié,

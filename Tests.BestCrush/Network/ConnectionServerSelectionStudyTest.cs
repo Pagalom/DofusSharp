@@ -40,6 +40,29 @@ public sealed class ConnectionServerSelectionStudyTest
         ]);
     }
 
+    // A single Connection selector immediately followed by a game TCP
+    // connection: ksc always appears; ksb only on loaded game sessions.
+    private static void Attempt(ConnectionServerSelectionStudy study,
+        int authNumber, int gameNumber, int selection, bool loaded)
+    {
+        CharacterCaptureFlowKey auth = Key(authNumber);
+        study.ObserveEvents(auth, [E(authNumber, CharacterCaptureEventKind.Opened)]);
+        study.ObserveFrame(authNumber, auth, CharacterCaptureDirection.ClientToServer,
+            Select(selection), hasGameAny: false);
+        study.ObserveEvents(auth, [E(authNumber, CharacterCaptureEventKind.Closed)]);
+
+        CharacterCaptureFlowKey game = Key(gameNumber);
+        List<CharacterCaptureEvent> events =
+        [
+            E(gameNumber, CharacterCaptureEventKind.Opened),
+            E(gameNumber, CharacterCaptureEventKind.Message, "ksc")
+        ];
+        if (loaded)
+            events.Add(E(gameNumber, CharacterCaptureEventKind.Message, "ksb"));
+        events.Add(E(gameNumber, CharacterCaptureEventKind.Closed));
+        study.ObserveEvents(game, events);
+    }
+
     [Fact]
     public void FindsStableSelectionPatternAcrossIndependentAuthAndGameSockets()
     {
@@ -368,6 +391,188 @@ public sealed class ConnectionServerSelectionStudyTest
         Phase(study, 2, 5, 6, 121, "198.51.100.6");
         study.Summarize().Last().Should()
             .Contain("comparable=yes A1-vs-A2=equal A1-vs-B=different pattern=A-B-A");
+    }
+
+    [Fact]
+    public void LinkedAttemptsRecoverLoadedAtoBtoADespiteTransitionPreloads()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0).Should().BeTrue();
+        Attempt(study, 1, 2, 15115, loaded: true);
+
+        study.StartStage(1).Should().BeTrue();
+        Attempt(study, 3, 4, 15115, loaded: false);
+        Attempt(study, 5, 6, 26226, loaded: true);
+
+        study.StartStage(2).Should().BeTrue();
+        Attempt(study, 7, 8, 26226, loaded: false);
+        Attempt(study, 9, 10, 15115, loaded: true);
+
+        study.Summarize().Last().Should().Contain("comparable=no");
+        string report = string.Join("\n", study.SummarizeLinkedAttempts());
+
+        report.Should().Contain(
+                "p3m11=linked-pair stage=A1 selection-session=1 game-session=2 observed-outcome=loaded adjacency=yes")
+            .And.Contain(
+                "p3m11=linked-pair stage=B selection-session=3 game-session=4 observed-outcome=did-not-load adjacency=yes")
+            .And.Contain(
+                "p3m11=linked-pair stage=B selection-session=5 game-session=6 observed-outcome=loaded adjacency=yes")
+            .And.Contain(
+                "p3m11=linked-pair stage=A2 selection-session=7 game-session=8 observed-outcome=did-not-load adjacency=yes")
+            .And.Contain(
+                "p3m11=linked-pair stage=A2 selection-session=9 game-session=10 observed-outcome=loaded adjacency=yes")
+            .And.Contain(
+                "linked-stage-B game-attempts=2 adjacency-linked=2 loaded=1 did-not-load=1 comparable=yes")
+            .And.Contain(
+                "p3m11=linked-summary comparable=yes loaded-A1-vs-A2=equal loaded-A1-vs-B=different loaded-pattern=A-B-A B-did-not-load-vs-A1-loaded=equal A2-did-not-load-vs-B-loaded=equal")
+            .And.NotContain("15115").And.NotContain("26226");
+    }
+
+    [Fact]
+    public void TransitionPreloadsDifferentFromPreviousAreReportedWithoutAssumptions()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        Attempt(study, 1, 2, 111, loaded: true);
+        study.StartStage(1);
+        Attempt(study, 3, 4, 333, loaded: false);
+        Attempt(study, 5, 6, 222, loaded: true);
+        study.StartStage(2);
+        Attempt(study, 7, 8, 444, loaded: false);
+        Attempt(study, 9, 10, 111, loaded: true);
+
+        study.SummarizeLinkedAttempts().Last().Should()
+            .Contain("comparable=yes")
+            .And.Contain("loaded-pattern=A-B-A")
+            .And.Contain("B-did-not-load-vs-A1-loaded=different")
+            .And.Contain("A2-did-not-load-vs-B-loaded=different");
+    }
+
+    [Fact]
+    public void NonAdjacentSelectionIsNotAttributedToGame()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        CharacterCaptureFlowKey selector = Key(1);
+        study.ObserveFrame(1, selector, CharacterCaptureDirection.ClientToServer,
+            Select(111), hasGameAny: false);
+        study.ObserveEvents(selector, [E(1, CharacterCaptureEventKind.Closed)]);
+        study.ObserveEvents(Key(2), [
+            E(2, CharacterCaptureEventKind.Opened),
+            E(2, CharacterCaptureEventKind.Closed)
+        ]);
+        study.ObserveEvents(Key(3), [
+            E(3, CharacterCaptureEventKind.Opened),
+            E(3, CharacterCaptureEventKind.Message, "ksc"),
+            E(3, CharacterCaptureEventKind.Message, "ksb"),
+            E(3, CharacterCaptureEventKind.Closed)
+        ]);
+        study.StartStage(1);
+        Attempt(study, 4, 5, 222, loaded: true);
+        study.StartStage(2);
+        Attempt(study, 6, 7, 111, loaded: true);
+
+        string result = string.Join("\n", study.SummarizeLinkedAttempts());
+        result.Should().Contain(
+                "linked-pair stage=A1 selection-session=unavailable game-session=3 observed-outcome=loaded adjacency=no")
+            .And.Contain("linked-summary comparable=no");
+    }
+
+    [Fact]
+    public void PreviousStageSelectorCannotAttachToNextStageGame()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        Attempt(study, 1, 2, 111, loaded: true);
+        CharacterCaptureFlowKey selector = Key(3);
+        study.ObserveFrame(3, selector, CharacterCaptureDirection.ClientToServer,
+            Select(111), false);
+        study.ObserveEvents(selector, [E(3, CharacterCaptureEventKind.Closed)]);
+        study.StartStage(1);
+        study.ObserveEvents(Key(4), [
+            E(4, CharacterCaptureEventKind.Opened),
+            E(4, CharacterCaptureEventKind.Message, "ksc"),
+            E(4, CharacterCaptureEventKind.Message, "ksb"),
+            E(4, CharacterCaptureEventKind.Closed)
+        ]);
+        study.StartStage(2);
+        Attempt(study, 5, 6, 111, loaded: true);
+
+        string report = string.Join("\n", study.SummarizeLinkedAttempts());
+        report.Should().Contain(
+                "linked-pair stage=B selection-session=unavailable game-session=4")
+            .And.Contain("linked-summary comparable=no");
+    }
+
+    [Fact]
+    public void ExtraUnpairedSelectorMakesResultAmbiguous()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        Attempt(study, 1, 2, 111, loaded: true);
+        CharacterCaptureFlowKey selector = Key(3);
+        study.ObserveFrame(3, selector, CharacterCaptureDirection.ClientToServer,
+            Select(222), false);
+        study.ObserveEvents(selector, [E(3, CharacterCaptureEventKind.Closed)]);
+        study.StartStage(1);
+        Attempt(study, 4, 5, 222, loaded: true);
+        study.StartStage(2);
+        Attempt(study, 6, 7, 111, loaded: true);
+        study.SummarizeLinkedAttempts().Last().Should()
+            .Contain("comparable=no");
+    }
+
+    [Fact]
+    public void UnclosedSelectorCannotBeLinkedToLoadedGame()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        var auth = Key(1);
+        study.ObserveFrame(1, auth, CharacterCaptureDirection.ClientToServer,
+            Select(111), false);
+        study.ObserveEvents(Key(2), [
+            E(2, CharacterCaptureEventKind.Message, "ksc"),
+            E(2, CharacterCaptureEventKind.Message, "ksb"),
+            E(2, CharacterCaptureEventKind.Closed)
+        ]);
+        study.StartStage(1);
+        Attempt(study, 3, 4, 222, loaded: true);
+        study.StartStage(2);
+        Attempt(study, 5, 6, 111, loaded: true);
+        study.SummarizeLinkedAttempts().Last().Should()
+            .Contain("comparable=no");
+    }
+
+    [Fact]
+    public void TwoFullyLoadedGamesInSameStageAreAmbiguous()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        Attempt(study, 1, 2, 111, loaded: true);
+        Attempt(study, 3, 4, 111, loaded: true);
+        study.StartStage(1);
+        Attempt(study, 5, 6, 222, loaded: true);
+        study.StartStage(2);
+        Attempt(study, 7, 8, 111, loaded: true);
+        string report = string.Join("\n", study.SummarizeLinkedAttempts());
+        report.Should().Contain(
+                "linked-stage-A1 game-attempts=2 adjacency-linked=2 loaded=2")
+            .And.Contain("linked-summary comparable=no");
+    }
+
+    [Fact]
+    public void SameLoadedIdOnAllStagesIsNotDeclaredABAPattern()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        Attempt(study, 1, 2, 77, loaded: true);
+        study.StartStage(1);
+        Attempt(study, 3, 4, 77, loaded: true);
+        study.StartStage(2);
+        Attempt(study, 5, 6, 77, loaded: true);
+        study.SummarizeLinkedAttempts().Last().Should()
+            .Contain("comparable=yes")
+            .And.Contain("loaded-pattern=other");
     }
 
     [Fact]

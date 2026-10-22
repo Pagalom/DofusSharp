@@ -289,6 +289,108 @@ Ce correctif ne branche aucune attribution automatique ;
 supplémentaire A → B → A doit déterminer si une valeur
 candidate est répétée pour A et distincte pour B.
 
+## Résultat réel P3m.11c et nouvelle corrélation P3m.11d
+
+L'opérateur a exécuté l'essai Draconiros (A1) →
+Tylezia (B) → Draconiros (A2). Le décodeur P3m.11c
+a reconnu **cinq candidats** `root.f1.f4.f1`
+dans des trames client→serveur, sans aucun rejet,
+sans troncature, et une session jeu complète
+`ksc`+`ksb` par phase.
+
+| Phase | Sélections observées | Connexions de jeu |
+| --- | --- | --- |
+| A1 | #1 sur `52.30.61.61:5555` | #2 : `ksc`, `ksb`, close |
+| B | #3 et #5 sur `52.30.61.61:5555` | #4 : `ksc` seul ; #6 : `ksc`, `ksb`, close |
+| A2 | #7 et #9 sur `34.247.205.111:5555` | #8 : `ksc` seul ; #10 : `ksc`, `ksb`, close |
+
+Les phases B et A2 affichent deux valeurs
+numériques distinctes chacune. Le résumé général
+de P3m.11c `comparable=no` était donc logique :
+il regroupait **plusieurs tentatives** en une
+phase. Ce résultat **ne signifie pas que les valeurs
+sont contradictoires ou que le schéma Connection est faux**.
+
+### Hypothèse à tester
+
+Les tentatives se succèdent exactement dans cet ordre
+de sessions TCP :
+
+```text
+A1 : sélection #1 → jeu #2, personnage chargé
+B  : sélection #3 → jeu #4, pas de ksb
+     sélection #5 → jeu #6, personnage chargé
+A2 : sélection #7 → jeu #8, pas de ksb
+     sélection #9 → jeu #10, personnage chargé
+```
+
+**Possibilité non prouvée** : lors d'un changement de
+serveur, une première sélection vise le contexte
+précédent, puis une seconde vise le serveur demandé.
+Pour la tester, P3m.11d évalue si la valeur de la
+première tentative B est égale à celle de la
+dernière tentative chargée A1, et si la première
+tentative A2 est égale à la dernière chargée B.
+
+### Diagnostic P3m.11d
+
+Le même mode CLI `--connection-selection-study`
+produit **en supplément**, sans supprimer les sorties
+P3m.11 existantes :
+
+- `p3m11=linked-pair` : association entre une
+  session de sélection candidate **clôturée** et
+  une session de jeu **immédiatement suivante**
+  (`numéro de session + 1`) dans **la même phase** ;
+- `observed-outcome=loaded` si `ksc` puis `ksb`
+  et fermeture ont été observés ; sinon
+  `observed-outcome=did-not-load` si `ksc`
+  sans `ksb` puis fermeture. Le second état
+  **ne prouve pas** que la connexion a échoué ;
+- `p3m11=linked-stage-A1/B/A2` : nombre
+  de tentatives, paires adjacentes et chargements,
+  avec **un seul chargement complet exigé par phase** ;
+- `p3m11=linked-summary` : égalité entre **les
+  valeurs associées aux chargements complets**
+  et comparaison de la première tentative
+  incomplète de B/A2 à celle du chargement complet
+  de la phase précédente.
+
+Une phase n'est pas comparable s'il manque une
+paire adjacente, si plusieurs chargements complets
+existent, s'il reste des sélections sans paire,
+si une session importante est incomplète ou
+si le collecteur est tronqué/évincé.
+
+**Important :** les numéros de sessions de capture
+sont une corrélation temporelle expérimentale,
+pas un identifiant de compte, personnage ou serveur.
+Ce mécanisme ne doit pas être intégré au routage
+multicomptes de production sans validation
+indépendante. Les valeurs de `f1.f4.f1` ne
+sont jamais affichées ni persistées.
+
+Commande Windows après build/tests :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --connection-selection-study
+```
+
+La nouvelle sortie `p3m11=linked-summary` peut
+avoir `comparable=yes` alors que le résumé brut
+`p3m11=summary` reste `comparable=no` :
+le second exige une seule valeur par phase,
+le premier porte uniquement sur la sélection
+associée au chargement complet.
+
+**Prochaine étape** : si `loaded-pattern=A-B-A`
+et les deux comparaisons des tentatives
+intermédiaires sont `equal`, vérifier ensuite
+que les valeurs candidates correspondent bien
+aux `ServerId` officiels Draconiros/Tylezia,
+sans se limiter à l'égalité. Ce diagnostic ne
+fournit pas encore cette validation.
+
 ## Suite
 
 Si A1=A2≠B est observé : déchiffrer

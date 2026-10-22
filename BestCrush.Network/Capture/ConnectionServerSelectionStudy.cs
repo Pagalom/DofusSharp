@@ -386,6 +386,118 @@ public sealed class ConnectionServerSelectionStudy
         }
     }
 
+    /// <summary>
+    /// P3m.11d: correlate a candidate from a closed Connection session
+    /// only to the IMMEDIATELY following game TCP session in the same
+    /// operator-defined phase. No IP-based or character-based attribution.
+    /// "did-not-load" means ksc but no ksb observed, not necessarily an error.
+    /// All candidate integers stay in RAM; only equality is displayed.
+    /// </summary>
+    public IReadOnlyList<string> SummarizeLinkedAttempts()
+    {
+        lock (_gate)
+        {
+            List<string> lines = [];
+            var loadedIds = new int?[3];
+            var interruptedIds = new int?[3];
+            bool comparable = _stage == 2 && !_capacityExceeded;
+            string[] labels = ["A1", "B", "A2"];
+
+            for (int stage = 0; stage < 3; stage++)
+            {
+                Session[] sessions = _sessions.Values.Where(s => s.Stage == stage)
+                    .OrderBy(s => s.Number).ToArray();
+                Session[] gameAttempts = sessions.Where(s => s.Ksc).ToArray();
+                List<(Session Game, Session Selector, int Candidate)> paired = [];
+                bool ambiguous = sessions.Any(s => s.Truncated || s.Evicted ||
+                    s.Ksb && !s.Ksc);
+
+                foreach (Session game in gameAttempts)
+                {
+                    bool adjacent = _sessions.TryGetValue(game.Number - 1,
+                        out Session? previous) &&
+                        previous.Stage == stage &&
+                        previous.Closed && !previous.Evicted && !previous.Truncated &&
+                        !previous.Ksc && !previous.Ksb &&
+                        previous.SelectMessages == 1 &&
+                        previous.SelectedIds.Count == 1;
+
+                    string outcome = game.Ksb && game.Closed && !game.Evicted
+                        ? "loaded"
+                        : !game.Ksb && game.Closed && !game.Evicted
+                            ? "did-not-load"
+                            : "incomplete";
+                    if (!adjacent)
+                        ambiguous = true;
+                    else
+                        paired.Add((game, previous!,
+                            previous!.SelectedIds.Single()));
+
+                    lines.Add("p3m11=linked-pair stage=" + labels[stage] +
+                        " selection-session=" + (adjacent
+                            ? previous!.Number.ToString() : "unavailable") +
+                        " game-session=" + game.Number +
+                        " observed-outcome=" + outcome +
+                        " adjacency=" + (adjacent ? "yes" : "no") +
+                        " server=unverified");
+                }
+
+                var loaded = paired.Where(p => p.Game.Ksb &&
+                    p.Game.Closed && !p.Game.Evicted).ToArray();
+                var interrupted = paired.Where(p => !p.Game.Ksb &&
+                    p.Game.Closed && !p.Game.Evicted).ToArray();
+
+                // Every selection must link to one game attempt; otherwise
+                // another client or a missed TCP session may be interleaved.
+                int selectors = sessions.Count(x => x.SelectMessages > 0);
+                bool stageValid = !ambiguous && gameAttempts.Length > 0 &&
+                    paired.Count == gameAttempts.Length &&
+                    selectors == paired.Count &&
+                    loaded.Length == 1 && loaded[0].Selector.SelectedIds.Count == 1;
+                if (!stageValid)
+                    comparable = false;
+                else
+                    loadedIds[stage] = loaded[0].Candidate;
+                if (stageValid && interrupted.Length == 1)
+                    interruptedIds[stage] = interrupted[0].Candidate;
+
+                lines.Add("p3m11=linked-stage-" + labels[stage] +
+                    " game-attempts=" + gameAttempts.Length +
+                    " adjacency-linked=" + paired.Count +
+                    " loaded=" + loaded.Length +
+                    " did-not-load=" + interrupted.Length +
+                    " comparable=" + (stageValid ? "yes" : "no") +
+                    " server=unverified");
+            }
+
+            if (!comparable || loadedIds.Any(id => id is null))
+            {
+                lines.Add("p3m11=linked-summary comparable=no" +
+                    " reason=incomplete-or-ambiguous-adjacency" +
+                    " meaning=sequence-only server=unverified");
+                return lines;
+            }
+
+            bool sameA = loadedIds[0] == loadedIds[2];
+            bool differsB = loadedIds[0] != loadedIds[1];
+            string transitionB = interruptedIds[1].HasValue
+                ? (interruptedIds[1] == loadedIds[0] ? "equal" : "different")
+                : "unavailable";
+            string transitionA2 = interruptedIds[2].HasValue
+                ? (interruptedIds[2] == loadedIds[1] ? "equal" : "different")
+                : "unavailable";
+
+            lines.Add("p3m11=linked-summary comparable=yes" +
+                " loaded-A1-vs-A2=" + (sameA ? "equal" : "different") +
+                " loaded-A1-vs-B=" + (differsB ? "different" : "equal") +
+                " loaded-pattern=" + (sameA && differsB ? "A-B-A" : "other") +
+                " B-did-not-load-vs-A1-loaded=" + transitionB +
+                " A2-did-not-load-vs-B-loaded=" + transitionA2 +
+                " meaning=sequence-only semantic=unverified server=unverified");
+            return lines;
+        }
+    }
+
     private Session? GetOrCreate(int number, CharacterCaptureFlowKey key)
     {
         if (_sessions.TryGetValue(number, out Session? found))
