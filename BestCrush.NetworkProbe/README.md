@@ -35,6 +35,35 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### Résultat réel P3m.12 : correspondance des ServerId candidats
+
+**22 octobre 2026** : l'essai A1 Draconiros →
+B Tylezia → A2 Draconiros a produit
+`p3m12=summary comparable=yes all-loaded-match=yes`.
+
+Les **trois chargements complets** correspondent
+aux références communautaires : **Draconiros 295**,
+**Tylezia 293**, **Draconiros 295**.
+Les tentatives de transition non chargées
+correspondent au serveur de la phase précédente
+(`p3m11=linked-summary` : deux égalités).
+
+**Validation expérimentale du ServerId candidat
+sur un client à la fois**, pas validation
+de la liaison multicompte, ni de la pérennité
+du mapping pour une autre version Dofus.
+
+La prochaine étude est le lien *Connection
+TCP → PID/HWND → Game TCP* en présence de
+deux fenêtres actives, par quadruplet TCP exact.
+L'adjacence globale des sessions utilisée
+en P3m.11d/P3m.12 **ne doit pas** servir
+au routage multicompte de BestCrush.
+Le serveur manuellement choisi reste
+autoritaire.
+
+Voir `docs/modular-workspace-p3m11-connection-select.md`.
+
 ### P3m.12 : comparer les valeurs candidates aux références 295 / 293
 
 P3m.11d a fourni
