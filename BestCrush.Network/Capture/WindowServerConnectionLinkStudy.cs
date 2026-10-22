@@ -163,9 +163,11 @@ public sealed class WindowServerConnectionLinkStudy
     }
 
     /// <summary>
-    /// Each Game flow is linked only to the sole unused Connection selection
-    /// in the SAME WINDOW since its previous game attempt. Global TCP
-    /// adjacency and destination IP are never used as identity.
+    /// Each Game flow is linked only to the sole unused, closed Connection
+    /// selection in the SAME WINDOW since its previous game attempt.
+    /// A ksc+ksb Game flow may still be alive: closure is NOT required.
+    /// Global TCP adjacency and destination IP are never used as identity.
+    /// Multiple selectors remain ambiguous even if they carry the same ID.
     /// </summary>
     public IReadOnlyList<string> Summarize(int draconirosId = 295, int kourialId = 355)
     {
@@ -194,22 +196,55 @@ public sealed class WindowServerConnectionLinkStudy
                 int unclassified = 0;
                 int lastGameSession = 0;
                 bool ambiguous = relevant.Any(f => f.Evicted);
+                string reason = ambiguous ? "evicted-flow" : "none";
 
                 foreach (Flow game in relevant.Where(f => f.Ksc))
                 {
                     gameAttempts++;
                     Flow[] candidates = relevant.Where(f =>
                         f.Number > lastGameSession && f.Number < game.Number &&
-                        f.Closed && !f.Evicted &&
                         !f.Ksc && !f.Ksb &&
                         _selections.ContainsKey(f.Number)).ToArray();
                     lastGameSession = game.Number;
-                    if (candidates.Length != 1 ||
-                        !_selections.TryGetValue(candidates[0].Number,
-                            out List<int>? values) ||
-                        values.Count != 1 || !game.Closed)
+
+                    // A running game connection is NOT expected to close when
+                    // the user presses Ctrl+C. ksc + ksb are the load markers.
+                    string gameState = game.Ksb
+                        ? (game.Closed ? "loaded-closed" : "loaded-live")
+                        : (game.Closed ? "ksc-only-closed" : "ksc-only-live");
+                    int distinctIds = candidates.SelectMany(candidate =>
+                            _selections[candidate.Number])
+                        .Distinct().Count();
+                    string attemptReason = "none";
+
+                    if (candidates.Length == 0)
+                        attemptReason = "selection-missing";
+                    else if (candidates.Length > 1)
+                        attemptReason = distinctIds > 1
+                            ? "multiple-distinct-selections"
+                            : "multiple-selections";
+                    else if (!candidates[0].Closed || candidates[0].Evicted)
+                        attemptReason = "selection-not-closed";
+                    else if (_selections[candidates[0].Number].Count != 1)
+                        attemptReason = "selection-multiple-values";
+                    else if (!game.Ksb && !game.Closed)
+                        attemptReason = "game-incomplete";
+
+                    output.Add("p3m13=attempt window-index=" + slot +
+                        " game-session=" + game.Number +
+                        " game-state=" + gameState +
+                        " preceding-selections=" + candidates.Length +
+                        " distinct-selection-values=" + distinctIds +
+                        " status=" + (attemptReason == "none"
+                            ? "candidate-linked" : "unverified") +
+                        " reason=" + attemptReason +
+                        " account=unverified server=unverified");
+
+                    if (attemptReason != "none")
                     {
                         ambiguous = true;
+                        if (reason == "none")
+                            reason = attemptReason;
                         continue;
                     }
 
@@ -217,7 +252,7 @@ public sealed class WindowServerConnectionLinkStudy
                     if (!game.Ksb)
                         continue;
                     loaded++;
-                    int selected = values[0];
+                    int selected = _selections[candidates[0].Number][0];
                     string reference = selected == draconirosId
                         ? "Draconiros" : selected == kourialId
                             ? "Kourial" : "unknown";
@@ -234,6 +269,12 @@ public sealed class WindowServerConnectionLinkStudy
                 // Reject selectors that were never consumed by a game
                 // attempt (e.g. interleaved login or lost packets).
                 bool hasStraySelectors = boundSelectors != linked;
+                if (hasStraySelectors && reason == "none")
+                    reason = "unpaired-selection";
+                if (gameAttempts == 0 && reason == "none")
+                    reason = "game-missing";
+                if (unclassified != 0 && reason == "none")
+                    reason = "unknown-reference";
                 bool ready = !ambiguous && !hasStraySelectors &&
                     gameAttempts > 0 && linked == gameAttempts && loaded > 0 &&
                     unclassified == 0 && knownRef == loaded;
@@ -248,6 +289,7 @@ public sealed class WindowServerConnectionLinkStudy
                     " loaded=" + loaded +
                     " references-matched=" + knownRef +
                     " status=" + (ready ? "linked-candidate" : "unverified") +
+                    " reason=" + (ready ? "none" : reason) +
                     " account=unverified server=unverified");
             }
 

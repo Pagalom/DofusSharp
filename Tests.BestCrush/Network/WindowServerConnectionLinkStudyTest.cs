@@ -157,6 +157,93 @@ public sealed class WindowServerConnectionLinkStudyTest
     }
 
     [Fact]
+    public void LiveGameWithKscAndKsbLinksWithoutClosingTcpSocket()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: true, id: 295);
+        Session(study, 2, 22, selection: true, id: 355);
+        Session(study, 3, 11, selection: false, game: true,
+            loaded: true, closed: false);
+        Session(study, 4, 22, selection: false, game: true,
+            loaded: true, closed: false);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain("p3m13=loaded window-index=1 connection-session=1 game-session=3 reference=Draconiros")
+            .And.Contain("p3m13=loaded window-index=2 connection-session=2 game-session=4 reference=Kourial")
+            .And.Contain("game-state=loaded-live")
+            .And.Contain("windows-ready=2 loaded-pairs=2 references-matched=2")
+            .And.Contain("status=two-window-links-candidate");
+    }
+
+    [Fact]
+    public void LiveGameWithOnlyKscIsIncompleteNotLoaded()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: true, id: 295);
+        Session(study, 2, 11, selection: false, game: true,
+            loaded: false, closed: false);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain("game-state=ksc-only-live")
+            .And.Contain("reason=game-incomplete")
+            .And.Contain("loaded-pairs=0")
+            .And.Contain("status=not-confirmed");
+    }
+
+    [Fact]
+    public void TwoSelectorsOneLiveGameStayUnverifiedAndExplainDifference()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: true, id: 295);
+        Session(study, 2, 11, selection: true, id: 355);
+        Session(study, 3, 11, selection: false, game: true,
+            loaded: true, closed: false);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain("game-state=loaded-live")
+            .And.Contain("preceding-selections=2 distinct-selection-values=2")
+            .And.Contain("reason=multiple-distinct-selections")
+            .And.Contain("status=not-confirmed");
+        report.Should().NotContain("p3m13=loaded");
+    }
+
+    [Fact]
+    public void TwoSameIdSelectorsStillDoNotProveWhichConnectionBelongsToGame()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: true, id: 295);
+        Session(study, 2, 11, selection: true, id: 295);
+        Session(study, 3, 11, selection: false, game: true,
+            loaded: true, closed: false);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain("preceding-selections=2 distinct-selection-values=1")
+            .And.Contain("reason=multiple-selections")
+            .And.Contain("status=not-confirmed");
+        report.Should().NotContain("p3m13=loaded");
+    }
+
+    [Fact]
+    public void P3m13RealisticTwoWindowsOneWithRepeatedSelectionsGetsPartialResult()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: true, id: 295);
+        Session(study, 2, 11, selection: true, id: 295);
+        Session(study, 3, 22, selection: true, id: 355);
+        Session(study, 4, 11, selection: false, game: true,
+            loaded: true, closed: false);
+        Session(study, 5, 22, selection: false, game: true,
+            loaded: true, closed: false);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain("p3m13=window window-index=1 connection-selections=2 game-attempts=1 linked=0 loaded=0")
+            .And.Contain("reason=multiple-selections")
+            .And.Contain("p3m13=window window-index=2 connection-selections=1 game-attempts=1 linked=1 loaded=1 references-matched=1 status=linked-candidate")
+            .And.Contain("windows-ready=1 loaded-pairs=1 references-matched=1")
+            .And.Contain("status=not-confirmed");
+    }
+
+    [Fact]
     public void SelectorNotClosedDoesNotLinkToGame()
     {
         WindowServerConnectionLinkStudy study = new();

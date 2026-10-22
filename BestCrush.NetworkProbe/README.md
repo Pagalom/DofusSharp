@@ -35,6 +35,45 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.13b : diagnostiquer les connexions Game encore ouvertes
+
+La première exécution à **deux comptes**, Draconiros
+et Kourial, a reconnu deux fenêtres et leurs sockets
+sans conflit ni propriétaire manquant, mais les
+deux associations ont échoué (`linked=0`).
+
+**Cause identifiée :** la règle précédente imposait
+la fermeture du socket de jeu avant d'accepter une
+association. Or le test conserve volontairement les
+deux fenêtres ouvertes. P3m.13b accepte une
+connexion Game **encore active**, dès lors que
+`ksc` et `ksb` ont été observés.
+
+La première fenêtre a également **deux sélections
+pour une tentative de jeu**. La nouvelle ligne
+`p3m13=attempt` explique pourquoi un lien est
+rejeté, notamment
+`reason=multiple-selections` ou
+`reason=multiple-distinct-selections`, sans
+révéler les identifiants numériques.
+
+**Ne pas attribuer arbitrairement la dernière
+sélection**, même en présence de deux valeurs
+identiques. La liaison réseau doit rester
+sans ambiguïté.
+
+Exécution inchangée après `dotnet test` :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --window-server-link
+```
+
+Garder **les deux clients ouverts** à l'arrêt.
+Récupérer les lignes `p3m13=attempt`,
+`p3m13=window` et `p3m13=summary`.
+
+Voir `docs/modular-workspace-p3m13-window-server-link.md`.
+
 ### P3m.13 : relier les selections serveur aux deux fenetres Dofus
 
 Les ServerId candidats **Draconiros=295** et

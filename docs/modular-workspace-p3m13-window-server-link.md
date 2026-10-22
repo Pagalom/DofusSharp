@@ -70,6 +70,91 @@ Le probe ne modifie pas le jeu et n'envoie aucun message réseau.
 
 La compilation et la campagne de validation **Windows réelles** restent nécessaires.
 
+## P3m.13 — Premier résultat réel et correctif P3m.13b (22 octobre 2026)
+
+Le probe a été lancé sur deux comptes simultanés :
+**Draconiros (295)** et **Kourial (355)**,
+les deux fenêtres Dofus restant **ouvertes** au
+moment de Ctrl+C. Sortie :
+
+```text
+p3m13=window window-index=1 connection-selections=2 game-attempts=1 linked=0 loaded=0 references-matched=0 status=unverified account=unverified server=unverified
+p3m13=window window-index=2 connection-selections=1 game-attempts=1 linked=0 loaded=0 references-matched=0 status=unverified account=unverified server=unverified
+p3m13=summary flows=6 windows-linked=2 windows-ready=0 loaded-pairs=0 references-matched=0 owner-missing=0 window-missing=0 conflicts=0 overflow=no status=not-confirmed account=unverified server=unverified
+```
+
+**Ce que cette sortie établit :** les deux fenêtres
+sont distinctes et tous les flux pertinents disposent
+d'un propriétaire de socket et d'une fenêtre,
+sans conflit. Elle ne démontre pas pourquoi les
+Game ne sont pas reliés, car P3m.13 n'imprimait
+aucun motif de rejet.
+
+**Défaut de logique identifié :** la fonction
+`Summarize()` imposait
+`game.Closed == true` pour chaque connexion Game.
+Or le protocole d'essai prescrivait justement de
+**conserver les deux clients connectés** pendant
+l'arrêt du probe. Une connexion Game ayant reçu
+`ksc`+`ksb` est considérée comme chargée
+**même si le socket TCP reste ouvert**.
+
+**Deuxième ambiguïté réelle :** fenêtre 1 avait
+deux sélections candidates pour une seule tentative
+Game, contre une sélection pour la fenêtre 2.
+Cela peut correspondre à des tentatives successives
+non reconnues comme `ksc` ou à une autre séquence ;
+nous ne devons pas sélectionner arbitrairement
+le dernier candidat ni supposer que les deux
+valeurs sont égales.
+
+### P3m.13b — Correction et observabilité minimale
+
+- Accepte pour un chargement complet la connexion
+  Game **active** si `ksc` et `ksb`
+  ont été observés ; n'exige sa fermeture
+  que si `ksb` est absent pour considérer
+  le passage comme `ksc-only-closed`.
+- Ajoute `p3m13=attempt` avec
+  `game-state=loaded-live|loaded-closed|
+  ksc-only-live|ksc-only-closed`,
+  `preceding-selections`,
+  `distinct-selection-values` et un
+  **code de rejet catégoriel**.
+- Si plusieurs sélections précèdent le même
+  Game, signale `multiple-selections`
+  ou `multiple-distinct-selections`.
+  Même deux ID identiques ne prouvent pas
+  quelle connexion a effectivement servi :
+  **aucune attribution forcée**.
+- Une tentative Game encore ouverte avec
+  `ksc` mais sans `ksb` reste
+  `game-incomplete`.
+- Ajoute `reason=...` à
+  `p3m13=window`.
+- Les numéros de serveur capturés, les jetons,
+  les PID, les HWND et les adresses ne sont
+  toujours pas affichés ni persistés.
+
+Le statut global `two-window-links-candidate`
+continue d'exiger deux liens indépendants
+non ambigus. Il est possible de confirmer
+**une seule fenêtre**, avec statut global
+`not-confirmed`, et d'étudier l'autre ensuite.
+
+Les tests synthétiques supplémentaires vérifient
+l'acceptation des chargements actifs,
+l'interdiction des faux chargements partiels,
+les conflits entre sélections différentes ou
+identiques et le scénario réel
+`2 sélections / 1 jeu` + `1 sélection / 1 jeu`.
+
+Après mise à jour, **ne pas fermer Dofus** avant
+Ctrl+C ; retransmettre les lignes `p3m13=attempt`,
+`p3m13=window`, `p3m13=summary`.
+Cette étape ne modifie aucun routage métier
+ni la sélection manuelle des serveurs.
+
 ## Après validation
 
 Tester deux fenêtres **sur le même serveur**, une reconnexion indépendante et des sélections simultanées. Puis comparer la robustesse du lien pendant fermeture/réouverture et réassignations de focus. Ne brancher aucun routage en production tant que l'association socket→fenêtre et la séparation des caches métier par flux ne sont pas démontrées sur le build actuel. Le choix manuel du serveur reste **autoritaire sans validation obligatoire**.
