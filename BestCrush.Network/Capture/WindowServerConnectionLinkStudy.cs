@@ -230,6 +230,24 @@ public sealed class WindowServerConnectionLinkStudy
                     else if (!game.Ksb && !game.Closed)
                         attemptReason = "game-incomplete";
 
+                    if (attemptReason == "selection-missing" && game.Ksb)
+                    {
+                        // Explicitly show observed prior loaded context, but do
+                        // NOT inherit its server: a separate selection with an
+                        // unresolved PID could belong to this very window.
+                        Flow[] earlierGames = relevant.Where(f =>
+                                f.Ksc && f.Ksb && f.Number < game.Number)
+                            .OrderByDescending(f => f.Number).ToArray();
+                        output.Add("p3m13=selection-gap window-index=" + slot +
+                            " game-session=" + game.Number +
+                            " previous-loaded-game=" +
+                            (earlierGames.Length > 0 ? "observed" : "unavailable") +
+                            " same-window=yes" +
+                            " new-selection=not-observed-in-window" +
+                            " inherited-server=unverified" +
+                            " account=unverified server=unverified");
+                    }
+
                     output.Add("p3m13=attempt window-index=" + slot +
                         " game-session=" + game.Number +
                         " game-state=" + gameState +
@@ -298,6 +316,32 @@ public sealed class WindowServerConnectionLinkStudy
             Flow[] relevantFlows = all.Where(f =>
                 f.Ksc || (f.Number > 0 && _selections.ContainsKey(f.Number)))
                 .ToArray();
+            // Missing selector owners may explain a "selection-missing"
+            // in a different window. Report their anonymized session numbers
+            // and role, not addresses, PIDs or candidate values.
+            foreach (Flow unmatched in relevantFlows
+                .Where(f => f.Pid is null || !f.WindowSlot.HasValue ||
+                    f.OwnerConflict).OrderBy(f => f.Number))
+            {
+                bool selection = unmatched.Number > 0 &&
+                    _selections.ContainsKey(unmatched.Number);
+                string kind = selection && unmatched.Ksc
+                    ? "selection-and-game"
+                    : selection ? "selection"
+                    : unmatched.Ksc ? "game" : "other";
+                string unresolved = unmatched.OwnerConflict
+                    ? "owner-conflict"
+                    : !unmatched.Pid.HasValue
+                        ? "owner-missing"
+                        : "window-missing";
+                output.Add("p3m13=unbound session=" + unmatched.Number +
+                    " role=" + kind +
+                    " reason=" + unresolved +
+                    " selection-candidates=" +
+                    (selection ? _selections[unmatched.Number].Count : 0) +
+                    " account=unverified server=unverified");
+            }
+
             int missingOwner = relevantFlows.Count(f => f.Pid is null);
             int noWindow = relevantFlows.Count(f => f.Pid.HasValue && !f.WindowSlot.HasValue);
             int conflicts = relevantFlows.Count(f => f.OwnerConflict);

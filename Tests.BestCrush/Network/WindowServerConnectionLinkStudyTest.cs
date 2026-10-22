@@ -244,6 +244,69 @@ public sealed class WindowServerConnectionLinkStudyTest
     }
 
     [Fact]
+    public void ReenteringCharacterSelectionAndReloadingKeepsServerUnverified()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: true, id: 295);
+        Session(study, 2, 11, selection: false, game: true,
+            loaded: true, closed: true);
+        Session(study, 3, 11, selection: false, game: true,
+            loaded: true, closed: false);
+        Session(study, 4, 22, selection: true, id: 355);
+        Session(study, 5, 22, selection: false, game: true,
+            loaded: true, closed: false);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain(
+                "p3m13=selection-gap window-index=1 game-session=3 previous-loaded-game=observed same-window=yes new-selection=not-observed-in-window inherited-server=unverified")
+            .And.Contain("p3m13=attempt window-index=1 game-session=3 game-state=loaded-live preceding-selections=0")
+            .And.Contain("reason=selection-missing")
+            .And.Contain("p3m13=window window-index=2 connection-selections=1 game-attempts=1 linked=1")
+            .And.Contain("windows-ready=1")
+            .And.Contain("status=not-confirmed");
+        report.Should().NotContain("p3m13=loaded window-index=1 connection-session=1 game-session=3");
+    }
+
+    [Fact]
+    public void UnknownOwnedSelectionCannotBeSilentlyAttributedToPreviousWindow()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: true, id: 295);
+        Session(study, 2, 11, selection: false, game: true,
+            loaded: true, closed: true);
+
+        // A selection candidate exists, but its short-lived Windows
+        // socket was not found while ESTABLISHED.
+        study.ObserveSelectedId(3, 355);
+        study.ObserveEvents(Socket(3), [
+            Event(3, CharacterCaptureEventKind.Opened),
+            Event(3, CharacterCaptureEventKind.Closed)]);
+        Session(study, 4, 11, selection: false, game: true,
+            loaded: true, closed: false);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain("p3m13=unbound session=3 role=selection reason=owner-missing selection-candidates=1")
+            .And.Contain("p3m13=selection-gap window-index=1 game-session=4 previous-loaded-game=observed")
+            .And.Contain("inherited-server=unverified")
+            .And.Contain("owner-missing=1")
+            .And.Contain("status=not-confirmed");
+        report.Should().NotContain("p3m13=loaded window-index=1 connection-session=3");
+    }
+
+    [Fact]
+    public void MissingPreviousLoadedGameNeverProducesAnInheritedReference()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: false, game: true,
+            loaded: true, closed: false);
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain(
+                "p3m13=selection-gap window-index=1 game-session=1 previous-loaded-game=unavailable")
+            .And.Contain("inherited-server=unverified")
+            .And.Contain("status=not-confirmed");
+    }
+
+    [Fact]
     public void SelectorNotClosedDoesNotLinkToGame()
     {
         WindowServerConnectionLinkStudy study = new();

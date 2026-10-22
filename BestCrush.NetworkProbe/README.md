@@ -35,6 +35,32 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.13c : retour à l'écran des personnages
+
+Dans un nouvel essai, le personnage Draconiros
+s'est déconnecté puis reconnecté **sans fermeture
+de la fenêtre Dofus**. Le nouveau Game TCP
+a bien reçu `ksc` et `ksb`, mais aucune nouvelle
+sélection n'a été attribuée à cette fenêtre ;
+le bilan indique `owner-missing=1` pour un flux
+pertinent non identifié. La fermeture TCP ne
+signifie pas fermeture de la fenêtre.
+
+Le probe affiche désormais
+`p3m13=selection-gap` et `p3m13=unbound` pour
+distinguer la réutilisation *possible* de la
+sélection précédente d'une capture manquante.
+Il interroge aussi le propriétaire Windows
+dès le premier paquet C→S non-SYN,
+même sans payload.
+
+Ne jamais hériter automatiquement de l'ID du
+serveur déjà chargé. `inherited-server=unverified`
+demeure obligatoire. Aucune attribution métier
+ou serveur n'est activée dans BestCrush.
+
+Voir `docs/modular-workspace-p3m13-window-server-link.md`.
+
 ### Validation réelle P3m.13b — deux fenêtres Draconiros / Kourial
 
 Le 22 octobre 2026, un nouveau test a abouti

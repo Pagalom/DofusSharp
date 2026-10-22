@@ -221,6 +221,94 @@ Cela valide la suite synthétique et la compilation,
 mais **pas encore les comportements de reconnexion
 et de changement de serveur en multicomptes**.
 
+## P3m.13c — Reconnexion d'un personnage sans fermeture de fenêtre
+
+**Essai réel utilisateur (22 octobre 2026) :** les deux comptes
+Draconiros (295) et Kourial (355) étaient ouverts.
+Dans la fenêtre Draconiros, l'opérateur **est seulement
+revenu à l'écran de sélection des personnages, puis a
+reconnecté son personnage, sans fermer la fenêtre**.
+La fenêtre Kourial est restée ouverte.
+
+```text
+p3m13=attempt window-index=1 game-session=4 game-state=loaded-closed preceding-selections=1 distinct-selection-values=1 status=candidate-linked reason=none account=unverified server=unverified
+p3m13=loaded window-index=1 connection-session=3 game-session=4 reference=Draconiros match=community-candidate account=unverified server=unverified
+p3m13=attempt window-index=1 game-session=6 game-state=loaded-live preceding-selections=0 distinct-selection-values=0 status=unverified reason=selection-missing account=unverified server=unverified
+p3m13=window window-index=1 connection-selections=1 game-attempts=2 linked=1 loaded=1 references-matched=1 status=unverified reason=selection-missing account=unverified server=unverified
+p3m13=attempt window-index=2 game-session=2 game-state=loaded-closed preceding-selections=1 distinct-selection-values=1 status=candidate-linked reason=none account=unverified server=unverified
+p3m13=loaded window-index=2 connection-session=1 game-session=2 reference=Kourial match=community-candidate account=unverified server=unverified
+p3m13=window window-index=2 connection-selections=1 game-attempts=1 linked=1 loaded=1 references-matched=1 status=linked-candidate reason=none account=unverified server=unverified
+p3m13=summary flows=6 windows-linked=2 windows-ready=1 loaded-pairs=2 references-matched=2 owner-missing=1 window-missing=0 conflicts=0 overflow=no status=not-confirmed account=unverified server=unverified
+```
+
+**Interprétation :**
+
+- Draconiros : le TCP Game #4 est **terminé** puis un nouveau
+  TCP Game #6 a reçu `ksc` + `ksb` et reste **ouvert**.
+  `loaded-closed` ne signifie PAS que l'application ou sa
+  fenêtre ont été fermées.
+- La capture ne trouve pas de nouvelle sélection
+  `root.f1.f4.f1` **attribuée à la fenêtre** entre les deux
+  chargements. Cela est compatible avec la réutilisation
+  du serveur précédemment sélectionné, mais peut aussi
+  provenir d'une connexion Connection non attribuée.
+- Kourial conserve son association **précédemment validée**.
+  Son Game TCP #2 est lui aussi clos (FIN/RST), sans
+  que cela démontre la fermeture de la fenêtre.
+- `owner-missing=1` : **un flux pertinent** n'a pas reçu
+  de propriétaire PID. L'ancien résumé ne permet pas de
+  savoir s'il s'agit d'une sélection ou d'un Game :
+  ne pas inventer son rattachement.
+
+### Instrumentation prudente P3m.13c
+
+Le diagnostic ajoute :
+
+1. `p3m13=selection-gap` pour signaler un Game
+   `ksc`+`ksb` sans sélection nouvellement
+   associée à la même fenêtre, et afficher
+   `previous-loaded-game=observed|unavailable`.
+   Le champ `inherited-server=unverified` reste obligatoire :
+   **aucun ServerId n'est hérité**.
+2. `p3m13=unbound` pour les flux pertinents
+   sans PID/fenêtre fiable : numéro de session
+   anonyme, rôle `selection`, `game` ou
+   `selection-and-game`, motif
+   `owner-missing`, `window-missing` ou
+   `owner-conflict`, nombre de candidats.
+   Aucune valeur numérique ni information privée.
+3. Un essai d'attribution PID dès le **premier
+   paquet TCP C→S non-SYN**, même un ACK
+   dépourvu de données, plutôt qu'attendre
+   le premier payload ; toujours borné à
+   24 essais par socket et 96 tuples au plus.
+4. Des tests synthétiques supplémentaires :
+   reconnexion de personnage sans sélection,
+   sélection anonyme sans propriétaire avant le
+   deuxième chargement, absence de contexte
+   de chargement précédent.
+
+La mesure de `selection-gap` reste une **observation
+de séquence**, pas un mécanisme de confiance permettant
+de transférer l'identité du serveur d'un Game précédent.
+Aucun changement dans BestCrush de production.
+
+**Prochain essai recommandé :**
+démarrer le probe avant les deux clients,
+charger Draconiros et Kourial, revenir sur
+l'écran des personnages Draconiros, reconnecter
+le personnage **sans fermer Dofus ni changer
+de serveur**, puis Ctrl+C tout en gardant les
+deux fenêtres ouvertes. Relever toutes les lignes
+`p3m13=selection-gap`, `p3m13=unbound`,
+`p3m13=attempt`, `p3m13=window` et
+`p3m13=summary`.
+
+**Statut des tests :** la dernière compilation
+Windows confirmée reste **897/897**, avant
+les changements P3m.13c ; exécuter `dotnet test`
+sur ce nouveau commit.
+
 ## Après validation
 
 Tester deux fenêtres **sur le même serveur**, une reconnexion indépendante et des sélections simultanées. Puis comparer la robustesse du lien pendant fermeture/réouverture et réassignations de focus. Ne brancher aucun routage en production tant que l'association socket→fenêtre et la séparation des caches métier par flux ne sont pas démontrées sur le build actuel. Le choix manuel du serveur reste **autoritaire sans validation obligatoire**.

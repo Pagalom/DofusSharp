@@ -108,10 +108,12 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
             {
                 RefreshWindows(force: false);
 
-                // Query the OS while the socket is active, on the first
-                // C→S payload, not after the short Connection flow closes.
-                // A failed lookup is retried on later payload packets.
-                if (!incoming && tcp.PayloadData.Length > 0 &&
+                // Query the OS on the first non-SYN client packet,
+                // including a payload-free TCP ACK. At that point the socket
+                // may already be ESTABLISHED, earlier than its first payload.
+                // This reduces missed very short Connection sockets;
+                // failed lookups are still retried, up to the bounded cap.
+                if (!incoming && !tcp.Synchronize &&
                     _links.NeedsOwner(tuple))
                 {
                     _attempts.TryGetValue(tuple, out int attempts);
