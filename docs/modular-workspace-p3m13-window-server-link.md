@@ -491,6 +491,83 @@ code n'a pas encore été fournie. Le dernier
 checkpoint annoncé demeure **897/897**, avant
 les évolutions P3m.13c, P3m.13d et P3m.13e.
 
+## P3m.13e — Résultat réel du sondage et décision P3m.14
+
+L'essai de reconnexion du personnage Draconiros
+a été rejoué avec Kourial simultanément connecté.
+La situation reste identique à P3m.13d :
+une nouvelle sélection Draconiros sur la session
+TCP #5 est immédiatement suivie du chargement
+Game #6 lié à la fenêtre 1, mais #5 reste
+**sans PID Windows**.
+
+```text
+p3m13=unbound session=5 role=selection reason=owner-missing selection-candidates=1 account=unverified server=unverified
+p3m13=unbound-hypothesis selection-session=5 candidate-reference=Draconiros adjacent-loaded-game-session=6 adjacent-game-window-index=1 matches-previous-loaded-selection=yes meaning=sequence-only linked=no account=unverified server=unverified
+p3m13=summary flows=6 windows-linked=2 windows-ready=1 loaded-pairs=2 references-matched=2 owner-missing=1 window-missing=0 conflicts=0 overflow=no status=not-confirmed account=unverified server=unverified
+p3m13=owner-polling samples=0 matches=0 active-at-stop=3 interval-ms=25 meaning=exact-tuple-only account=unverified server=unverified
+```
+
+**Diagnostic exact de `samples=0` :** la tâche
+d'échantillonnage P3m.13e ne déclenche
+`ConnectingOrEstablishedIPv4` **que si**,
+au passage de sa boucle de 25 ms,
+`_activeTuples` contient une connexion
+pour laquelle `_links.NeedsOwner(tuple)`
+est toujours vrai. Les trois tuples actifs
+à l'arrêt ne démontrent pas qu'un tuple sans
+propriétaire attendait encore à cet instant.
+Donc `samples=0` ne permet pas de conclure
+que la tâche a échoué, ni que la table Windows
+ne contenait pas #5. Il établit seulement
+**aucun relevé déclenché dans ces conditions**.
+
+### Orientation retenue : P3m.14 (étude ETW opt-in)
+
+La prochaine expérimentation ne doit pas
+enchaîner un autre polling sans mesure utile.
+Windows documente un événement ETW
+**TcpIp / Connect IPv4** (type **12**),
+qui contient, selon sa version, un PID
+d'événement et les paramètres de la
+connexion TCP. Voir les sources Microsoft :
+
+- [TcpIp class](https://learn.microsoft.com/en-us/windows/win32/etw/tcpip)
+- [TcpIp_TypeGroup2 class](https://learn.microsoft.com/en-us/windows/win32/etw/tcpip-typegroup2)
+- [GetExtendedTcpTable](https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedtcptable)
+
+**Conception souhaitée :**
+un mode `--window-server-etw` explicitement
+demandé, Windows uniquement, qui active la
+capture ETW TCP Connect **avant** d'ouvrir
+Dofus. Le mode associera le quadruplet exact
+(source locale et destination, ports) et son
+PID à la fenêtre visible unique, en
+confrontant ces événements à Npcap.
+Aucun nom de compte, token, adresse, PID
+ou identifiant de personnage dans la sortie.
+Sortie anonymisée : event count, matched
+tuple count, session index, et éventuelle
+source de provenance du lien.
+
+**Précautions préalables :**
+vérifier les permissions ETW et les
+conflits possibles avec les sessions
+de traçage noyau, garantir l'arrêt/libération
+de la session ETW, distinguer PID des
+données d'événement et PID de l'entête
+générique (qui n'est pas toujours le
+processus initiateur), contrôler le
+recyclage des tuples TCP et ne jamais
+abaisser les règles `fail-closed`.
+Ne pas modifier `DofusNetworkCaptureService`
+ni la sélection manuelle du serveur.
+
+**État :** P3m.14 est ici **documenté,
+pas encore implémenté**. Le dernier
+checkpoint Windows de tests communiqué
+reste **897/897** (avant P3m.13c/d/e).
+
 ## Après validation
 
 Tester deux fenêtres **sur le même serveur**, une reconnexion indépendante et des sélections simultanées. Puis comparer la robustesse du lien pendant fermeture/réouverture et réassignations de focus. Ne brancher aucun routage en production tant que l'association socket→fenêtre et la séparation des caches métier par flux ne sont pas démontrées sur le build actuel. Le choix manuel du serveur reste **autoritaire sans validation obligatoire**.
