@@ -35,6 +35,30 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.13e : capture propriétaire TCP par sondage périodique
+
+Le dernier essai retrouve encore une sélection
+`reference=Draconiros` sur la session #5,
+immédiatement suivie du Game #6 dans la bonne
+fenêtre ; le PID du TCP #5 reste cependant
+introuvable (`linked=no`). Ni l'égalité numérique
+ni l'adjacence ne remplacent le propriétaire TCP.
+
+Le mode `--window-server-link` interroge
+désormais **en complément** la table Windows
+TCP/5555 toutes les ~25 ms pour les tuples
+actifs et manquant de propriétaire. Il accepte
+seulement un **quadruplet exact avec PID et
+fenêtre uniques**. Aucune attribution par
+déduction. La nouvelle ligne
+`p3m13=owner-polling` donne des compteurs
+anonymisés.
+
+Cette expérience ne modifie pas
+`BestCrush` de production. Les tests
+et la capture réelle sous Windows
+restent à confirmer.
+
 ### P3m.13d : sélection courte sans propriétaire Windows
 
 Un essai de reconnexion de personnage sur

@@ -394,6 +394,103 @@ Windows confirmé est **897/897** avant P3m.13c/d.
 Les nouveaux changements exigent compilation
 et validation Windows.
 
+## P3m.13e — Propriétaire Windows des connexions courtes
+
+### Deuxième capture réelle du même scénario — 22 octobre 2026
+
+L'opérateur a de nouveau chargé les deux comptes,
+puis a quitté la partie Draconiros vers la sélection
+des personnages **sans fermer sa fenêtre Dofus** et
+a reconnecté son personnage. Le nouveau contrôle
+P3m.13d montre :
+
+```text
+p3m13=loaded window-index=1 connection-session=3 game-session=4 reference=Draconiros match=community-candidate account=unverified server=unverified
+p3m13=selection-gap window-index=1 game-session=6 previous-loaded-game=observed same-window=yes new-selection=not-observed-in-window inherited-server=unverified account=unverified server=unverified
+p3m13=attempt window-index=1 game-session=6 game-state=loaded-live preceding-selections=0 distinct-selection-values=0 status=unverified reason=selection-missing account=unverified server=unverified
+p3m13=loaded window-index=2 connection-session=1 game-session=2 reference=Kourial match=community-candidate account=unverified server=unverified
+p3m13=unbound session=5 role=selection reason=owner-missing selection-candidates=1 account=unverified server=unverified
+p3m13=unbound-hypothesis selection-session=5 candidate-reference=Draconiros adjacent-loaded-game-session=6 adjacent-game-window-index=1 matches-previous-loaded-selection=yes meaning=sequence-only linked=no account=unverified server=unverified
+p3m13=summary flows=6 windows-linked=2 windows-ready=1 loaded-pairs=2 references-matched=2 owner-missing=1 window-missing=0 conflicts=0 overflow=no status=not-confirmed account=unverified server=unverified
+```
+
+Les trois indices concordent : **ID Draconiros**,
+connexion TCP #5 immédiatement suivie du Game
+#6 lié à la fenêtre 1, valeur égale à la sélection
+précédemment confirmée. **Cependant le socket #5
+reste sans propriétaire PID Windows : l'association
+reste hypothétique, et `linked=no` est obligatoire.**
+Le mode SYN_SENT déclenché dans le callback ne
+suffisait donc pas pour ce cas.
+
+### Instrumentation supplémentaire, diagnostic seulement
+
+Le mode existant `--window-server-link` garde
+sa recherche de propriétaire au fil des paquets
+et ajoute un **échantillonnage asynchrone toutes
+les ~25 ms** de la table TCP Windows `SYN_SENT`
+ou `ESTABLISHED` **pendant que les connexions
+sont considérées actives**.
+
+- Un flux candidat n'est éligible que si son
+  quadruplet TCP a été vu sur un paquet sortant.
+  Il est désactivé à FIN/RST.
+- Le sondage cherche **exactement le même
+  quadruplet TCP**, exige un propriétaire
+  unique et une fenêtre Dofus unique.
+- La lecture de table est faite **hors verrou
+  de traitement des paquets Npcap** pour éviter
+  de ralentir le réassemblage. L'application
+  de la correspondance est synchronisée.
+- Les données restent en RAM, et la mémoire
+  est bornée à **96 quadruplets actifs**.
+- `p3m13=owner-polling samples=N matches=M
+  active-at-stop=K interval-ms=25` donne
+  des **compteurs** sans adresse/port/PID/HWND.
+  Ces compteurs sont purement diagnostiques.
+- Si Windows n'expose jamais le tuple à temps,
+  **aucune attribution n'est inventée**.
+  L'indice `unbound-hypothesis` reste
+  distinct de la preuve d'identité.
+
+Cette stratégie est **opportuniste** : un
+polling ne garantit pas de trouver une
+connexion de quelques millisecondes.
+Si `owner-missing=1` persiste, étudier une
+notification d'événement de connexion Windows
+avec PID (ETW/WFP), après évaluation de ses
+permissions et du coût d'implémentation.
+Ne pas abaisser les contrôles d'identité.
+
+Deux nouveaux tests synthétiques vérifient
+l'identification **différée sur le même tuple**
+et le refus d'emprunter le propriétaire
+d'une connexion voisine. Le diagnostic est
+inchangé sur les serveurs choisis manuellement,
+l'identité du personnage, la base et le routage.
+
+### Protocole de vérification
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --window-server-link
+```
+
+Reproduire la déconnexion puis reconnexion du
+personnage sur Draconiros avec Kourial connecté,
+**sans fermer les fenêtres**. Fournir les lignes
+`p3m13=unbound`, `p3m13=unbound-hypothesis`,
+`p3m13=attempt`, `p3m13=owner-polling`
+et `p3m13=summary`.
+
+La validation des tests Windows sur le nouveau
+code n'a pas encore été fournie. Le dernier
+checkpoint annoncé demeure **897/897**, avant
+les évolutions P3m.13c, P3m.13d et P3m.13e.
+
 ## Après validation
 
 Tester deux fenêtres **sur le même serveur**, une reconnexion indépendante et des sélections simultanées. Puis comparer la robustesse du lien pendant fermeture/réouverture et réassignations de focus. Ne brancher aucun routage en production tant que l'association socket→fenêtre et la séparation des caches métier par flux ne sont pas démontrées sur le build actuel. Le choix manuel du serveur reste **autoritaire sans validation obligatoire**.

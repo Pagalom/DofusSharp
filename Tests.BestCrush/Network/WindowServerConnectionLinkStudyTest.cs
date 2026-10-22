@@ -145,6 +145,57 @@ public sealed class WindowServerConnectionLinkStudyTest
     }
 
     [Fact]
+    public void OwnerLearnedAfterConnectionSelectionPacketLinksExactTuple()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        var selector = Socket(1);
+        var game = Socket(2);
+        // Windows owner is not available on SYN. A later SYN_SENT or
+        // ESTABLISHED poll finds the owner before the TCP session closes.
+        study.ObserveEvents(selector, [Event(1, CharacterCaptureEventKind.Opened)]);
+        study.ObserveSelectedId(1, 295);
+        study.NeedsOwner(selector).Should().BeTrue();
+        study.ObserveOwner(selector,
+            [new TcpSocketOwner(selector, 11)], Windows());
+        study.NeedsOwner(selector).Should().BeFalse();
+        study.ObserveEvents(selector, [Event(1, CharacterCaptureEventKind.Closed)]);
+        study.ObserveOwner(game,
+            [new TcpSocketOwner(game, 11)], Windows());
+        study.ObserveEvents(game, [
+            Event(2, CharacterCaptureEventKind.Opened),
+            Event(2, CharacterCaptureEventKind.Message, "ksc"),
+            Event(2, CharacterCaptureEventKind.Message, "ksb")]);
+
+        string result = string.Join("\n", study.Summarize());
+        result.Should().Contain("p3m13=loaded window-index=1 connection-session=1 game-session=2 reference=Draconiros")
+            .And.Contain("status=linked-candidate")
+            .And.Contain("owner-missing=0");
+    }
+
+    [Fact]
+    public void WrongOwnerSnapshotCannotBorrowAnAdjacentConnection()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        var selector = Socket(1);
+        var neighbor = Socket(2);
+        // Another process' socket is visible but the exact selector tuple
+        // is not: a sampling tick must not borrow its PID.
+        study.ObserveEvents(selector, [
+            Event(1, CharacterCaptureEventKind.Opened),
+            Event(1, CharacterCaptureEventKind.Closed)]);
+        study.ObserveSelectedId(1, 295);
+        study.ObserveOwner(selector, [
+            new TcpSocketOwner(neighbor, 11)], Windows());
+        Session(study, 2, 11, selection: false, game: true,
+            loaded: true, closed: false);
+
+        string result = string.Join("\n", study.Summarize());
+        result.Should().Contain("p3m13=unbound session=1 role=selection reason=owner-missing")
+            .And.Contain("status=not-confirmed")
+            .And.NotContain("p3m13=loaded window-index=1 connection-session=1");
+    }
+
+    [Fact]
     public void MissingEstablishedSocketCannotBeGuessedFromVisibleWindow()
     {
         WindowServerConnectionLinkStudy study = new();

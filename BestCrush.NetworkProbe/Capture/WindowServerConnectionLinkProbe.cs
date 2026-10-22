@@ -15,6 +15,11 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
 {
     private const int MaximumWindows = 16;
     private const int MaximumOwnerAttemptsPerFlow = 24;
+    private const int MaximumFlows = 96;
+    // P3m.13e opt-in diagnostic: samples the Windows TCP table
+    // continuously while outstanding short-lived sockets are active.
+    private static readonly TimeSpan OwnerSamplingInterval =
+        TimeSpan.FromMilliseconds(25);
     private static readonly TimeSpan WindowsRefreshInterval =
         TimeSpan.FromMilliseconds(200);
 
@@ -26,8 +31,13 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
     private readonly object _sync = new();
     private readonly Dictionary<(long Handle, int ProcessId), int> _slots = [];
     private readonly Dictionary<TcpSocketTuple, int> _attempts = [];
+    private readonly HashSet<TcpSocketTuple> _activeTuples = [];
     private IReadOnlyList<(int ProcessId, int WindowSlot)> _windows = [];
     private DateTime _lastRefresh = DateTime.MinValue;
+    private CancellationTokenSource? _ownerPollingCancel;
+    private Task? _ownerPollingTask;
+    private int _ownerPolls;
+    private int _ownerPollingMatches;
     private bool _running;
 
     internal WindowServerConnectionLinkProbe(ICaptureDevice device, int port)
@@ -53,6 +63,10 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
             lock (_sync) { RefreshWindows(force: true); }
             _device.StartCapture();
             _running = true;
+            _ownerPollingCancel = new CancellationTokenSource();
+            CancellationToken samplingToken = _ownerPollingCancel.Token;
+            _ownerPollingTask = Task.Run(() =>
+                PollOwnersAsync(samplingToken));
         }
         catch
         {
@@ -66,6 +80,15 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
         if (!_running)
             return;
         _running = false;
+        _ownerPollingCancel?.Cancel();
+        try { _ownerPollingTask?.GetAwaiter().GetResult(); }
+        catch (OperationCanceledException) { /* normal shutdown */ }
+        finally
+        {
+            _ownerPollingTask = null;
+            _ownerPollingCancel?.Dispose();
+            _ownerPollingCancel = null;
+        }
         try { _device.StopCapture(); }
         catch { /* best effort; never print packet details */ }
         _device.OnPacketArrival -= OnPacketArrival;
@@ -78,6 +101,11 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
             RefreshWindows(force: true);
             foreach (string line in _links.Summarize())
                 Console.WriteLine(line);
+            Console.WriteLine("p3m13=owner-polling samples=" + _ownerPolls +
+                " matches=" + _ownerPollingMatches +
+                " active-at-stop=" + _activeTuples.Count +
+                " interval-ms=25 meaning=exact-tuple-only" +
+                " account=unverified server=unverified");
         }
     }
 
@@ -107,6 +135,11 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
             lock (_sync)
             {
                 RefreshWindows(force: false);
+                // Only sockets seen on an outgoing packet are eligible for
+                // ongoing sampling; revoke on FIN/RST from either direction.
+                if (!incoming && !tcp.Finished && !tcp.Reset &&
+                    (_activeTuples.Contains(tuple) || _activeTuples.Count < MaximumFlows))
+                    _activeTuples.Add(tuple);
 
                 // Consult Windows on the outgoing SYN too (SYN_SENT);
                 // some Connection sockets close before the first payload
@@ -117,7 +150,7 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
                 {
                     _attempts.TryGetValue(tuple, out int attempts);
                     if (attempts < MaximumOwnerAttemptsPerFlow &&
-                        (attempts > 0 || _attempts.Count < 96))
+                        (attempts > 0 || _attempts.Count < MaximumFlows))
                     {
                         _attempts[tuple] = attempts + 1;
                         IReadOnlyList<TcpSocketOwner> owners =
@@ -136,6 +169,8 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
 
                 _links.ObserveEvents(tuple, events);
                 _selection.ObserveEvents(key, events);
+                if (tcp.Finished || tcp.Reset)
+                    _activeTuples.Remove(tuple);
             }
         }
         catch (Exception ex)
@@ -143,6 +178,52 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
             // No source addresses, payloads, account details or token data.
             Console.Error.WriteLine("p3m13=packet-ignored reason=" +
                 ex.GetType().Name);
+        }
+    }
+
+    private async Task PollOwnersAsync(CancellationToken cancellation)
+    {
+        // This runs only in the opt-in P3m.13 probe, never in BestCrush.
+        // Do not infer an owner from time, remote server IP, or PID alone.
+        while (!cancellation.IsCancellationRequested)
+        {
+            try
+            {
+                TcpSocketTuple[] pending;
+                lock (_sync)
+                    pending = _activeTuples.Where(_links.NeedsOwner)
+                        .Take(MaximumFlows).ToArray();
+
+                if (pending.Length > 0)
+                {
+                    // The native query is outside the capture callback lock,
+                    // so it cannot stall Npcap packet reassembly.
+                    IReadOnlyList<TcpSocketOwner> snapshot =
+                        WindowsDofusSocketTable.ConnectingOrEstablishedIPv4(_port);
+                    lock (_sync)
+                    {
+                        _ownerPolls++;
+                        RefreshWindows(force: false);
+                        foreach (TcpSocketTuple tuple in pending)
+                        {
+                            if (!_activeTuples.Contains(tuple) ||
+                                !_links.NeedsOwner(tuple))
+                                continue;
+                            _links.ObserveOwner(tuple, snapshot, _windows);
+                            if (!_links.NeedsOwner(tuple))
+                                _ownerPollingMatches++;
+                        }
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // A failed OS poll must not abort an otherwise healthy
+                // packet capture. No exception text or tuple is logged.
+            }
+
+            try { await Task.Delay(OwnerSamplingInterval, cancellation); }
+            catch (OperationCanceledException) { break; }
         }
     }
 
