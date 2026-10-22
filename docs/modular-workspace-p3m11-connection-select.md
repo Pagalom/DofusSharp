@@ -223,6 +223,72 @@ flux réellement observé.
 Aucun nouveau serveur logique n'est déclaré vérifié,
 aucune base/profil/overlay n'est modifiée.
 
+## Résultat réel P3m.11b — 22 octobre 2026
+
+Après correction du quota des trames, l'essai de l'opérateur
+Draconiros → Tylezia → Draconiros a confirmé :
+
+| Phase | Trames avant ksb | Hors Game C→S / S→C | Sessions complètes | Troncature | Match strict f1.f4.f1 |
+| --- | ---: | --- | ---: | --- | ---: |
+| A1 | 30 | 3 / 7 | 1 | non | 0 |
+| B | 51 | 7 / 12 | 1 | non | 0 |
+| A2 | 51 | 7 / 12 | 1 | non | 0 |
+
+Mais les histogrammes structurels des trames du **client
+vers serveur** contiennent **exactement** la signature :
+
+```text
+root(f1:L)/f1(f1:L.f4:L)/f4(f1:V)
+```
+
+sur les connexions **d'amorçage** suivantes :
+
+- A1 : session TCP #1 → `34.247.205.111:5555`
+- B : sessions #3 et #5 → `108.128.247.72:5555`
+- A2 : session #7 → `52.30.61.61:5555` ;
+  session #9 → `108.128.247.72:5555`
+
+Les connexions de jeu distinctes et complètes avaient
+pour destinations `34.252.214.29:5555`,
+`54.77.100.255:5555` et `18.202.11.172:5555`.
+
+**Interprétation :** l'enveloppe `f1.f4.f1` du protocole
+Connection documenté est bien présente **structurellement**
+sur les connexions courtes, mais l'ancien validateur
+acceptait `f1.f4.f1` seulement si `root.f1.f1`
+était une chaîne UTF-8 lisible **d'au moins deux octets**
+et si la valeur sélectionnée était un entier positif
+au plus égal à `int.MaxValue`.
+
+Le journal P3m.11b ne révèle **pas** laquelle de ces
+conditions faisait échouer le candidat ; la signature
+n'affiche volontairement ni contenu, ni longueurs,
+ni valeurs numériques. Il est donc incorrect de
+déclarer ce champ `ServerId` confirmé.
+
+**Correctif P3m.11c** :
+
+- traiter le champ contexte `root.f1.f1` comme un
+  ensemble **opaque de 1 à 256 octets**, sans exiger
+  qu'il soit du texte UTF-8 ;
+- exiger que `root.f1` contienne **exactement**
+  les deux champs `f1:L` et `f4:L`,
+  avec `f4` contenant seulement `f1:V` ;
+- continuer de rejeter valeurs nulles ou hors
+  plage `int32` positive ;
+- produire `shape-matches` et
+  `rejection-codes` catégoriels, notamment
+  `contextabsentortoolong`, `zeroid`,
+  `outofint32range`, `selectionfieldnotnumeric` ;
+- ne jamais exposer de valeur, texte de contexte,
+  jeton, UUID ou identifiant de compte dans
+  les lignes de résultat.
+
+Ce correctif ne branche aucune attribution automatique ;
+`server=unverified` demeure en vigueur. Un test
+supplémentaire A → B → A doit déterminer si une valeur
+candidate est répétée pour A et distincte pour B.
+
 ## Suite
 
 Si A1=A2≠B est observé : déchiffrer
