@@ -480,6 +480,104 @@ l'authenticité absolue du schéma Unity 3.6.11.15,
 ni la fiabilité d'une association en situation
 multicomptes simultanée.
 
+## Résultat réel P3m.12 — 22 octobre 2026 : correspondance numérique complète
+
+L'opérateur a réalisé Draconiros (A1) → Tylezia (B) →
+Draconiros (A2), en fermant chaque client Dofus avant
+de passer à la phase suivante. Le diagnostic
+`--connection-selection-study` a confirmé **sans
+troncature** une session jeu complète `ksc`+`ksb`
+par phase, ainsi que des sélections candidates
+`root.f1.f4.f1` sur les connexions d'amorçage.
+
+Résultats P3m.11d :
+
+```text
+p3m11=linked-summary comparable=yes loaded-A1-vs-A2=equal loaded-A1-vs-B=different loaded-pattern=A-B-A B-did-not-load-vs-A1-loaded=equal A2-did-not-load-vs-B-loaded=equal meaning=sequence-only semantic=unverified server=unverified
+```
+
+Résultats P3m.12, références **Draconiros=295** et
+**Tylezia=293** (deux répertoires communautaires
+indépendants décrits plus haut) :
+
+```text
+p3m12=stage-A1 reference=Draconiros game-attempts=1 selections-linked=1 loaded=1 comparable=yes matches-reference=yes provenance=community server=unverified
+p3m12=stage-B reference=Tylezia game-attempts=2 selections-linked=2 loaded=1 comparable=yes matches-reference=yes provenance=community server=unverified
+p3m12=stage-A2 reference=Draconiros game-attempts=2 selections-linked=2 loaded=1 comparable=yes matches-reference=yes provenance=community server=unverified
+p3m12=summary comparable=yes all-loaded-match=yes reference-ids=community-not-official semantic=unverified server=unverified
+```
+
+**Conclusion expérimentale solide :** les nombres capturés
+dans le chemin du protocole Connection correspondent
+exactement aux références numériques connues des
+serveurs **effectivement chargés**, et le changement
+de serveur conserve d'abord le candidat du serveur
+précédent, avant celui du serveur demandé.
+
+Aucune valeur extraite n'a été écrite dans la base
+ou dans les fiches BestCrush. Le test est limité
+à **un client à la fois**, deux noms de serveurs et
+une association des sélections aux sessions Game
+fondée sur leur **adjacence de numéros de sessions**.
+
+La ligne `p3m11=summary comparable=no` n'est pas
+une contradiction : le résumé brut exige une seule
+valeur par phase, alors que deux valeurs sont
+légitimement présentes pendant les changements.
+
+Les schémas et la table de correspondance restent
+de provenance externe ; ne pas considérer le
+mécanisme de liaison au compte/personnage comme
+validé en production.
+
+### Étape suivante envisagée : P3m.13
+
+**Ne pas réutiliser l'adjacence N→N+1 pour
+associer le serveur à un client multicomptes.**
+Les sessions de deux fenêtres peuvent être
+entrelacées, et l'ordre global ne garantit
+aucun propriétaire.
+
+Faire d'abord un probe **opt-in, en RAM**, qui :
+
+1. associe séparément chaque connexion
+   **Connection** et chaque connexion **Game**
+   au **quadruplet TCP** exact dans Npcap ;
+2. lit le propriétaire de ce socket via la
+   table TCP Windows **pendant que la connexion
+   est établie** (les connexions Connection sont
+   brèves et doivent être liées avant fermeture) ;
+3. n'accepte que la liaison **unique PID ↔ HWND**
+   d'une fenêtre Dofus déjà supportée par P3k
+   et P3m.1 ;
+4. teste sous **deux fenêtres simultanées** :
+   serveurs différents, mêmes serveurs,
+   reconnexions et intercalage des sessions ;
+5. ne joint une sélection et une session Game
+   que lorsqu'elles appartiennent **sans
+   ambiguïté au même PID/HWND/cycle de fenêtre**
+   et que la continuité temporelle est prouvée ;
+6. refuse toute attribution si socket disparu
+   avant observation, propriétaire absent ou
+   multiple, fenêtre fermée, ou chronologie
+   ambiguë ;
+7. ne publie que des **indices anonymes
+   de fenêtres**, des nombres de liaisons
+   et des statuts catégoriels, sans compte,
+   jeton, nom de personnage, tuple TCP ni ID privé.
+
+La capture réseau est une aide **optionnelle**
+à BestCrush, jamais une validation préalable du
+serveur choisi manuellement. Le décodage des
+professions/équipements et l'isolation des caches
+métier par flux sont des sujets séparés.
+
+**État des tests :** l'exécution du probe
+P3m.12 atteste une compilation possible ;
+le résultat de la suite complète `dotnet test`
+après le dernier correctif n'a pas été transmis
+dans cet échange.
+
 ## Suite
 
 Si A1=A2≠B est observé : déchiffrer
