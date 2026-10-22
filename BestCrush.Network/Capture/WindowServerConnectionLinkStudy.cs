@@ -93,6 +93,23 @@ public sealed class WindowServerConnectionLinkStudy
         flow.WindowSlot = slot;
     }
 
+    /// <summary>
+    /// A duplicate ETW Connect event with a conflicting PID or a repeated
+    /// four-tuple in another TCP generation invalidates its association.
+    /// Never use the most recent or first owner as a tie-breaker.
+    /// </summary>
+    public void InvalidateOwner(TcpSocketTuple tuple)
+    {
+        lock (_sync)
+        {
+            Flow? flow = GetOrAdd(tuple);
+            if (flow is null)
+                return;
+            flow.OwnerConflict = true;
+            flow.WindowSlot = null;
+        }
+    }
+
     public bool NeedsOwner(TcpSocketTuple tuple)
     {
         lock (_sync)

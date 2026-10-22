@@ -46,6 +46,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --window-flow-link");
     Console.WriteLine("Pour lier experimentalement les selections Connection aux fenetres et au chargement Game :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --window-server-link");
+    Console.WriteLine("Pour investiguer ETW TCP Connect avec PID (Windows, autorisation admin probable) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --window-server-etw");
     Console.WriteLine("Pour comparer anonymement les métiers entre connexions TCP :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-continuity");
     Console.WriteLine("Pour suivre ksc → ksb → ipz par session TCP, sans référence privée :");
@@ -118,6 +120,13 @@ if (options.ServerRouteStudy || options.ServerWireStudy)
         ? "P3m.6 : comparaison des champs numériques TCP/5555 lors de A-B-A ; aucune identité de serveur vérifiée."
         : "P3m.5 : protocole manuel A-B-A, IP et ports TCP de jeu affichés ; serveur logique NON vérifié.");
     Console.WriteLine("Une instance Dofus à la fois. Chaque phase débute avant l'ouverture du client.");
+}
+if (options.WindowServerEtw)
+{
+    Console.WriteLine("P3m.14 : ETW TCP Connect + Npcap ; droits Windows eleves potentiellement requis.");
+    Console.WriteLine("Demarrer AVANT les deux clients Dofus, garder les fenetres ouvertes jusqu'a Ctrl+C.");
+    Console.WriteLine("Une session ETW unique sera liberee a l'arret ; aucune capture privee enregistre.");
+    Console.WriteLine("Aucune correlation par simple succession TCP, compte ou serveur valide.");
 }
 if (options.WindowServerLink)
 {
@@ -343,12 +352,25 @@ Console.CancelKeyPress += (_, e) =>
     stop.Set();
 };
 
-if (options.WindowServerLink)
+if (options.WindowServerLink || options.WindowServerEtw)
 {
     using WindowServerConnectionLinkProbe probe = new(
-        devices[options.DeviceIndex.Value], options.Port);
-    probe.Start();
-    Console.WriteLine("P3m.13 : ouvrir une fenêtre Draconiros et une fenêtre Kourial sur DEUX comptes différents.");
+        devices[options.DeviceIndex.Value], options.Port,
+        useEtw: options.WindowServerEtw);
+    try
+    {
+        probe.Start();
+    }
+    catch (Exception ex) when (options.WindowServerEtw)
+    {
+        Console.Error.WriteLine("p3m14=start-failed reason=" +
+            ex.GetType().Name +
+            " hint=run-elevated-check-ETW-session-conflict");
+        return;
+    }
+    Console.WriteLine(options.WindowServerEtw
+        ? "P3m.14 : ETW demarre ; ouvrir Draconiros et Kourial sur DEUX comptes puis revenir aux personnages sur Draconiros."
+        : "P3m.13 : ouvrir une fenêtre Draconiros et une fenêtre Kourial sur DEUX comptes différents.");
     Console.WriteLine("Tester aussi une action réseau sur chaque fenêtre, puis Ctrl+C sans les fermer.");
     stop.Wait();
     probe.Stop();
@@ -729,6 +751,7 @@ internal sealed record ProbeOptions(
     bool CheckPublicJobIds,
     bool WindowFlowLink,
     bool WindowServerLink,
+    bool WindowServerEtw,
     bool IdentityName,
     bool IdentityFields,
     bool IdentityPair,
@@ -773,6 +796,7 @@ internal sealed record ProbeOptions(
         bool checkPublicJobIds = false;
         bool windowFlowLink = false;
         bool windowServerLink = false;
+        bool windowServerEtw = false;
         bool identityName = false;
         bool identityFields = false;
         bool identityPair = false;
@@ -841,6 +865,9 @@ internal sealed record ProbeOptions(
                     break;
                 case "--window-server-link":
                     windowServerLink = true;
+                    break;
+                case "--window-server-etw":
+                    windowServerEtw = true;
                     break;
                 case "--identity-name":
                     identityName = true;
@@ -915,6 +942,7 @@ internal sealed record ProbeOptions(
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
             (windowServerLink ? 1 : 0) +
+            (windowServerEtw ? 1 : 0) +
             (serverRouteStudy ? 1 : 0) + (serverWireStudy ? 1 : 0) +
             (ktaF1Control ? 1 : 0) + (ktaCharacterCompare ? 1 : 0) +
             (serverNameStudy ? 1 : 0) +
@@ -946,7 +974,8 @@ internal sealed record ProbeOptions(
             professionStudy, showCandidateJobIds, professionIdentify,
             professionFlow, professionContinuity, professionXpStudy,
             professionJobStudy, checkPublicJobIds, windowFlowLink,
-            windowServerLink, identityName, identityFields, identityPair,
+            windowServerLink, windowServerEtw,
+            identityName, identityFields, identityPair,
             identityCrossOpcodes, serverRouteStudy, serverWireStudy,
             ktaF1Control, ktaCharacterCompare, serverNameStudy,
             connectionSelectionStudy, expectedClassId);

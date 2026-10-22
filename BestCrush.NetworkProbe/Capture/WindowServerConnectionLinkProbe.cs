@@ -25,6 +25,11 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
 
     private readonly ICaptureDevice _device;
     private readonly int _port;
+    private readonly bool _useEtw;
+    private readonly EtwTcpConnectionOwnerIndex _etwIndex = new();
+    private readonly Dictionary<TcpSocketTuple, DateTime> _firstSeen = [];
+    private readonly HashSet<TcpSocketTuple> _etwMatched = [];
+    private WindowTcpEtwConnectProbe? _etw;
     private readonly WindowServerConnectionLinkStudy _links = new();
     private readonly ConnectionServerSelectionStudy _selection;
     private readonly CharacterCaptureFlowTracker _tracker;
@@ -40,10 +45,12 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
     private int _ownerPollingMatches;
     private bool _running;
 
-    internal WindowServerConnectionLinkProbe(ICaptureDevice device, int port)
+    internal WindowServerConnectionLinkProbe(
+        ICaptureDevice device, int port, bool useEtw = false)
     {
         _device = device;
         _port = port;
+        _useEtw = useEtw;
         _selection = new ConnectionServerSelectionStudy(_links.ObserveSelectedId);
         _tracker = new CharacterCaptureFlowTracker(connectionSelectionStudy: _selection);
         // The study's explicit staging is a legacy single-client concern:
@@ -58,6 +65,13 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
         _device.OnPacketArrival += OnPacketArrival;
         try
         {
+            // ETW must be active before packet capture and client startup.
+            // If privilege/provider setup fails, do not silently run Npcap.
+            if (_useEtw)
+            {
+                _etw = new WindowTcpEtwConnectProbe(_port, OnEtwConnect);
+                _etw.Start();
+            }
             _device.Open(DeviceModes.Promiscuous, 1000);
             _device.Filter = $"tcp port {_port}";
             lock (_sync) { RefreshWindows(force: true); }
@@ -71,6 +85,8 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
         catch
         {
             _device.OnPacketArrival -= OnPacketArrival;
+            _etw?.Dispose();
+            _etw = null;
             throw;
         }
     }
@@ -92,6 +108,7 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
         try { _device.StopCapture(); }
         catch { /* best effort; never print packet details */ }
         _device.OnPacketArrival -= OnPacketArrival;
+        _etw?.Stop();
     }
 
     internal void WriteSummary()
@@ -106,6 +123,15 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
                 " active-at-stop=" + _activeTuples.Count +
                 " interval-ms=25 meaning=exact-tuple-only" +
                 " account=unverified server=unverified");
+            if (_useEtw)
+            {
+                Console.WriteLine("p3m14=matches exact-tuples=" + _etwMatched.Count +
+                    " events-indexed=" + _etwIndex.Count +
+                    " index-overflow=" + (_etwIndex.Overflow ? "yes" : "no") +
+                    " meaning=exact-tuple-and-timestamp-only" +
+                    " account=unverified server=unverified");
+                _etw?.WriteStatus();
+            }
         }
     }
 
@@ -135,6 +161,12 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
             lock (_sync)
             {
                 RefreshWindows(force: false);
+                if (_useEtw && !incoming && !_firstSeen.ContainsKey(tuple) &&
+                    _firstSeen.Count < MaximumFlows)
+                    _firstSeen.Add(tuple, DateTime.UtcNow);
+
+                if (_useEtw)
+                    TryApplyEtwOwner(tuple);
                 // Only sockets seen on an outgoing packet are eligible for
                 // ongoing sampling; revoke on FIN/RST from either direction.
                 if (!incoming && !tcp.Finished && !tcp.Reset &&
@@ -179,6 +211,41 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
             Console.Error.WriteLine("p3m13=packet-ignored reason=" +
                 ex.GetType().Name);
         }
+    }
+
+    private void OnEtwConnect(TcpSocketTuple tuple, int pid, DateTime whenUtc)
+    {
+        lock (_sync)
+        {
+            _etwIndex.Observe(tuple, pid, whenUtc);
+            if (_etwIndex.IsConflicted(tuple))
+                _links.InvalidateOwner(tuple);
+            else
+                TryApplyEtwOwner(tuple);
+        }
+    }
+
+    private void TryApplyEtwOwner(TcpSocketTuple tuple)
+    {
+        if (_etwIndex.IsConflicted(tuple))
+        {
+            _links.InvalidateOwner(tuple);
+            return;
+        }
+        if (!_firstSeen.TryGetValue(tuple, out DateTime firstSeen) ||
+            _etwMatched.Contains(tuple) || _etwIndex.Overflow)
+            return;
+
+        int? pid = _etwIndex.Resolve(tuple, firstSeen);
+        if (pid is not > 0)
+            return;
+
+        // A real ETW TCP Connect event supplies this PID. The exact tuple
+        // and close event timestamp were checked before accepting it.
+        // Existing owner conflicts are rejected by the link study.
+        _links.ObserveOwner(tuple,
+            [new TcpSocketOwner(tuple, pid.Value)], _windows);
+        _etwMatched.Add(tuple);
     }
 
     private async Task PollOwnersAsync(CancellationToken cancellation)
@@ -255,6 +322,7 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
     public void Dispose()
     {
         Stop();
+        _etw?.Dispose();
         _device.Dispose();
     }
 }

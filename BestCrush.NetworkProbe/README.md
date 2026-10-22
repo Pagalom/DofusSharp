@@ -35,6 +35,54 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.14 — Observer TCP Connect par ETW (mode séparé)
+
+La sélection Draconiros #5 reste sans PID dans
+P3m.13e, même si le paquet `selectServer` est bien
+capturé et précède le Game #6 sur la bonne fenêtre
+(selon l'ordre des sessions, **sans preuve d'identité**).
+
+Nouveau mode expérimental ETW, **à lancer AVANT
+toutes les fenêtres Dofus**, depuis PowerShell
+administrateur si nécessaire :
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --window-server-etw
+```
+
+Ce mode ajoute au seul projet Probe la dépendance
+Microsoft.Diagnostics.Tracing.TraceEvent 3.2.8
+et crée une session ETW kernel temporaire, isolée,
+au nom unique. Il rapproche un événement
+TCP Connect de Npcap **par les quatre champs TCP
+et une proximité temporelle** avant d'associer
+le PID à une fenêtre unique. Aucun fichier ETL,
+payload, adresse, PID ni identifiant de compte
+n'est affiché ou sauvegardé.
+
+Reproduire Draconiros + Kourial, retour à la
+sélection des personnages Draconiros puis
+reconnexion sans fermer Dofus, Ctrl+C.
+Transmettre les lignes `p3m13=`,
+`p3m14=` et la sortie des tests.
+
+Un problème d'autorisation ETW ou de session
+échoue **explicitement** avec
+`p3m14=start-failed` au lieu de retomber
+silencieusement sur un autre mode.
+
+**Validation réelle et compilation Windows de P3m.14
+non encore effectuées.** Aucun routage automatique,
+profil persistant ni validation obligatoire
+du serveur choisi manuellement.
+
+Documentation complète :
+`docs/modular-workspace-p3m14-etw-connect.md`.
+
 ### P3m.13e — Capture réelle : polling sans relevé utile
 
 Nouvel essai Draconiros/Kourial après la
