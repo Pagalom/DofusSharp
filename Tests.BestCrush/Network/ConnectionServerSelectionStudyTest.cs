@@ -119,7 +119,11 @@ public sealed class ConnectionServerSelectionStudyTest
         var key = Key(1);
         study.ObserveFrame(1, key, CharacterCaptureDirection.ServerToClient,
             Select(777), hasGameAny: false);
-        study.Summarize()[0].Should().Contain("non-game-frames=1 select-candidates=0");
+        string stage = study.Summarize().Single(line =>
+            line.StartsWith("p3m11=stage-A1 ", StringComparison.Ordinal));
+        stage.Should().Contain("non-game-frames=1")
+            .And.Contain("non-game-c2s=0 non-game-s2c=1")
+            .And.Contain("select-candidates=0");
     }
 
     [Fact]
@@ -204,7 +208,9 @@ public sealed class ConnectionServerSelectionStudyTest
         study.ObserveEvents(key, e2);
         string result = study.Summarize()[0];
         result.Should().Contain("tcp-sessions=1")
-            .And.Contain("frames=2 non-game-frames=1 select-candidates=1");
+            .And.Contain("frames=2 non-game-frames=1")
+            .And.Contain("non-game-c2s=1 non-game-s2c=0")
+            .And.Contain("select-candidates=1");
     }
 
     [Fact]
@@ -306,8 +312,13 @@ public sealed class ConnectionServerSelectionStudyTest
         study.StartStage(1);
         study.ObserveFrame(1, key, CharacterCaptureDirection.ClientToServer,
             Select(100), false);
-        study.Summarize()[0].Should().Contain("stage-A1 tcp-sessions=1")
+        string[] lines = study.Summarize().ToArray();
+        lines.Single(line => line.StartsWith(
+                "p3m11=stage-A1 ", StringComparison.Ordinal))
+            .Should().Contain("tcp-sessions=1")
             .And.Contain("select-candidates=1");
-        study.Summarize()[1].Should().Contain("stage-B tcp-sessions=0");
+        lines.Single(line => line.StartsWith(
+                "p3m11=stage-B ", StringComparison.Ordinal))
+            .Should().Contain("tcp-sessions=0");
     }
 }
