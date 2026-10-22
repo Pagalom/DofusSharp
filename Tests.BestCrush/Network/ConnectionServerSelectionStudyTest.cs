@@ -50,7 +50,7 @@ public sealed class ConnectionServerSelectionStudyTest
 
         string output = string.Join("\n", study.Summarize());
         output.Should().Contain("stage-A1 tcp-sessions=2 completed-game=1")
-            .And.Contain("select-candidates=1 distinct-values=1")
+            .And.Contain("select-candidates=1 shape-matches=1 distinct-values=1")
             .And.Contain("selector-session=1 selector-destination=198.51.100.4:5555")
             .And.Contain("p3m11=summary comparable=yes A1-vs-A2=equal A1-vs-B=different pattern=A-B-A")
             .And.Contain("meaning=structural-candidate-only server=unverified")
@@ -145,7 +145,8 @@ public sealed class ConnectionServerSelectionStudyTest
         Phase(study, 1, 3, 4, 200);
         Phase(study, 2, 5, 6, 100);
         study.Summarize().Last().Should().Contain("comparable=no");
-        study.Summarize()[0].Should().Contain("select-candidates=2 distinct-values=2");
+        study.Summarize()[0].Should()
+            .Contain("select-candidates=2 shape-matches=2 distinct-values=2");
     }
 
     [Fact]
@@ -291,6 +292,82 @@ public sealed class ConnectionServerSelectionStudyTest
                 Message(Unsigned(1, 55)), hasGameAny: false);
         study.Summarize()[0].Should().Contain("truncated=yes")
             .And.Contain("non-game-frames=257");
+    }
+
+    [Theory]
+    [InlineData("fr")]
+    [InlineData("64eb3871-fa39-4ffa-b9e0-a61fa145f598")]
+    public void ModernOrLegacyContextIsOpaqueAndOptionalUtf8ValidationRemoved(
+        string context)
+    {
+        byte[] frame = Select(412, context);
+        ConnectionServerSelectionStudy.InspectSelectedServerCandidate(frame,
+            out int selected).Should().Be(
+                ConnectionServerSelectionStudy.SelectionCandidateStatus.Accepted);
+        selected.Should().Be(412);
+    }
+
+    [Fact]
+    public void BinaryOrOneByteContextCanStillCarryValidSelection()
+    {
+        byte[] opaqueContext = { 0x00, 0xff, 0xfe, 0x01 };
+        byte[] frame = Message(Bytes(1, Message(
+            Bytes(1, opaqueContext),
+            Bytes(4, Message(Unsigned(1, 841))))));
+        ConnectionServerSelectionStudy.InspectSelectedServerCandidate(
+            frame, out int candidate).Should().Be(
+                ConnectionServerSelectionStudy.SelectionCandidateStatus.Accepted);
+        candidate.Should().Be(841);
+
+        byte[] shortContext = Message(Bytes(1, Message(
+            Bytes(1, [0xff]),
+            Bytes(4, Message(Unsigned(1, 841))))));
+        ConnectionServerSelectionStudy.TryGetSelectedServerCandidate(
+            shortContext, out int oneByteCandidate).Should().BeTrue();
+        oneByteCandidate.Should().Be(841);
+    }
+
+    [Fact]
+    public void InvalidCandidateReportsOnlySafeReasonCodesAndNeverFieldValues()
+    {
+        ConnectionServerSelectionStudy study = new();
+        study.StartStage(0);
+        CharacterCaptureFlowKey key = Key(1);
+        byte[] zeroServerId = Select(0, "unique-sensitive-context-value");
+        study.ObserveFrame(1, key, CharacterCaptureDirection.ClientToServer,
+            zeroServerId, hasGameAny: false);
+        string stage = study.Summarize()[0];
+        string socket = study.Summarize().Single(line =>
+            line.StartsWith("p3m11=socket stage=A1", StringComparison.Ordinal));
+        stage.Should().Contain("select-candidates=0 shape-matches=1");
+        socket.Should().Contain("rejection-codes=[zeroid*1]")
+            .And.NotContain("unique-sensitive-context-value");
+        ConnectionServerSelectionStudy.InspectSelectedServerCandidate(
+            zeroServerId, out int candidate).Should().Be(
+                ConnectionServerSelectionStudy.SelectionCandidateStatus.ZeroId);
+        candidate.Should().Be(0);
+    }
+
+    [Fact]
+    public void NumericSelectionMustNotBeAcceptedWhenEnvelopeContainsExtraField()
+    {
+        byte[] extraField = Message(Bytes(1, Message(
+            Bytes(1, Encoding.UTF8.GetBytes("fr")),
+            Bytes(4, Message(Unsigned(1, 201))),
+            Unsigned(8, 11))));
+        ConnectionServerSelectionStudy.TryGetSelectedServerCandidate(
+            extraField, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void NumericCandidateStillMatchesIndependentConnectionPhases()
+    {
+        ConnectionServerSelectionStudy study = new();
+        Phase(study, 0, 1, 2, 121, "198.51.100.4");
+        Phase(study, 1, 3, 4, 243, "198.51.100.5");
+        Phase(study, 2, 5, 6, 121, "198.51.100.6");
+        study.Summarize().Last().Should()
+            .Contain("comparable=yes A1-vs-A2=equal A1-vs-B=different pattern=A-B-A");
     }
 
     [Fact]
