@@ -209,11 +209,17 @@ l'association dans toutes ces situations.
 synthétiques dans
 `WindowServerConnectionLinkStudyTest`,
 dont le correctif `loaded-live` et les cas
-de sélections multiples. L'exécution de
-`dotnet test` sur Windows n'a pas été
-communiquée lors de cette dernière capture ;
-le lancement du probe atteste seulement que
-celui-ci a compilé et pu s'exécuter.
+de sélections multiples.
+
+**Checkpoint Windows transmis après l'essai :**
+`dotnet test .\\Tests.BestCrush\\Tests.BestCrush.csproj`
+→ **897 tests réussis, 0 échec, 0 ignoré** ;
+durée des tests **6,6 s** ; génération
+réussie avec **2 avertissements** en **10,2 s**.
+Les messages des avertissements n'ont pas été fournis.
+Cela valide la suite synthétique et la compilation,
+mais **pas encore les comportements de reconnexion
+et de changement de serveur en multicomptes**.
 
 ## Après validation
 
