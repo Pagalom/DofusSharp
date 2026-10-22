@@ -7,8 +7,8 @@ namespace BestCrush.Network.Capture;
 /// envelope, distinct from type.ankama.com/* game messages.
 /// Two documented Unity schemas both encode:
 ///   outer.f1 request/auth -> f4 selectServer -> f1 varint serverId.
-/// Requiring a short UTF-8 string at outer.f1.f1 rejects some unrelated
-/// protobuf structures, but never proves schema identity.
+/// A request context at outer.f1.f1 may be opaque; only its presence and
+/// length are checked. The numeric field's meaning is NOT confirmed by shape.
 /// No authentication token, UUID, account or character data is surfaced.
 /// </summary>
 public sealed class ConnectionServerSelectionStudy
@@ -35,6 +35,9 @@ public sealed class ConnectionServerSelectionStudy
         internal int ClientNonGameFrames;
         internal int ServerNonGameFrames;
         internal int SelectMessages;
+        internal int SelectionShapeMatches;
+        // Only bounded, non-sensitive reason codes are stored.
+        internal readonly Dictionary<string, int> SelectionRejects = new(StringComparer.Ordinal);
         // Structural metadata only: field numbers and wire types.
         // No field values, sizes, names, UUIDs or tokens.
         internal readonly Dictionary<string, int> ClientShapes = new(StringComparer.Ordinal);
@@ -94,7 +97,19 @@ public sealed class ConnectionServerSelectionStudy
             else
                 session.ShapesOverflow = true;
 
-            if (TryGetSelectedServerCandidate(frame, out int value))
+            SelectionCandidateStatus status = InspectSelectedServerCandidate(
+                frame, out int value);
+            if (status != SelectionCandidateStatus.Unrelated)
+            {
+                session.SelectionShapeMatches++;
+                if (status != SelectionCandidateStatus.Accepted)
+                {
+                    string reason = status.ToString().ToLowerInvariant();
+                    session.SelectionRejects.TryGetValue(reason, out int existing);
+                    session.SelectionRejects[reason] = existing + 1;
+                }
+            }
+            if (status == SelectionCandidateStatus.Accepted)
             {
                 session.SelectMessages++;
                 session.SelectedIds.Add(value);
@@ -189,15 +204,34 @@ public sealed class ConnectionServerSelectionStudy
     }
 
     /// <summary>
-    /// Strict, bounded structural match only. It may also fit unknown other
-    /// protobuf messages, and does NOT assign the meaning "server ID".
+    /// A bounded, privacy-preserving validation of the numeric selection path.
+    /// Only the structural match, not its semantics, is reported as evidence.
     /// </summary>
+    public enum SelectionCandidateStatus
+    {
+        Unrelated,
+        Accepted,
+        ContextAbsentOrTooLong,
+        SelectionFieldNotNumeric,
+        ZeroId,
+        OutOfInt32Range
+    }
+
     public static bool TryGetSelectedServerCandidate(
+        ReadOnlySpan<byte> frame, out int serverIdCandidate) =>
+        InspectSelectedServerCandidate(frame, out serverIdCandidate) ==
+        SelectionCandidateStatus.Accepted;
+
+    /// <summary>
+    /// Returns only a categorical result and, when accepted, an ephemeral
+    /// numeric candidate. Never returns context or token bytes to callers.
+    /// </summary>
+    public static SelectionCandidateStatus InspectSelectedServerCandidate(
         ReadOnlySpan<byte> frame, out int serverIdCandidate)
     {
         serverIdCandidate = 0;
         if (frame.IsEmpty || frame.Length > MaxFrameBytes)
-            return false;
+            return SelectionCandidateStatus.Unrelated;
         try
         {
             List<ProtoField>? outer = ProtoWire.ReadFields(frame);
@@ -205,40 +239,43 @@ public sealed class ConnectionServerSelectionStudy
                 outer[0].Number != 1 ||
                 outer[0].WireType != ProtoWireType.LengthDelimited ||
                 outer[0].Bytes is not { Length: > 0 and <= MaxFrameBytes } requestBytes)
-                return false;
+                return SelectionCandidateStatus.Unrelated;
 
             List<ProtoField>? request = ProtoWire.ReadFields(requestBytes);
-            if (request is null || request.Count is < 2 or > 8)
-                return false;
+            if (request is not { Count: 2 } ||
+                request.Count(f => f.Number == 1 &&
+                    f.WireType == ProtoWireType.LengthDelimited) != 1)
+                return SelectionCandidateStatus.Unrelated;
 
-            ProtoField[] contexts = request.Where(f => f.Number == 1 &&
-                f.WireType == ProtoWireType.LengthDelimited).ToArray();
             ProtoField[] selects = request.Where(f => f.Number == 4 &&
                 f.WireType == ProtoWireType.LengthDelimited).ToArray();
-            if (contexts.Length != 1 || selects.Length != 1 ||
-                contexts[0].Bytes is not { Length: >= 2 and <= 80 } contextBytes ||
+            if (selects.Length != 1 ||
                 selects[0].Bytes is not { Length: > 0 } selectBytes)
-                return false;
+                return SelectionCandidateStatus.Unrelated;
 
-            // Legacy envelope uses language (fr); modern connection request
-            // uses request UUID. Read only to validate type/length, never log.
-            string? context = ProtoWire.TryUtf8(contextBytes);
-            if (string.IsNullOrWhiteSpace(context) ||
-                context.Any(char.IsControl))
-                return false;
+            // Both source schemas require a context (lang or uuid). Do not
+            // attempt to decode it as text: newer wire versions may encode
+            // it opaquely, and printing it would expose identifying data.
+            byte[]? context = request.Single(f => f.Number == 1).Bytes;
+            if (context is not { Length: >= 1 and <= 256 })
+                return SelectionCandidateStatus.ContextAbsentOrTooLong;
 
             List<ProtoField>? selection = ProtoWire.ReadFields(selectBytes);
             if (selection is not { Count: 1 } ||
                 selection[0].Number != 1 ||
-                selection[0].WireType != ProtoWireType.Varint ||
-                selection[0].Varint is 0 or > int.MaxValue)
-                return false;
+                selection[0].WireType != ProtoWireType.Varint)
+                return SelectionCandidateStatus.SelectionFieldNotNumeric;
+            if (selection[0].Varint == 0)
+                return SelectionCandidateStatus.ZeroId;
+            if (selection[0].Varint > int.MaxValue)
+                return SelectionCandidateStatus.OutOfInt32Range;
+
             serverIdCandidate = checked((int)selection[0].Varint);
-            return true;
+            return SelectionCandidateStatus.Accepted;
         }
-        catch (Exception e) when (e is OverflowException or ArgumentOutOfRangeException)
+        catch (Exception ex) when (ex is OverflowException or ArgumentOutOfRangeException)
         {
-            return false;
+            return SelectionCandidateStatus.Unrelated;
         }
     }
 
@@ -286,6 +323,7 @@ public sealed class ConnectionServerSelectionStudy
                     " non-game-c2s=" + sessions.Sum(s => s.ClientNonGameFrames) +
                     " non-game-s2c=" + sessions.Sum(s => s.ServerNonGameFrames) +
                     " select-candidates=" + sessions.Sum(s => s.SelectMessages) +
+                    " shape-matches=" + sessions.Sum(s => s.SelectionShapeMatches) +
                     " distinct-values=" + values.Count +
                     " selector-session=" + (selectedSession is null
                         ? "unavailable" : selectedSession.Number.ToString()) +
@@ -301,6 +339,9 @@ public sealed class ConnectionServerSelectionStudy
                     string socketDestination = session.Address.Contains(':')
                         ? "[" + session.Address + "]:" + session.Port
                         : session.Address + ":" + session.Port;
+                    string rejectCodes = string.Join(",",
+                        session.SelectionRejects.OrderBy(p => p.Key, StringComparer.Ordinal)
+                            .Select(p => p.Key + "*" + p.Value));
                     string shapes = string.Join(",",
                         session.ClientShapes.OrderByDescending(p => p.Value)
                             .ThenBy(p => p.Key, StringComparer.Ordinal)
@@ -312,6 +353,9 @@ public sealed class ConnectionServerSelectionStudy
                         " destination=" + socketDestination +
                         " non-game-c2s=" + session.ClientNonGameFrames +
                         " select-candidates=" + session.SelectMessages +
+                        " shape-matches=" + session.SelectionShapeMatches +
+                        " rejection-codes=[" +
+                        (rejectCodes.Length == 0 ? "none" : rejectCodes) + "]" +
                         " shapes=[" + (shapes.Length == 0 ? "none" : shapes) + "]" +
                         " shapes-truncated=" +
                         (session.ShapesOverflow ||
