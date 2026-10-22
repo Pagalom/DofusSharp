@@ -167,9 +167,9 @@ public sealed class WindowServerConnectionLinkStudy
     /// in the SAME WINDOW since its previous game attempt. Global TCP
     /// adjacency and destination IP are never used as identity.
     /// </summary>
-    public IReadOnlyList<string> Summarize(int draconirosId = 295, int tyleziaId = 293)
+    public IReadOnlyList<string> Summarize(int draconirosId = 295, int kourialId = 355)
     {
-        if (draconirosId <= 0 || tyleziaId <= 0 || draconirosId == tyleziaId)
+        if (draconirosId <= 0 || kourialId <= 0 || draconirosId == kourialId)
             throw new ArgumentException("Two positive and distinct references required.");
         lock (_sync)
         {
@@ -219,8 +219,8 @@ public sealed class WindowServerConnectionLinkStudy
                     loaded++;
                     int selected = values[0];
                     string reference = selected == draconirosId
-                        ? "Draconiros" : selected == tyleziaId
-                            ? "Tylezia" : "unknown";
+                        ? "Draconiros" : selected == kourialId
+                            ? "Kourial" : "unknown";
                     if (reference == "unknown") unclassified++;
                     else knownRef++;
                     output.Add("p3m13=loaded window-index=" + slot +

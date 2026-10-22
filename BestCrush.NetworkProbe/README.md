@@ -39,7 +39,10 @@ dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- -
 
 Les ServerId candidats **Draconiros=295** et
 **Tylezia=293** ont été confirmés expérimentalement
-sur un client à la fois. Le mode `--window-server-link`
+sur un client à la fois dans P3m.12. **Pour P3m.13**,
+le second compte est sur **Kourial=355**, confirme
+par deux catalogues communautaires concordants.
+Le mode `--window-server-link`
 étudie désormais **deux clients simultanés** et associe
 les connexions Connection/Game à la même fenêtre
 à partir du **quadruplet TCP exact, PID propriétaire
@@ -51,7 +54,7 @@ dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- -
 ```
 
 Démarrer le probe avec Dofus fermé, ouvrir le premier
-client sur Draconiros, puis le deuxième sur Tylezia
+compte sur Draconiros, puis le deuxieme compte sur Kourial
 **sans fermer le premier**. Après le chargement
 des deux personnages, laisser les deux fenêtres
 ouvertes et appuyer sur Ctrl+C dans la console.

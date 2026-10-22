@@ -124,7 +124,7 @@ if (options.WindowServerLink)
     Console.WriteLine("P3m.13 : liaison expérimentale Connection → PID/HWND → Game par quadruplet TCP.");
     Console.WriteLine("Démarrer AVANT les deux clients, garder les deux fenêtres ouvertes, puis Ctrl+C.");
     Console.WriteLine("Aucun tuple, PID, HWND, nom de personnage, jeton ou compte affiché.");
-    Console.WriteLine("Références communautaires : Draconiros 295 / Tylezia 293 ; aucun serveur validé en production.");
+    Console.WriteLine("Références communautaires P3m.13 : Draconiros 295 / Kourial 355 ; aucun serveur validé en production.");
 }
 if (options.WindowFlowLink)
 {
@@ -348,7 +348,7 @@ if (options.WindowServerLink)
     using WindowServerConnectionLinkProbe probe = new(
         devices[options.DeviceIndex.Value], options.Port);
     probe.Start();
-    Console.WriteLine("P3m.13 : ouvrir une fenêtre Draconiros et une fenêtre Tylezia, laisser les deux chargées.");
+    Console.WriteLine("P3m.13 : ouvrir une fenêtre Draconiros et une fenêtre Kourial sur DEUX comptes différents.");
     Console.WriteLine("Tester aussi une action réseau sur chaque fenêtre, puis Ctrl+C sans les fermer.");
     stop.Wait();
     probe.Stop();

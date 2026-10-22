@@ -43,13 +43,13 @@ public sealed class WindowServerConnectionLinkStudyTest
     {
         WindowServerConnectionLinkStudy study = new();
         Session(study, 1, 11, selection: true, id: 295);
-        Session(study, 2, 22, selection: true, id: 293);
+        Session(study, 2, 22, selection: true, id: 355);
         Session(study, 3, 22, selection: false, game: true, loaded: true);
         Session(study, 4, 11, selection: false, game: true, loaded: true);
 
         string output = string.Join("\n", study.Summarize());
         output.Should().Contain("p3m13=loaded window-index=1 connection-session=1 game-session=4 reference=Draconiros")
-            .And.Contain("p3m13=loaded window-index=2 connection-session=2 game-session=3 reference=Tylezia")
+            .And.Contain("p3m13=loaded window-index=2 connection-session=2 game-session=3 reference=Kourial")
             .And.Contain("p3m13=summary flows=4 windows-linked=2 windows-ready=2 loaded-pairs=2 references-matched=2")
             .And.Contain("status=two-window-links-candidate")
             .And.NotContain("198.51.100.9")
@@ -170,9 +170,21 @@ public sealed class WindowServerConnectionLinkStudyTest
     {
         WindowServerConnectionLinkStudy study = new();
         Session(study, 1, 11, selection: true, id: 295);
-        Session(study, 2, 11, selection: true, id: 293);
+        Session(study, 2, 11, selection: true, id: 355);
         Session(study, 3, 11, selection: false, game: true, loaded: true);
         study.Summarize().Last().Should().Contain("not-confirmed");
+    }
+
+    [Fact]
+    public void TyleziaReferenceIsNotMistakenForKourialOnTheOtherAccount()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: true, id: 293);
+        Session(study, 2, 11, selection: false, game: true, loaded: true);
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain("reference=unknown")
+            .And.Contain("status=not-confirmed")
+            .And.NotContain("reference=Kourial");
     }
 
     [Fact]
@@ -194,11 +206,11 @@ public sealed class WindowServerConnectionLinkStudyTest
         WindowServerConnectionLinkStudy study = new();
         Session(study, 1, 11, selection: true, id: 295);
         Session(study, 2, 11, selection: false, game: true, loaded: true);
-        Session(study, 3, 11, selection: true, id: 293);
+        Session(study, 3, 11, selection: true, id: 355);
         Session(study, 4, 11, selection: false, game: true, loaded: true);
         string result = string.Join("\n", study.Summarize());
         result.Should().Contain("reference=Draconiros")
-            .And.Contain("reference=Tylezia")
+            .And.Contain("reference=Kourial")
             .And.Contain("loaded=2 references-matched=2 status=linked-candidate");
     }
 }
