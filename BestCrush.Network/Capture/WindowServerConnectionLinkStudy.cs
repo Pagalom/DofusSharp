@@ -182,6 +182,10 @@ public sealed class WindowServerConnectionLinkStudy
             int distinctReadyWindows = 0;
             int loadedPairs = 0;
             int matchedReferences = 0;
+            // Only game loads with exactly one closed, same-window selector.
+            // Used for diagnostic equality, never as a server attribution.
+            Dictionary<int, List<(int GameSession, int SelectionId)>>
+                verifiedLoadedSelections = [];
 
             foreach (int slot in slots)
             {
@@ -271,6 +275,13 @@ public sealed class WindowServerConnectionLinkStudy
                         continue;
                     loaded++;
                     int selected = _selections[candidates[0].Number][0];
+                    if (!verifiedLoadedSelections.TryGetValue(slot,
+                        out List<(int GameSession, int SelectionId)>? entries))
+                    {
+                        entries = [];
+                        verifiedLoadedSelections.Add(slot, entries);
+                    }
+                    entries.Add((game.Number, selected));
                     string reference = selected == draconirosId
                         ? "Draconiros" : selected == kourialId
                             ? "Kourial" : "unknown";
@@ -339,6 +350,44 @@ public sealed class WindowServerConnectionLinkStudy
                     " reason=" + unresolved +
                     " selection-candidates=" +
                     (selection ? _selections[unmatched.Number].Count : 0) +
+                    " account=unverified server=unverified");
+
+                if (!selection)
+                    continue;
+
+                // Research-only: numeric equality plus global session order
+                // can support a hypothesis, but cannot recover a PID/HWND.
+                List<int> ids = _selections[unmatched.Number];
+                int? candidateId = ids.Count == 1 ? ids[0] : null;
+                string candidateRef = !candidateId.HasValue ? "unavailable"
+                    : candidateId.Value == draconirosId ? "Draconiros"
+                    : candidateId.Value == kourialId ? "Kourial" : "other";
+                Flow[] nextLoaded = all.Where(f =>
+                    f.Number == unmatched.Number + 1 &&
+                    f.Ksc && f.Ksb && !f.OwnerConflict &&
+                    f.WindowSlot.HasValue).ToArray();
+                Flow? adjacent = nextLoaded.Length == 1 ? nextLoaded[0] : null;
+                string sameAsPrevious = "unavailable";
+                if (candidateId.HasValue && adjacent?.WindowSlot is int nextSlot &&
+                    verifiedLoadedSelections.TryGetValue(nextSlot,
+                        out List<(int GameSession, int SelectionId)>? verified))
+                {
+                    (int GameSession, int SelectionId)[] preceding = verified
+                        .Where(v => v.GameSession < adjacent.Number)
+                        .OrderByDescending(v => v.GameSession).ToArray();
+                    if (preceding.Length > 0)
+                        sameAsPrevious = preceding[0].SelectionId == candidateId.Value
+                            ? "yes" : "no";
+                }
+                output.Add("p3m13=unbound-hypothesis selection-session=" +
+                    unmatched.Number +
+                    " candidate-reference=" + candidateRef +
+                    " adjacent-loaded-game-session=" +
+                    (adjacent is null ? "unavailable" : adjacent.Number.ToString()) +
+                    " adjacent-game-window-index=" +
+                    (adjacent?.WindowSlot?.ToString() ?? "unavailable") +
+                    " matches-previous-loaded-selection=" + sameAsPrevious +
+                    " meaning=sequence-only linked=no" +
                     " account=unverified server=unverified");
             }
 

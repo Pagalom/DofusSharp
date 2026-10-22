@@ -307,6 +307,85 @@ public sealed class WindowServerConnectionLinkStudyTest
     }
 
     [Fact]
+    public void UnboundSelectorWithSameKnownIdIsChronologicalHintOnly()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: true, id: 295);
+        Session(study, 2, 11, selection: false, game: true,
+            loaded: true, closed: true);
+
+        study.ObserveSelectedId(3, 295);
+        study.ObserveEvents(Socket(3), [
+            Event(3, CharacterCaptureEventKind.Opened),
+            Event(3, CharacterCaptureEventKind.Closed)]);
+        Session(study, 4, 11, selection: false, game: true,
+            loaded: true, closed: false);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain(
+                "p3m13=unbound-hypothesis selection-session=3 candidate-reference=Draconiros adjacent-loaded-game-session=4 adjacent-game-window-index=1 matches-previous-loaded-selection=yes meaning=sequence-only linked=no")
+            .And.Contain("reason=selection-missing")
+            .And.Contain("status=not-confirmed")
+            .And.NotContain("p3m13=loaded window-index=1 connection-session=3");
+    }
+
+    [Fact]
+    public void UnboundSelectorWithDifferentIdMustNotBeInherited()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        Session(study, 1, 11, selection: true, id: 295);
+        Session(study, 2, 11, selection: false, game: true,
+            loaded: true, closed: true);
+        study.ObserveSelectedId(3, 355);
+        study.ObserveEvents(Socket(3), [
+            Event(3, CharacterCaptureEventKind.Opened),
+            Event(3, CharacterCaptureEventKind.Closed)]);
+        Session(study, 4, 11, selection: false, game: true,
+            loaded: true, closed: false);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain(
+                "candidate-reference=Kourial adjacent-loaded-game-session=4 adjacent-game-window-index=1 matches-previous-loaded-selection=no meaning=sequence-only linked=no")
+            .And.Contain("inherited-server=unverified")
+            .And.Contain("status=not-confirmed");
+        report.Should().NotContain("p3m13=loaded window-index=1 connection-session=3");
+    }
+
+    [Fact]
+    public void UnboundSelectorWithoutAdjacentLoadedGameCannotSuggestWindow()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        study.ObserveSelectedId(1, 355);
+        study.ObserveEvents(Socket(1), [
+            Event(1, CharacterCaptureEventKind.Opened),
+            Event(1, CharacterCaptureEventKind.Closed)]);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain(
+                "p3m13=unbound-hypothesis selection-session=1 candidate-reference=Kourial adjacent-loaded-game-session=unavailable adjacent-game-window-index=unavailable matches-previous-loaded-selection=unavailable meaning=sequence-only linked=no")
+            .And.Contain("status=not-confirmed");
+    }
+
+    [Fact]
+    public void UnboundSelectorWithSeveralCandidateIdsStaysUnclassified()
+    {
+        WindowServerConnectionLinkStudy study = new();
+        study.ObserveSelectedId(1, 295);
+        study.ObserveSelectedId(1, 355);
+        study.ObserveEvents(Socket(1), [
+            Event(1, CharacterCaptureEventKind.Opened),
+            Event(1, CharacterCaptureEventKind.Closed)]);
+
+        string report = string.Join("\n", study.Summarize());
+        report.Should().Contain(
+                "selection-session=1 candidate-reference=unavailable")
+            .And.Contain("meaning=sequence-only linked=no")
+            .And.Contain("selection-candidates=2")
+            .And.NotContain("candidate-reference=Draconiros")
+            .And.NotContain("candidate-reference=Kourial");
+    }
+
+    [Fact]
     public void SelectorNotClosedDoesNotLinkToGame()
     {
         WindowServerConnectionLinkStudy study = new();

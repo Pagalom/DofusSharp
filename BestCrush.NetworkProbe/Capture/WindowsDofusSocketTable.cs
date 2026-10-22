@@ -18,6 +18,7 @@ internal static class WindowsDofusSocketTable
     private const int AddressFamilyInet = 2;
     private const int TcpTableOwnerPidAll = 5;
     private const int TcpStateEstablished = 5;
+    private const int TcpStateSynSent = 3;
     private const int OwnerPidRowBytes = 24;
     private const int MaxTableBytes = 16 * 1024 * 1024;
 
@@ -49,7 +50,19 @@ internal static class WindowsDofusSocketTable
         return result;
     }
 
-    internal static IReadOnlyList<TcpSocketOwner> EstablishedIPv4(int gamePort)
+    internal static IReadOnlyList<TcpSocketOwner> EstablishedIPv4(int gamePort) =>
+        ReadOwners(gamePort, includeConnecting: false);
+
+    /// <summary>
+    /// Opt-in P3m.13d: permit SYN_SENT as well as ESTABLISHED when looking
+    /// up a short-lived outgoing Connection flow on its initial SYN.
+    /// Do not change P3k's established-only behavior.
+    /// </summary>
+    internal static IReadOnlyList<TcpSocketOwner> ConnectingOrEstablishedIPv4(
+        int gamePort) => ReadOwners(gamePort, includeConnecting: true);
+
+    private static IReadOnlyList<TcpSocketOwner> ReadOwners(
+        int gamePort, bool includeConnecting)
     {
         int size = 0;
         uint result = GetExtendedTcpTable(
@@ -76,7 +89,8 @@ internal static class WindowsDofusSocketTable
             {
                 int offset = 4 + i * OwnerPidRowBytes;
                 int state = Marshal.ReadInt32(buffer, offset);
-                if (state != TcpStateEstablished)
+                if (state != TcpStateEstablished &&
+                    (!includeConnecting || state != TcpStateSynSent))
                     continue;
 
                 ushort localPort = ReadPort(buffer, offset + 8);

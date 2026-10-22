@@ -309,6 +309,91 @@ Windows confirmée reste **897/897**, avant
 les changements P3m.13c ; exécuter `dotnet test`
 sur ce nouveau commit.
 
+## P3m.13d — Identification du candidat non attribué et sondage SYN_SENT
+
+Nouvel essai réel (22 octobre 2026) : Draconiros a
+chargé une première fois (`Connection #3 → Game #4`),
+puis l'opérateur a quitté le personnage vers
+l'écran de sélection **sans fermer sa fenêtre Dofus**
+et l'a reconnecté (`Game #6`). Kourial est resté
+sur le deuxième compte.
+
+```text
+p3m13=selection-gap window-index=1 game-session=6 previous-loaded-game=observed same-window=yes new-selection=not-observed-in-window inherited-server=unverified account=unverified server=unverified
+p3m13=attempt window-index=1 game-session=6 game-state=loaded-live preceding-selections=0 distinct-selection-values=0 status=unverified reason=selection-missing account=unverified server=unverified
+p3m13=unbound session=5 role=selection reason=owner-missing selection-candidates=1 account=unverified server=unverified
+p3m13=summary flows=6 windows-linked=2 windows-ready=1 loaded-pairs=2 references-matched=2 owner-missing=1 window-missing=0 conflicts=0 overflow=no status=not-confirmed account=unverified server=unverified
+```
+
+**Fait nouveau :** la sélection numérique existe
+bien sur le flux TCP #5, immédiatement avant
+la connexion Game #6 dans l'ordre des sessions
+globales. Elle n'est **pas** liée au PID/HWND :
+impossible de garantir quel client l'a émise.
+Il serait incorrect d'affirmer que Dofus n'envoie
+pas de nouveau message de sélection en revenant
+à l'écran des personnages.
+
+### Nouveau contrôle catégoriel (sans attribution)
+
+Pour les connexions de sélection sans propriétaire
+Windows, la sortie `p3m13=unbound-hypothesis` contient :
+
+- `candidate-reference=Draconiros|Kourial|other|unavailable` :
+  comparaison de la valeur candidate capturée
+  aux **références communautaires** 295/355 ;
+  le nombre capturé n'est jamais affiché ;
+- `adjacent-loaded-game-session` et
+  `adjacent-game-window-index` : uniquement
+  quand la session **suivante dans l'ordre global**
+  est un Game chargé et lié à une fenêtre ;
+- `matches-previous-loaded-selection=yes|no|unavailable` :
+  égalité avec la sélection précédemment
+  associée de façon non ambiguë à un Game chargé
+  sur cette fenêtre ;
+- `meaning=sequence-only linked=no` :
+  **l'adjacence et l'égalité ne constituent
+  pas une preuve du propriétaire TCP**.
+
+Exemple fictif de sortie, non observé à ce stade :
+
+```text
+p3m13=unbound-hypothesis selection-session=5 candidate-reference=Draconiros adjacent-loaded-game-session=6 adjacent-game-window-index=1 matches-previous-loaded-selection=yes meaning=sequence-only linked=no account=unverified server=unverified
+```
+
+Même si ces comparaisons sont toutes positives,
+l'association reste **non vérifiée** et
+`status=not-confirmed` reste inchangé.
+Une sélection appartenant à l'autre client
+pourrait être entrelacée juste avant #6.
+
+### Lecture propriétaire plus précoce
+
+La table TCP native du diagnostic pouvait déjà
+être interrogée sur les ACK et les données, mais
+seulement pour les sockets Windows en état
+`ESTABLISHED`.
+
+P3m.13d ajoute **pour ce seul mode de recherche**
+une lecture des sockets IPv4 Windows en état
+`SYN_SENT` **ou** `ESTABLISHED`, avec une
+tentative dès le paquet TCP sortant SYN ;
+les tentatives restent bornées (24 par tuple,
+96 tuples suivis). La lecture historique
+`EstablishedIPv4` utilisée par P3k reste
+inchangée. Cela peut aider pour les flux courts,
+**sans garantir** que Windows expose le socket
+au moment où Npcap délivre le paquet.
+
+Des tests synthétiques couvrent l'égalité,
+la différence, l'absence de Game adjacent
+et les valeurs candidates multiples.
+
+**État des tests :** le dernier checkpoint
+Windows confirmé est **897/897** avant P3m.13c/d.
+Les nouveaux changements exigent compilation
+et validation Windows.
+
 ## Après validation
 
 Tester deux fenêtres **sur le même serveur**, une reconnexion indépendante et des sélections simultanées. Puis comparer la robustesse du lien pendant fermeture/réouverture et réassignations de focus. Ne brancher aucun routage en production tant que l'association socket→fenêtre et la séparation des caches métier par flux ne sont pas démontrées sur le build actuel. Le choix manuel du serveur reste **autoritaire sans validation obligatoire**.

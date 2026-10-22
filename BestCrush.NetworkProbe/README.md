@@ -35,6 +35,39 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.13d : sélection courte sans propriétaire Windows
+
+Un essai de reconnexion de personnage sur
+Draconiros a permis d'identifier précisément
+le blocage : une sélection existe sur la session
+TCP #5, mais `owner-missing=1`. Le nouveau Game
+#6 appartient à la fenêtre Draconiros.
+
+La sortie `p3m13=unbound-hypothesis` vérifie
+désormais **sans montrer les nombres capturés** :
+la correspondance au ServerId communautaire,
+l'adjacence globale avec un Game chargé,
+et l'égalité avec le serveur précédemment
+chargé sur la fenêtre. **Ce ne sont que des
+indices de séquence : `linked=no`**.
+
+L'inventaire Windows pour ce mode inclut
+`SYN_SENT` et `ESTABLISHED`, et commence
+au SYN sortant ; P3k reste limité à
+`ESTABLISHED`. Aucun PID ou serveur n'est
+inventé s'il est manquant.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --window-server-link
+```
+
+Conserver les deux fenêtres actives et recopier
+les lignes `p3m13=unbound-hypothesis`,
+`p3m13=unbound`, `p3m13=selection-gap`
+et `p3m13=summary`.
+
+Voir `docs/modular-workspace-p3m13-window-server-link.md`.
+
 ### P3m.13c : retour à l'écran des personnages
 
 Dans un nouvel essai, le personnage Draconiros

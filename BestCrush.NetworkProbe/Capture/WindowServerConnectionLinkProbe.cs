@@ -108,12 +108,11 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
             {
                 RefreshWindows(force: false);
 
-                // Query the OS on the first non-SYN client packet,
-                // including a payload-free TCP ACK. At that point the socket
-                // may already be ESTABLISHED, earlier than its first payload.
-                // This reduces missed very short Connection sockets;
-                // failed lookups are still retried, up to the bounded cap.
-                if (!incoming && !tcp.Synchronize &&
+                // Consult Windows on the outgoing SYN too (SYN_SENT);
+                // some Connection sockets close before the first payload
+                // callback. A later ACK or payload can retry if not found.
+                // Never query on FIN/RST and never infer owner from order.
+                if (!incoming && !tcp.Finished && !tcp.Reset &&
                     _links.NeedsOwner(tuple))
                 {
                     _attempts.TryGetValue(tuple, out int attempts);
@@ -122,7 +121,7 @@ internal sealed class WindowServerConnectionLinkProbe : IDisposable
                     {
                         _attempts[tuple] = attempts + 1;
                         IReadOnlyList<TcpSocketOwner> owners =
-                            WindowsDofusSocketTable.EstablishedIPv4(_port);
+                            WindowsDofusSocketTable.ConnectingOrEstablishedIPv4(_port);
                         _links.ObserveOwner(tuple, owners, _windows);
                     }
                 }
