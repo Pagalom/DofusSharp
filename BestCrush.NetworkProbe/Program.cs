@@ -64,6 +64,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --kta-character-compare");
     Console.WriteLine("Pour rechercher les noms des serveurs dans les messages de connexion (A-B-A) :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 6 --server-name-study");
+    Console.WriteLine("Pour vérifier le champ numérique de sélection sur le Connection Server (A-B-A) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --connection-selection-study");
     Console.WriteLine("Pour comparer localement les champs numériques ksb et ksc dans une même connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --identity-fields");
     Console.WriteLine("Pour vérifier le candidat de classe f5.f3 (comparaison anonymisée seulement) :");
@@ -87,6 +89,11 @@ Console.WriteLine(options.WindowFlowLink
     : $"BestCrush Network Probe — mapping de référence {map.ClientBuild} (build réel du jeu non vérifié)");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
+if (options.ConnectionSelectionStudy)
+{
+    Console.WriteLine("P3m.11 : étude du protocole Connection distinct de type.ankama.com ; sélection numérique candidate A-B-A.");
+    Console.WriteLine("Une seule instance Dofus par étape. Aucune valeur numérique, UUID ou jeton dans la sortie.");
+}
 if (options.ServerNameStudy)
 {
     Console.WriteLine("P3m.9 : recherche bornée de deux noms publics de serveurs dans les messages TCP/5555.");
@@ -334,6 +341,37 @@ if (options.WindowFlowLink)
     stop.Wait();
     probe.Stop();
     probe.WriteSummary();
+}
+else if (options.ConnectionSelectionStudy)
+{
+    ConnectionServerSelectionStudy study = new();
+    ServerRouteTransitionStudy route = new();
+    using CharacterMetadataProbe probe = new(
+        devices[options.DeviceIndex.Value], options.Port,
+        serverRouteStudy: route, connectionSelectionStudy: study);
+    probe.Start();
+    Console.WriteLine("P3m.11 : capture ouverte sur TCP/5555. A=Draconiros, B=Tylezia (choix MANUEL).");
+    for (int stage = 0; stage < 3; stage++)
+    {
+        if (!study.StartStage(stage) || !route.StartStage(stage))
+            break;
+        Console.WriteLine(stage switch
+        {
+            0 => "PHASE A1 : lancer Dofus et connecter un personnage sur Draconiros.",
+            1 => "PHASE B : lancer Dofus et connecter un personnage sur Tylezia.",
+            _ => "PHASE A2 : relancer Dofus et revenir sur Draconiros."
+        });
+        Console.WriteLine("Fermer complètement Dofus, puis appuyer sur Entrée (Ctrl+C pour arrêter).");
+        Task<string?> nextLine = Task.Run(() => Console.ReadLine());
+        while (!nextLine.IsCompleted && !stop.Wait(TimeSpan.FromMilliseconds(100))) { }
+        if (stop.IsSet || (nextLine.IsCompleted && nextLine.Result is null))
+            break;
+    }
+    probe.Stop();
+    foreach (string line in route.Summarize())
+        Console.WriteLine(line);
+    foreach (string line in study.Summarize())
+        Console.WriteLine(line);
 }
 else if (options.ServerNameStudy)
 {
@@ -672,6 +710,7 @@ internal sealed record ProbeOptions(
     bool KtaF1Control,
     bool KtaCharacterCompare,
     bool ServerNameStudy,
+    bool ConnectionSelectionStudy,
     int? ExpectedClassId)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
@@ -714,6 +753,7 @@ internal sealed record ProbeOptions(
         bool ktaF1Control = false;
         bool ktaCharacterCompare = false;
         bool serverNameStudy = false;
+        bool connectionSelectionStudy = false;
         int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
@@ -797,6 +837,9 @@ internal sealed record ProbeOptions(
                 case "--server-name-study":
                     serverNameStudy = true;
                     break;
+                case "--connection-selection-study":
+                    connectionSelectionStudy = true;
+                    break;
                 case "--expected-class-id" when i + 1 < args.Length &&
                     int.TryParse(args[i + 1], out int parsedClassId):
                     i++;
@@ -841,7 +884,8 @@ internal sealed record ProbeOptions(
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
             (serverRouteStudy ? 1 : 0) + (serverWireStudy ? 1 : 0) +
             (ktaF1Control ? 1 : 0) + (ktaCharacterCompare ? 1 : 0) +
-            (serverNameStudy ? 1 : 0);
+            (serverNameStudy ? 1 : 0) +
+            (connectionSelectionStudy ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -872,6 +916,6 @@ internal sealed record ProbeOptions(
             identityName, identityFields, identityPair,
             identityCrossOpcodes, serverRouteStudy, serverWireStudy,
             ktaF1Control, ktaCharacterCompare, serverNameStudy,
-            expectedClassId);
+            connectionSelectionStudy, expectedClassId);
     }
 }

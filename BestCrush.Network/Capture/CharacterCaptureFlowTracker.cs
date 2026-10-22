@@ -89,6 +89,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly KtaFieldScopeStudy? _ktaScopeStudy;
     private readonly KtaSelectedCharacterStudy? _ktaCharacterStudy;
     private readonly ServerNameWireStudy? _serverNameStudy;
+    private readonly ConnectionServerSelectionStudy? _connectionSelectionStudy;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -119,7 +120,8 @@ public sealed class CharacterCaptureFlowTracker
         ServerWireTransitionStudy? serverWireStudy = null,
         KtaFieldScopeStudy? ktaScopeStudy = null,
         KtaSelectedCharacterStudy? ktaCharacterStudy = null,
-        ServerNameWireStudy? serverNameStudy = null)
+        ServerNameWireStudy? serverNameStudy = null,
+        ConnectionServerSelectionStudy? connectionSelectionStudy = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -305,6 +307,21 @@ public sealed class CharacterCaptureFlowTracker
                 nameof(serverNameStudy));
         _serverNameStudy = serverNameStudy;
 
+        if (connectionSelectionStudy is not null &&
+            (serverNameStudy is not null || ktaCharacterStudy is not null ||
+             ktaScopeStudy is not null || characterNameReference is not null ||
+             identityFieldsReference is not null || identityPairStudy is not null ||
+             crossOpcodeStudy is not null || serverWireStudy is not null ||
+             expectedClassId is not null || shapeKeys is not null ||
+             professionReferences is not null || studyReferences is not null ||
+             identifyReferences is not null || decodeIpz || showCandidateJobIds ||
+             _characterNameOpCodes.Count != 0 || studyProfessionFlow ||
+             studyProfessionContinuity || professionXpStudy is not null))
+            throw new ArgumentException(
+                "Connection selection study must run exclusively.",
+                nameof(connectionSelectionStudy));
+        _connectionSelectionStudy = connectionSelectionStudy;
+
         if ((studyProfessionFlow || studyProfessionContinuity || professionXpStudy is not null) &&
             (shapeKeys is not null || professionReferences is not null ||
              decodeIpz || studyReferences is not null ||
@@ -426,6 +443,10 @@ public sealed class CharacterCaptureFlowTracker
                             while (stream.FrameBuffer.TryReadFrame(out byte[] frame))
                             {
                                 AnkamaAny? any = AnkamaFrameDecoder.FindAny(frame);
+                                // P3m.11 must see the raw framed Connection
+                                // protobuf before the game-only Any filter.
+                                _connectionSelectionStudy?.ObserveFrame(
+                                    flow.Number, key, direction, frame, any is not null);
                                 if (any is null)
                                     continue;
 

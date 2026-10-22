@@ -32,7 +32,8 @@ internal sealed class CharacterMetadataProbe(
     ServerWireTransitionStudy? serverWireStudy = null,
     KtaFieldScopeStudy? ktaScopeStudy = null,
     KtaSelectedCharacterStudy? ktaCharacterStudy = null,
-    ServerNameWireStudy? serverNameStudy = null) : IDisposable
+    ServerNameWireStudy? serverNameStudy = null,
+    ConnectionServerSelectionStudy? connectionSelectionStudy = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
@@ -41,6 +42,7 @@ internal sealed class CharacterMetadataProbe(
     private readonly KtaFieldScopeStudy? _ktaScopeStudy = ktaScopeStudy;
     private readonly KtaSelectedCharacterStudy? _ktaCharacterStudy = ktaCharacterStudy;
     private readonly ServerNameWireStudy? _serverNameStudy = serverNameStudy;
+    private readonly ConnectionServerSelectionStudy? _connectionSelectionStudy = connectionSelectionStudy;
     private readonly CharacterCaptureFlowTracker _flows = new(
         shapeKeys: shapeKeys, professionReferences: professionReferences,
         decodeIpz: decodeIpz, studyReferences: studyReferences,
@@ -58,7 +60,8 @@ internal sealed class CharacterMetadataProbe(
         serverWireStudy: serverWireStudy,
         ktaScopeStudy: ktaScopeStudy,
         ktaCharacterStudy: ktaCharacterStudy,
-        serverNameStudy: serverNameStudy);
+        serverNameStudy: serverNameStudy,
+        connectionSelectionStudy: connectionSelectionStudy);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;
@@ -170,13 +173,15 @@ internal sealed class CharacterMetadataProbe(
             _ktaScopeStudy?.ObserveEvents(key, events);
             _ktaCharacterStudy?.ObserveEvents(events);
             _serverNameStudy?.ObserveEvents(events);
+            _connectionSelectionStudy?.ObserveEvents(key, events);
 
             foreach (CharacterCaptureEvent entry in events)
             {
                 // P3m.5/6 show only session lifecycle + the two marker
                 // opcodes; never dump other messages or their contents.
                 if ((_serverRouteStudy is not null || _ktaScopeStudy is not null ||
-                     _ktaCharacterStudy is not null || _serverNameStudy is not null) &&
+                     _ktaCharacterStudy is not null || _serverNameStudy is not null ||
+                     _connectionSelectionStudy is not null) &&
                     entry.Kind == CharacterCaptureEventKind.Message &&
                     entry.Opcode is not ("ksc" or "ksb"))
                     continue;

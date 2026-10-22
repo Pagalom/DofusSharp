@@ -35,6 +35,31 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.11 : recherche du message de sélection numérique `SelectServer`
+
+P3m.10 montre plusieurs connexions Dofus en TCP/5555
+par phase, sans identifier leur rôle logique.
+Les schémas publics du protocole Unity **Connection**
+montrent deux familles de messages ayant un champ
+numérique candidat `root.f1.f4.f1` (sélection serveur).
+
+Le mode expérimental suivant inspecte les trames TCP/5555
+**avant** le filtre qui écartait les messages sans
+`type.ankama.com`, sur A1 (Draconiros) → B (Tylezia)
+→ A2 (Draconiros) :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --connection-selection-study
+```
+
+Il n'affiche jamais les tokens ni les valeurs candidates.
+Il signale le nombre de trames sans enveloppe Game,
+les sélections candidates et la correspondance A-B-A.
+Le sens `ServerId` reste **à vérifier** et la
+sélection manuelle reste autoritaire.
+
+Voir `docs/modular-workspace-p3m11-connection-select.md`.
+
 ### P3m.10 : relever les autres connexions TCP du client / launcher
 
 P3m.9 a observé **96 messages Ankama décodés** (32 par
