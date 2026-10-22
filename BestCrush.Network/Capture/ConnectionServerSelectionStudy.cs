@@ -19,7 +19,14 @@ public sealed class ConnectionServerSelectionStudy
     private const int MaxShapesPerSession = 12;
     private const int MaxShapesPerStageOutput = 8;
     private readonly object _gate = new();
+    private readonly Action<int, int>? _onSelectedServerCandidate;
     private readonly Dictionary<int, Session> _sessions = [];
+
+    public ConnectionServerSelectionStudy(
+        Action<int, int>? onSelectedServerCandidate = null)
+    {
+        _onSelectedServerCandidate = onSelectedServerCandidate;
+    }
     private bool _capacityExceeded;
     private int _stage = -1;
 
@@ -113,6 +120,8 @@ public sealed class ConnectionServerSelectionStudy
             {
                 session.SelectMessages++;
                 session.SelectedIds.Add(value);
+                // Observation-only opt-in; all values remain transient in RAM.
+                _onSelectedServerCandidate?.Invoke(sessionNumber, value);
             }
         }
     }

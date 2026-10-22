@@ -665,6 +665,23 @@ public sealed class ConnectionServerSelectionStudyTest
     }
 
     [Fact]
+    public void ExperimentalSelectedIdObserverOnlyReceivesActualConnectionCandidates()
+    {
+        List<(int Session, int Selected)> calls = [];
+        ConnectionServerSelectionStudy study = new(
+            (session, value) => calls.Add((session, value)));
+        study.StartStage(0).Should().BeTrue();
+        var key = Key(3);
+        study.ObserveFrame(3, key, CharacterCaptureDirection.ClientToServer,
+            Select(295), hasGameAny: false);
+        study.ObserveFrame(3, key, CharacterCaptureDirection.ClientToServer,
+            Select(293), hasGameAny: true);
+        study.ObserveFrame(3, key, CharacterCaptureDirection.ServerToClient,
+            Select(293), hasGameAny: false);
+        calls.Should().ContainSingle().Which.Should().Be((3, 295));
+    }
+
+    [Fact]
     public void ExclusiveModeRejectsUnrelatedMetadataCollection()
     {
         Action make = () => new CharacterCaptureFlowTracker(

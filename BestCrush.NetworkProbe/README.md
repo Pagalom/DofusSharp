@@ -35,6 +35,36 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.13 : relier les selections serveur aux deux fenetres Dofus
+
+Les ServerId candidats **Draconiros=295** et
+**Tylezia=293** ont été confirmés expérimentalement
+sur un client à la fois. Le mode `--window-server-link`
+étudie désormais **deux clients simultanés** et associe
+les connexions Connection/Game à la même fenêtre
+à partir du **quadruplet TCP exact, PID propriétaire
+Windows et HWND**. L'adjacence **globale** des sessions
+TCP n'est pas utilisée.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --window-server-link
+```
+
+Démarrer le probe avec Dofus fermé, ouvrir le premier
+client sur Draconiros, puis le deuxième sur Tylezia
+**sans fermer le premier**. Après le chargement
+des deux personnages, laisser les deux fenêtres
+ouvertes et appuyer sur Ctrl+C dans la console.
+Envoyer les lignes `p3m13=`.
+
+Les indices de fenêtres sont anonymes. Aucun
+token, IP, PID, HWND, personnage ou ID capturé
+n'est imprimé. Lien expérimental uniquement :
+`server=unverified`, aucune attribution automatique
+ou validation du serveur choisi manuellement.
+
+Voir `docs/modular-workspace-p3m13-window-server-link.md`.
+
 ### Résultat réel P3m.12 : correspondance des ServerId candidats
 
 **22 octobre 2026** : l'essai A1 Draconiros →

@@ -44,6 +44,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  (P3g) --profession-job-study --check-public-job-ids : vérification locale des IDs publics et roster 20 lignes");
     Console.WriteLine("Pour comparer exactement une fenetre Dofus et son flux Npcap :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --window-flow-link");
+    Console.WriteLine("Pour lier experimentalement les selections Connection aux fenetres et au chargement Game :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --window-server-link");
     Console.WriteLine("Pour comparer anonymement les métiers entre connexions TCP :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-continuity");
     Console.WriteLine("Pour suivre ksc → ksb → ipz par session TCP, sans référence privée :");
@@ -116,6 +118,13 @@ if (options.ServerRouteStudy || options.ServerWireStudy)
         ? "P3m.6 : comparaison des champs numériques TCP/5555 lors de A-B-A ; aucune identité de serveur vérifiée."
         : "P3m.5 : protocole manuel A-B-A, IP et ports TCP de jeu affichés ; serveur logique NON vérifié.");
     Console.WriteLine("Une instance Dofus à la fois. Chaque phase débute avant l'ouverture du client.");
+}
+if (options.WindowServerLink)
+{
+    Console.WriteLine("P3m.13 : liaison expérimentale Connection → PID/HWND → Game par quadruplet TCP.");
+    Console.WriteLine("Démarrer AVANT les deux clients, garder les deux fenêtres ouvertes, puis Ctrl+C.");
+    Console.WriteLine("Aucun tuple, PID, HWND, nom de personnage, jeton ou compte affiché.");
+    Console.WriteLine("Références communautaires : Draconiros 295 / Tylezia 293 ; aucun serveur validé en production.");
 }
 if (options.WindowFlowLink)
 {
@@ -334,7 +343,18 @@ Console.CancelKeyPress += (_, e) =>
     stop.Set();
 };
 
-if (options.WindowFlowLink)
+if (options.WindowServerLink)
+{
+    using WindowServerConnectionLinkProbe probe = new(
+        devices[options.DeviceIndex.Value], options.Port);
+    probe.Start();
+    Console.WriteLine("P3m.13 : ouvrir une fenêtre Draconiros et une fenêtre Tylezia, laisser les deux chargées.");
+    Console.WriteLine("Tester aussi une action réseau sur chaque fenêtre, puis Ctrl+C sans les fermer.");
+    stop.Wait();
+    probe.Stop();
+    probe.WriteSummary();
+}
+else if (options.WindowFlowLink)
 {
     using WindowTcpFlowLinkProbe probe = new(devices[options.DeviceIndex.Value], options.Port);
     probe.Start();
@@ -708,6 +728,7 @@ internal sealed record ProbeOptions(
     bool ProfessionJobStudy,
     bool CheckPublicJobIds,
     bool WindowFlowLink,
+    bool WindowServerLink,
     bool IdentityName,
     bool IdentityFields,
     bool IdentityPair,
@@ -751,6 +772,7 @@ internal sealed record ProbeOptions(
         bool professionJobStudy = false;
         bool checkPublicJobIds = false;
         bool windowFlowLink = false;
+        bool windowServerLink = false;
         bool identityName = false;
         bool identityFields = false;
         bool identityPair = false;
@@ -816,6 +838,9 @@ internal sealed record ProbeOptions(
                     break;
                 case "--window-flow-link":
                     windowFlowLink = true;
+                    break;
+                case "--window-server-link":
+                    windowServerLink = true;
                     break;
                 case "--identity-name":
                     identityName = true;
@@ -889,6 +914,7 @@ internal sealed record ProbeOptions(
             (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
+            (windowServerLink ? 1 : 0) +
             (serverRouteStudy ? 1 : 0) + (serverWireStudy ? 1 : 0) +
             (ktaF1Control ? 1 : 0) + (ktaCharacterCompare ? 1 : 0) +
             (serverNameStudy ? 1 : 0) +
@@ -920,7 +946,7 @@ internal sealed record ProbeOptions(
             professionStudy, showCandidateJobIds, professionIdentify,
             professionFlow, professionContinuity, professionXpStudy,
             professionJobStudy, checkPublicJobIds, windowFlowLink,
-            identityName, identityFields, identityPair,
+            windowServerLink, identityName, identityFields, identityPair,
             identityCrossOpcodes, serverRouteStudy, serverWireStudy,
             ktaF1Control, ktaCharacterCompare, serverNameStudy,
             connectionSelectionStudy, expectedClassId);
