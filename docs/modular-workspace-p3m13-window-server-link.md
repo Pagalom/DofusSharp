@@ -66,7 +66,7 @@ Le probe ne modifie pas le jeu et n'envoie aucun message réseau.
 
 ## Tests
 
-12 méthodes de test isolées incluent : sessions Connection et Game entrelacées entre 2 fenêtres, serveurs identiques, anti-association inter-PID, liaison tardive à la fenêtre, PID ambigu, socket Windows dupliqué, conflit de propriétaire, socket absent, sélection non terminée, deux sélections pour un seul Game, identifiant non reconnu, connexions successives sur le même client.
+18 méthodes de test isolées incluent : sessions Connection et Game entrelacées entre 2 fenêtres, serveurs identiques, anti-association inter-PID, liaison tardive à la fenêtre, PID ambigu, socket Windows dupliqué, conflit de propriétaire, socket absent, sélection non terminée, deux sélections pour un seul Game, identifiant non reconnu, connexions successives sur le même client.
 
 La compilation et la campagne de validation **Windows réelles** restent nécessaires.
 
@@ -154,6 +154,66 @@ Ctrl+C ; retransmettre les lignes `p3m13=attempt`,
 `p3m13=window`, `p3m13=summary`.
 Cette étape ne modifie aucun routage métier
 ni la sélection manuelle des serveurs.
+
+## P3m.13b — Résultat terrain : deux comptes et deux serveurs correctement associés (22 octobre 2026)
+
+Après le correctif qui accepte un Game encore actif
+(`ksc` + `ksb` sans exiger la fermeture TCP), le
+protocole a été rejoué avec **deux comptes Dofus
+connectés simultanément** : Draconiros (295) et
+Kourial (355).
+
+```text
+p3m13=attempt window-index=1 game-session=4 game-state=loaded-live preceding-selections=1 distinct-selection-values=1 status=candidate-linked reason=none account=unverified server=unverified
+p3m13=loaded window-index=1 connection-session=3 game-session=4 reference=Draconiros match=community-candidate account=unverified server=unverified
+p3m13=window window-index=1 connection-selections=1 game-attempts=1 linked=1 loaded=1 references-matched=1 status=linked-candidate reason=none account=unverified server=unverified
+p3m13=attempt window-index=2 game-session=2 game-state=loaded-live preceding-selections=1 distinct-selection-values=1 status=candidate-linked reason=none account=unverified server=unverified
+p3m13=loaded window-index=2 connection-session=1 game-session=2 reference=Kourial match=community-candidate account=unverified server=unverified
+p3m13=window window-index=2 connection-selections=1 game-attempts=1 linked=1 loaded=1 references-matched=1 status=linked-candidate reason=none account=unverified server=unverified
+p3m13=summary flows=4 windows-linked=2 windows-ready=2 loaded-pairs=2 references-matched=2 owner-missing=0 window-missing=0 conflicts=0 overflow=no status=two-window-links-candidate account=unverified server=unverified
+```
+
+**Conclusion observée :** les deux flux **Connection**
+des sessions #3 et #1 ont été associés, par le
+quadruplet TCP exact et le propriétaire Windows
+(PID/fenêtre), aux sessions Game respectives
+#4 et #2. Les deux Game étaient toujours
+ouverts, mais `ksc` puis `ksb` avaient été
+observés. Chaque sélection comportait un unique
+identifiant candidat ; les identifiants concordent
+avec les références communautaires des deux
+serveurs effectivement chargés.
+
+Cela valide **dans cette situation précise**
+l'association expérimentale de deux serveurs
+différents à deux fenêtres distinctes, malgré
+l'entrelacement des numéros de sessions.
+Il ne s'agit **pas** d'une preuve d'identité
+du compte Ankama ni de celle du personnage ;
+les indicateurs `account=unverified` et
+`server=unverified` sont donc conservés dans
+le diagnostic et le routage production n'est
+pas activé.
+
+**Contrôles restant nécessaires :** inversion de
+l'ordre d'ouverture, reconnexion d'un seul client
+pendant que l'autre reste chargé, changement de
+serveur avant sélection du personnage, fermeture
+et réouverture d'une fenêtre, conflits/
+sélections multiples, et vérification du
+comportement sur le build réel du jeu.
+L'étude P3m.13b ne suffit pas à garantir
+l'association dans toutes ces situations.
+
+**Tests :** P3m.13 compte désormais 18 tests
+synthétiques dans
+`WindowServerConnectionLinkStudyTest`,
+dont le correctif `loaded-live` et les cas
+de sélections multiples. L'exécution de
+`dotnet test` sur Windows n'a pas été
+communiquée lors de cette dernière capture ;
+le lancement du probe atteste seulement que
+celui-ci a compilé et pu s'exécuter.
 
 ## Après validation
 
