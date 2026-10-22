@@ -35,6 +35,38 @@ Puis lancer la capture sur l'interface choisie :
 dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --all
 ```
 
+### P3m.11c : structure Connection trouvée dans les connexions d'amorçage
+
+L'essai P3m.11b réel n'était plus tronqué et a identifié,
+dans chaque phase Draconiros → Tylezia → Draconiros,
+des messages C→S de forme
+
+`root(f1:L)/f1(f1:L.f4:L)/f4(f1:V)`
+
+**sur les sessions TCP courtes précédant le jeu**.
+Malgré cela, le décodeur strict retournait zéro
+candidat : il imposait que le champ de contexte
+`f1.f1` soit du texte UTF-8 lisible.
+
+P3m.11c accepte désormais un contexte opaque,
+conserve les contrôles de forme/valeur de sélection,
+et ajoute `shape-matches` ainsi que
+`rejection-codes` pour lever l'ambiguïté
+**sans afficher les contenus privés**.
+
+Après mise à jour et `dotnet test`, relancer :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --connection-selection-study
+```
+
+Les lignes `p3m11=socket` et `p3m11=summary`
+permettront de vérifier s'il existe une sélection
+numérique candidate A1=A2≠B. Cela **ne valide pas**
+encore la sémantique `ServerId`.
+
+Voir `docs/modular-workspace-p3m11-connection-select.md`.
+
 ### P3m.11b : distinguer les trames de connexion des trames de jeu
 
 P3m.11 : trois phases A1/B/A2 valides,
