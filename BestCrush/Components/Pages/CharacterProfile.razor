@@ -7,6 +7,12 @@
 @inject CurrentDofusClientsState CurrentDofusClientsState
 
 <div class="character-profile-page container-fluid px-1 px-md-3 py-4">
+    @{
+        // The local title is only a conservative UI visibility hint:
+        // selection-screen windows must never display an active character
+        // card. Network ownership still comes exclusively from TCP/OS.
+        var visibleCandidateSheets = VisibleCandidateSheets;
+    }
     <div class="profile-page-intro">
         <h1>Personnages</h1>
         <p>
@@ -16,26 +22,22 @@
     </div>
 
     @if (CurrentCandidateWindowCardsState.IsResearchEnabled &&
-         CurrentCandidateWindowCardsState.Cards.Count > 0)
+         visibleCandidateSheets.Count > 0)
     {
         <section class="profile-sheet-section" aria-label="Fiches temporaires des fenêtres Dofus">
             <div class="profile-section-heading">
                 <h2>Fiches de la session</h2>
             </div>
             <div class="profile-sheet-grid">
-                @foreach (CandidateWindowRosterCard candidate in CurrentCandidateWindowCardsState.Cards)
+                @foreach (var (candidate, client) in visibleCandidateSheets)
                 {
-                    @if (CurrentDofusClientsState.Clients.FirstOrDefault(
-                        client => client.Key == candidate.Window) is { } client)
-                    {
-                        <CharacterSheetCard @key="candidate.Window"
-                                            DisplayName="@client.DisplayName"
-                                            ClassName="@client.ClassName"
-                                            Level="@candidate.SelectedLevelCandidate"
-                                            IsExperimental="true"
-                                            IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
-                                            OnSelect="@(() => SelectDofusClient(client.Key))" />
-                    }
+                    <CharacterSheetCard @key="candidate.Window"
+                                        DisplayName="@client.DisplayName"
+                                        ClassName="@client.ClassName"
+                                        Level="@candidate.SelectedLevelCandidate"
+                                        IsExperimental="true"
+                                        IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
+                                        OnSelect="@(() => SelectDofusClient(client.Key))" />
                 }
             </div>
         </section>
@@ -45,7 +47,7 @@
             CurrentCharacterState.IsCharacterConnected(profile.Key)))
     {
         <section class="profile-sheet-section" aria-label="Fiches de personnages confirmés">
-            @if (CurrentCandidateWindowCardsState.Cards.Count > 0)
+            @if (visibleCandidateSheets.Count > 0)
             {
                 <div class="profile-section-heading">
                     <h2>Fiches avec identité vérifiée</h2>
@@ -69,7 +71,7 @@
         </section>
     }
 
-    @if (CurrentCandidateWindowCardsState.Cards.Count == 0 &&
+    @if (visibleCandidateSheets.Count == 0 &&
          !CurrentCharacterState.Characters.Any(profile =>
              CurrentCharacterState.IsCharacterConnected(profile.Key)))
     {
@@ -95,6 +97,14 @@
 </div>
 
 @code {
+    private IReadOnlyList<(CandidateWindowRosterCard Candidate, DofusClientWindow Client)>
+        VisibleCandidateSheets =>
+            (from candidate in CurrentCandidateWindowCardsState.Cards
+             join client in CurrentDofusClientsState.Clients
+                 on candidate.Window equals client.Key
+             where client.HasCharacterTitle
+             select (Candidate: candidate, Client: client)).ToArray();
+
     protected override void OnInitialized()
     {
         CurrentCharacterState.Changed += OnCharacterChanged;
