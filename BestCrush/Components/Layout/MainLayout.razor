@@ -271,6 +271,8 @@
                     // character card disappears even with NO TCP traffic.
                     CurrentCandidateWindowCardsState.RemoveMissingWindows(liveClientKeys);
                     WindowServerAttributionState.RemoveMissingWindows(liveClientKeys);
+                    WindowServerAttributionState.ReconcileCharacterTitles(
+                        CurrentDofusClientsState.Clients);
                     // Remove ephemeral per-window equipment even when the
                     // closed Dofus client generates no further TCP traffic.
                     WindowEquipmentState.RemoveMissingWindows(liveClientKeys);
