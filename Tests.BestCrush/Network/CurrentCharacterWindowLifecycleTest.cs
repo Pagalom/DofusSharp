@@ -87,6 +87,27 @@ public sealed class CurrentCharacterWindowLifecycleTest
     }
 
     [Fact]
+    public void LateIdentityCannotRecreateProfileAfterWindowClose()
+    {
+        CurrentCharacterState state = new();
+        state.SelectServer("Draconiros");
+        CharacterIdentityAssessment original = Confirmed(1, "Alice", 1);
+        state.ObserveConfirmedCharacter(original, true, A).Should().BeTrue();
+
+        state.RemoveMissingWindows([]);
+        state.Characters.Should().BeEmpty();
+        state.ObserveConfirmedCharacter(original, true, A).Should().BeFalse();
+        state.Characters.Should().BeEmpty();
+
+        // A separately re-confirmed new TCP connection may create a new
+        // session card only for a currently present, independently proven
+        // window; this is not reuse of the revoked old connection.
+        state.ObserveConfirmedCharacter(Confirmed(1, "Alice", 2),
+            true, B).Should().BeTrue();
+        state.Characters.Should().ContainSingle();
+    }
+
+    [Fact]
     public void UnverifiedWindowCannotRemoveProfileByNameOrServerAlone()
     {
         CurrentCharacterState state = new();
