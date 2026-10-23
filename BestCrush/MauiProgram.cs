@@ -54,7 +54,15 @@ public static class MauiProgram
             // Inactive by default; only an explicitly opted-in Debug capture
             // exposes ephemeral unverified network candidate cards.
             builder.Services.AddSingleton<CurrentCandidateWindowCardsState>();
+#if DEBUG
+            builder.Services.AddSingleton(new WindowServerAttributionState(
+                diagnosticsEnabled: string.Equals(
+                    Environment.GetEnvironmentVariable(
+                        "BESTCRUSH_SERVER_LINK_DIAGNOSTICS"), "1",
+                    StringComparison.Ordinal)));
+#else
             builder.Services.AddSingleton<WindowServerAttributionState>();
+#endif
             builder.Services.AddSingleton<LiveDofusClientNetworkBindings>();
             builder.Services.AddSingleton<CurrentAccountProfessionsState>();
             builder.Services.AddSingleton<ServersService>();
