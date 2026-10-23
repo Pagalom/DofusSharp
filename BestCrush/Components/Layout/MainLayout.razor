@@ -59,8 +59,8 @@
                     {
                         <button @key="client.Key"
                                 type="button"
-                                class="character-avatar @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "active" : "") @(LiveClientNetworkBindings.IsLinked(client.Key) ? "network-linked" : "") @(CurrentCandidateWindowCardsState.HasCandidateLink(client.Key) ? "candidate-roster-linked" : "")"
-                                title="@($"{client.DisplayName}{(client.ClassName is null ? "" : $" — {client.ClassName}")} — fenêtre Dofus (flux TCP {(LiveClientNetworkBindings.IsLinked(client.Key) ? "relié" : "non relié")}, groupe candidat {(CurrentCandidateWindowCardsState.HasCandidateLink(client.Key) ? "lié" : "non lié")}, compte non vérifié)")"
+                                class="character-avatar @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "active" : "") @(LiveClientNetworkBindings.IsLinked(client.Key) ? "network-linked" : "") @(client.HasCharacterTitle && CurrentCandidateWindowCardsState.HasCandidateLink(client.Key) ? "candidate-roster-linked" : "")"
+                                title="@($"{client.DisplayName}{(client.ClassName is null ? "" : $" — {client.ClassName}")} — fenêtre Dofus (flux TCP {(LiveClientNetworkBindings.IsLinked(client.Key) ? "relié" : "non relié")}, groupe candidat {(client.HasCharacterTitle && CurrentCandidateWindowCardsState.HasCandidateLink(client.Key) ? "lié" : "non lié")}, compte non vérifié)")"
                                 aria-label="@($"Cibler la fenêtre de {client.DisplayName}")"
                                 aria-pressed="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
                                 @onclick="() => SelectDofusClient(client.Key)">
