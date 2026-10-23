@@ -332,3 +332,42 @@ Les trois `ipz` ont été décodés, avec 20 lignes et un champ candidat `f5` un
 P3c doit maintenant comparer une source potentiellement liée au compte qui soit **indépendante** de la progression `ipz` et de l'identifiant candidat de personnage `ksc/ksb`, avec au moins deux personnages différents sur un même compte et un second compte sur le même serveur. Les résultats de professions ne peuvent pas servir de preuve de compte.
 
 **Checkpoint de tests :** P3m.19 a été confirmé à 959/959. P3c.2 a ajouté 12 cas et P3c.3 5 cas ; **976 attendus**, mais le résultat Windows n'a pas encore été transmis.
+
+## P3c.4 — Chemins numériques indépendants des métiers (préparé le 23 octobre 2026)
+
+**Objectif strictement exploratoire :** chercher, dans les réponses **serveur → client `krg` uniquement**, des chemins protobuf numériques uniques qui présentent le motif suivant sur un **même serveur choisi manuellement** :
+
+- Phase 1 **A-X** : compte A, personnage X.
+- Phase 2 **A-Y** : **même compte A**, personnage Y **différent** sur le même serveur.
+- Phase 3 **B-Z** : compte B **différent**, personnage Z sur le même serveur.
+- Phase 4 **A-X2** : retour au personnage X initial du compte A.
+
+La sortie ne signale comme **chemin de recherche candidat** qu'un scalaire présent sur les quatre phases, égal en A-X/A-Y/A-X2 mais différent en B-Z. Cela ne constitue **absolument pas une identification de compte** : une constante de jeu, une propriété du personnage, une métadonnée ou une coïncidence peuvent suivre ce motif. Aucun chemin n'est promu au modèle de production. Le serveur choisi manuellement reste autoritaire ; il n'est pas validé par cette étude.
+
+### Mode isolé ajouté au NetworkProbe
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --list
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --account-wire-study
+```
+
+**Vérifier l'index** Npcap via `--list` : le `6` n'est qu'un exemple issu d'une précédente capture. Fermer **toutes** les fenêtres Dofus avant le démarrage.
+
+Le programme guide les **quatre phases**, une seule fenêtre Dofus à la fois, avec **Entrée après la fermeture complète de chaque fenêtre**. Démarrer la capture AVANT le premier client. À la phase 2, choisir impérativement un autre personnage du **même compte et même serveur** ; le test n'a aucun sens si le même personnage est utilisé en A-X et A-Y. À la phase 3, choisir le **deuxième compte** sur le même serveur. La phase 4 reprend **exactement X**.
+
+Après chaque phase, le probe doit obtenir un seul message `S→C krg` valable sur une session Game ouverte **dans cette phase**. Plusieurs Game candidates dans la même phase, une contradiction, un défaut de trame ou l'absence de phase rendent la comparaison `incomplete` et empêchent toute conclusion.
+
+À la fin, transmettre **uniquement les lignes `p3c4=`**, plus les éventuels `ACCOUNT_WIRE=[p3c4=...]`, sans corps bruts ni autres traces privées. Un résultat `account-shaped-paths=[none]` est parfaitement acceptable et signifie qu'aucun champ unique n'a satisfait cette recherche limitée : **ne pas inventer un identifiant**.
+
+### Garantie de minimisation
+
+- Ne traite **aucun message client → serveur**, en particulier les échanges d'authentification `knc` et `kod`.
+- `krg` : corps au plus **8192 octets**, protobuf analysé de manière bornée (profondeur maximale 3, 256 champs par nœud, 64 chemins scalaires retenus) ; conteneurs répétés ignorés pour éviter les grands tableaux d'inventaire.
+- Valeurs candidates conservées **uniquement en RAM pendant ce probe** ; aucune valeur, hachage, nom, login, token, compte, ID, niveau ou payload n'est affiché ou sauvegardé.
+- N'accepte pour une phase qu'un TCP ouvert dans celle-ci ; toute deuxième session Game candidate la rend ambiguë.
+- Même si le motif A-X=A-Y=A-X2≠B-Z est observé : `semantic=unverified account=unverified server=unverified`.
+- Aucune mutation de `CurrentCharacterState`, `CurrentAccountProfessionsState`, SQLite, capture métier, historique économique ou gestion de la molette.
+
+**Tests synthétiques ajoutés :** 13 cas isolés (motif positif, motif absent, champ dépendant du personnage, contrôle C→S, conflit multi-Game, contradiction de même Game, duplication identique, trame malformée, mauvaise époque/phase, isolation et non-divulgation).
+
+P3c.4 est **à valider sur Windows**. Base connue : 959 tests P3m.19 validés, 12 tests P3c.2 et 5 tests P3c.3 créés, puis **13 tests P3c.4** : **989 tests attendus** sous réserve du build et de la découverte des tests. Un nombre de tests seul ne confirme ni la sémantique du protocole ni l'identité Ankama.
