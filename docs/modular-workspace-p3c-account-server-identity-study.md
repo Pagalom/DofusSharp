@@ -2,14 +2,14 @@
 
 ## Checklist P3c — validations reportées
 
-**Statut : EN ATTENTE — l'opérateur ne dispose pas encore d'un second compte Dofus.**
+**Statut : ÉTUDE RELANCÉE — deux comptes Dofus distincts disposent désormais d'un personnage sur un même serveur (23 octobre 2026).**
 Ces contrôles ne sont pas requis pour poursuivre les autres phases
 de recherche, mais **aucune identité de compte vérifiée, attribution
 automatique des métiers ou persistance compte + serveur** ne doit être
 activée tant qu'ils restent non validés.
 
-- [ ] Disposer d'un **second compte Dofus distinct**, idéalement avec
-  un personnage **sur le même serveur** que le premier.
+- [x] Disposer d'un **second compte Dofus distinct**, avec
+  un personnage **sur le même serveur** que le premier (confirmé par l'opérateur le 23/10/2026).
 - [ ] Contrôle positif : personnage A → B sur un seul compte / serveur ;
   le candidat de compte reste stable.
 - [ ] **Contrôle négatif indispensable : compte A → compte B sur le même serveur** ;
@@ -212,3 +212,34 @@ d'être présenté prématurément comme fiable.
 Les clés de compte et de serveur demeurent
 `unverified` jusqu'à preuve sémantique
 et isolation multiclient.
+
+## Reprise P3c.2 — deux comptes sur le même serveur (23 octobre 2026)
+
+**Contexte contrôlé par l'opérateur :** deux personnages de deux comptes Ankama distincts se trouvent maintenant sur un même serveur Dofus. Le test réel de la molette multicomptes P3m.19 est réussi (**959 tests automatisés** et **5/5 contrôles manuels**). Ceci prouve un routage pratique d'équipement par fenêtre dans ce scénario, **pas une identité de compte fiable**.
+
+**Objectif immédiat :** observer, par sessions TCP indépendantes, les formes des messages **S→C** `ksc`, `ksb`, `krg` et `ipg` lors de connexions contrôlées. Cette étape ne compare **aucune valeur** de compte/secret ; elle sert à déterminer s'il existe des structures candidates raisonnables pour concevoir plus tard un comparatif de valeurs strictement limité, en RAM, sans émission des données.
+
+Commande existante (index réseau à vérifier par `--list`) :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --list
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --character-shape --shape-keys ksc,ksb,krg,ipg
+```
+
+L'index `6` correspondait à une capture ancienne ; **ne pas supposer qu'il reste correct**. Le probe imprime aussi les tailles et marqueurs de connexion anonymes. Il n'affiche **pas** de valeur de champ protobuf ni de nom de personnage. Les `knc`/`kod` client→serveur pouvant porter de l'authentification ne font **pas** partie de cette expérience.
+
+### Parcours conseillé
+
+1. **Fermer complètement les deux clients Dofus** (laisser le launcher possible), puis démarrer le probe.
+2. **Phase A1 :** ouvrir le compte A sur ce serveur ; charger un personnage ; attendre `ksc` et `ksb`. Noter localement « A1 », puis fermer entièrement sa fenêtre Dofus.
+3. **Phase B :** ouvrir le compte B sur **le même serveur**, charger le nouveau personnage, attendre `ksc`/`ksb`, puis fermer sa fenêtre.
+4. **Phase A2 :** rouvrir le compte A et reconnecter le **même** personnage qu'en A1, afin de contrôler la stabilité à travers une reconnexion. Si un second personnage du compte A est disponible sur ce serveur, prévoir ensuite une session complémentaire distincte pour vérifier l'effet du changement de personnage au sein d'un même compte.
+5. Arrêter le probe par **Ctrl+C**. Ne partager que les lignes `Session #...` concernant `S→C ksc`, `S→C ksb`, `S→C krg`, `S→C ipg` et les marqueurs `OPENED/CLOSED` correspondants. Ne pas partager une saisie locale, un corps Base64, une trace `--all`, un PCAP ni d'autres champs privés.
+
+**Interprétation :** mêmes structures ou tailles entre A1/A2 ou différences entre A/B = *pistes seulement*. Elles peuvent dépendre du personnage, de l'inventaire, des métiers ou de l'état de session. Elles ne constituent pas une preuve d'identité de compte. Sans candidat indépendant vérifiable, `account=unverified server=unverified` demeure impératif.
+
+### Protection logicielle P3c.2
+
+`CurrentAccountProfessionsState.ForVerifiedSnapshot` est un comparateur pur de snapshots **déjà vérifiés**. Il reste séparé de l'ingestion, et les tests synthétiques vérifient que deux comptes sur le même serveur ne peuvent jamais s'emprunter leurs métiers, que deux personnages d'un compte/serveur peuvent lire le même snapshot, et qu'aucun métier n'est restauré au redémarrage. **Aucune observation de métier n'est ajoutée en production.**
+
+L'étape suivante dépendra de ces formes et des captures réelles anonymisées : choix prudent des seuls champs S→C pertinents, expérience comparative contrôlée (même compte/personnages différents vs comptes distincts même serveur), puis validation sémantique avant tout branchement automatique.
