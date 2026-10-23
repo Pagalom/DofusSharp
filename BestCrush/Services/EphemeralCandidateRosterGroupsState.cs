@@ -198,6 +198,24 @@ internal sealed class EphemeralCandidateRosterGroupsState
     }
 
     /// <summary>
+    /// Quarantine an independently observed closed HWND/PID even when its
+    /// network ksc is still pending (there may be no linked entry yet).
+    /// </summary>
+    internal void QuarantineWindow(DofusClientWindowKey window)
+    {
+        if (!ValidWindow(window))
+            return;
+
+        lock (_gate)
+        {
+            if (_windows.TryGetValue(window, out Entry? existing))
+                Revoke(window, existing.ConnectionId, quarantine: true);
+            else
+                _quarantined.Add(window);
+        }
+    }
+
+    /// <summary>
     /// Immediately invalidate all candidate associations on a user-driven
     /// server-selection change. The lease is NOT a verified game-server ID;
     /// this is only a lifetime boundary. Old messages must be blocked by
