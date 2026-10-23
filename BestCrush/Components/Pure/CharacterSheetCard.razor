@@ -18,6 +18,21 @@
                 <span class="sheet-class">@ClassName</span>
             </div>
             <p class="sheet-origin">@((IsExperimental) ? "Données de personnage provisoires" : "Fiche de personnage")</p>
+            @if (ServerName is not null)
+            {
+                <p class="sheet-server">
+                    <span aria-hidden="true">◈</span>
+                    Serveur : <strong>@ServerName</strong>
+                    @if (ServerId is { } id)
+                    {
+                        <span class="sheet-server-id">ID @id — association expérimentale</span>
+                    }
+                </p>
+            }
+            else if (IsExperimental)
+            {
+                <p class="sheet-server sheet-server--pending">Serveur : identification en cours</p>
+            }
         </div>
     </header>
 
@@ -125,6 +140,8 @@
     [Parameter, EditorRequired] public string DisplayName { get; set; } = "Personnage";
     [Parameter] public string? ClassName { get; set; }
     [Parameter] public int? Level { get; set; }
+    [Parameter] public string? ServerName { get; set; }
+    [Parameter] public int? ServerId { get; set; }
     [Parameter] public long? PocketKamas { get; set; }
     [Parameter] public long? BankKamas { get; set; }
     [Parameter] public IReadOnlyList<AccountProfessionProgress>? Professions { get; set; }
