@@ -2221,6 +2221,7 @@ public sealed class DofusNetworkRoutingTest
             List<NetworkCrushCapture> crushes,
             List<MarketDataChangedEventArgs>
                 notifications,
+            WindowServerAttributionState automaticAttributions,
             EphemeralCandidateRosterGroupsState? rosterWorkspace = null)
         {
             this.database = database;
@@ -2234,10 +2235,12 @@ public sealed class DofusNetworkRoutingTest
             Service = service;
             Crushes = crushes;
             Notifications = notifications;
+            AutomaticAttributions = automaticAttributions;
             RosterWorkspace = rosterWorkspace;
         }
 
         public EphemeralCandidateRosterGroupsState? RosterWorkspace { get; }
+        public WindowServerAttributionState AutomaticAttributions { get; }
 
         public CurrentServerState
             ServerState
@@ -2286,7 +2289,8 @@ public sealed class DofusNetworkRoutingTest
         public static async Task<RoutingHarness>
             CreateAsync(Func<CurrentServerState,
                 EphemeralCandidateRosterGroupsState,
-                EphemeralCandidateRosterWireObserver>? observerFactory = null)
+                EphemeralCandidateRosterWireObserver>? observerFactory = null,
+                bool automaticRouting = false)
         {
             TestDatabase database =
                 new();
@@ -2305,6 +2309,7 @@ public sealed class DofusNetworkRoutingTest
             services.AddScoped<
                 MarketPriceService>();
             services.AddSingleton<WindowScopedNetworkEquipmentState>();
+            services.AddSingleton<WindowServerAttributionState>();
 
             services.AddScoped<
                 CoefficientService>();
@@ -2351,11 +2356,15 @@ public sealed class DofusNetworkRoutingTest
                     .SaveChangesAsync();
             }
 
-            CurrentServerState serverState =
-                new();
+            WindowServerAttributionState automaticAttributions =
+                provider.GetRequiredService<WindowServerAttributionState>();
+            CurrentServerState serverState = automaticRouting
+                ? new CurrentServerState(automaticAttributions,
+                    automaticRoutingEnabled: true)
+                : new CurrentServerState();
 
-            serverState.SelectServer(
-                Server);
+            if (!automaticRouting)
+                serverState.SelectServer(Server);
 
             LastNetworkEquipmentState lastEquipment =
                 new();
@@ -2435,6 +2444,7 @@ public sealed class DofusNetworkRoutingTest
                 service,
                 crushes,
                 notifications,
+                automaticAttributions,
                 candidateWorkspace);
         }
 
