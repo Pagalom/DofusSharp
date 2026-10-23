@@ -17,6 +17,7 @@ public sealed class AccountWireFieldComparisonStudy
     private const int MaximumScalarPaths = 64;
     private const int MaximumNestedBytes = 2048;
     private const int MaximumDepth = 3;
+    private const int MaximumKrgPerPhase = 8;
 
     private sealed class Phase
     {
@@ -25,6 +26,8 @@ public sealed class AccountWireFieldComparisonStudy
         internal Dictionary<string, ulong>? Fields;
         internal bool Conflict;
         internal int Rejected;
+        internal int Snapshots;
+        internal int ChangedOrMissing;
     }
 
     private readonly object _gate = new();
@@ -81,26 +84,57 @@ public sealed class AccountWireFieldComparisonStudy
                 return Report("multiple-game-sessions");
             }
 
-            Dictionary<string, ulong>? fields = ExtractUniqueScalars(body);
-            if (fields is null || fields.Count == 0)
-            {
-                phase.Rejected++;
-                return Report("layout-rejected");
-            }
-
-            if (phase.Fields is not null &&
-                (phase.Fields.Count != fields.Count ||
-                 phase.Fields.Any(kv =>
-                     !fields.TryGetValue(kv.Key, out ulong value) ||
-                     value != kv.Value)))
+            if (phase.Snapshots >= MaximumKrgPerPhase)
             {
                 phase.Conflict = true;
                 phase.Fields = null;
-                return Report("contradictory-snapshot");
+                return Report("krg-limit");
+            }
+
+            Dictionary<string, ulong>? fields = ExtractUniqueScalars(body);
+            if (fields is null || fields.Count == 0)
+            {
+                // A malformed subsequent krg makes the whole phase
+                // ambiguous. Never retain the first valid snapshot alone.
+                phase.Rejected++;
+                if (phase.Snapshots > 0)
+                {
+                    phase.Conflict = true;
+                    phase.Fields = null;
+                }
+                return Report("layout-rejected");
             }
 
             phase.GameSession = sessionNumber;
-            phase.Fields ??= fields;
+            phase.Snapshots++;
+            if (phase.Fields is null)
+            {
+                phase.Fields = fields;
+                return Report("observed");
+            }
+
+            // krg messages within ONE legitimate game session may represent
+            // distinct stages of loading. Account candidates must be stable
+            // across EVERY valid krg, not just the first or last snapshot.
+            // A path changing value or disappearing is excluded permanently
+            // from this phase; its prior value is never restored.
+            string[] unstablePaths = phase.Fields
+                .Where(kv =>
+                    !fields.TryGetValue(kv.Key, out ulong current) ||
+                    current != kv.Value)
+                .Select(kv => kv.Key)
+                .ToArray();
+            foreach (string path in unstablePaths)
+                phase.Fields.Remove(path);
+            phase.ChangedOrMissing += unstablePaths.Length;
+
+            if (phase.Fields.Count == 0)
+            {
+                phase.Conflict = true;
+                phase.Fields = null;
+                return Report("no-stable-fields");
+            }
+
             return Report("observed");
         }
     }
@@ -120,7 +154,9 @@ public sealed class AccountWireFieldComparisonStudy
                 report.Add($"p3c4=phase={i + 1} status=" +
                     (phase.Conflict ? "conflicted" :
                      phase.Fields is null ? "unavailable" : "recorded") +
-                    $" fields={phase.Fields?.Count ?? 0} " +
+                    $" fields={phase.Fields?.Count ?? 0}" +
+                    $" krg={phase.Snapshots}" +
+                    $" unstable-dropped={phase.ChangedOrMissing} " +
                     "account=unverified server=unverified");
             }
 
