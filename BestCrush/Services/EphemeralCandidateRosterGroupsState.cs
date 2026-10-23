@@ -77,6 +77,28 @@ internal sealed class EphemeralCandidateRosterGroupsState
         }
     }
 
+    /// <summary>
+    /// UI projection: only OS window key plus roster member count.
+    /// Candidate character IDs, names, levels and account group identifiers
+    /// never cross the boundary into Blazor presentation.
+    /// </summary>
+    internal IReadOnlyList<CandidateWindowRosterCard> GetWindowCards(
+        NetworkCaptureLease lease, long captureEpoch)
+    {
+        lock (_gate)
+        {
+            if (_lease != lease || _captureEpoch != captureEpoch)
+                return [];
+
+            return _windows
+                .Select(pair => new CandidateWindowRosterCard(
+                    pair.Key, pair.Value.Roster.Count))
+                .OrderBy(card => card.Window.ProcessId)
+                .ThenBy(card => card.Window.Handle)
+                .ToArray();
+        }
+    }
+
     public override string ToString() =>
         "[candidate roster workspace: redacted account=unverified]";
 
