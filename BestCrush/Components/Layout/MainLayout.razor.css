@@ -108,3 +108,19 @@
     border-radius: 50%;
     background: #32866c;
 }
+
+
+/* P3c.11: amber lower-left marker means a temporary candidate roster was
+   linked to this OS window in the explicitly opted-in Debug study.
+   It is deliberately distinct from the upper-right TCP connection marker. */
+.character-avatar.candidate-roster-linked::before {
+    content: "";
+    position: absolute;
+    bottom: -3px;
+    left: -3px;
+    width: 9px;
+    height: 9px;
+    border: 2px solid #f0e8d7;
+    border-radius: 50%;
+    background: #bb8241;
+}
