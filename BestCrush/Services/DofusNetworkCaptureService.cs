@@ -468,7 +468,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     captureEpoch,
                     completion,
                     connectionId,
-                    candidateWindow)))
+                    candidateWindow,
+                    SyntheticWindowForReplay: candidateWindow is not null)))
         {
             throw new InvalidOperationException(
                 "Le canal réseau n'accepte plus de messages.");
@@ -744,7 +745,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                         // a closed window or recycled TCP token cannot
                         // silently become another client's identity.
                         DofusWireMessage routed = message;
-                        if (message.CandidateWindow is { } client &&
+                        if (!message.SyntheticWindowForReplay &&
+                            message.CandidateWindow is { } client &&
                             (_clientBindings is null ||
                              !_clientBindings.IsCurrentConnection(
                                  message.CaptureEpoch, message.ConnectionId, client)))
