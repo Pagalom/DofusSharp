@@ -1,69 +1,14 @@
-﻿@inject ServersService ServersService
-@inject NavigationManager NavigationManager
-@inject BestCrush.Services.CurrentServerState CurrentServerState
 @page "/servers"
-@using BestCrush.Components.Layout
-@using BestCrush.Domain.Services
-@using DofusSharp.Dofocus.ApiClients.Models.Servers
 @layout SimpleLayout
+@inject NavigationManager NavigationManager
+@using BestCrush.Components.Layout
 
-<div class="container">
-    @if (_servers is null)
-    {
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Chargement...</span>
-        </div>
-    }
-    else
-    {
-        <div class="d-flex flex-wrap justify-content-center gap-4 my-4">
-            @foreach (ServerAndIcon server in _servers)
-            {
-                <a class="btn btn-light border border-1 border-dark-subtle p-0 overflow-hidden text-center" @onclick="() => SelectServer(server.Server)">
-                    <div>
-                        @if (server.Icon is not null)
-                        {
-                            <img src="data:@server.Icon" width="auto" height="200" alt="Server icon"/>
-                        }
-                        else
-                        {
-                            <img src="img/server.webp" width="auto" height="200" alt="Server icon"/>
-                        }
-                    </div>
-                    <span class="fw-semibold">@server.Server.Name</span>
-                </a>
-            }
-        </div>
-    }
-</div>
+<p class="p-4">Le serveur est désormais détecté automatiquement depuis chaque
+    fenêtre Dofus. Redirection vers les personnages…</p>
 
 @code {
-    List<ServerAndIcon>? _servers;
-
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
-        IReadOnlyCollection<DofocusServer> servers = await ServersService.GetServers();
-        List<ServerAndIcon> result = new(servers.Count);
-        foreach (DofocusServer server in servers)
-        {
-            string icon = await ServersService.GetServerIconAsync(server);
-            result.Add(new ServerAndIcon(server, icon));
-        }
-
-        _servers = result;
+        NavigationManager.NavigateTo(KnownRoutes.Profile(), replace: true);
     }
-
-    async Task SelectServer(DofocusServer server)
-    {
-        if (!string.Equals(
-            CurrentServerState.ServerName, server.Name, StringComparison.Ordinal))
-            CurrentServerState.Clear();
-
-        await ServersService.SetCurrentServerAsync(server);
-        CurrentServerState.SelectServer(server.Name);
-        NavigationManager.NavigateTo(KnownRoutes.Server(server));
-    }
-
-    readonly record struct ServerAndIcon(DofocusServer Server, string? Icon);
-
 }
