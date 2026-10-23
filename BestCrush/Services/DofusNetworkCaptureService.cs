@@ -207,6 +207,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private void OnServerSelectionChanged()
     {
         _lastNetworkEquipmentState.Clear();
+        _windowEquipmentState?.Clear();
 
         // Drop partial frames when the user selects another server.
         lock (_streamLock)
@@ -274,6 +275,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
             long epoch = Interlocked.Increment(ref _captureEpoch);
             _clientBindings?.Reset(epoch);
+            _windowEquipmentState?.Clear();
             lock (_clientBindingsRefreshLock)
             {
                 _clientBindingsLastRefreshUtc = DateTime.MinValue;
@@ -334,6 +336,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             {
                 _started = false;
                 _clientBindings?.Reset(Interlocked.Increment(ref _captureEpoch));
+                _windowEquipmentState?.Clear();
 
                 logger.LogWarning(
                     "Aucune interface réseau n'a pu être ouverte pour Dofus.");
@@ -352,6 +355,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
             _started = false;
             _clientBindings?.Reset(Interlocked.Increment(ref _captureEpoch));
+            _windowEquipmentState?.Clear();
 
             // Do not complete the shared channel or cancel the worker here:
             // Start() must be able to reactivate this service.
