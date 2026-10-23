@@ -4,7 +4,7 @@
 
 P3m.18 : **949 tests réussis / aucun échec / aucun ignoré** sous Windows, confirmé par l'utilisateur.
 
-P3m.19 : modifications de production et **10 nouveaux tests** publiés. La compilation Windows et les tests ne sont **pas encore validés** pour cette étape.
+P3m.19 : modifications de production et **10 nouveaux tests** publiés. **Validation Windows confirmée par l'utilisateur : 959 tests réussis, 0 échec, 0 ignoré, 7,8 s.** La validation manuelle multicomptes à deux comptes sur un même serveur est également positive (voir ci-dessous).
 
 ## Règles produit conservées
 
@@ -63,7 +63,7 @@ dotnet build .\BestCrush\BestCrush.csproj -f net10.0-windows10.0.19041.0
 dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
 ```
 
-**959 tests attendus**, si aucun test préexistant n'est supprimé et si la découverte reste identique. Ne pas déclarer la validation acquise avant retour utilisateur.
+**Résultat communiqué : 959 tests réussis, 0 échec, 0 ignoré, 7,8 s.**
 
 ## Après tests unitaires : vérification manuelle
 
@@ -75,3 +75,19 @@ dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
 6. Vérifier séparément la lecture d'infobulle F8 et l'affichage F7.
 
 Ce test manuel ne vaut pas validation de l'identité personnage ni des métiers, qui restent soumis à des preuves de protocole indépendantes.
+
+## Résultat du test manuel réel — 23/10/2026
+
+L'utilisateur a créé un personnage sur le même serveur mais sur un deuxième compte et a réalisé le scénario P3m.19 :
+
+| Contrôle | Retour utilisateur |
+| --- | --- |
+| Clic molette sur compte A | OK |
+| Clic molette sur compte B | OK |
+| Retour à A sans nouvelle capture | OK |
+| Fermeture de B sans perturbation de A | OK |
+| F7 et F8 | OK |
+
+**Conclusion limitée :** le ciblage du dernier équipement réseau par fenêtre Dofus est **validé dans ce scénario réel** avec deux comptes sur un même serveur choisi manuellement. Ce résultat ne constitue pas une validation générale des cas sans attribution réseau, du changement de serveur pendant un clic asynchrone, des collisions de fenêtres, ni de l'identification des personnages, des comptes et des métiers. Les protections correspondantes ont une couverture par tests automatisés, mais tous les scénarios limites n'ont pas été rejoués manuellement.
+
+**À conserver pour les étapes suivantes :** les fiches personnages et leurs associations HWND/PID restent en RAM et ne sont jamais restaurées après fermeture de BestCrush. Les métiers, lorsqu'ils seront caractérisés, devront être attribués par identité **compte + serveur**, jamais par serveur seul ni par nom de personnage.
