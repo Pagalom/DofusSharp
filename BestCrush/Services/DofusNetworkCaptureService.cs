@@ -36,6 +36,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
     // The observer remains null in standard builds and normal Debug runs.
     // P3c.10 activates anonymous diagnostics only on an explicit Debug opt-in.
     private readonly EphemeralCandidateRosterWireObserver? _rosterWireObserver;
+    private readonly CurrentCandidateWindowCardsState? _candidateCardsState;
     private readonly bool _liveRosterDiagnostics;
     private int _liveRosterReportCount;
     private const int MaximumLiveRosterReports = 128;
@@ -139,11 +140,21 @@ public sealed class DofusNetworkCaptureService : IDisposable
 #if WINDOWS
         _clientBindings = clientBindings;
         _dofusWindowService = dofusWindowService;
+        // Reuse the existing process-lifetime singleton: only anonymous
+        // window/card counts cross into Blazor, never candidate identity.
+        using (IServiceScope scope = serviceScopeFactory.CreateScope())
+        {
+            _windowEquipmentState = scope.ServiceProvider
+                .GetService<WindowScopedNetworkEquipmentState>();
+            _candidateCardsState = scope.ServiceProvider
+                .GetService<CurrentCandidateWindowCardsState>();
+        }
 #if DEBUG
         // No activation by production DI, settings, command-line argument,
         // or release build. Only an explicit per-process Debug environment
         // variable starts the anonymous live study.
         if (rosterWireObserver is null &&
+            _candidateCardsState is not null &&
             IsLiveRosterStudyEnabled(
                 Environment.GetEnvironmentVariable(
                     "BESTCRUSH_P3C10_ROSTER_STUDY"),
@@ -151,8 +162,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 hasOwnerServices: clientBindings is not null &&
                                   dofusWindowService is not null))
         {
-            _rosterWireObserver = new EphemeralCandidateRosterWireObserver(
-                currentServerState, new EphemeralCandidateRosterGroupsState());
+            _rosterWireObserver =
+                _candidateCardsState.EnableForResearch(currentServerState);
             _liveRosterDiagnostics = true;
             logger.LogInformation(
                 "p3c10=status=enabled mode=debug-opt-in " +
@@ -163,11 +174,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
         {
             _rosterWireObserver = rosterWireObserver;
         }
-        // Resolve the process-lifetime singleton without changing the
-        // public constructor signature (tests can omit this staged service).
-        using (IServiceScope scope = serviceScopeFactory.CreateScope())
-            _windowEquipmentState = scope.ServiceProvider
-                .GetService<WindowScopedNetworkEquipmentState>();
         _networkDebugWriter =
             new NetworkDebugWriter(
                 currentServerState,
@@ -251,6 +257,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
         _lastNetworkEquipmentState.Clear();
         _windowEquipmentState?.Clear();
         _rosterWireObserver?.OnManualServerChanged();
+        _candidateCardsState?.NotifyChanged();
         if (_liveRosterDiagnostics)
             logger.LogInformation(
                 "p3c10=status=reset reason=manual-server-change " +
@@ -324,6 +331,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             _clientBindings?.Reset(epoch);
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(epoch);
+            _candidateCardsState?.NotifyChanged();
             if (_liveRosterDiagnostics)
                 Interlocked.Exchange(ref _liveRosterReportCount, 0);
             lock (_clientBindingsRefreshLock)
@@ -389,6 +397,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 _clientBindings?.Reset(stoppedEpoch);
                 _windowEquipmentState?.Clear();
                 _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
+                _candidateCardsState?.NotifyChanged();
 
                 logger.LogWarning(
                     "Aucune interface réseau n'a pu être ouverte pour Dofus.");
@@ -410,6 +419,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             _clientBindings?.Reset(stoppedEpoch);
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
+            _candidateCardsState?.NotifyChanged();
 
             // Do not complete the shared channel or cancel the worker here:
             // Start() must be able to reactivate this service.
@@ -474,6 +484,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
         long replayEpoch = Interlocked.Increment(ref _captureEpoch);
         _windowEquipmentState?.Clear();
         _rosterWireObserver?.OnCaptureEpochChanged(replayEpoch);
+        _candidateCardsState?.NotifyChanged();
         _started = true;
     }
 
@@ -491,6 +502,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             long replayEpoch = Interlocked.Increment(ref _captureEpoch);
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(replayEpoch);
+            _candidateCardsState?.NotifyChanged();
             _started = true;
         }
     }
@@ -779,6 +791,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                         _windowEquipmentState?.Reconcile(
                             liveLease, captureEpoch, _clientWindows);
                     _rosterWireObserver?.ReconcileWindows(_clientWindows);
+                    _candidateCardsState?.NotifyChanged();
                 }
 
                 if (_started && captureEpoch == Interlocked.Read(ref _captureEpoch) &&
@@ -853,6 +866,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                          routed.CaptureEpoch,
                                          routed.ConnectionId,
                                          routed.CandidateWindow.Value) == true)));
+
+                                if (outcome != EphemeralCandidateRosterWireObserver
+                                    .Result.Ignored)
+                                    _candidateCardsState?.NotifyChanged();
 
                                 if (_liveRosterDiagnostics &&
                                     outcome != EphemeralCandidateRosterWireObserver
