@@ -25,6 +25,7 @@ internal sealed class WindowTcpEtwConnectProbe : IDisposable
     private int _rejected;
     private bool _ready;
     private bool _drained;
+    private string _startupStage = "not-started";
 
     internal WindowTcpEtwConnectProbe(int port,
         Action<TcpSocketTuple, int, DateTime> onConnect)
@@ -46,16 +47,20 @@ internal sealed class WindowTcpEtwConnectProbe : IDisposable
         string name = "BestCrush-P3m14-" + Guid.NewGuid().ToString("N");
         try
         {
+            _startupStage = "session-construction";
             _session = new TraceEventSession(
                 name, TraceEventSessionOptions.NoRestartOnCreate);
             _session.StopOnDispose = true;
             // For a uniquely named non-NT-Kernel-Logger session, reading
             // Source first may start the session; EnableKernelProvider then
             // rejects it ("must be enabled first"). Enable before Source.
+            _startupStage = "kernel-provider-enablement";
             _session.EnableKernelProvider(
                 KernelTraceEventParser.Keywords.NetworkTCPIP);
+            _startupStage = "event-source-acquisition";
             _source = _session.Source;
 
+            _startupStage = "callback-registration";
             _source.Kernel.TcpIpConnect += data =>
             {
                 Interlocked.Increment(ref _tcpEvents);
@@ -92,14 +97,18 @@ internal sealed class WindowTcpEtwConnectProbe : IDisposable
             // Enable before launching either Dofus client or packet capture.
             // This may require administrative rights. No fallbacks that
             // falsely claim ETW has started.
-            _ready = true;
+            _startupStage = "event-processing-start";
             ETWTraceEventSource source = _source;
             _pump = Task.Run(() => source.Process());
+            _ready = true;
+            _startupStage = "started";
         }
-        catch
+        catch (Exception ex)
         {
-            Dispose();
-            throw;
+            string failedStage = _startupStage;
+            try { Dispose(); }
+            catch { /* Preserve the original startup failure. */ }
+            throw new WindowTcpEtwStartException(failedStage, ex);
         }
     }
 
@@ -141,4 +150,11 @@ internal sealed class WindowTcpEtwConnectProbe : IDisposable
     }
 
     public void Dispose() => Stop();
+}
+
+/// <summary>Preserves the ETW startup stage without exposing private event data.</summary>
+internal sealed class WindowTcpEtwStartException(string stage, Exception innerException)
+    : Exception("ETW startup failed.", innerException)
+{
+    internal string Stage { get; } = stage;
 }
