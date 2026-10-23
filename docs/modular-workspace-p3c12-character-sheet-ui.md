@@ -15,6 +15,7 @@ L'utilisateur souhaite une fiche joueur reconnaissable, proche des panneaux **Ca
 - Métiers : `CurrentAccountProfessionsState.ForCharacter` exige toujours un `VerifiedAccountServerKey` indépendant, et reste sans writer live. **P3g avait caractérisé 20 ID `f1.f5`, P3e les niveaux/XP et les seuils `f1.f3/f1.f6`**, mais ces éléments ne sont PAS fusionnés à des groupes candidats pour alimenter des profils. La liste métiers est donc **indisponible pour les cartes candidates** tant que la propriété des données n'est pas établie.
 - Les vrais remplissages de barres sont préparés dans `ProfessionProgressPresentation.For` : niveau XP = `CumulativeExperience - LevelStartCumulativeExperience`, XP du niveau = `NextLevelCumulativeExperience - LevelStartCumulativeExperience`. Les deux seuils sont facultatifs dans `AccountProfessionProgress`, pour une future ingestion vérifiée (pas de writer ajouté ici). Pas d'estimation linéaire depuis le niveau ni depuis l'XP cumulée : si les seuils manquent, une barre grisée/indéterminée et « Progression non observée » apparaissent. Niveau 200 affiché comme niveau maximal. Aucun fake `0/20`.
 - La disparition sans nouveau paquet TCP est conservée via le polling Win32 de `MainLayout` et le service P3c.11. Le mode candidat **reste réservé au Debug opt-in**, `BESTCRUSH_P3C10_ROSTER_STUDY=1`, comme avant.
+- L'affichage ne présente un candidat que lorsque le titre de fenêtre indique un **personnage chargé** (`HasCharacterTitle`). La vue se masque à l'écran de sélection, même si un ancien lien TCP candidat existe encore en RAM ; le titre n'est pas une preuve réseau, et ne réattribue aucune donnée. `CandidateCharacterSheetVisibility` effectue exclusivement une jointure sur la clé de fenêtre locale unique.
 
 ## Validation ciblée
 
@@ -22,6 +23,7 @@ Nouveaux tests :
 - `ProfessionProgressPresentationTest` : progression proportionnelle réelle, bornes exactes, niveau et XP connus mais bornes absentes, bornes incohérentes, très grands cumuls, niveau invalide et aucune écriture de métier dans l'état live.
 - `CurrentCandidateWindowCardsStateTest` : deux tests sur la propagation du niveau au bon HWND/TCP et sa suppression sur fermeture.
 - `EphemeralCandidateRosterGroupsStateTest` : deux tests sur le niveau cantonné au bon bail/époque et sur une contradiction qui invalide le HWND.
+- `CandidateCharacterSheetVisibilityTest` : trois tests pour masquer l'écran de sélection, gérer deux fenêtres avec noms identiques et refuser l'inventaire HWND ambigu.
 
 Ne pas annoncer la compilation .NET ou une suite de tests validée avant retour du poste Windows. Aucun runtime .NET n'est disponible dans l'environnement d'édition.
 
