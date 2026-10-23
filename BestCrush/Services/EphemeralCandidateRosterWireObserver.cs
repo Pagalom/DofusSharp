@@ -43,6 +43,21 @@ internal sealed class EphemeralCandidateRosterWireObserver(
     internal int CandidateWindowCount => state.LiveWindowCount;
 
     /// <summary>
+    /// Research-only Blazor projection with no candidate IDs, names or
+    /// inferred account keys. The manual server lease is a scope, not proof.
+    /// </summary>
+    internal IReadOnlyList<CandidateWindowRosterCard> ReadWindowCards()
+    {
+        lock (_gate)
+        {
+            NetworkCaptureLease? lease = serverState.GetCaptureLease();
+            return lease is { } current && serverState.IsCaptureLeaseActive(current)
+                ? state.GetWindowCards(current, _epoch)
+                : [];
+        }
+    }
+
+    /// <summary>
     /// P3c.10 diagnostic: no network bodies, IDs, titles, TCP details,
     /// names, account keys or server names may escape via this string.
     /// A count of equal rosters is not a verified account identity.
