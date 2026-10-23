@@ -223,11 +223,17 @@ internal sealed class CharacterMetadataProbe(
             _ktaCharacterStudy?.ObserveEvents(events);
             _serverNameStudy?.ObserveEvents(events);
             _connectionSelectionStudy?.ObserveEvents(key, events);
-            if (_windowEvidence is not null)
-                ObserveConcurrentWindowEvidence(ip, tcp, events);
+            // Compute OS ownership while the Game socket is still live,
+            // but print each result only AFTER its corresponding ksb line.
+            // Otherwise an unrelated preceding ksc appears to have
+            // triggered WINDOW_ROSTER in the console transcript.
+            string?[]? windowReports = _windowEvidence is not null
+                ? ObserveConcurrentWindowEvidence(ip, tcp, events)
+                : null;
 
-            foreach (CharacterCaptureEvent entry in events)
+            for (int eventIndex = 0; eventIndex < events.Count; eventIndex++)
             {
+                CharacterCaptureEvent entry = events[eventIndex];
                 // P3m.5/6 show only session lifecycle + the two marker
                 // opcodes; never dump other messages or their contents.
                 if ((_serverRouteStudy is not null || _ktaScopeStudy is not null ||
@@ -337,6 +343,10 @@ internal sealed class CharacterMetadataProbe(
                     $"[{entry.ObservedAtUtc:HH:mm:ss.fff} UTC] " +
                     $"Session #{entry.SessionNumber} {direction} {detail}");
 
+                if (windowReports is not null &&
+                    windowReports[eventIndex] is { } windowReport)
+                    Console.WriteLine("WINDOW_ROSTER=[" + windowReport + "]");
+
                 if (entry.Kind is CharacterCaptureEventKind.Closed or
                     CharacterCaptureEventKind.Evicted)
                 {
@@ -356,24 +366,28 @@ internal sealed class CharacterMetadataProbe(
         }
     }
 
-    private void ObserveConcurrentWindowEvidence(
+    private string?[] ObserveConcurrentWindowEvidence(
         IPPacket ip, TcpPacket tcp, IReadOnlyList<CharacterCaptureEvent> events)
     {
+        // Indexed to the input event batch: a single captured TCP packet can
+        // yield several decoded messages and lifecycle events.
+        string?[] reports = new string?[events.Count];
         if (_windowEvidence is null || _concurrentRosterStudy is null ||
             ip.SourceAddress.AddressFamily != AddressFamily.InterNetwork ||
             ip.DestinationAddress.AddressFamily != AddressFamily.InterNetwork)
-            return;
+            return reports;
 
         TcpSocketTuple? socket = TcpSocketTuple.FromPacket(
             ip.SourceAddress, tcp.SourcePort,
             ip.DestinationAddress, tcp.DestinationPort, port);
         if (socket is null)
-            return;
+            return reports;
 
         lock (_windowEvidenceSync)
         {
-            foreach (CharacterCaptureEvent entry in events)
+            for (int eventIndex = 0; eventIndex < events.Count; eventIndex++)
             {
+                CharacterCaptureEvent entry = events[eventIndex];
                 if (entry.Kind == CharacterCaptureEventKind.Opened)
                 {
                     if (_sessionSockets.Count < MaxWindowStudySessions &&
@@ -429,11 +443,14 @@ internal sealed class CharacterMetadataProbe(
                     string status = _windowEvidence.ObserveLinked(
                         stage, entry.SessionNumber, socket.Value,
                         owners, windows);
-                    Console.WriteLine("WINDOW_ROSTER=[" + status + "]");
+                    // Never print the PID/HWND/tuple or an account ID.
+                    // Defer reporting until the corresponding ksb line.
+                    reports[eventIndex] = status;
                     break;
                 }
             }
         }
+        return reports;
     }
 
     public void Dispose()
