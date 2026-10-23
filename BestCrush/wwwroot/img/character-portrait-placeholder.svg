@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 160 192" role="img" aria-labelledby="title desc">
+  <title id="title">Portrait de personnage générique</title>
+  <desc id="desc">Silhouette fantasy à capuche sur fond vert sombre et doré</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#375c52"/>
+      <stop offset="0.53" stop-color="#24393d"/>
+      <stop offset="1" stop-color="#131f29"/>
+    </linearGradient>
+    <linearGradient id="hood" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#638474"/>
+      <stop offset="0.52" stop-color="#37554c"/>
+      <stop offset="1" stop-color="#1c3835"/>
+    </linearGradient>
+    <linearGradient id="cloak" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#536972"/>
+      <stop offset="1" stop-color="#192c3c"/>
+    </linearGradient>
+    <linearGradient id="face" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#eab78d"/>
+      <stop offset="1" stop-color="#a36c51"/>
+    </linearGradient>
+  </defs>
+  <rect width="160" height="192" fill="url(#bg)"/>
+  <g fill="none" stroke="#d2ba82" opacity=".16">
+    <circle cx="80" cy="83" r="63"/>
+    <path d="M0 150L160 30M0 183L160 63"/>
+    <path d="M80 15V172M17 83H143"/>
+  </g>
+  <path d="M3 192Q19 144 51 141L62 125H102L115 141Q146 146 157 192Z" fill="url(#cloak)"/>
+  <path d="M39 152L62 123H102L122 152L95 192H68Z" fill="#a17b49"/>
+  <path d="M74 128H89L99 159L81 181L62 159Z" fill="#203b3e"/>
+  <path d="M50 103Q38 80 46 51Q50 22 82 20Q115 19 120 55Q127 80 113 108L105 128Q82 142 61 128Z" fill="url(#hood)"/>
+  <path d="M59 83Q64 62 80 59Q102 61 107 83V109Q96 131 81 132Q66 129 58 109Z" fill="url(#face)"/>
+  <path d="M57 79Q74 53 84 55Q102 53 112 79L116 63Q108 28 81 28Q48 30 45 65Z" fill="#1a3335"/>
+  <path d="M55 76Q61 48 80 42Q105 44 112 77Q104 64 93 61Q72 57 55 76Z" fill="#2d4e45"/>
+  <path d="M64 92Q72 89 77 93M88 93Q96 89 102 92" stroke="#3a3534" stroke-width="3" stroke-linecap="round"/>
+  <path d="M79 100L75 113Q80 117 85 113" fill="none" stroke="#995b42" stroke-width="2"/>
+  <path d="M70 119Q81 126 92 119" fill="none" stroke="#804b3a" stroke-width="2" stroke-linecap="round"/>
+  <path d="M44 99Q43 123 59 139L69 123Q55 114 55 84Z" fill="#2d4d44"/>
+  <path d="M116 99Q116 121 103 139L92 123Q108 114 107 84Z" fill="#243f3b"/>
+  <path d="M51 144L25 165L17 192H51L70 162Z" fill="#273b4b"/>
+  <path d="M110 144L137 165L144 192H110L91 162Z" fill="#243a4a"/>
+  <path d="M53 153L67 163M107 153L93 163" stroke="#d8b574" stroke-width="3" opacity=".75"/>
+  <rect x="1.5" y="1.5" width="157" height="189" rx="4" fill="none" stroke="#d5b675" stroke-width="3" opacity=".65"/>
+</svg>
