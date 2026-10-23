@@ -75,6 +75,7 @@ public static class MauiProgram
             builder.Services.AddSingleton<BestCrush.Domain.Services.IBestCrushSettingsProvider>(serviceProvider => serviceProvider.GetRequiredService<BestCrush.Services.BestCrushSettingsService>());
             builder.Services.AddSingleton<FocusedEquipmentState>();
             builder.Services.AddSingleton<LastNetworkEquipmentState>();
+            builder.Services.AddSingleton<WindowScopedNetworkEquipmentState>();
             builder.Services.AddScoped<BestCrush.Services.DofusItemRecognitionService>();
             builder.Services.AddScoped<BestCrush.Services.DofusItemTooltipDetectionService>();
             builder.Services.AddScoped<MarketPriceService>();
