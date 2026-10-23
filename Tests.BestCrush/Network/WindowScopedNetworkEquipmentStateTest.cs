@@ -13,6 +13,54 @@ public sealed class WindowScopedNetworkEquipmentStateTest
         new("Draconiros", 5);
 
     [Fact]
+    public void AutomaticDifferentServersKeepEquipmentIsolatedByWindow()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        NetworkCaptureLease first =
+            new("Draconiros", 5, First, 31, 21);
+        NetworkCaptureLease second =
+            new("Kourial", 6, Second, 31, 22);
+
+        state.Remember(First, first, 31, 42, T0).Should().BeTrue();
+        state.Remember(Second, second, 31, 43, T0).Should().BeTrue();
+
+        state.Get(First, first, 31)!.ServerName.Should().Be("Draconiros");
+        state.Get(Second, second, 31)!.ServerName.Should().Be("Kourial");
+        state.Get(First, second, 31).Should().BeNull();
+        state.Get(Second, first, 31).Should().BeNull();
+
+        WindowEquipmentFocusToken oldA = state.GetFocusToken(First, first)!;
+        WindowEquipmentFocusToken oldB = state.GetFocusToken(Second, second)!;
+
+        NetworkCaptureLease reconnect = new(
+            "Tylezia", 7, First, 31, 23);
+        state.Remember(First, reconnect, 31, 44, T0)
+            .Should().BeTrue();
+
+        state.IsCurrent(oldA).Should().BeFalse();
+        state.IsCurrent(oldB).Should().BeTrue();
+        state.Get(Second, second, 31)!.DofusDbId.Should().Be(43);
+
+        state.RemoveMissingWindows([Second]);
+        state.GetFocusToken(First, reconnect).Should().BeNull();
+        state.IsCurrent(oldB).Should().BeTrue();
+    }
+
+    [Fact]
+    public void AutomaticEquipmentRejectsLeaseForWrongWindow()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        NetworkCaptureLease scoped = new(
+            "Draconiros", 5, First, 31, 21);
+
+        state.Remember(Second, scoped, 31, 43, T0)
+            .Should().BeFalse();
+        state.GetFocusToken(Second, scoped).Should().BeNull();
+        state.Remember(First, scoped, 32, 43, T0)
+            .Should().BeFalse();
+    }
+
+    [Fact]
     public void TwoWindowsCannotReplaceEachOthersLastEquipment()
     {
         WindowScopedNetworkEquipmentState state = new();
