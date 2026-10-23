@@ -1542,13 +1542,14 @@ private bool _hasF7VisibilitySnapshot;
             );
         }
 
-        bool overDofus =
-            IsPointInsideActiveDofusWindow(
+        // Require the actual top-level Dofus window under the pointer.
+        // The foreground window or the first Dofus window is never proof.
+        DofusWindowInfo? targetWindow = dofusWindowService
+            .GetDofusWindowAtScreenPoint(
                 mouseData.Point.X,
-                mouseData.Point.Y
-            );
+                mouseData.Point.Y);
 
-        if (!overDofus)
+        if (targetWindow is null)
         {
             return CallNextHookEx(
                 _mouseHook,
@@ -1563,12 +1564,29 @@ private bool _hasF7VisibilitySnapshot;
         {
             _middleButtonPressed = true;
 
-            // Aucun screenshot/OCR ici : le clic molette
-            // reprend uniquement le dernier équipement dont
-            // l'identité a été confirmée par le trafic réseau.
-            _ = Task.Run(
-                FocusLastNetworkEquipmentAsync
-            );
+            // An empty click also cancels a previous asynchronous focus.
+            long requestVersion = Interlocked.Increment(
+                ref _middleFocusRequestVersion);
+            NetworkCaptureLease? lease =
+                currentServerState.GetCaptureLease();
+
+            if (lease is { } selectedLease &&
+                _windowEquipmentState is { } windows)
+            {
+                DofusClientWindowKey target = new(
+                    targetWindow.Handle.ToInt64(), targetWindow.ProcessId);
+                WindowEquipmentFocusToken? token =
+                    windows.GetFocusToken(target, selectedLease);
+
+                // Fail closed: NEVER use the previous global equipment if
+                // the clicked Dofus window has no verified network item.
+                if (token is not null)
+                {
+                    _ = Task.Run(() =>
+                        FocusLastNetworkEquipmentAsync(
+                            token, requestVersion));
+                }
+            }
         }
 
         return CallNextHookEx(
@@ -1577,30 +1595,6 @@ private bool _hasF7VisibilitySnapshot;
             wParam,
             lParam
         );
-    }
-
-    private bool IsPointInsideActiveDofusWindow(
-        int x,
-        int y)
-    {
-        DofusWindowInfo? dofusWindow =
-            dofusWindowService
-                .GetActiveDofusWindow();
-
-        if (dofusWindow is null)
-        {
-            return false;
-        }
-
-        return
-            x >= dofusWindow.X &&
-            y >= dofusWindow.Y &&
-            x <
-                dofusWindow.X +
-                dofusWindow.Width &&
-            y <
-                dofusWindow.Y +
-                dofusWindow.Height;
     }
 
     private bool IsPointInsideMainOverlay(
