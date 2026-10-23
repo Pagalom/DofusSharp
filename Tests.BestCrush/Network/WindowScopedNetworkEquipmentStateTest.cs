@@ -266,6 +266,37 @@ public sealed class WindowScopedNetworkEquipmentStateTest
     }
 
     [Fact]
+    public void NewIdenticalObservationInvalidatesPendingFocusWithinSameCapture()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+        WindowEquipmentFocusToken old =
+            state.GetFocusToken(First, Draconiros)!;
+
+        state.Remember(First, Draconiros, 31, 42, T0);
+
+        state.IsCurrent(old).Should().BeFalse();
+        state.GetFocusToken(First, Draconiros)!.ObservationVersion
+            .Should().BeGreaterThan(old.ObservationVersion);
+    }
+
+    [Fact]
+    public void ClosedThenRecreatedSameWindowCannotReviveOldFocusToken()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+        WindowEquipmentFocusToken before =
+            state.GetFocusToken(First, Draconiros)!;
+
+        state.RemoveMissingWindows([]);
+        state.Remember(First, Draconiros, 31, 42, T0);
+
+        state.IsCurrent(before).Should().BeFalse();
+        state.GetFocusToken(First, Draconiros)!.ObservationVersion
+            .Should().BeGreaterThan(before.ObservationVersion);
+    }
+
+    [Fact]
     public void RecycledWindowKeyCannotReadPreviousClientsEquipment()
     {
         WindowScopedNetworkEquipmentState state = new();
