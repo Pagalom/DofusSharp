@@ -407,3 +407,53 @@ dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- -
 ```
 
 Index `6` à vérifier via `--list`. Refaire le même parcours **quatre phases**, arrêter chaque client entièrement avant Entrée. À communiquer : les lignes `ACCOUNT_WIRE`, `p3c4=phase` et `p3c4=summary`, sans corps réseau, noms ou identifiants.
+
+## Résultat terrain P3c.4b — quatre phases acceptées (23 octobre 2026)
+
+L'opérateur a rejoué le parcours **A-X → A-Y → B-Z → A-X** sur le même serveur manuel, chaque client Dofus étant fermé entre deux phases. Le comparateur `krg` corrigé pour tenir compte de deux messages successifs pendant le chargement a produit :
+
+| Phase | Session Game | Deux `krg` | Chemins numériques stables | Chemins supprimés |
+| --- | ---: | --- | ---: | ---: |
+| A-X | #2 | 828, 851 octets | 7 | 1 |
+| A-Y | #4 | 812, 808 octets | 7 | 0 |
+| B-Z | #6 | 812, 808 octets | 7 | 0 |
+| A-X (retour) | #8 | 828, 851 octets | 7 | 1 |
+
+**Sortie :** `p3c4=summary status=compared account-shaped-paths=[none] account=unverified server=unverified semantic=unverified`.
+
+**Conclusion bornée :** P3c.4b a traité correctement les quatre phases et les mises à jour `krg`. Aucun des **chemins numériques uniques et stables examinés dans `krg`** n'a le motif `A-X = A-Y = A-X2 ≠ B-Z`. Ce résultat **ne démontre pas** l'absence d'un identifiant de compte dans Dofus : les chaînes, enveloppes imbriquées ignorées, opcodes distincts et champs répétés n'ont pas été analysés comme identité. Ne pas chercher à forcer une égalité ni à traiter le contenu d'authentification.
+
+### P3c.5 — piste indépendante : groupes candidats de personnages dans ksc/ksb
+
+La famille `ksc` (S→C) contient une **liste candidate de personnages** (`f2.f3`) dans les essais P2f ; `ksb` contient le personnage chargé candidat (`f1.f1.f3`). Les deux familles ont été rapprochées dans une même session Game, sans authentification de leur sémantique.
+
+Le mode de diagnostic **strictement opt-in** `--account-roster-study` étudie la continuité de cette liste :
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --account-roster-study
+```
+
+L'index de Npcap `6` est **un exemple à vérifier avec `--list`**. Fermer toutes les fenêtres Dofus avant le début ; le programme affiche quatre phases :
+
+1. **A-X** : compte A, personnage X sur le serveur commun.
+2. **A-Y** : **même compte A**, autre personnage Y sur le même serveur.
+3. **B-Z** : compte B distinct sur **ce même serveur**, personnage Z.
+4. **A-X** : reconnexion du même personnage X initial.
+
+Une seule fenêtre Dofus par phase ; attendre `ksc` et `ksb`, **fermer totalement la fenêtre**, puis appuyer sur **Entrée** dans le probe. À la fin, partager uniquement les lignes `p3c5=` et `ROSTER_STUDY` anonymes. Ne jamais transmettre la saisie d'un nom, une valeur d'ID, un body/protobuf, un jeton ni un fichier de capture.
+
+Le diagnostic requiert :
+- un seul TCP Game ayant un `ksc` décodable et un `ksb` correspondant, tous deux S→C et **dans la même session** ;
+- un ensemble candidat `f3` constant entre A-X, A-Y et A-X2, distinct et sans recouvrement avec B-Z ;
+- X et Y numériquement distincts, mais X stable au retour ;
+- échec fermé lors d'une liste invalide ou contradictoire, d'une sélection absente du roster, d'un second TCP Game candidat, ou d'une phase manquante.
+
+**Si ce motif est observé :** `roster-group-candidate` signifie uniquement qu'une **liste de personnages candidate** peut servir de référence temporaire pendant cette étude, **pas qu'un identifiant de compte Ankama a été trouvé**. Des listes égales/différentes ne prouvent pas l'exclusivité du compte ni le serveur logique et ne permettent aucune alimentation des métiers en production à ce stade.
+
+Aucune connexion, identité, nom, hash ou liste n'est affiché ni persisté. La mémoire disparaît avec le probe. Aucun changement aux overlays, à F7/F8, à la molette, aux métiers en production, à SQLite ou aux fiches personnages. Cette piste complète la recherche d'un champ d'identité de compte, mais ne remplace pas une preuve indépendante.
+
+**Validation Windows requise :** dernier checkpoint confirmé 989 tests P3c.4 ; 6 tests P3c.4b publiés (validation non communiquée), puis 17 tests P3c.5 publiés : **1012 tests attendus**, sous réserve du build Windows et de la découverte des tests.
