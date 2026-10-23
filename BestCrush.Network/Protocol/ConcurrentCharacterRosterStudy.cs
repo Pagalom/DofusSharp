@@ -196,6 +196,18 @@ public sealed class ConcurrentCharacterRosterStudy
         }
     }
 
+    /// <summary>
+    /// Exposes only the anonymous TCP Game session ordinal of a fully linked
+    /// stage to a separate, opt-in OS-window study. No roster IDs, names or
+    /// ownership conclusions leave this component.
+    /// </summary>
+    public int? LinkedGameSession(int stage)
+    {
+        lock (_gate)
+            return stage is >= 0 and < StageCount && _stages[stage].Linked
+                ? _stages[stage].GameSession : null;
+    }
+
     public IReadOnlyList<string> Summarize()
     {
         lock (_gate)
