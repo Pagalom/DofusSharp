@@ -37,6 +37,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
     // P3c.10 activates anonymous diagnostics only on an explicit Debug opt-in.
     private readonly EphemeralCandidateRosterWireObserver? _rosterWireObserver;
     private readonly CurrentCandidateWindowCardsState? _candidateCardsState;
+    private readonly WindowServerAttributionState? _windowServerAttributionState;
     private readonly bool _liveRosterDiagnostics;
     private int _liveRosterReportCount;
     private const int MaximumLiveRosterReports = 128;
@@ -148,6 +149,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 .GetService<WindowScopedNetworkEquipmentState>();
             _candidateCardsState = scope.ServiceProvider
                 .GetService<CurrentCandidateWindowCardsState>();
+            _windowServerAttributionState = scope.ServiceProvider
+                .GetService<WindowServerAttributionState>();
         }
 #if DEBUG
         // No activation by production DI, settings, command-line argument,
@@ -331,6 +334,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             _clientBindings?.Reset(epoch);
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(epoch);
+            _windowServerAttributionState?.Reset(epoch);
             _candidateCardsState?.NotifyChanged();
             if (_liveRosterDiagnostics)
                 Interlocked.Exchange(ref _liveRosterReportCount, 0);
@@ -397,6 +401,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 _clientBindings?.Reset(stoppedEpoch);
                 _windowEquipmentState?.Clear();
                 _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
+                _windowServerAttributionState?.Reset(stoppedEpoch);
                 _candidateCardsState?.NotifyChanged();
 
                 logger.LogWarning(
@@ -419,6 +424,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             _clientBindings?.Reset(stoppedEpoch);
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
+            _windowServerAttributionState?.Reset(stoppedEpoch);
             _candidateCardsState?.NotifyChanged();
 
             // Do not complete the shared channel or cancel the worker here:
@@ -484,6 +490,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
         long replayEpoch = Interlocked.Increment(ref _captureEpoch);
         _windowEquipmentState?.Clear();
         _rosterWireObserver?.OnCaptureEpochChanged(replayEpoch);
+        _windowServerAttributionState?.Reset(replayEpoch);
         _candidateCardsState?.NotifyChanged();
         _started = true;
     }
@@ -502,6 +509,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             long replayEpoch = Interlocked.Increment(ref _captureEpoch);
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(replayEpoch);
+            _windowServerAttributionState?.Reset(replayEpoch);
             _candidateCardsState?.NotifyChanged();
             _started = true;
         }
@@ -627,11 +635,12 @@ public sealed class DofusNetworkCaptureService : IDisposable
             if (tcp.PayloadData.Length == 0)
                 return;
 
-            NetworkCaptureLease? lease =
-                _currentServerState.GetCaptureLease();
-
-            if (lease is null)
-                return;
+            // Discovery can parse Connection selections before any legacy
+            // global server is chosen. The discovery lease is NEVER an
+            // active persistence authorization in CurrentServerState.
+            NetworkCaptureLease lease =
+                _currentServerState.GetCaptureLease() ??
+                new NetworkCaptureLease("__server-discovery-only__", 1);
 
             TcpFlowKey flow =
                 new(
@@ -646,16 +655,13 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
             lock (_streamLock)
             {
-                if (!_currentServerState.IsCaptureLeaseActive(lease.Value))
-                    return;
-
                 // Control-packet invalidation was handled above.
                 DateTime now = DateTime.UtcNow;
                 connectionId = _connectionScopes.GetOrCreate(
-                    connection, lease.Value, now, () => ++_nextConnectionId);
+                    connection, lease, now, () => ++_nextConnectionId);
 
                 stream = _streams.GetOrCreate(
-                    flow, lease.Value, now,
+                    flow, lease, now,
                     static () => new TcpReassembler());
             }
 
@@ -700,7 +706,25 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                         frame);
 
                                 if (any is null)
+                                {
+                                    // Connection traffic has no Ankama Any.
+                                    // A selection alone never proves the
+                                    // loaded server; the same-window Game
+                                    // ksc/ksb must also complete.
+                                    if (tcp.DestinationPort == DofusPort &&
+                                        candidateWindow is { } selectedWindow &&
+                                        _windowServerAttributionState is not null &&
+                                        ConnectionServerSelectionStudy
+                                            .TryGetSelectedServerCandidate(
+                                                frame, out int selectedServerId))
+                                    {
+                                        _windowServerAttributionState.ObserveSelection(
+                                            selectedWindow, captureEpoch,
+                                            connectionId, selectedServerId,
+                                            DateTime.UtcNow);
+                                    }
                                     continue;
+                                }
 
                                 string direction =
                                     tcp.SourcePort == DofusPort
@@ -845,6 +869,22 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                  message.CaptureEpoch, message.ConnectionId, client)))
                         {
                             routed = message with { CandidateWindow = null };
+                        }
+
+                        // Independent from the global server lease. Only a
+                        // uniquely revalidated TCP/HWND owner and same-flow
+                        // ksc+ksb can publish a window-scoped server.
+                        if (_windowServerAttributionState is not null)
+                        {
+                            bool windowOwnerValid =
+                                routed.CandidateWindow is not null &&
+                                (routed.SyntheticWindowForReplay ||
+                                 (_clientBindings?.IsCurrentConnection(
+                                     routed.CaptureEpoch,
+                                     routed.ConnectionId,
+                                     routed.CandidateWindow.Value) == true));
+                            _windowServerAttributionState.ObserveGame(
+                                routed, windowOwnerValid);
                         }
 
                         await _messageProcessor
