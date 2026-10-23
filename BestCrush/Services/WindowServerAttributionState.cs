@@ -41,9 +41,57 @@ public sealed record WindowServerAttribution(int ServerId, string ServerName)
     public override string ToString() => "[window server attribution: redacted window]";
 }
 
-public sealed class WindowServerAttributionState
+/// <summary>
+/// Counts only anonymous capture outcomes. No endpoints, process IDs,
+/// account identifiers, character names or server IDs are included.
+/// </summary>
+public sealed record ServerLinkDiagnostics(
+    int SelectionFrames,
+    int SelectionWithOwner,
+    int SelectionWithoutOwner,
+    int GameWithSelection,
+    int GameWithoutSelection,
+    int Confirmed);
+
+public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false)
 {
     private const int MaximumWindows = 16;
+
+    public bool DiagnosticsEnabled { get; } = diagnosticsEnabled;
+    private int _selectionFrames;
+    private int _selectionWithOwner;
+    private int _selectionWithoutOwner;
+    private int _gameWithSelection;
+    private int _gameWithoutSelection;
+    private int _confirmed;
+
+    public ServerLinkDiagnostics ReadDiagnostics()
+    {
+        lock (_sync)
+            return new ServerLinkDiagnostics(
+                _selectionFrames, _selectionWithOwner,
+                _selectionWithoutOwner, _gameWithSelection,
+                _gameWithoutSelection, _confirmed);
+    }
+
+    /// <summary>
+    /// A structurally decoded server selection was seen in a Connection
+    /// frame. This counter cannot itself authorize any server attribution.
+    /// </summary>
+    internal void RecordSelectionFrame(long epoch, bool exactOwnerLinked)
+    {
+        lock (_sync)
+        {
+            if (epoch != _epoch)
+                return;
+            _selectionFrames++;
+            if (exactOwnerLinked)
+                _selectionWithOwner++;
+            else
+                _selectionWithoutOwner++;
+        }
+        if (DiagnosticsEnabled) Changed?.Invoke();
+    }
     private const int MaximumPendingGameFlows = 64;
     private static readonly TimeSpan SelectionLifetime = TimeSpan.FromMinutes(2);
 
@@ -147,8 +195,14 @@ public sealed class WindowServerAttributionState
             _games.Clear();
             _closedWindows.Clear();
             _seenCharacterTitle.Clear();
+            _selectionFrames = 0;
+            _selectionWithOwner = 0;
+            _selectionWithoutOwner = 0;
+            _gameWithSelection = 0;
+            _gameWithoutSelection = 0;
+            _confirmed = 0;
         }
-        if (changed) Changed?.Invoke();
+        if (changed || DiagnosticsEnabled) Changed?.Invoke();
     }
 
     /// <summary>
@@ -244,6 +298,10 @@ public sealed class WindowServerAttributionState
                             recent[0].ConnectionId != message.ConnectionId)
                             eligible = recent[0];
                     }
+                    if (eligible is null)
+                        _gameWithoutSelection++;
+                    else
+                        _gameWithSelection++;
                     _games.Add(message.ConnectionId, new Game(window, roster, eligible));
                 }
             }
@@ -260,6 +318,7 @@ public sealed class WindowServerAttributionState
                     new WindowServerAttribution(selection.Id, serverName),
                     message.CaptureEpoch, message.ConnectionId,
                     ++_nextGeneration, selected.Candidates[0].Level);
+                _confirmed++;
                 changed = true;
             }
             else
@@ -267,7 +326,7 @@ public sealed class WindowServerAttributionState
                 changed = _loaded.Remove(window);
             }
         }
-        if (changed) Changed?.Invoke();
+        if (changed || DiagnosticsEnabled) Changed?.Invoke();
     }
 
     /// <summary>
