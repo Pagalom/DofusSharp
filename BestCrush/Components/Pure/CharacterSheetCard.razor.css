@@ -1,0 +1,282 @@
+.character-sheet {
+    --sheet-bg: #222e34;
+    --sheet-panel: #2b3a3e;
+    --sheet-panel-deep: #1d292f;
+    --sheet-gold: #e4c27a;
+    --sheet-text: #f5f1e8;
+    --sheet-muted: #b9c4c2;
+    width: min(100%, 610px);
+    min-width: 0;
+    background: var(--sheet-bg);
+    color: var(--sheet-text);
+    border: 1px solid #a79a7e;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 10px 25px rgba(16, 28, 31, .13);
+}
+
+.sheet-header {
+    display: flex;
+    align-items: center;
+    min-height: 152px;
+    padding: 16px 20px;
+    gap: 18px;
+    background: linear-gradient(112deg, #334c4b, #283840 62%, #242e3b);
+    border-bottom: 1px solid #647a72;
+}
+
+.sheet-portrait {
+    position: relative;
+    flex: 0 0 104px;
+    height: 126px;
+    border-radius: 8px;
+    overflow: hidden;
+    border: 2px solid #c8ad6f;
+    box-shadow: 0 0 0 3px rgba(12, 28, 26, .25);
+    background: #193936;
+}
+
+.sheet-portrait img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.sheet-portrait-class {
+    position: absolute;
+    bottom: 4px;
+    right: 5px;
+    width: 24px;
+    height: 24px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid #dfc581;
+    background: #1e3536;
+    color: #f2deb5;
+    font-size: .8rem;
+    font-weight: 800;
+}
+
+.sheet-headline { min-width: 0; }
+
+.sheet-name {
+    margin: 0 0 9px;
+    color: #fff;
+    font-size: clamp(1.25rem, 2.3vw, 1.75rem);
+    font-weight: 800;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+}
+
+.sheet-character-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 9px;
+    font-size: .77rem;
+    font-weight: 750;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+}
+
+.sheet-level { color: var(--sheet-gold); }
+.sheet-class { color: #e1ebe7; }
+.sheet-meta-separator { width: 4px; height: 4px; border-radius: 50%; background: #93aaa2; }
+
+.sheet-origin {
+    margin: 10px 0 0;
+    color: #b8cbc3;
+    font-size: .75rem;
+}
+
+.sheet-body { padding: 16px 18px 10px; }
+
+.sheet-wallets {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+}
+
+.sheet-wallet {
+    min-width: 0;
+    min-height: 80px;
+    border-radius: 9px;
+    padding: 12px 14px;
+    border: 1px solid #51605d;
+    background: linear-gradient(140deg, #31423f, #293739);
+}
+
+.sheet-wallet-caption {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: #d2d8d0;
+    font-size: .78rem;
+    margin-bottom: 7px;
+}
+
+.sheet-wallet-caption img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+}
+
+.sheet-wallet-bank {
+    display: grid;
+    place-items: center;
+    width: 22px;
+    height: 22px;
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: #d8bb78;
+}
+
+.sheet-wallet-amount {
+    display: block;
+    color: var(--sheet-gold);
+    font-size: 1.1rem;
+    font-weight: 800;
+    overflow-wrap: anywhere;
+}
+
+.sheet-section-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 12px;
+    color: #f3e6c8;
+    font-size: .99rem;
+    font-weight: 750;
+}
+
+.sheet-section-title span { color: var(--sheet-gold); }
+
+.sheet-job-list { display: grid; gap: 7px; }
+
+.sheet-job {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: linear-gradient(100deg, #354649 0%, #2b3b40 100%);
+    border: 1px solid #465758;
+}
+
+.sheet-job-icon {
+    display: grid;
+    place-items: center;
+    flex: 0 0 40px;
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    font-size: 1.3rem;
+    background: #243f3d;
+    border: 1px solid #6e826c;
+}
+
+.sheet-job-content { min-width: 0; flex: 1; }
+
+.sheet-job-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 7px;
+}
+
+.sheet-job-name {
+    font-size: .88rem;
+    color: #fff;
+    overflow-wrap: anywhere;
+}
+
+.sheet-job-level {
+    flex: 0 0 auto;
+    font-size: .75rem;
+    font-weight: 750;
+    color: #e8d393;
+}
+
+.sheet-job-track {
+    position: relative;
+    width: 100%;
+    height: 9px;
+    overflow: hidden;
+    border-radius: 8px;
+    background: #152429;
+    border: 1px solid #192729;
+}
+
+.sheet-job-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: linear-gradient(90deg, #7ca754 0%, #c7d36b 75%, #f1d87d);
+    box-shadow: 0 0 7px rgba(185, 215, 113, .3);
+}
+
+.sheet-job-track--unknown {
+    background: repeating-linear-gradient(
+        -45deg, #1b2b31 0, #1b2b31 6px, #27363c 6px, #27363c 12px);
+}
+
+.sheet-job-xp {
+    margin-top: 5px;
+    font-size: .68rem;
+    color: #bacac5;
+    font-variant-numeric: tabular-nums;
+}
+
+.sheet-empty-jobs {
+    display: flex;
+    gap: 11px;
+    align-items: center;
+    padding: 12px 13px;
+    background: #2b393c;
+    border: 1px dashed #64736d;
+    border-radius: 8px;
+    color: #d2d6d0;
+    font-size: .83rem;
+}
+
+.sheet-empty-jobs-symbol { font-size: 1.4rem; color: #dcc079; }
+
+.sheet-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    padding: 11px 18px 15px;
+    border-top: 1px solid #455555;
+}
+
+.sheet-footnote { max-width: 380px; color: #afbfba; font-size: .7rem; }
+
+.sheet-target {
+    flex: 0 0 auto;
+    border-radius: 7px;
+    border: 1px solid #cfb173;
+    background: #dbc188;
+    padding: 7px 13px;
+    font-size: .79rem;
+    font-weight: 700;
+    color: #263430;
+    cursor: pointer;
+}
+
+.sheet-target:hover:not(:disabled) { background: #f1dcaa; }
+.sheet-target:focus-visible { outline: 3px solid #e6d6a8; outline-offset: 3px; }
+.sheet-target--selected { background: #3a4c48; color: #e6d6b6; cursor: default; }
+
+@media (max-width: 500px) {
+    .sheet-header { padding: 12px; gap: 13px; }
+    .sheet-portrait { flex-basis: 80px; height: 104px; }
+    .sheet-body { padding: 12px 12px 8px; }
+    .sheet-wallet { padding: 10px; }
+    .sheet-footer { padding: 10px 12px 12px; flex-wrap: wrap; }
+    .sheet-footnote { max-width: none; }
+}
