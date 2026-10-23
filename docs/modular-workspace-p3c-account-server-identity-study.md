@@ -314,3 +314,21 @@ Aucune sortie de niveau, XP, identifiant de métier, nom, hash ou payload ; seul
 Si A2 diffère encore d'A1, le statut de l'expérience sera **anomalie de continuité observée, cause inconnue** jusqu'à examen de preuves de sélection de personnage et de connexion. Le statut `account=unverified server=unverified` reste obligatoire.
 
 **Tests :** 5 tests additionnels couvrent A-B-B, A-B-A, trames invalides intermédiaires, changement du set `f5` et non-divulgation. Après les 959 tests P3m.19 et les 12 tests P3c.2 en attente de confirmation Windows, total prévisionnel = **976 tests** (sous réserve de compilation/découverte des tests).
+
+## Résultat terrain P3c.3b — continuité retrouvée (23 octobre 2026)
+
+Le diagnostic amélioré avec comparaison à la **précédente capture valide** a été rejoué par l'opérateur dans l'ordre déclaré **A1 → B → A2** (même personnage du compte A au début et à la fin, comptes distincts A et B sur le même serveur) :
+
+| Phase | Session | Taille `ipz` | vs A1 : `f5` / niveaux / XP | vs précédente : `f5` / niveaux / XP |
+| --- | ---: | ---: | --- | --- |
+| A1 | #2 | 174 | référence créée | référence créée |
+| B | #4 | 213 | yes / no / no | yes / no / no |
+| A2 | #6 | 174 | yes / yes / yes | yes / no / no |
+
+Les trois `ipz` ont été décodés, avec 20 lignes et un champ candidat `f5` unique par ligne. Les niveaux/XP sont **identiques entre A1 et A2**, tandis que B diffère des deux. Les `f5` candidats restent identiques en tant qu'ensemble, ce qui est compatible avec une table de référence des métiers partagée, mais **ne démontre pas leur sémantique officielle**.
+
+**Conclusion bornée :** le retour à A restaure exactement le même **snapshot de progression de métiers** mesuré par `ipz` malgré une connexion du second compte entre les deux. Le précédent essai où A2 différait d'A1 n'est pas reproduit ici ; sa cause n'est pas identifiée. Aucun champ identifiant de compte n'a été validé par ces comparaisons : **account=unverified, server=unverified** restent obligatoires dans le protocole.
+
+P3c doit maintenant comparer une source potentiellement liée au compte qui soit **indépendante** de la progression `ipz` et de l'identifiant candidat de personnage `ksc/ksb`, avec au moins deux personnages différents sur un même compte et un second compte sur le même serveur. Les résultats de professions ne peuvent pas servir de preuve de compte.
+
+**Checkpoint de tests :** P3m.19 a été confirmé à 959/959. P3c.2 a ajouté 12 cas et P3c.3 5 cas ; **976 attendus**, mais le résultat Windows n'a pas encore été transmis.
