@@ -152,14 +152,21 @@ internal sealed class EphemeralCandidateRosterWireObserver(
         lock (_gate)
         {
             var live = liveWindows.ToHashSet();
+            // Revoke linked entries first so the workspace can quarantine
+            // closed HWND/PID keys, then quarantine pending-only windows too.
+            state.RemoveMissingWindows(liveWindows);
             foreach (var pair in _pending.ToArray())
                 if (!live.Contains(pair.Value.Window))
+                {
+                    state.QuarantineWindow(pair.Value.Window);
                     Reject(pair.Key);
+                }
             foreach (var pair in _linked.ToArray())
                 if (!live.Contains(pair.Value.Window))
+                {
+                    state.QuarantineWindow(pair.Value.Window);
                     Reject(pair.Key);
-
-            state.RemoveMissingWindows(liveWindows);
+                }
         }
     }
 
