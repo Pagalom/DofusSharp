@@ -790,8 +790,12 @@ public sealed class DofusNetworkCaptureService : IDisposable
                         _currentServerState.IsCaptureLeaseActive(liveLease))
                         _windowEquipmentState?.Reconcile(
                             liveLease, captureEpoch, _clientWindows);
-                    _rosterWireObserver?.ReconcileWindows(_clientWindows);
-                    _candidateCardsState?.NotifyChanged();
+                    // Notify the UI only if the set of candidate cards
+                    // actually changed; do not redraw on every OS scan.
+                    if (_liveRosterDiagnostics && _candidateCardsState is not null)
+                        _candidateCardsState.RemoveMissingWindows(_clientWindows);
+                    else
+                        _rosterWireObserver?.ReconcileWindows(_clientWindows);
                 }
 
                 if (_started && captureEpoch == Interlocked.Read(ref _captureEpoch) &&
