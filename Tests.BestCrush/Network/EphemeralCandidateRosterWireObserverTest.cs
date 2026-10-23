@@ -256,6 +256,36 @@ public sealed class EphemeralCandidateRosterWireObserverTest
     }
 
     [Fact]
+    public void ClosedWindowKeyCannotBeReusedWithNewTcpConnectionInSameCapture()
+    {
+        var (observer, state, server) = Create();
+        Link(observer, server, A, 11, 101, "Sable-Ciel", (101, "Sable-Ciel"));
+        observer.ReconcileWindows([]);
+
+        observer.Observe(Wire(server, "ksc",
+            Ksc((101, "Sable-Ciel")), A, 12), true)
+            .Should().Be(EphemeralCandidateRosterWireObserver.Result.Pending);
+        observer.Observe(Wire(server, "ksb",
+            Ksb(101, "Sable-Ciel"), A, 12), true)
+            .Should().Be(EphemeralCandidateRosterWireObserver.Result.Rejected);
+        state.LiveWindowCount.Should().Be(0);
+    }
+
+    [Fact]
+    public void SameCaptureEpochNotificationDoesNotLosePendingRoster()
+    {
+        var (observer, state, server) = Create();
+        observer.Observe(Wire(server, "ksc",
+            Ksc((101, "Sable-Ciel")), A, 11), true)
+            .Should().Be(EphemeralCandidateRosterWireObserver.Result.Pending);
+        observer.OnCaptureEpochChanged(1);
+        observer.Observe(Wire(server, "ksb",
+            Ksb(101, "Sable-Ciel"), A, 11), true)
+            .Should().Be(EphemeralCandidateRosterWireObserver.Result.Linked);
+        state.LiveWindowCount.Should().Be(1);
+    }
+
+    [Fact]
     public void WireAdapterNeverLogsSensitiveValuesOrVerifiesAccount()
     {
         var (observer, state, server) = Create();
