@@ -109,6 +109,50 @@ public sealed class DofusClientWindowSelectionTest
     }
 
     [Fact]
+    public void PointerTargetUsesActualTopLevelWindowNotForegroundOrListOrder()
+    {
+        DofusWindowInfo a = Window(101, 1001, "A");
+        DofusWindowInfo b = Window(102, 1002, "B");
+        DofusWindowService.ResolvePointerTarget([a, b], new IntPtr(102),
+            100, 100)!.ProcessId.Should().Be(1002);
+        DofusWindowService.ResolvePointerTarget([b, a], new IntPtr(101),
+            100, 100)!.ProcessId.Should().Be(1001);
+    }
+
+    [Fact]
+    public void PointerWithoutOsHitProofNeverChoosesFallbackWindow()
+    {
+        DofusWindowInfo a = Window(101, 1001, "A");
+        DofusWindowService.ResolvePointerTarget([a], IntPtr.Zero,
+            10, 10).Should().BeNull();
+        DofusWindowService.ResolvePointerTarget([a], new IntPtr(888),
+            10, 10).Should().BeNull();
+    }
+
+    [Fact]
+    public void PointerOutsideWindowCannotTargetItsEquipment()
+    {
+        DofusWindowInfo a = Window(101, 1001, "A");
+        DofusWindowService.ResolvePointerTarget([a], new IntPtr(101),
+            -1, 1).Should().BeNull();
+        DofusWindowService.ResolvePointerTarget([a], new IntPtr(101),
+            799, 599).Should().NotBeNull();
+        DofusWindowService.ResolvePointerTarget([a], new IntPtr(101),
+            800, 600).Should().BeNull();
+    }
+
+    [Fact]
+    public void InvalidPidOrDuplicateHandleFailClosedForPointerTarget()
+    {
+        DofusWindowInfo a = Window(101, 1001, "A");
+        DofusWindowInfo invalidPid = Window(101, 0, "No owner");
+        DofusWindowService.ResolvePointerTarget([invalidPid],
+            new IntPtr(101), 10, 10).Should().BeNull();
+        DofusWindowService.ResolvePointerTarget([a, a],
+            new IntPtr(101), 10, 10).Should().BeNull();
+    }
+
+    [Fact]
     public void NewBestCrushProcessStartsWithNoClientOrSelection()
     {
         CurrentDofusClientsState state = new();
