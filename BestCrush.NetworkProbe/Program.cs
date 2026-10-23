@@ -363,9 +363,31 @@ if (options.WindowServerLink || options.WindowServerEtw)
     }
     catch (Exception ex) when (options.WindowServerEtw)
     {
-        Console.Error.WriteLine("p3m14=start-failed reason=" +
-            ex.GetType().Name +
-            " hint=run-elevated-check-ETW-session-conflict");
+        // The previous generic hint could not distinguish Windows elevation,
+        // ETW provider activation and an unrelated Npcap startup failure.
+        // Print only safe diagnostics: stage, exception type, HRESULT and
+        // whether this process actually has an elevated administrator token.
+        Exception cause = ex is WindowTcpEtwStartException etwFailure
+            ? etwFailure.InnerException ?? ex
+            : ex;
+        string stage = ex is WindowTcpEtwStartException failure
+            ? failure.Stage
+            : "capture-or-other";
+        string elevated = "unknown";
+        try
+        {
+            using var identity = System.Security.Principal.WindowsIdentity.GetCurrent();
+            elevated = new System.Security.Principal.WindowsPrincipal(identity)
+                .IsInRole(System.Security.Principal.WindowsBuiltInRole.Administrator)
+                ? "yes" : "no";
+        }
+        catch { /* Privilege inspection is diagnostic only. */ }
+
+        Console.Error.WriteLine("p3m14=start-failed stage=" + stage +
+            " reason=" + cause.GetType().Name +
+            " hresult=0x" + cause.HResult.ToString("X8") +
+            " elevated=" + elevated +
+            " account=unverified server=unverified");
         return;
     }
     Console.WriteLine(options.WindowServerEtw
