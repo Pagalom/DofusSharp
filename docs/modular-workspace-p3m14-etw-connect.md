@@ -63,7 +63,7 @@ p3m14=start-failed stage=... reason=... hresult=0x... elevated=yes|no|unknown ac
 
 **P3m.14a — diagnostic d'accès ETW (23/10/2026).** La compilation Windows et les **918 tests** ont réussi (deux avertissements laissés de côté). En revanche, le démarrage ETW échoue avec `UnauthorizedAccessException`, y compris après validation d'un contrôle UAC. La cause exacte n'est **pas encore identifiée** ; il serait prématuré de changer de provider ou d'arrêter une autre session ETW. Le journal de démarrage indique désormais l'étape précise (`session-construction`, `kernel-provider-enablement`, `event-source-acquisition`, `callback-registration`, `event-processing-start` ou `capture-or-other`), le HRESULT de l'exception d'origine, et les droits administrateur du **processus effectif**. Ces champs ne contiennent aucun identifiant réseau ou personnel.
 
-Si l'échec persiste, transmettre **uniquement** cette nouvelle ligne `p3m14=start-failed` après `git fetch` et `git merge --ff-only FETCH_HEAD`. Les 918 tests ne valident pas encore le mode ETW réel.
+L'échec initial a ensuite été caractérisé par `stage=kernel-provider-enablement reason=UnauthorizedAccessException hresult=0x80070005 elevated=no`. En utilisant un processus réellement élevé, le mode ETW a démarré et achevé deux captures. Les 918 tests constituent la validation Windows antérieure à ce résultat, sans démontrer à eux seuls le comportement ETW.
 
 **Aucun PID, UUID, port local, IP ni nom de compte n'est affiché**, même en cas d'échec.
 
@@ -94,12 +94,30 @@ dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- -
 4. Laisser les deux fenêtres ouvertes, attendre que le chargement soit fini et appuyer sur Ctrl+C dans PowerShell.
 5. Communiquer les lignes \`p3m13=...\`, \`p3m14=...\` et les résultats \`dotnet test\`, sans aucune capture brute ni identifiant privé.
 
+## Résultats Windows réels — 23/10/2026
+
+**Capture initiale à deux clients (sans reconnexion)** : `flows=4`, `windows-linked=2`, `loaded-pairs=2`, `owner-missing=0`, `conflicts=0`. ETW : `exact-tuples=4`, `events-indexed=4`, `tcp-connect-events=45`, `port-connect-events=4`, `rejected=0`, `ready=yes`, `processing-stopped=yes`.
+
+**Capture de reconnexion sans fermeture du client** : Kourial `connection-session=1 → game-session=2` en fenêtre 1 ; Draconiros `connection-session=3 → game-session=4` puis `connection-session=5 → game-session=6` en fenêtre 2.
+
+```text
+p3m13=window window-index=2 connection-selections=2 game-attempts=2 linked=2 loaded=2 references-matched=2 status=linked-candidate reason=none account=unverified server=unverified
+p3m13=summary flows=6 windows-linked=2 windows-ready=2 loaded-pairs=3 references-matched=3 owner-missing=0 window-missing=0 conflicts=0 overflow=no status=two-window-links-candidate account=unverified server=unverified
+p3m14=matches exact-tuples=6 events-indexed=6 index-overflow=no meaning=exact-tuple-and-timestamp-only account=unverified server=unverified
+p3m14=etw ready=yes processing-stopped=yes tcp-connect-events=37 port-connect-events=6 rejected=0 provider=kernel-tcpip-connect account=unverified server=unverified
+```
+
+**Interprétation limitée :** dans le scénario observé, la seconde sélection Draconiros (#5) et son nouveau Game (#6) sont tous deux liés à la fenêtre Draconiros, sans manque de propriétaire. L'index ETW a rapproché 6/6 quadruplets exacts. Ce résultat ne prouve pas qu'ETW est la **seule** source de propriétaire, puisque l'interrogation directe de la table TCP est également active ; `owner-polling samples=0` se rapporte seulement au sondage asynchrone de 25 ms. Le serveur affiché provient d'une correspondance avec une référence communautaire, non d'une identité de serveur officiellement attestée. Il n'y a aucune preuve d'identité de compte ni validation du routage métier de production.
+
+Le défaut de diagnostic antérieur `owner-missing=1` est **non reproduit dans ce test ETW**, et le lien expérimental de reconnexion est observé ; cela ne constitue pas une garantie globale de fiabilité en conditions de concurrence, de perte d'événements ou de réutilisation de tuples.
+
 ## État des validations et conditions de suite
 
 - **Confirmé avant P3m.14 :** premier test multicomptes Draconiros/Kourial \`two-window-links-candidate\`.
 - **Confirmé avant P3m.14 :** sur reconnexion, sélection #5 Draconiros sans PID, Game #6 dans la bonne fenêtre, \`owner-missing=1\`.
-- **Checkpoint Windows récent :** 918 tests réussis, 0 échec, le 23/10/2026 avec 2 avertissements ; ETW n'a pas encore démarré en conditions réelles. Le correctif de diagnostic P3m.14a nécessite une nouvelle compilation.
+- **Checkpoint Windows communiqué :** 918 tests réussis, 0 échec, avec 2 avertissements. Les captures ETW ci-dessous ont ensuite fonctionné sur Windows ; aucun nouveau décompte de tests après la modification de diagnostic P3m.14a n'a été communiqué.
 - **Tests synthétiques :** index ETW exact, isolation des tuples, horodatage, délai ETW, refus des conflits PID/génération, débordement, intégration avec propriétaire unique et quarantaine ; pas de test ETW réel sans Windows.
-- **À confirmer :** présence effective des événements \`TcpIpConnect\` sur le Windows utilisateur, droits ETW, livraison des événements à temps, correspondance du PID et de la fenêtre, comportement lors d'une reconnexion.
+- **Confirmé expérimentalement :** le fournisseur `TcpIpConnect` délivre les événements, le processus élevé peut démarrer ETW, et les six tuples du scénario avec reconnexion sont correspondants ETW ↔ Npcap sans propriétaire manquant.
+- **À confirmer avant production :** reproductibilité sur davantage de scénarios, comportement lors des collisions, attribution au-delà d'une simple preuve candidate de serveur, isolement des caches de décodage métier par flux, séparation entre sessions et cycles de fenêtres. Le mode ETW demeure opt-in et diagnostique.
 
 Aucun changement des données métier ou des portraits multi-comptes BestCrush. **Le serveur choisi manuellement reste autoritaire, sans obligation de validation réseau.** Aucune déduction de serveur en production tant que le lien réel n'est pas suffisamment fiable.
