@@ -30,6 +30,10 @@ internal sealed class WindowScopedNetworkEquipmentState
     private long _nextWindowVersion;
     private NetworkCaptureLease? _lease;
     private long _captureEpoch = -1;
+    // Auto mode stores a different current Game lease per window.
+    // A global lease must not evict equipment from another game server.
+    private readonly Dictionary<DofusClientWindowKey,
+        (NetworkCaptureLease Lease, long Epoch)> _automaticScopes = [];
 
     /// <summary>
     /// Records a per-window equipment observation. Caller must independently
@@ -50,13 +54,27 @@ internal sealed class WindowScopedNetworkEquipmentState
 
         lock (_sync)
         {
-            if (!TransitionTo(lease, captureEpoch))
+            if (lease.Window is { } leaseWindow)
+            {
+                if (leaseWindow != window ||
+                    lease.CaptureEpoch != captureEpoch ||
+                    lease.ConnectionId <= 0)
+                    return false;
+                if (_automaticScopes.TryGetValue(window, out var prior) &&
+                    (captureEpoch < prior.Epoch ||
+                     (captureEpoch == prior.Epoch &&
+                      lease.Generation < prior.Lease.Generation)))
+                    return false;
+            }
+            else if (!TransitionTo(lease, captureEpoch))
                 return false;
 
             if (!_byWindow.ContainsKey(window) &&
                 _byWindow.Count >= MaximumClients)
                 return false;
 
+            if (lease.Window is not null)
+                _automaticScopes[window] = (lease, captureEpoch);
             _byWindow[window] = new LastNetworkEquipmentSnapshot(
                 equipmentId, lease.ServerName, observedAtUtc);
             _windowVersions[window] = ++_nextWindowVersion;
@@ -74,8 +92,10 @@ internal sealed class WindowScopedNetworkEquipmentState
         long captureEpoch)
     {
         lock (_sync)
-            return _captureEpoch == captureEpoch &&
-                _lease == lease &&
+            return (lease.Window is not null
+                    ? _automaticScopes.TryGetValue(window, out var scope) &&
+                      scope.Lease == lease && scope.Epoch == captureEpoch
+                    : _captureEpoch == captureEpoch && _lease == lease) &&
                 _byWindow.TryGetValue(window, out var snapshot)
                     ? snapshot : null;
     }
@@ -92,11 +112,25 @@ internal sealed class WindowScopedNetworkEquipmentState
 
         lock (_sync)
         {
-            return _lease == lease && _captureEpoch >= 0 &&
-                _byWindow.TryGetValue(window, out var equipment) &&
+            long epoch;
+            if (lease.Window is not null)
+            {
+                if (!_automaticScopes.TryGetValue(window, out var auto) ||
+                    auto.Lease != lease)
+                    return null;
+                epoch = auto.Epoch;
+            }
+            else
+            {
+                if (_lease != lease || _captureEpoch < 0)
+                    return null;
+                epoch = _captureEpoch;
+            }
+
+            return _byWindow.TryGetValue(window, out var equipment) &&
                 _windowVersions.TryGetValue(window, out long version)
                 ? new WindowEquipmentFocusToken(
-                    window, lease, _captureEpoch, equipment, version)
+                    window, lease, epoch, equipment, version)
                 : null;
         }
     }
@@ -112,8 +146,12 @@ internal sealed class WindowScopedNetworkEquipmentState
 
         lock (_sync)
         {
-            return _lease == token.Lease &&
-                _captureEpoch == token.CaptureEpoch &&
+            return (token.Lease.Window is not null
+                    ? _automaticScopes.TryGetValue(token.Window, out var auto) &&
+                      auto.Lease == token.Lease &&
+                      auto.Epoch == token.CaptureEpoch
+                    : _lease == token.Lease &&
+                      _captureEpoch == token.CaptureEpoch) &&
                 _byWindow.TryGetValue(token.Window, out var current) &&
                 _windowVersions.TryGetValue(token.Window, out long version) &&
                 version == token.ObservationVersion &&
@@ -139,6 +177,7 @@ internal sealed class WindowScopedNetworkEquipmentState
                 {
                     _byWindow.Remove(window);
                     _windowVersions.Remove(window);
+                    _automaticScopes.Remove(window);
                 }
         }
     }
@@ -154,6 +193,7 @@ internal sealed class WindowScopedNetworkEquipmentState
                 {
                     _byWindow.Remove(key);
                     _windowVersions.Remove(key);
+                    _automaticScopes.Remove(key);
                 }
         }
     }
@@ -164,6 +204,7 @@ internal sealed class WindowScopedNetworkEquipmentState
         {
             _byWindow.Clear();
             _windowVersions.Clear();
+            _automaticScopes.Clear();
             _lease = null;
             _captureEpoch = -1;
         }
