@@ -8,7 +8,8 @@ internal sealed record WindowEquipmentFocusToken(
     DofusClientWindowKey Window,
     NetworkCaptureLease Lease,
     long CaptureEpoch,
-    LastNetworkEquipmentSnapshot Equipment);
+    LastNetworkEquipmentSnapshot Equipment,
+    long ObservationVersion);
 
 /// <summary>
 /// P3m.16 staging state only: last network equipment per *verified local
@@ -23,6 +24,10 @@ internal sealed class WindowScopedNetworkEquipmentState
     private readonly object _sync = new();
     private readonly Dictionary<DofusClientWindowKey, LastNetworkEquipmentSnapshot>
         _byWindow = [];
+    // Monotonic generation protects against a closed window being recreated
+    // with the same key/item/timestamp before an async focus is applied.
+    private readonly Dictionary<DofusClientWindowKey, long> _windowVersions = [];
+    private long _nextWindowVersion;
     private NetworkCaptureLease? _lease;
     private long _captureEpoch = -1;
 
@@ -54,6 +59,7 @@ internal sealed class WindowScopedNetworkEquipmentState
 
             _byWindow[window] = new LastNetworkEquipmentSnapshot(
                 equipmentId, lease.ServerName, observedAtUtc);
+            _windowVersions[window] = ++_nextWindowVersion;
             return true;
         }
     }
@@ -87,9 +93,10 @@ internal sealed class WindowScopedNetworkEquipmentState
         lock (_sync)
         {
             return _lease == lease && _captureEpoch >= 0 &&
-                _byWindow.TryGetValue(window, out var equipment)
+                _byWindow.TryGetValue(window, out var equipment) &&
+                _windowVersions.TryGetValue(window, out long version)
                 ? new WindowEquipmentFocusToken(
-                    window, lease, _captureEpoch, equipment)
+                    window, lease, _captureEpoch, equipment, version)
                 : null;
         }
     }
@@ -108,6 +115,8 @@ internal sealed class WindowScopedNetworkEquipmentState
             return _lease == token.Lease &&
                 _captureEpoch == token.CaptureEpoch &&
                 _byWindow.TryGetValue(token.Window, out var current) &&
+                _windowVersions.TryGetValue(token.Window, out long version) &&
+                version == token.ObservationVersion &&
                 current == token.Equipment;
         }
     }
@@ -127,7 +136,10 @@ internal sealed class WindowScopedNetworkEquipmentState
             var live = liveWindows.ToHashSet();
             foreach (var window in _byWindow.Keys.ToArray())
                 if (!live.Contains(window))
+                {
                     _byWindow.Remove(window);
+                    _windowVersions.Remove(window);
+                }
         }
     }
 
@@ -139,7 +151,10 @@ internal sealed class WindowScopedNetworkEquipmentState
             HashSet<DofusClientWindowKey> live = current.ToHashSet();
             foreach (DofusClientWindowKey key in _byWindow.Keys.ToArray())
                 if (!live.Contains(key))
+                {
                     _byWindow.Remove(key);
+                    _windowVersions.Remove(key);
+                }
         }
     }
 
@@ -148,6 +163,7 @@ internal sealed class WindowScopedNetworkEquipmentState
         lock (_sync)
         {
             _byWindow.Clear();
+            _windowVersions.Clear();
             _lease = null;
             _captureEpoch = -1;
         }
@@ -175,6 +191,7 @@ internal sealed class WindowScopedNetworkEquipmentState
         }
 
         _byWindow.Clear();
+        _windowVersions.Clear();
         _lease = lease;
         _captureEpoch = epoch;
         return true;
