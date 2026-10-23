@@ -1,6 +1,16 @@
 namespace BestCrush.Services;
 
 /// <summary>
+/// Immutable network-equipment choice for a single verified OS window at
+/// the moment of the click. Never an account or character identity.
+/// </summary>
+internal sealed record WindowEquipmentFocusToken(
+    DofusClientWindowKey Window,
+    NetworkCaptureLease Lease,
+    long CaptureEpoch,
+    LastNetworkEquipmentSnapshot Equipment);
+
+/// <summary>
 /// P3m.16 staging state only: last network equipment per *verified local
 /// Windows client*, scoped to the user-selected server lease and capture run.
 /// Not wired to ingestion or wheel targeting until real client ownership is
@@ -62,6 +72,44 @@ internal sealed class WindowScopedNetworkEquipmentState
                 _lease == lease &&
                 _byWindow.TryGetValue(window, out var snapshot)
                     ? snapshot : null;
+    }
+
+    /// <summary>
+    /// Read only the exact verified window, in the currently selected manual
+    /// server lease. Never consult the legacy global last-equipment slot.
+    /// </summary>
+    internal WindowEquipmentFocusToken? GetFocusToken(
+        DofusClientWindowKey window, NetworkCaptureLease lease)
+    {
+        if (window.Handle == 0 || window.ProcessId <= 0)
+            return null;
+
+        lock (_sync)
+        {
+            return _lease == lease && _captureEpoch >= 0 &&
+                _byWindow.TryGetValue(window, out var equipment)
+                ? new WindowEquipmentFocusToken(
+                    window, lease, _captureEpoch, equipment)
+                : null;
+        }
+    }
+
+    /// <summary>
+    /// Recheck after asynchronous database access: a closed window, server
+    /// change, capture restart or newer equipment invalidates the click.
+    /// </summary>
+    internal bool IsCurrent(WindowEquipmentFocusToken? token)
+    {
+        if (token is null)
+            return false;
+
+        lock (_sync)
+        {
+            return _lease == token.Lease &&
+                _captureEpoch == token.CaptureEpoch &&
+                _byWindow.TryGetValue(token.Window, out var current) &&
+                current == token.Equipment;
+        }
     }
 
     /// <summary>Closed windows lose their equipment state immediately.</summary>
