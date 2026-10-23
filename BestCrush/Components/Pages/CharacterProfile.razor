@@ -165,8 +165,10 @@
         CurrentDofusClientsState.Changed += OnCharacterChanged;
     }
 
-    private void SelectDofusClient(BestCrush.Services.DofusClientWindowKey key) =>
+    private void SelectDofusClient(BestCrush.Services.DofusClientWindowKey key)
+    {
         CurrentDofusClientsState.SelectWindow(key);
+    }
 
     private void SelectCharacter(BestCrush.Services.CharacterKey key)
     {
