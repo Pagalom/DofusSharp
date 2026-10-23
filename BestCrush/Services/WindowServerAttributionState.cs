@@ -101,6 +101,17 @@ public sealed class WindowServerAttributionState
                     : null;
     }
 
+    internal NetworkCaptureLease? GetWindowLease(DofusClientWindowKey window)
+    {
+        lock (_sync)
+            return _loaded.TryGetValue(window, out Loaded? loaded) &&
+                !_closedWindows.Contains(window)
+                ? new NetworkCaptureLease(
+                    loaded.Server.ServerName, loaded.Generation, window,
+                    loaded.CaptureEpoch, loaded.ConnectionId)
+                : null;
+    }
+
     internal bool IsGameLeaseActive(NetworkCaptureLease lease)
     {
         if (lease.Window is not { } window || lease.CaptureEpoch < 0 ||
