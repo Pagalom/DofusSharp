@@ -690,3 +690,45 @@ dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
 ```
 
 **Suite après validation :** caractériser en opt-in une liaison de capture live qui ne publie que des **indicateurs anonymes**, puis éprouver fermeture de fenêtres, reconnexion, changement de personnage, serveur manuel et capture Stop/Start ; l'attribution de professions à `VerifiedAccountServerKey` demeure interdite sans preuve de compte+serveur indépendante.
+
+## P3c.9 — Checkpoint Windows 1081/1081 et P3c.10 : diagnostic réseau live en Debug
+
+**Validation transmise par l'opérateur le 23 octobre 2026 : 1081 tests réussis, 0 échec, 0 ignoré, durée 7,2 secondes.** P3c.9 (observateur RAM dans le vrai worker en rejeu synthétique) est confirmé. Il n'existait encore aucun raccordement live visible pour les groupes candidats.
+
+### P3c.10 — activation explicite sans impact sur l'application normale
+
+**Objectif :** permettre une nouvelle expérience **réelle** depuis le worker réseau de BestCrush, pour observer la cohérence `S→C ksc` puis `S→C ksb` par fenêtre/propriétaire TCP, et afficher **uniquement** des compteurs catégoriels. Aucun nom, identifiant de personnage, numéro de compte Ankama, tuple, HWND/PID, adresse, capture brute ou hash n'est écrit par ce nouveau diagnostic.
+
+La construction du `DofusNetworkCaptureService` reste inchangée. Le système standard n'injecte pas d'observateur. En **compilation Debug Windows seulement**, si la variable d'environnement du **processus** `BESTCRUSH_P3C10_ROSTER_STUDY` vaut **exactement** `1` et que les services de rattachement Windows existent, le constructeur instancie un observateur séparé **en RAM**, sans l'exposer aux profils/métiers.
+
+Lors de la consommation réseau, le worker continue de revalider son token logique TCP/fenêtre OS et ses baux de capture avant de passer les messages au routeur économique existant. **Après** ce routeur métier, l'observateur optionnel examine `ksc/ksb`, sans jamais bloquer les données de marché/concassage. Un message non attribuable à une fenêtre, contradictoire ou périmé ne crée pas de groupe. Une fermeture de fenêtre est rapprochée du prochain inventaire Win32 ; une reconnexion exige de nouveaux `ksc/ksb`.
+
+**Sorties observables autorisées** dans les journaux Debug : `p3c10=status=enabled` et `p3c10=status=pending|linked|rejected`, suivis de `linked-windows=N equal-roster-pairs=N disjoint-roster-pairs=N account=unverified server=unverified`. Les nombres ne sont **pas des comptes authentifiés**. Limite de **128 événements** par activation de capture, puis `status=report-limit`, pour éviter une croissance incontrôlée des journaux. Un changement de serveur choisi manuellement donne `status=reset`.
+
+**Isolation :** aucune donnée de groupe candidat ne sort de la RAM hormis les compteurs anonymisés. La session ne peuple pas `CurrentCharacterState`, `CurrentAccountProfessionsState`, `VerifiedAccountServerKey`, les portraits, les métiers, l'inventaire, les prix, SQLite ni la molette. Pas de vérification forcée du serveur manuel, ni d'authentification Ankama. Le mapping réseau étudié reste non prouvé sémantiquement.
+
+### Validation Windows préalable
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush\BestCrush.csproj -c Debug -f net10.0-windows10.0.19041.0
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+**5 tests ajoutés** dans `LiveCandidateRosterDiagnosticTest.cs` : le flag exactement `1` requis, rejet des modes Release/absence de services Windows, anonymat des compteurs même avec noms/IDs fictifs connus, égalité et disjonction des listes sans inférence de comptes, reset manuel et changement d'époque. Dernier total **1081 confirmé**, **1086 tests attendus** tant que le checkpoint Windows n'est pas transmis. Aucune compilation .NET locale n'est possible dans l'environnement de l'agent.
+
+### Après validation uniquement : manipulation réelle
+
+Arrêter les clients Dofus et BestCrush, lancer BestCrush **depuis un terminal PowerShell** avec la variable d'environnement temporaire, de manière à ce qu'elle soit héritée du processus Debug :
+
+```powershell
+$env:BESTCRUSH_P3C10_ROSTER_STUDY = "1"
+dotnet run --project .\BestCrush\BestCrush.csproj -c Debug -f net10.0-windows10.0.19041.0
+```
+
+Si la configuration locale de l'application Windows ne permet pas `dotnet run`, utiliser le mécanisme local existant de lancement du binaire Debug en conservant **la variable d'environnement de ce processus**, sans inventer de chemin vers un exécutable. Ne pas utiliser le mode Release pour cette expérience. Après l'essai, `Remove-Item Env:BESTCRUSH_P3C10_ROSTER_STUDY` supprime le flag du PowerShell courant. Il n'est **pas enregistré** dans les paramètres de BestCrush.
+
+Dans le jeu, sélectionner manuellement un même serveur, lancer **A-X**, attendre l'affichage complet, puis lancer **B-Z** tout en gardant A ouvert ; fermer et relancer B si utile. Ne copier **que les lignes commençant par `p3c10=`** du terminal/journal Debug, et les éventuelles erreurs de build/test. Ne pas partager le journal intégral, le corps de messages, un dump mémoire, le PCAP, les noms, les tokens ou les identifiants. Si `status=rejected` apparaît, cela peut signaler une fenêtre non attribuable au moment de `ksc`/ `ksb` ; **ne pas en inférer** une erreur de compte Ankama.
+
+**Attention :** ce diagnostic Debug dépend de l'association OS déjà existante dans `LiveDofusClientNetworkBindings` avec inventaires rafraîchis périodiquement ; il n'est pas une réexécution exacte du snapshot Windows ponctuel P3c.7. Pour une intégration multicomptes réelle, il restera nécessaire de tester les fermetures hors trafic, les connexions recyclées et le changement de personnage. Aucune publication de données de professions n'est autorisée.
