@@ -114,9 +114,9 @@ public sealed class AccountWireFieldComparisonStudy
         lock (_gate)
         {
             List<string> report = [];
-            foreach (Phase phase in _phases.Select((value, index) => value))
+            for (int i = 0; i < Phases; i++)
             {
-                int i = Array.IndexOf(_phases, phase);
+                Phase phase = _phases[i];
                 report.Add($"p3c4=phase={i + 1} status=" +
                     (phase.Conflict ? "conflicted" :
                      phase.Fields is null ? "unavailable" : "recorded") +
