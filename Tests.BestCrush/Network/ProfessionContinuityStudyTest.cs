@@ -181,6 +181,79 @@ public sealed class ProfessionContinuityStudyTest
     }
 
     [Fact]
+    public void AtoBtoAWhenFinalActuallyMatchesBIsReportedAsSuch()
+    {
+        var study = new ProfessionContinuityStudy();
+        study.Observe(Ipz()).Should().Contain("baseline=created");
+
+        string b = study.Observe(Ipz(5, "level"));
+        b.Should().Contain("levels-equal=no xp-equal=yes");
+        b.Should().Contain("previous-levels-equal=no previous-xp-equal=yes");
+
+        string a2 = study.Observe(Ipz(5, "level"));
+        a2.Should().Contain("levels-equal=no xp-equal=yes");
+        a2.Should().Contain("previous-f5-set-equal=yes");
+        a2.Should().Contain("previous-levels-equal=yes previous-xp-equal=yes");
+        a2.Should().Contain("account=unverified server=unverified");
+    }
+
+    [Fact]
+    public void AtoBtoAWhenFinalReturnsToBaselineDetectsRecovery()
+    {
+        var study = new ProfessionContinuityStudy();
+        study.Observe(Ipz());
+        study.Observe(Ipz(5, "xp"));
+
+        string a2 = study.Observe(Ipz());
+        a2.Should().Contain("levels-equal=yes xp-equal=yes");
+        a2.Should().Contain("previous-levels-equal=yes previous-xp-equal=no");
+        a2.Should().Contain("account=unverified");
+    }
+
+    [Fact]
+    public void MalformedOrNonUniqueIntermediateIpzCannotBecomePrevious()
+    {
+        var study = new ProfessionContinuityStudy();
+        study.Observe(Ipz());
+        study.Observe([0x80]).Should().Contain("baseline=unchanged");
+        study.Observe(Ipz(4, "duplicate-id"))
+            .Should().Contain("baseline=unchanged");
+
+        string b = study.Observe(Ipz(5, "xp"));
+        b.Should().Contain("previous-levels-equal=yes previous-xp-equal=no");
+        string a2 = study.Observe(Ipz(5, "xp"));
+        a2.Should().Contain("previous-levels-equal=yes previous-xp-equal=yes");
+    }
+
+    [Fact]
+    public void DifferentCandidateIdsMakePreviousLevelAndXpUnavailable()
+    {
+        var study = new ProfessionContinuityStudy();
+        study.Observe(Ipz());
+        string b = study.Observe(Ipz(5, "id"));
+        b.Should().Contain("previous-f5-set-equal=no");
+        b.Should().Contain("previous-levels-equal=unavailable previous-xp-equal=unavailable");
+
+        string a2 = study.Observe(Ipz(5, "id"));
+        a2.Should().Contain("previous-f5-set-equal=yes");
+        a2.Should().Contain("previous-levels-equal=yes previous-xp-equal=yes");
+        a2.Should().Contain("f5-set-equal=no levels-equal=unavailable xp-equal=unavailable");
+    }
+
+    [Fact]
+    public void PreviousComparisonDoesNotExposeProfessionValuesOrAccountIds()
+    {
+        var study = new ProfessionContinuityStudy();
+        study.Observe(Ipz());
+        string report = study.Observe(Ipz(5, "level"));
+        report.Should().Contain("previous-levels-equal=no");
+        report.Should().NotContain("1100");
+        report.Should().NotContain("301");
+        report.Should().NotContain("account-A");
+        report.Should().Contain("account=unverified server=unverified mapping=unverified");
+    }
+
+    [Fact]
     public void StandaloneContinuityRejectsMixedDiagnosticModes()
     {
         Action mixed = () => new CharacterCaptureFlowTracker(
