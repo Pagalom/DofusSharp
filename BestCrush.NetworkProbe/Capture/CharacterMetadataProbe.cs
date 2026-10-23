@@ -139,8 +139,25 @@ internal sealed class CharacterMetadataProbe(
     {
         if (_windowEvidence is null)
             return;
-        foreach (string line in _windowEvidence.Summarize())
+
+        // A correct OS PID/HWND join is not enough if the character-roster
+        // negative control failed. Publish one positive final conclusion
+        // ONLY when both independent diagnostics found their candidate.
+        bool rosterCandidate = _concurrentRosterStudy?.Summarize().LastOrDefault()
+            ?.Contains("status=concurrent-roster-group-candidate",
+                StringComparison.Ordinal) == true;
+
+        IReadOnlyList<string> windowSummary = _windowEvidence.Summarize();
+        foreach (string line in windowSummary.Take(windowSummary.Count - 1))
             Console.WriteLine(line);
+
+        string final = windowSummary.Last();
+        if (rosterCandidate)
+            Console.WriteLine(final);
+        else
+            Console.WriteLine("p3c7=summary status=incomplete " +
+                "reason=roster-pattern-not-confirmed " +
+                "account=unverified server=unverified semantic=unverified");
     }
 
     public void WriteTrafficStatus(string phase)
