@@ -93,6 +93,57 @@ public sealed class WindowScopedNetworkEquipmentStateTest
     }
 
     [Fact]
+    public void IndependentWindowPollingRemovesClosedClientWithoutTraffic()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        CurrentDofusClientsState clients = new();
+        DofusWindowInfo first = new(new IntPtr(101), "Dofus", "Dofus",
+            0, 0, 800, 600) { ProcessId = 1201 };
+        DofusWindowInfo second = new(new IntPtr(102), "Dofus", "Dofus",
+            0, 0, 800, 600) { ProcessId = 1202 };
+
+        clients.Update([first, second]);
+        state.Remember(First, Draconiros, 31, 42, T0);
+        state.Remember(Second, Draconiros, 31, 43, T0);
+
+        clients.Update([second]);
+        state.RemoveMissingWindows(
+            clients.Clients.Select(client => client.Key).ToArray());
+
+        state.Get(First, Draconiros, 31).Should().BeNull();
+        state.Get(Second, Draconiros, 31)!.DofusDbId.Should().Be(43);
+    }
+
+    [Fact]
+    public void OldWindowHandleWithNewPidDoesNotInheritEquipment()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+
+        var recycled = new DofusClientWindowKey(First.Handle, 9999);
+        state.RemoveMissingWindows([recycled]);
+
+        state.Get(First, Draconiros, 31).Should().BeNull();
+        state.Get(recycled, Draconiros, 31).Should().BeNull();
+    }
+
+    [Fact]
+    public void NoLiveWindowsRemoveAllEntriesWithoutChangingCaptureGeneration()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+        state.Remember(Second, Draconiros, 31, 43, T0);
+
+        state.RemoveMissingWindows([]);
+        state.Get(First, Draconiros, 31).Should().BeNull();
+        state.Get(Second, Draconiros, 31).Should().BeNull();
+
+        state.Remember(First, Draconiros, 31, 44,
+            T0.AddSeconds(1)).Should().BeTrue();
+        state.Get(First, Draconiros, 31)!.DofusDbId.Should().Be(44);
+    }
+
+    [Fact]
     public void ClearRemovesAllClientStateWithoutPersistence()
     {
         WindowScopedNetworkEquipmentState state = new();
