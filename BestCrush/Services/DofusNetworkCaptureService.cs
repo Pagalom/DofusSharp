@@ -33,6 +33,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly WindowScopedNetworkEquipmentState? _windowEquipmentState;
     private readonly LiveDofusClientNetworkBindings? _clientBindings;
     private readonly DofusWindowService? _dofusWindowService;
+    // P3c.9 read-only opt-in research seam: never resolved from DI or
+    // enabled by the public production constructor.
+    private readonly EphemeralCandidateRosterWireObserver? _rosterWireObserver;
 #endif
 
 #if WINDOWS
@@ -87,7 +90,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
             CancellationToken,
             Task> applyNetworkCrushAsync,
         ILogger<DofusNetworkCaptureService> logger,
-        Func<bool>? keepDebugArtifacts = null)
+        Func<bool>? keepDebugArtifacts = null,
+        EphemeralCandidateRosterWireObserver? rosterWireObserver = null)
         : this(
             serviceScopeFactory,
             currentServerState,
@@ -99,7 +103,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
             marketDataChangeNotifier,
             logger,
             null,
-            null)
+            null,
+            rosterWireObserver)
     {
     }
 
@@ -119,7 +124,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
         MarketDataChangeNotifier marketDataChangeNotifier,
         ILogger<DofusNetworkCaptureService> logger,
         LiveDofusClientNetworkBindings? clientBindings,
-        DofusWindowService? dofusWindowService)
+        DofusWindowService? dofusWindowService,
+        EphemeralCandidateRosterWireObserver? rosterWireObserver = null)
     {
         this.npcapPrerequisiteService =
             npcapPrerequisiteService;
@@ -130,6 +136,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
 #if WINDOWS
         _clientBindings = clientBindings;
         _dofusWindowService = dofusWindowService;
+        _rosterWireObserver = rosterWireObserver;
         // Resolve the process-lifetime singleton without changing the
         // public constructor signature (tests can omit this staged service).
         using (IServiceScope scope = serviceScopeFactory.CreateScope())
@@ -208,6 +215,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
     {
         _lastNetworkEquipmentState.Clear();
         _windowEquipmentState?.Clear();
+        _rosterWireObserver?.OnManualServerChanged();
 
         // Drop partial frames when the user selects another server.
         lock (_streamLock)
@@ -276,6 +284,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             long epoch = Interlocked.Increment(ref _captureEpoch);
             _clientBindings?.Reset(epoch);
             _windowEquipmentState?.Clear();
+            _rosterWireObserver?.OnCaptureEpochChanged(epoch);
             lock (_clientBindingsRefreshLock)
             {
                 _clientBindingsLastRefreshUtc = DateTime.MinValue;
@@ -335,8 +344,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
             if (_devices.Count == 0)
             {
                 _started = false;
-                _clientBindings?.Reset(Interlocked.Increment(ref _captureEpoch));
+                long stoppedEpoch = Interlocked.Increment(ref _captureEpoch);
+                _clientBindings?.Reset(stoppedEpoch);
                 _windowEquipmentState?.Clear();
+                _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
 
                 logger.LogWarning(
                     "Aucune interface réseau n'a pu être ouverte pour Dofus.");
@@ -354,8 +365,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 return;
 
             _started = false;
-            _clientBindings?.Reset(Interlocked.Increment(ref _captureEpoch));
+            long stoppedEpoch = Interlocked.Increment(ref _captureEpoch);
+            _clientBindings?.Reset(stoppedEpoch);
             _windowEquipmentState?.Clear();
+            _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
 
             // Do not complete the shared channel or cancel the worker here:
             // Start() must be able to reactivate this service.
@@ -417,8 +430,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
                         _cancellation.Token));
 
         // Replay uses the same Stop/Resume epoch semantics as Npcap.
-        Interlocked.Increment(ref _captureEpoch);
+        long replayEpoch = Interlocked.Increment(ref _captureEpoch);
         _windowEquipmentState?.Clear();
+        _rosterWireObserver?.OnCaptureEpochChanged(replayEpoch);
         _started = true;
     }
 
@@ -433,8 +447,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
             if (_started)
                 return;
 
-            Interlocked.Increment(ref _captureEpoch);
+            long replayEpoch = Interlocked.Increment(ref _captureEpoch);
             _windowEquipmentState?.Clear();
+            _rosterWireObserver?.OnCaptureEpochChanged(replayEpoch);
             _started = true;
         }
     }
@@ -722,6 +737,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                         _currentServerState.IsCaptureLeaseActive(liveLease))
                         _windowEquipmentState?.Reconcile(
                             liveLease, captureEpoch, _clientWindows);
+                    _rosterWireObserver?.ReconcileWindows(_clientWindows);
                 }
 
                 if (_started && captureEpoch == Interlocked.Read(ref _captureEpoch) &&
@@ -778,6 +794,34 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                 _map,
                                 routed,
                                 cancellationToken);
+
+                        // P3c.9 research observer is never constructed by
+                        // production DI. Reuse the worker's exact
+                        // connection/window revalidation; replay fixtures
+                        // are explicitly flagged synthetic. Failures never
+                        // suppress economic routing.
+                        if (_rosterWireObserver is not null)
+                        {
+                            try
+                            {
+                                _rosterWireObserver.Observe(
+                                    routed,
+                                    routed.CandidateWindow is not null &&
+                                    (routed.SyntheticWindowForReplay ||
+                                     (_clientBindings?.IsCurrentConnection(
+                                         routed.CaptureEpoch,
+                                         routed.ConnectionId,
+                                         routed.CandidateWindow.Value) == true)));
+                            }
+                            catch (Exception ex)
+                            {
+                                // Never disclose candidate payloads, IDs,
+                                // HWNDs, endpoints or exception content.
+                                logger.LogDebug(
+                                    "Étude éphémère ksc/ksb indisponible : {ExceptionType}.",
+                                    ex.GetType().Name);
+                            }
+                        }
                     }
 
                     message.Completion?
