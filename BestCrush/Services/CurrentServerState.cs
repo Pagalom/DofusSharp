@@ -104,6 +104,12 @@ public sealed class CurrentServerState
     /// Ignore old queued messages when the selected server changes.
     /// This does not verify the Dofus server; selection is user-authoritative.
     /// </summary>
+    public NetworkCaptureLease? GetWindowCaptureLease(
+        DofusClientWindowKey window) =>
+        AutomaticRoutingEnabled
+            ? _automaticAttributions?.GetWindowLease(window)
+            : GetCaptureLease();
+
     public bool IsCaptureLeaseActive(NetworkCaptureLease lease)
     {
         if (AutomaticRoutingEnabled)
