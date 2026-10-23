@@ -631,3 +631,26 @@ p3c7=summary status=window-roster-link-candidate A-window-stable-across-B=yes A-
 ### Suite possible, distincte de la production
 
 L'étape de développement la moins intrusive est un **index éphémère expérimental, strictement en RAM**, qui pourrait conserver pour la durée d'une capture les groupes candidats `ksc` et leurs fenêtres **uniquement après** résolution exacte du propriétaire du Game. Le lien devra être invalidé à la fermeture de fenêtre, au changement de capture, au changement de serveur manuel, à la perte de socket, à une sélection contradictoire, ou à tout réemploi de tuple TCP. Rien ne doit renseigner `VerifiedAccountServerKey` sans preuve sémantique indépendante ; la publication des professions compte + serveur reste bloquée.
+
+## P3c.7 — Checkpoint Windows 1044/1044 et P3c.8 (23 octobre 2026)
+
+**Validation de compilation et suite complète sur le poste Windows : 1044 tests exécutés, 1044 réussis, 0 échec, 0 ignoré, 7,4 secondes.** Cela confirme les 16 nouveaux tests P3c.6, les 16 tests P3c.7 et le correctif d'ordonnancement `WINDOW_ROSTER` (aucun test Windows ultérieur annoncé).
+
+La preuve terrain P3c.7 ci-dessus est conservée distincte de la réussite des tests unitaires : les groupes `ksc/ksb` candidats ont été joints à leurs propriétaires OS TCP uniques et fenêtres HWND, avec A stable pendant la reconnexion de B ; **cela ne constitue toujours pas un identifiant Ankama vérifié ni un serveur réseau vérifié**.
+
+### P3c.8 — Modèle candidat éphémère, **non branché à la production**
+
+Nouveau composant purement RAM `BestCrush/Services/EphemeralCandidateRosterGroupsState.cs`, interne à BestCrush et **sans enregistrement de service, sans appel depuis les captures et sans interface utilisateur**. Cette première étape caractérise les invariants de durée de vie avant toute proposition d'ingestion réseau.
+
+- Pour une fenêtre `DofusClientWindowKey(HWND, PID)` unique, une observation candidate porte un bail de serveur **choisi manuellement**, une époque Npcap, un identifiant logique de connexion et le candidat sélectionné présent dans un ensemble `ksc`. Le type est interne et n'a **aucune signification d'identité de compte**, même lorsque les deux listes sont égales.
+- Les ensembles de candidats sont **uniquement en RAM**, bornés à **16 fenêtres** et **16 candidats par fenêtre**. Pas de noms de personnages, d'identifiants en logs, de jetons, de hash, de PID/HWND, de payloads ni d'écriture sur disque.
+- La comparaison ne renvoie que les catégories `SameRosterCandidate`, `DisjointRosterCandidates`, `Ambiguous` ou `Unavailable`. Des ensembles différents mais se recouvrant partiellement sont **quarantinés**, pas fusionnés.
+- Changer de connexion sur une même fenêtre **révoque** la précédente ; un `connectionId` tardif ne peut pas revenir. Les contradictions du même token révoquent et mettent en quarantaine la fenêtre. La déconnexion ne touche qu'au token exact.
+- Une fenêtre supprimée de l'inventaire Win32 est révoquée ; son ancien `HWND/PID` reste **quarantiné pour toute l'époque de capture**, empêchant la réutilisation ambiguë. Une nouvelle fenêtre obtient sa propre identité locale.
+- Un changement de bail de serveur manuel ou un redémarrage de capture **efface immédiatement tous les candidats**. Les époques/générations antérieures ne peuvent pas récupérer ces données.
+- **Les classes et chemins existants `CurrentCharacterState`, `CurrentDofusClientsState`, `CurrentAccountProfessionsState`, `LiveDofusClientNetworkBindings`, `DofusNetworkCaptureService`, overlays F7/F8, molette, SQLite et prix restent inchangés.** Aucune attribution de métiers, de niveaux, de kamas ou d'inventaire n'est autorisée par ce seul état.
+- Le modèle suppose explicitement qu'un **appelant futur** aura déjà établi `ksc/ksb` sur la même connexion et l'appartenance OS unique via le quadruplet TCP ; le modèle en RAM **ne prouve pas lui-même ces éléments** et ne peut donc pas être branché sans étape d'intégration/revalidation indépendante.
+
+**Tests additionnels :** 17 tests xUnit dans `EphemeralCandidateRosterGroupsStateTest.cs` couvrent l'isolation de deux fenêtres, la comparaison égal/disjoint/inconnu, les nouvelles connexions et messages tardifs, les contradictions, le nettoyage à fermeture, le redémarrage Npcap, la génération du serveur manuel, les limites de taille et la non-divulgation.
+
+**Checkpoint suivant : 1061 tests attendus**, sous réserve de compilation/tests Windows. Aucun résultat de validation P3c.8 n'a encore été fourni.
