@@ -764,6 +764,133 @@ public sealed class DofusNetworkRoutingTest
     }
 
     [Fact]
+    public async Task ConflictingVerifiedWindowsQuarantinePurchaseForEntireConnection()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey clientA = new(101, 1201);
+        DofusClientWindowKey clientB = new(102, 1202);
+
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt, connectionId: 11, candidateWindow: clientA);
+
+        // A contradictory verified window for the SAME connection ID
+        // invalidates its pending request. Reverting to A is insufficient.
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(100, 601, 15, 140),
+            ObservedAt.AddSeconds(1), connectionId: 11,
+            candidateWindow: clientB);
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(100, 601, 15, 140),
+            ObservedAt.AddSeconds(2), connectionId: 11,
+            candidateWindow: clientA);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .Should().BeEmpty();
+
+        // A fresh logical TCP connection has an independent, clean scope.
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt.AddSeconds(3), connectionId: 12,
+            candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(100, 601, 15, 140),
+            ObservedAt.AddSeconds(4), connectionId: 12,
+            candidateWindow: clientA);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .Should().HaveCount(2);
+    }
+
+    [Fact]
+    public async Task ConflictingVerifiedWindowsCannotBorrowOrRestoreItemUid()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey clientA = new(101, 1201);
+        DofusClientWindowKey clientB = new(102, 1202);
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42),
+            ObservedAt, connectionId: 11, candidateWindow: clientA);
+        byte[] crush = CurrentCrush(
+            CurrentCrushRow(9022491, 1.615723f,
+                CurrentCrushRune(100, 6)));
+
+        await harness.ReplayAsync(
+            "kag", crush, ObservedAt.AddSeconds(1),
+            connectionId: 11, candidateWindow: clientB);
+        await harness.ReplayAsync(
+            "kag", crush, ObservedAt.AddSeconds(2),
+            connectionId: 11, candidateWindow: clientA);
+
+        harness.Crushes.Should().BeEmpty();
+        (await harness.ReadCoefficientsAsync(42)).Should().BeEmpty();
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42),
+            ObservedAt.AddSeconds(3), connectionId: 12,
+            candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kag", crush, ObservedAt.AddSeconds(4),
+            connectionId: 12, candidateWindow: clientA);
+        harness.Crushes.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task ReconnectToSameWindowRequiresNewUidAndPurchaseCorrelations()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey clientA = new(101, 1201);
+        byte[] crush = CurrentCrush(
+            CurrentCrushRow(9022491, 1.615723f,
+                CurrentCrushRune(100, 6)));
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42),
+            ObservedAt, connectionId: 11, candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt.AddSeconds(1), connectionId: 11,
+            candidateWindow: clientA);
+
+        // Same physical window and same item/offer identifiers, but a new
+        // logical TCP connection following character re-selection.
+        await harness.ReplayAsync(
+            "kag", crush, ObservedAt.AddSeconds(2),
+            connectionId: 12, candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(100, 601, 15, 140),
+            ObservedAt.AddSeconds(3), connectionId: 12,
+            candidateWindow: clientA);
+
+        harness.Crushes.Should().BeEmpty();
+        (await harness.ReadCoefficientsAsync(42)).Should().BeEmpty();
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .Should().BeEmpty();
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42),
+            ObservedAt.AddSeconds(4), connectionId: 12,
+            candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt.AddSeconds(5), connectionId: 12,
+            candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kag", crush, ObservedAt.AddSeconds(6),
+            connectionId: 12, candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(100, 601, 15, 140),
+            ObservedAt.AddSeconds(7), connectionId: 12,
+            candidateWindow: clientA);
+
+        harness.Crushes.Should().ContainSingle();
+        (await harness.ReadCoefficientsAsync(42)).Should().ContainSingle();
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task TwoClientsCannotSharePendingPurchaseEvenForSameOfferId()
     {
         await using RoutingHarness harness =
@@ -1988,13 +2115,15 @@ public sealed class DofusNetworkRoutingTest
             string key,
             byte[] body,
             DateTime observedAtUtc,
-            long connectionId = 1) =>
+            long connectionId = 1,
+            DofusClientWindowKey? candidateWindow = null) =>
             Service.ReplayMessageAsync(
                 "TEST",
                 key,
                 body,
                 observedAtUtc,
-                connectionId: connectionId);
+                connectionId: connectionId,
+                candidateWindow: candidateWindow);
 
         public async Task<
             IReadOnlyList<
