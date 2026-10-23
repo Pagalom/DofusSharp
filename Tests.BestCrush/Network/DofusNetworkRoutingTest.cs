@@ -120,7 +120,7 @@ public sealed class DofusNetworkRoutingTest
 
         (await harness.ReadPricesAsync(MarketObjectType.Equipment, 42,
             "Draconiros")).Select(p => p.Price)
-            .Should().BeEquivalentTo([4899L, 5099L]);
+            .Should().BeEquivalentTo(new long[] { 4899L, 5099L });
         harness.AutomaticAttributions.ForWindow(a)!.ServerName
             .Should().Be("Draconiros");
         harness.AutomaticAttributions.ForWindow(b)!.ServerName
