@@ -79,6 +79,10 @@ public sealed class ConcurrentRosterWindowEvidenceStudy
             if (stage > 0)
             {
                 Stage first = _stages[0];
+                // A TCP Game session ordinal must never be borrowed by B,
+                // even when another tuple happens to resolve to a window.
+                if (first.Session == session || first.Socket == socket)
+                    return Quarantine(current, stage, "A-B-same-game");
                 if (!first.Matched || first.Closed ||
                     _primaryClosedBeforeThirdLink)
                     return Status(stage, "A-unavailable");
