@@ -554,3 +554,47 @@ p3c6=summary status=concurrent-roster-group-candidate B-reconnect-roster-stable=
 Critères de sûreté : vérifier 2 clients simultanés avec **fenêtres distinctes**, maintien de A pendant fermeture/réouverture de B, réévaluation du propriétaire OS (et non attribution par numéro global de phase), éviction immédiate des liaisons de fenêtre fermées, échec fermé si un PID a deux HWND Dofus, si le socket/propriétaire est absent ou contradictoire, ou si un paquet est retardé au-delà du cycle de connexion. Conserver les preuves **en RAM seulement**, aucune valeur d'identifiant, nom, tuple, PID ou HWND dans les traces.
 
 Le serveur choisi manuellement reste le seul contexte économique ; **ne pas imposer une validation de serveur**. Un lien Windows prouvé ne constitue **pas** une identité de compte Ankama. Les métiers et fiches personnages restent non alimentés par ces diagnostics jusqu'à leur validation indépendante.
+
+## P3c.7 — Relier les listes candidates ksc/ksb à la fenêtre OS propriétaire
+
+**Départ :** P3c.6 a produit un résultat réel positif (voir ci-dessus), mais le probe ne vérifiait pas l'appartenance des sessions Game TCP à un processus/fenêtre Windows. L'opérateur n'a **pas encore donné de rapport de tests Windows sur les 16 cas P3c.6**, même si sa capture réelle est concluante.
+
+### Ajout expérimental isolé
+
+La commande `--account-roster-window` conserve **exactement le protocole manuel P3c.6** et ajoute une vérification locale de chaque connexion Game portant un `ksb` lié à son `ksc` :
+
+1. Reconstruire le **quadruplet TCP exact** sur le paquet Game de cette session, sans le publier.
+2. Lire la table IPv4 Windows des sockets `ESTABLISHED` de destination TCP/5555 pour rechercher **un propriétaire PID unique** de ce quadruplet.
+3. Rechercher **une seule fenêtre Dofus visible** appartenant à ce PID ; une fenêtre absente, deux HWND pour un PID ou plusieurs propriétaires de socket donnent `os-unavailable`.
+4. Lorsque B est lié, **réévaluer le socket de A avec le même instantané OS**, exiger le même PID/HWND que lors du chargement de A et une fenêtre **différente** de celle de B.
+5. Lors de B reconnecté, exiger la fermeture du premier B, une nouvelle session logique Game, la stabilité de A et une fenêtre distincte de A. Un changement de propriétaire sur un même Game, un flux périmé ou une contradiction échoue fermé.
+
+L'outil n'infère **jamais** l'identité Ankama depuis PID, HWND, port, nom de processus, ordre d'ouverture, nom de personnage ou sélection manuelle de serveur. Le statut affiché `window-roster-link-candidate` signifie seulement qu'un **rattachement technique local** est cohérent avec les deux listes candidates `ksc/ksb` et les observations OS. Le bilan positif **requiert aussi** `p3c6=summary status=concurrent-roster-group-candidate` ; si le motif de listes échoue, le bilan P3c.7 est bloqué.
+
+**Rien n'est branché dans BestCrush en production.** Pas de persistance de profils ni de personnages, pas de nouveau contrôle obligatoire du serveur choisi manuellement, aucun changement de molette, F7, F8, métiers, prix ou SQLite.
+
+### Protocole Windows
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --list
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --account-roster-window
+```
+
+La carte `3` était celle utilisée dans le dernier essai P3c.6, **à vérifier via `--list`**. Le programme démarre avant Dofus :
+
+1. Ouvrir **A-X**, attendre `ksc/ksb`, **garder A ouvert**, puis Entrée.
+2. Ouvrir **B-Z**, attendre `ksc/ksb`, fermer **B uniquement** tout en gardant A ouvert, puis Entrée.
+3. Rouvrir **B-Z**, attendre `ksc/ksb` et garder **A+B ouverts**, puis Entrée.
+4. Transmettre **uniquement** les lignes `CONCURRENT_ROSTER`, `WINDOW_ROSTER`, `p3c6=` et `p3c7=` et le bilan des tests. Ne jamais fournir de PID/HWND, noms, ID personnages, adresses IP, quadruplets TCP, payloads, hashes, traces `--all` ou PCAP.
+
+Les lignes par phase P3c.7 sont `status=os-matched|unavailable|conflicted` et le bilan n'est positif que si A reste sur son HWND unique pendant les deux connexions Game de B, avec des fenêtres A/B différentes, en plus du contrôle des rosters candidats P3c.6. L'observation du propriétaire OS est instantanée à la réception des messages `ksb`; si une table est indisponible à cet instant, le résultat est **incomplet**, sans association de secours.
+
+### Tests et précautions
+
+**15 tests synthétiques** supplémentaires pour le lien OS : deux Game simultanés + reconnexion, absence de fuite de PID/HWND/tuple, collisions propriétaire/PID, fermeture de A, perte d'owner pendant B, changements de propriétaire, arrivée tardive B1, nouvelle session et observations répétées. Après **1012 tests P3c.5 confirmés**, **16 cas P3c.6 ajoutés** et **15 cas P3c.7 nouveaux**, **1043 tests attendus** sous Windows, non encore exécutés sur le poste de l'opérateur.
+
+**Portée des résultats :** un lien exact TCP/PID/HWND n'authentifie pas un compte Dofus ni un serveur logique ; `account=unverified server=unverified semantic=unverified` demeure obligatoire et l'intégration des métiers au profil reste désactivée.
