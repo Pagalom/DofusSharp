@@ -55,6 +55,9 @@ public sealed class CurrentCharacterState
     private readonly object _sync = new();
     private readonly Dictionary<CharacterKey, CharacterSessionProfile> _profiles = [];
     private readonly Dictionary<CharacterKey, CharacterConnectionScope> _scopes = [];
+    // Only identities independently confirmed on a particular OS window.
+    // RAM-only, never inferred from display names or the selected server.
+    private readonly Dictionary<CharacterKey, DofusClientWindowKey> _verifiedWindows = [];
     private readonly HashSet<CharacterConnectionScope> _revokedScopes = [];
     private string? _serverName;
     private CharacterKey? _active;
@@ -121,11 +124,14 @@ public sealed class CurrentCharacterState
     /// </summary>
     internal bool ObserveConfirmedCharacter(
         CharacterIdentityAssessment identity,
-        bool isVerifiedTargetWindow)
+        bool isVerifiedTargetWindow,
+        DofusClientWindowKey? verifiedWindow = null)
     {
         if (identity.Status != CharacterIdentityStatus.Confirmed ||
             identity.Character is not { CharacterId: > 0 } character ||
-            string.IsNullOrWhiteSpace(identity.Scope.ServerName))
+            string.IsNullOrWhiteSpace(identity.Scope.ServerName) ||
+            (verifiedWindow is { } invalid &&
+                (invalid.Handle == 0 || invalid.ProcessId <= 0)))
             return false;
 
         lock (_sync)
@@ -149,10 +155,23 @@ public sealed class CurrentCharacterState
 
                 return false;
 
+            bool newConnection = !_scopes.TryGetValue(
+                key, out CharacterConnectionScope knownScope) ||
+                knownScope != identity.Scope;
+            if (!newConnection &&
+                verifiedWindow is { } proposedWindow &&
+                _verifiedWindows.TryGetValue(key, out DofusClientWindowKey knownWindow) &&
+                knownWindow != proposedWindow)
+                return false;
+
+            if (newConnection)
+                _verifiedWindows.Remove(key);
+
+            if (verifiedWindow is { } confirmedWindow)
+                _verifiedWindows[key] = confirmedWindow;
+
             if (_profiles.TryGetValue(key, out CharacterSessionProfile? existing))
             {
-                bool newConnection = !_scopes.TryGetValue(
-                    key, out CharacterConnectionScope knownScope) || knownScope != identity.Scope;
                 // On reconnect, never present old cash/inventory as current.
                 _profiles[key] = existing with
                 {
@@ -288,6 +307,37 @@ public sealed class CurrentCharacterState
                     _active = null;
                     changed = true;
                 }
+            }
+        }
+
+        if (changed)
+            Changed?.Invoke();
+    }
+
+    /// <summary>
+    /// A vanished OS window revokes every session profile explicitly bound
+    /// to that window, including cards retained after TCP disconnection.
+    /// Unbound cards are not attributed by name, focus or server guesswork.
+    /// The live-window inventory is refreshed independently of TCP packets.
+    /// </summary>
+    public void RemoveMissingWindows(
+        IReadOnlyCollection<DofusClientWindowKey> liveWindows)
+    {
+        ArgumentNullException.ThrowIfNull(liveWindows);
+        bool changed = false;
+        lock (_sync)
+        {
+            HashSet<DofusClientWindowKey> live = liveWindows.ToHashSet();
+            foreach (CharacterKey key in _verifiedWindows
+                .Where(entry => !live.Contains(entry.Value))
+                .Select(entry => entry.Key).ToArray())
+            {
+                _verifiedWindows.Remove(key);
+                _profiles.Remove(key);
+                _scopes.Remove(key);
+                if (_active == key)
+                    _active = null;
+                changed = true;
             }
         }
 
