@@ -46,12 +46,19 @@ internal sealed class EphemeralCandidateRosterWireObserver(
     /// Research-only Blazor projection with no candidate IDs, names or
     /// inferred account keys. The manual server lease is a scope, not proof.
     /// </summary>
+    private static NetworkCaptureLease ResearchLease(long epoch) =>
+        new("__roster-research-only__", Math.Max(1, epoch));
+
     internal IReadOnlyList<CandidateWindowRosterCard> ReadWindowCards()
     {
         lock (_gate)
         {
-            NetworkCaptureLease? lease = serverState.GetCaptureLease();
-            return lease is { } current && serverState.IsCaptureLeaseActive(current)
+            NetworkCaptureLease? lease = serverState.AutomaticRoutingEnabled
+                ? ResearchLease(_epoch)
+                : serverState.GetCaptureLease();
+            return lease is { } current &&
+                (serverState.AutomaticRoutingEnabled ||
+                 serverState.IsCaptureLeaseActive(current))
                 ? state.GetWindowCards(current, _epoch)
                 : [];
         }
@@ -66,7 +73,9 @@ internal sealed class EphemeralCandidateRosterWireObserver(
     {
         lock (_gate)
         {
-            NetworkCaptureLease? lease = serverState.GetCaptureLease();
+            NetworkCaptureLease? lease = serverState.AutomaticRoutingEnabled
+                ? ResearchLease(_epoch)
+                : serverState.GetCaptureLease();
             EphemeralCandidateRosterGroupsState.AnonymousCounts counts =
                 lease is { } active
                     ? state.GetAnonymousCounts(active, _epoch)
@@ -93,11 +102,19 @@ internal sealed class EphemeralCandidateRosterWireObserver(
             message.Direction != "S→C")
             return Result.Ignored;
 
+        // An auto-mode ksc arrives before the Game server is confirmed.
+        // Research uses a separate epoch-only scope: NEVER a market lease.
+        NetworkCaptureLease? candidateLease =
+            serverState.AutomaticRoutingEnabled
+                ? ResearchLease(message.CaptureEpoch)
+                : message.CaptureLease;
+
         if (!ownerRevalidated ||
             message.CandidateWindow is not { Handle: not 0, ProcessId: > 0 } ||
-            message.CaptureLease is not { } lease ||
+            candidateLease is not { } lease ||
             message.CaptureEpoch < 0 || message.ConnectionId <= 0 ||
-            !serverState.IsCaptureLeaseActive(lease))
+            (!serverState.AutomaticRoutingEnabled &&
+             !serverState.IsCaptureLeaseActive(lease)))
         {
             // If an already linked flow loses owner/lease evidence, drop
             // its in-memory candidate immediately. Never reassign a delayed
