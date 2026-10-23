@@ -7,7 +7,8 @@ namespace BestCrush.Services;
 /// Do not log/serialize a card (including its window handle).
 /// </summary>
 public sealed record CandidateWindowRosterCard(
-    DofusClientWindowKey Window, int CandidateCount)
+    DofusClientWindowKey Window, int CandidateCount,
+    int? SelectedLevelCandidate = null)
 {
     public override string ToString() =>
         "[candidate window card: redacted account=unverified]";
