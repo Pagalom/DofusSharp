@@ -9,6 +9,9 @@ namespace BestCrush.Network.Protocol;
 public sealed class ProfessionContinuityStudy
 {
     private Dictionary<ulong, (int Level, ulong Xp)>? _baseline;
+    // Previous *valid* capture in this probe run, regardless of account.
+    // This is not an account identity and is never written to disk.
+    private Dictionary<ulong, (int Level, ulong Xp)>? _previous;
 
     private const string Unverified =
         " scope=account-server account=unverified server=unverified mapping=unverified";
@@ -32,6 +35,7 @@ public sealed class ProfessionContinuityStudy
         if (_baseline is null)
         {
             _baseline = current;
+            _previous = current;
             return "p3b=ipz decoded=yes rows=20 f5-valid=yes " +
                    "baseline=created" + Unverified;
         }
@@ -48,9 +52,31 @@ public sealed class ProfessionContinuityStudy
                 current[pair.Key].Xp == pair.Value.Xp) ? "yes" : "no";
         }
 
+        // The old mode only compared A2 against A1; when both B and A2
+        // differed, it could not say whether B and A2 matched each other.
+        // Compare the current capture against both A1 and the preceding
+        // VALID capture without printing any job IDs, levels, XP or hashes.
+        Dictionary<ulong, (int Level, ulong Xp)> previous = _previous!;
+        bool previousIdsEqual = previous.Count == current.Count &&
+            previous.Keys.All(current.ContainsKey);
+        string previousLevel = "unavailable";
+        string previousXp = "unavailable";
+        if (previousIdsEqual)
+        {
+            previousLevel = previous.All(pair =>
+                current[pair.Key].Level == pair.Value.Level) ? "yes" : "no";
+            previousXp = previous.All(pair =>
+                current[pair.Key].Xp == pair.Value.Xp) ? "yes" : "no";
+        }
+
+        _previous = current;
+
         return "p3b=ipz decoded=yes rows=20 f5-valid=yes " +
                "baseline=compared f5-set-equal=" + (idsEqual ? "yes" : "no") +
                " levels-equal=" + level + " xp-equal=" + xp +
-               Unverified;
+               Unverified +
+               " previous-f5-set-equal=" + (previousIdsEqual ? "yes" : "no") +
+               " previous-levels-equal=" + previousLevel +
+               " previous-xp-equal=" + previousXp;
     }
 }
