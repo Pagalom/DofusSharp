@@ -198,7 +198,7 @@ internal sealed class EphemeralCandidateRosterWireObserver(
     {
         lock (_gate)
         {
-            if (nextEpoch < _epoch)
+            if (nextEpoch <= _epoch)
                 return;
             _pending.Clear();
             _rejected.Clear();
