@@ -42,6 +42,27 @@ internal sealed class EphemeralCandidateRosterWireObserver(
 
     internal int CandidateWindowCount => state.LiveWindowCount;
 
+    /// <summary>
+    /// P3c.10 diagnostic: no network bodies, IDs, titles, TCP details,
+    /// names, account keys or server names may escape via this string.
+    /// A count of equal rosters is not a verified account identity.
+    /// </summary>
+    internal string FormatAnonymousStatus(Result outcome)
+    {
+        lock (_gate)
+        {
+            NetworkCaptureLease? lease = serverState.GetCaptureLease();
+            EphemeralCandidateRosterGroupsState.AnonymousCounts counts =
+                lease is { } active
+                    ? state.GetAnonymousCounts(active, _epoch)
+                    : new EphemeralCandidateRosterGroupsState
+                        .AnonymousCounts(0, 0, 0);
+
+            return "p3c10=status=" + outcome.ToString().ToLowerInvariant() +
+                " " + counts;
+        }
+    }
+
     public override string ToString() =>
         "[candidate wire observer: redacted account=unverified]";
 
