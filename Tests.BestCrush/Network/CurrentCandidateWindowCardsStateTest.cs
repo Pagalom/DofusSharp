@@ -101,10 +101,11 @@ public sealed class CurrentCandidateWindowCardsStateTest
         Link(observer, server, B, 22, 201, "Hiver-Rouge",
             (201, "Hiver-Rouge"));
 
-        cards.Cards.Should().BeEquivalentTo([
+        cards.Cards.Should().BeEquivalentTo(new[]
+        {
             new CandidateWindowRosterCard(A, 2),
             new CandidateWindowRosterCard(B, 1)
-        ]);
+        });
         new CurrentAccountProfessionsState().ActiveSnapshot.Should().BeNull();
         new CurrentCharacterState().Characters.Should().BeEmpty();
     }
@@ -148,10 +149,11 @@ public sealed class CurrentCandidateWindowCardsStateTest
 
         Link(observer, server, ReopenedB, 24, 201, "Hiver-Rouge",
             (201, "Hiver-Rouge"));
-        cards.Cards.Should().BeEquivalentTo([
+        cards.Cards.Should().BeEquivalentTo(new[]
+        {
             new CandidateWindowRosterCard(A, 1),
             new CandidateWindowRosterCard(ReopenedB, 1)
-        ]);
+        });
     }
 
     [Fact]
