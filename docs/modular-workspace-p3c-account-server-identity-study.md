@@ -370,4 +370,4 @@ Après chaque phase, le probe doit obtenir un seul message `S→C krg` valable s
 
 **Tests synthétiques ajoutés :** 13 cas isolés (motif positif, motif absent, champ dépendant du personnage, contrôle C→S, conflit multi-Game, contradiction de même Game, duplication identique, trame malformée, mauvaise époque/phase, isolation et non-divulgation).
 
-P3c.4 est **à valider sur Windows**. Base connue : 959 tests P3m.19 validés, 12 tests P3c.2 et 5 tests P3c.3 créés, puis **13 tests P3c.4** : **989 tests attendus** sous réserve du build et de la découverte des tests. Un nombre de tests seul ne confirme ni la sémantique du protocole ni l'identité Ankama.
+**Checkpoint Windows P3c.4 confirmé par l'opérateur le 23 octobre 2026 : 989 tests réussis, 0 échec, 0 ignoré, 7,5 s.** Cela couvre les 959 tests antérieurs et les 30 nouveaux tests P3c.2–P3c.4. Le comportement réel du diagnostic `--account-wire-study` et la sémantique d'un éventuel champ d'identité Ankama **restent à vérifier** par capture réelle. Un nombre de tests seul ne confirme ni la sémantique du protocole ni l'identité Ankama.
