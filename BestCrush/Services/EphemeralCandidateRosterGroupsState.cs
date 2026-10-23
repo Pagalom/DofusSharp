@@ -198,6 +198,23 @@ internal sealed class EphemeralCandidateRosterGroupsState
     }
 
     /// <summary>
+    /// Immediately invalidate all candidate associations on a user-driven
+    /// server-selection change. The lease is NOT a verified game-server ID;
+    /// this is only a lifetime boundary. Old messages must be blocked by
+    /// CurrentServerState.IsCaptureLeaseActive before entering the workspace.
+    /// </summary>
+    internal void InvalidateManualSelection(NetworkCaptureLease? newLease)
+    {
+        lock (_gate)
+        {
+            _windows.Clear();
+            _connectionFloor.Clear();
+            _quarantined.Clear();
+            _lease = newLease;
+        }
+    }
+
+    /// <summary>
     /// Explicit restart: caller provides a genuinely newer capture epoch.
     /// Old in-flight messages cannot revive a previous cohort.
     /// </summary>
