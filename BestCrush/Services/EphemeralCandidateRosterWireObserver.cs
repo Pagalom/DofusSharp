@@ -58,7 +58,7 @@ internal sealed class EphemeralCandidateRosterWireObserver(
             return Result.Ignored;
 
         if (!ownerRevalidated ||
-            message.CandidateWindow is not { Handle: not 0, ProcessId: > 0 } window ||
+            message.CandidateWindow is not { Handle: not 0, ProcessId: > 0 } ||
             message.CaptureLease is not { } lease ||
             message.CaptureEpoch < 0 || message.ConnectionId <= 0 ||
             !serverState.IsCaptureLeaseActive(lease))
@@ -72,6 +72,8 @@ internal sealed class EphemeralCandidateRosterWireObserver(
                     Reject((message.CaptureEpoch, message.ConnectionId));
             return Result.Rejected;
         }
+
+        DofusClientWindowKey window = message.CandidateWindow.Value;
 
         lock (_gate)
         {
