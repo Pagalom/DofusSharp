@@ -23,6 +23,10 @@ internal sealed class DofusNetworkMessageProcessor(
         internal PurchaseRequestObservation? PendingPurchaseRequest;
         internal DateTime PendingPurchaseRequestAtUtc;
         internal DateTime LastSeenUtc;
+        // A window is only an OS client context, not an account/character.
+        // The same logical TCP token must never switch between two windows.
+        internal DofusClientWindowKey? FirstVerifiedWindow;
+        internal bool WindowConflict;
     }
 
     private readonly Dictionary<long, FlowCorrelation> _correlations = [];
@@ -73,6 +77,32 @@ internal sealed class DofusNetworkMessageProcessor(
 
         FlowCorrelation correlation =
             CorrelationFor(message.ConnectionId, message.ObservedAtUtc);
+
+        // Defense-in-depth for the client/socket routing boundary. A logical
+        // connection ID is expected to belong to just one OS window. Should
+        // contradictory *verified* window metadata ever reach this worker,
+        // quarantine that entire token for the rest of its capture lease.
+        // In particular, neither an item UID nor a pending purchase may be
+        // reused by the other window. Missing window metadata is not proof
+        // of a different owner and keeps the existing manual-server path.
+        if (correlation.WindowConflict)
+            return;
+
+        if (message.CandidateWindow is { } window)
+        {
+            if (correlation.FirstVerifiedWindow is { } previous &&
+                previous != window)
+            {
+                correlation.ItemDetails.Clear();
+                correlation.PendingPurchaseRequest = null;
+                correlation.PendingPurchaseRequestAtUtc = default;
+                correlation.WindowConflict = true;
+                return;
+            }
+
+            correlation.FirstVerifiedWindow ??= window;
+        }
+
         RecentItemDetailsCache itemDetails = correlation.ItemDetails;
 
         await debugWriter.WriteWireDebugAsync(
