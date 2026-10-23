@@ -334,7 +334,8 @@ public sealed class CurrentCharacterState
             {
                 _verifiedWindows.Remove(key);
                 _profiles.Remove(key);
-                _scopes.Remove(key);
+                if (_scopes.Remove(key, out CharacterConnectionScope closedScope))
+                    _revokedScopes.Add(closedScope);
                 if (_active == key)
                     _active = null;
                 changed = true;
