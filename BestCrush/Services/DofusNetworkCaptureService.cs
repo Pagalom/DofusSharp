@@ -33,9 +33,12 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly WindowScopedNetworkEquipmentState? _windowEquipmentState;
     private readonly LiveDofusClientNetworkBindings? _clientBindings;
     private readonly DofusWindowService? _dofusWindowService;
-    // P3c.9 read-only opt-in research seam: never resolved from DI or
-    // enabled by the public production constructor.
+    // The observer remains null in standard builds and normal Debug runs.
+    // P3c.10 activates anonymous diagnostics only on an explicit Debug opt-in.
     private readonly EphemeralCandidateRosterWireObserver? _rosterWireObserver;
+    private readonly bool _liveRosterDiagnostics;
+    private int _liveRosterReportCount;
+    private const int MaximumLiveRosterReports = 128;
 #endif
 
 #if WINDOWS
@@ -136,7 +139,30 @@ public sealed class DofusNetworkCaptureService : IDisposable
 #if WINDOWS
         _clientBindings = clientBindings;
         _dofusWindowService = dofusWindowService;
-        _rosterWireObserver = rosterWireObserver;
+#if DEBUG
+        // No activation by production DI, settings, command-line argument,
+        // or release build. Only an explicit per-process Debug environment
+        // variable starts the anonymous live study.
+        if (rosterWireObserver is null &&
+            IsLiveRosterStudyEnabled(
+                Environment.GetEnvironmentVariable(
+                    "BESTCRUSH_P3C10_ROSTER_STUDY"),
+                debugBuild: true,
+                hasOwnerServices: clientBindings is not null &&
+                                  dofusWindowService is not null))
+        {
+            _rosterWireObserver = new EphemeralCandidateRosterWireObserver(
+                currentServerState, new EphemeralCandidateRosterGroupsState());
+            _liveRosterDiagnostics = true;
+            logger.LogInformation(
+                "p3c10=status=enabled mode=debug-opt-in " +
+                "account=unverified server=unverified");
+        }
+        else
+#endif
+        {
+            _rosterWireObserver = rosterWireObserver;
+        }
         // Resolve the process-lifetime singleton without changing the
         // public constructor signature (tests can omit this staged service).
         using (IServiceScope scope = serviceScopeFactory.CreateScope())
@@ -173,6 +199,15 @@ public sealed class DofusNetworkCaptureService : IDisposable
     }
 #if WINDOWS
     private const int DofusPort = 5555;
+
+    /// <summary>
+    /// Pure diagnostic gate for tests. Production builds never call this
+    /// with debugBuild=true; the activation branch is compiled out.
+    /// </summary>
+    internal static bool IsLiveRosterStudyEnabled(
+        string? flag, bool debugBuild, bool hasOwnerServices) =>
+        debugBuild && hasOwnerServices &&
+        string.Equals(flag, "1", StringComparison.Ordinal);
 
     private readonly object _captureLock = new();
     private readonly object _streamLock = new();
@@ -216,6 +251,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
         _lastNetworkEquipmentState.Clear();
         _windowEquipmentState?.Clear();
         _rosterWireObserver?.OnManualServerChanged();
+        if (_liveRosterDiagnostics)
+            logger.LogInformation(
+                "p3c10=status=reset reason=manual-server-change " +
+                "account=unverified server=unverified");
 
         // Drop partial frames when the user selects another server.
         lock (_streamLock)
@@ -285,6 +324,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
             _clientBindings?.Reset(epoch);
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(epoch);
+            if (_liveRosterDiagnostics)
+                Interlocked.Exchange(ref _liveRosterReportCount, 0);
             lock (_clientBindingsRefreshLock)
             {
                 _clientBindingsLastRefreshUtc = DateTime.MinValue;
@@ -804,7 +845,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                         {
                             try
                             {
-                                _rosterWireObserver.Observe(
+                                var outcome = _rosterWireObserver.Observe(
                                     routed,
                                     routed.CandidateWindow is not null &&
                                     (routed.SyntheticWindowForReplay ||
@@ -812,6 +853,23 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                          routed.CaptureEpoch,
                                          routed.ConnectionId,
                                          routed.CandidateWindow.Value) == true)));
+
+                                if (_liveRosterDiagnostics &&
+                                    outcome != EphemeralCandidateRosterWireObserver
+                                        .Result.Ignored)
+                                {
+                                    int emitted = Interlocked.Increment(
+                                        ref _liveRosterReportCount);
+                                    if (emitted <= MaximumLiveRosterReports)
+                                        logger.LogInformation("{P3c10Status}",
+                                            _rosterWireObserver
+                                                .FormatAnonymousStatus(outcome));
+                                    else if (emitted ==
+                                             MaximumLiveRosterReports + 1)
+                                        logger.LogInformation(
+                                            "p3c10=status=report-limit " +
+                                            "account=unverified server=unverified");
+                                }
                             }
                             catch (Exception ex)
                             {
