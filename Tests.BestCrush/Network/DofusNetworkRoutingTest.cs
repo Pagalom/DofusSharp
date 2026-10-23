@@ -29,6 +29,171 @@ public sealed class DofusNetworkRoutingTest
     private static byte[] CandidateSelected(ulong id, string name) =>
         Bytes(1, Bytes(1, CandidateRow(id, name)));
 
+    private static async Task LoadAutoWindowAsync(
+        RoutingHarness harness,
+        DofusClientWindowKey window,
+        int serverId,
+        long connectionId,
+        ulong characterId,
+        string characterName,
+        DateTime at)
+    {
+        long epoch = harness.Service.CaptureEpochForReplay;
+        harness.AutomaticAttributions.ObserveSelection(
+            window, epoch, connectionId + 1000,
+            serverId, at.AddSeconds(-5));
+
+        await harness.Service.ReplayMessageAsync(
+            "S→C", "ksc",
+            CandidateRoster((characterId, characterName)),
+            at, connectionId: connectionId, candidateWindow: window);
+        await harness.Service.ReplayMessageAsync(
+            "S→C", "ksb",
+            CandidateSelected(characterId, characterName),
+            at.AddSeconds(1), connectionId: connectionId,
+            candidateWindow: window);
+    }
+
+    [Fact]
+    public async Task AutomaticServersPersistMarketObservationsUnderTheirOwnServerNames()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync(automaticRouting: true);
+        DofusClientWindowKey a = new(101, 1201);
+        DofusClientWindowKey b = new(102, 1202);
+        // UI choice cannot override the network ID in automatic mode.
+        harness.ServerState.SelectServer("WRONG_GLOBAL_SERVER");
+
+        await LoadAutoWindowAsync(harness, a, 295, 21, 101,
+            "Alpha-One", ObservedAt);
+        await LoadAutoWindowAsync(harness, b, 293, 22, 201,
+            "Bravo-Two", ObservedAt.AddSeconds(4));
+
+        await harness.ReplayAsync("jzs",
+            JzsMarket(42, 11,
+                JzsOffer(42, 128998, 11, 4899, 0, 0, 0)),
+            ObservedAt.AddSeconds(8), connectionId: 21,
+            candidateWindow: a);
+        await harness.ReplayAsync("jzs",
+            JzsMarket(43, 11,
+                JzsOffer(43, 128998, 11, 7399, 0, 0, 0)),
+            ObservedAt.AddSeconds(9), connectionId: 22,
+            candidateWindow: b);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 42,
+            "Draconiros")).Should().ContainSingle()
+            .Which.Price.Should().Be(4899);
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 43,
+            "Tylezia")).Should().ContainSingle()
+            .Which.Price.Should().Be(7399);
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 42,
+            "Tylezia")).Should().BeEmpty();
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 43,
+            "Draconiros")).Should().BeEmpty();
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 42,
+            "WRONG_GLOBAL_SERVER")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task TwoWindowsOnSameServerShareOneMarketHistory()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync(automaticRouting: true);
+        DofusClientWindowKey a = new(101, 1201);
+        DofusClientWindowKey b = new(102, 1202);
+
+        await LoadAutoWindowAsync(harness, a, 295, 21, 101,
+            "Alpha-One", ObservedAt);
+        await LoadAutoWindowAsync(harness, b, 295, 22, 201,
+            "Bravo-Two", ObservedAt.AddSeconds(4));
+
+        await harness.ReplayAsync("jzs",
+            JzsMarket(42, 11,
+                JzsOffer(42, 128998, 11, 4899, 0, 0, 0)),
+            ObservedAt.AddSeconds(8), connectionId: 21,
+            candidateWindow: a);
+        await harness.ReplayAsync("jzs",
+            JzsMarket(42, 11,
+                JzsOffer(42, 129000, 11, 5099, 0, 0, 0)),
+            ObservedAt.AddSeconds(9), connectionId: 22,
+            candidateWindow: b);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 42,
+            "Draconiros")).Select(p => p.Price)
+            .Should().BeEquivalentTo([4899L, 5099L]);
+        harness.AutomaticAttributions.ForWindow(a)!.ServerName
+            .Should().Be("Draconiros");
+        harness.AutomaticAttributions.ForWindow(b)!.ServerName
+            .Should().Be("Draconiros");
+    }
+
+    [Fact]
+    public async Task WindowWithoutLinkedServerNeverWritesToLegacyOrOtherMarkets()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync(automaticRouting: true);
+        DofusClientWindowKey a = new(101, 1201);
+        DofusClientWindowKey b = new(102, 1202);
+        harness.ServerState.SelectServer("Tylezia");
+        harness.ServerState.GetCaptureLease().Should().BeNull();
+
+        await LoadAutoWindowAsync(harness, a, 295, 21, 101,
+            "Alpha-One", ObservedAt);
+
+        // B has a plausible game roster but no independently linked ID.
+        await harness.Service.ReplayMessageAsync(
+            "S→C", "ksc", CandidateRoster((201UL, "Bravo-Two")),
+            ObservedAt.AddSeconds(3), connectionId: 22,
+            candidateWindow: b);
+        await harness.Service.ReplayMessageAsync(
+            "S→C", "ksb", CandidateSelected(201, "Bravo-Two"),
+            ObservedAt.AddSeconds(4), connectionId: 22,
+            candidateWindow: b);
+        await harness.ReplayAsync("jzs",
+            JzsMarket(43, 11,
+                JzsOffer(43, 128998, 11, 7399, 0, 0, 0)),
+            ObservedAt.AddSeconds(5), connectionId: 22,
+            candidateWindow: b);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 43,
+            "Tylezia")).Should().BeEmpty();
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 43,
+            "Draconiros")).Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task ReconnectWithoutNewSelectionRevokesOldEconomicLease()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync(automaticRouting: true);
+        DofusClientWindowKey a = new(101, 1201);
+        await LoadAutoWindowAsync(harness, a, 295, 21, 101,
+            "Alpha-One", ObservedAt);
+        NetworkCaptureLease oldLease = harness.ServerState
+            .GetWindowCaptureLease(a)!.Value;
+        harness.ServerState.IsCaptureLeaseActive(oldLease)
+            .Should().BeTrue();
+
+        await harness.Service.ReplayMessageAsync(
+            "S→C", "ksc", CandidateRoster((101UL, "Alpha-One")),
+            ObservedAt.AddSeconds(5), connectionId: 31,
+            candidateWindow: a);
+        await harness.Service.ReplayMessageAsync(
+            "S→C", "ksb", CandidateSelected(101, "Alpha-One"),
+            ObservedAt.AddSeconds(6), connectionId: 31,
+            candidateWindow: a);
+
+        harness.ServerState.IsCaptureLeaseActive(oldLease)
+            .Should().BeFalse();
+        await harness.ReplayAsync("jzs",
+            JzsMarket(42, 11,
+                JzsOffer(42, 128998, 11, 4899, 0, 0, 0)),
+            ObservedAt.AddSeconds(7), connectionId: 31,
+            candidateWindow: a);
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 42,
+            "Draconiros")).Should().BeEmpty();
+    }
+
     [Fact]
     public async Task OptInRosterObserverReceivesRealWorkerReplayButCannotWriteAccounts()
     {
