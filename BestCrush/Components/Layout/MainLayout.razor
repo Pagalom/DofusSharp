@@ -11,6 +11,7 @@
 @inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
 @inject BestCrush.Services.CurrentDofusClientsState CurrentDofusClientsState
 @inject BestCrush.Services.CurrentCandidateWindowCardsState CurrentCandidateWindowCardsState
+@inject BestCrush.Services.WindowServerAttributionState WindowServerAttributionState
 @inject BestCrush.Services.LiveDofusClientNetworkBindings LiveClientNetworkBindings
 @inject BestCrush.Services.WindowScopedNetworkEquipmentState WindowEquipmentState
 @inject BestCrush.Services.DofusWindowService DofusWindowService
@@ -203,6 +204,7 @@
         CurrentCharacterState.Changed += OnCharacterChanged;
         CurrentDofusClientsState.Changed += OnDofusClientChanged;
         CurrentCandidateWindowCardsState.Changed += OnDofusClientChanged;
+        WindowServerAttributionState.Changed += OnDofusClientChanged;
         LiveClientNetworkBindings.Changed += OnDofusClientChanged;
         GuardLegacyRoute();
 
@@ -310,6 +312,7 @@
         CurrentCharacterState.Changed -= OnCharacterChanged;
         CurrentDofusClientsState.Changed -= OnDofusClientChanged;
         CurrentCandidateWindowCardsState.Changed -= OnDofusClientChanged;
+        WindowServerAttributionState.Changed -= OnDofusClientChanged;
         LiveClientNetworkBindings.Changed -= OnDofusClientChanged;
 
         if (_clientPollingCancellation is { } cancellation)
