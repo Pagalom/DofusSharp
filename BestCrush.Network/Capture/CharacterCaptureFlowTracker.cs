@@ -41,7 +41,8 @@ public sealed record CharacterCaptureEvent(
     string? ProfessionFlowSummary = null,
     string? ProfessionContinuitySummary = null,
     string? ProfessionXpStudySummary = null,
-    string? AccountWireFieldSummary = null);
+    string? AccountWireFieldSummary = null,
+    string? RosterContinuitySummary = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -92,6 +93,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly ServerNameWireStudy? _serverNameStudy;
     private readonly ConnectionServerSelectionStudy? _connectionSelectionStudy;
     private readonly AccountWireFieldComparisonStudy? _accountWireStudy;
+    private readonly CharacterRosterContinuityStudy? _rosterStudy;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -124,7 +126,8 @@ public sealed class CharacterCaptureFlowTracker
         KtaSelectedCharacterStudy? ktaCharacterStudy = null,
         ServerNameWireStudy? serverNameStudy = null,
         ConnectionServerSelectionStudy? connectionSelectionStudy = null,
-        AccountWireFieldComparisonStudy? accountWireStudy = null)
+        AccountWireFieldComparisonStudy? accountWireStudy = null,
+        CharacterRosterContinuityStudy? rosterStudy = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -341,6 +344,23 @@ public sealed class CharacterCaptureFlowTracker
                 nameof(accountWireStudy));
         _accountWireStudy = accountWireStudy;
 
+        if (rosterStudy is not null &&
+            (accountWireStudy is not null ||
+             connectionSelectionStudy is not null ||
+             serverNameStudy is not null || ktaCharacterStudy is not null ||
+             ktaScopeStudy is not null || serverWireStudy is not null ||
+             crossOpcodeStudy is not null || identityPairStudy is not null ||
+             expectedClassId is not null || identityFieldsReference is not null ||
+             characterNameReference is not null || shapeKeys is not null ||
+             professionReferences is not null || studyReferences is not null ||
+             identifyReferences is not null || decodeIpz || showCandidateJobIds ||
+             studyProfessionFlow || studyProfessionContinuity ||
+             professionXpStudy is not null || _characterNameOpCodes.Count > 0))
+            throw new ArgumentException(
+                "Roster study requires an exclusive passive diagnostic mode.",
+                nameof(rosterStudy));
+        _rosterStudy = rosterStudy;
+
         if ((studyProfessionFlow || studyProfessionContinuity || professionXpStudy is not null) &&
             (shapeKeys is not null || professionReferences is not null ||
              decodeIpz || studyReferences is not null ||
@@ -418,6 +438,7 @@ public sealed class CharacterCaptureFlowTracker
                 flow = new Session(++_nextNumber, observedAtUtc);
                 _flows.Add(key, flow);
                 _accountWireStudy?.ObserveOpenedSession(flow.Number);
+                _rosterStudy?.ObserveOpenedSession(flow.Number);
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
                     CharacterCaptureEventKind.Opened));
@@ -432,6 +453,7 @@ public sealed class CharacterCaptureFlowTracker
                 flow = new Session(++_nextNumber, observedAtUtc);
                 _flows[key] = flow;
                 _accountWireStudy?.ObserveOpenedSession(flow.Number);
+                _rosterStudy?.ObserveOpenedSession(flow.Number);
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
                     CharacterCaptureEventKind.Opened));
@@ -548,6 +570,8 @@ public sealed class CharacterCaptureFlowTracker
                                         ? _professionXpStudy.Observe(flow.Number, any.Body)
                                         : null,
                                     _accountWireStudy?.Observe(
+                                        flow.Number, direction, any.Key, any.Body),
+                                    _rosterStudy?.Observe(
                                         flow.Number, direction, any.Key, any.Body)));
                             }
                         }
