@@ -288,3 +288,17 @@
     .sheet-footer { padding: 10px 12px 12px; flex-wrap: wrap; }
     .sheet-footnote { max-width: none; }
 }
+
+.sheet-server {
+    margin: 6px 0 0;
+    color: #e4d49d;
+    font-size: .78rem;
+}
+.sheet-server strong { color: #fff5ce; }
+.sheet-server-id {
+    display: inline-block;
+    margin-left: 5px;
+    color: #bdc9c3;
+    font-size: .68rem;
+}
+.sheet-server--pending { color: #b4c2c1; }
