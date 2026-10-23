@@ -109,16 +109,14 @@ public sealed class WindowServerAttributionState
                 list = [];
                 _selections.Add(window, list);
             }
-            // An exact Connection TCP token may advertise only one selection.
-            // A contradictory repeat poisons this window's pending evidence.
+            // Repeated selections, including the same ID on the same TCP,
+            // are ambiguous. Do not silently choose the first value.
             if (list.Any(s => s.ConnectionId == connectionId))
             {
-                Selection previous = list.First(s => s.ConnectionId == connectionId);
-                if (previous.Id != serverId)
+                if (list.Count < 4)
                     list.Add(new Selection(connectionId, 0, atUtc));
-                return;
             }
-            if (list.Count < 4)
+            else if (list.Count < 4)
                 list.Add(new Selection(connectionId, serverId, atUtc));
             changed = _loaded.Remove(window);
         }
