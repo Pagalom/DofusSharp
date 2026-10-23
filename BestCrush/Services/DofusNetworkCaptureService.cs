@@ -712,16 +712,26 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                     // loaded server; the same-window Game
                                     // ksc/ksb must also complete.
                                     if (tcp.DestinationPort == DofusPort &&
-                                        candidateWindow is { } selectedWindow &&
                                         _windowServerAttributionState is not null &&
                                         ConnectionServerSelectionStudy
                                             .TryGetSelectedServerCandidate(
                                                 frame, out int selectedServerId))
                                     {
-                                        _windowServerAttributionState.ObserveSelection(
-                                            selectedWindow, captureEpoch,
-                                            connectionId, selectedServerId,
-                                            DateTime.UtcNow);
+                                        // Short Connection sockets may appear
+                                        // between periodic Windows table
+                                        // refreshes; force one exact-tuple
+                                        // owner lookup while payload is live.
+                                        DofusClientWindowKey? selectedWindow =
+                                            ObserveLiveDofusClient(
+                                                ip.SourceAddress, tcp.SourcePort,
+                                                ip.DestinationAddress, tcp.DestinationPort,
+                                                captureEpoch, connectionId,
+                                                forceRefresh: true);
+                                        if (selectedWindow is { } owner)
+                                            _windowServerAttributionState.ObserveSelection(
+                                                owner, captureEpoch,
+                                                connectionId, selectedServerId,
+                                                DateTime.UtcNow);
                                     }
                                     continue;
                                 }
@@ -776,7 +786,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private DofusClientWindowKey? ObserveLiveDofusClient(
         System.Net.IPAddress source, int sourcePort,
         System.Net.IPAddress destination, int destinationPort,
-        long captureEpoch, long connectionId)
+        long captureEpoch, long connectionId,
+        bool forceRefresh = false)
     {
         if (_clientBindings is null || _dofusWindowService is null ||
             !_started || captureEpoch != Interlocked.Read(ref _captureEpoch) ||
@@ -794,7 +805,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
             lock (_clientBindingsRefreshLock)
             {
                 DateTime now = DateTime.UtcNow;
-                if (now - _clientBindingsLastRefreshUtc >= TimeSpan.FromSeconds(1))
+                if (forceRefresh ||
+                    now - _clientBindingsLastRefreshUtc >= TimeSpan.FromSeconds(1))
                 {
                     // OS snapshots are inspected locally, never written to
                     // logs or persisted. A missing snapshot fails closed.
