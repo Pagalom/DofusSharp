@@ -102,13 +102,16 @@
         </div>
     }
 
-    @if (CurrentCandidateWindowCardsState.IsResearchEnabled)
+    @if (CurrentCandidateWindowCardsState.IsResearchEnabled ||
+         serverLinkedWithoutRoster.Count > 0)
     {
         <p class="profile-research-note">
-            Le serveur affiché est un candidat lié à une fenêtre via Connection et ksc/ksb, non encore utilisé pour l'enregistrement des prix. Les fiches expérimentales utilisent le nom et la classe du titre Windows,
-            et un niveau candidat issu des messages réseau. Les métiers et les kamas
-            seront affichés après attribution fiable ; aucune donnée n'est inventée
-            ni sauvegardée dans le profil.
+            Association serveur expérimentale issue des messages Connection et
+            ksc/ksb. Attention : les prix et coefficients utilisent encore le
+            serveur global historique dans ce jalon. Ne pas collecter de
+            données économiques de plusieurs serveurs simultanément.
+            Les noms/classes proviennent des titres Windows ; les niveaux
+            candidats ne sont montrés que lorsqu'ils sont observés.
         </p>
     }
 </div>
