@@ -5,6 +5,7 @@
 @inject CurrentAccountProfessionsState CurrentAccountProfessionsState
 @inject CurrentCandidateWindowCardsState CurrentCandidateWindowCardsState
 @inject CurrentDofusClientsState CurrentDofusClientsState
+@inject WindowServerAttributionState WindowServerAttributionState
 
 <div class="character-profile-page container-fluid px-1 px-md-3 py-4">
     @{
@@ -35,6 +36,8 @@
                                         DisplayName="@client.DisplayName"
                                         ClassName="@client.ClassName"
                                         Level="@candidate.SelectedLevelCandidate"
+                                        ServerName="@WindowServerAttributionState.ForWindow(client.Key)?.ServerName"
+                                        ServerId="@WindowServerAttributionState.ForWindow(client.Key)?.ServerId"
                                         IsExperimental="true"
                                         IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
                                         OnSelect="@(() => SelectDofusClient(client.Key))" />
@@ -61,6 +64,7 @@
                                         DisplayName="@character.Name"
                                         ClassName="@DofusClassDisplayNames.ForId(character.ClassId)"
                                         Level="@character.Level"
+                                        ServerName="@character.Key.ServerName"
                                         PocketKamas="@character.PocketKamas"
                                         BankKamas="@character.BankKamas"
                                         Professions="@CurrentAccountProfessionsState.ForCharacter(character)?.Professions"
@@ -88,7 +92,7 @@
     @if (CurrentCandidateWindowCardsState.IsResearchEnabled)
     {
         <p class="profile-research-note">
-            Les fiches expérimentales utilisent le nom et la classe du titre Windows,
+            Le serveur affiché est un candidat lié à une fenêtre via Connection et ksc/ksb, non encore utilisé pour l'enregistrement des prix. Les fiches expérimentales utilisent le nom et la classe du titre Windows,
             et un niveau candidat issu des messages réseau. Les métiers et les kamas
             seront affichés après attribution fiable ; aucune donnée n'est inventée
             ni sauvegardée dans le profil.
@@ -108,6 +112,7 @@
         CurrentCharacterState.Changed += OnCharacterChanged;
         CurrentCandidateWindowCardsState.Changed += OnCharacterChanged;
         CurrentDofusClientsState.Changed += OnCharacterChanged;
+        WindowServerAttributionState.Changed += OnCharacterChanged;
     }
 
     private void SelectDofusClient(DofusClientWindowKey key)
@@ -128,5 +133,6 @@
         CurrentCharacterState.Changed -= OnCharacterChanged;
         CurrentCandidateWindowCardsState.Changed -= OnCharacterChanged;
         CurrentDofusClientsState.Changed -= OnCharacterChanged;
+        WindowServerAttributionState.Changed -= OnCharacterChanged;
     }
 }
