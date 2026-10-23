@@ -15,6 +15,7 @@ internal sealed class DofusNetworkMessageProcessor(
     // TCP connection ID. Never use a selected window or character name as
     // evidence that two messages belong to the same connection.
     private const int MaximumCorrelationFlows = 64;
+    private const int MaximumQuarantinedConnections = 128;
     private static readonly TimeSpan CorrelationIdleTimeout = TimeSpan.FromHours(1);
 
     private sealed class FlowCorrelation
@@ -26,10 +27,13 @@ internal sealed class DofusNetworkMessageProcessor(
         // A window is only an OS client context, not an account/character.
         // The same logical TCP token must never switch between two windows.
         internal DofusClientWindowKey? FirstVerifiedWindow;
-        internal bool WindowConflict;
     }
 
     private readonly Dictionary<long, FlowCorrelation> _correlations = [];
+    // Separate from the LRU-like correlation cache: eviction/idle expiry must
+    // never resurrect a token whose OS client context was contradictory.
+    private readonly HashSet<long> _quarantinedConnections = [];
+    private bool _quarantineOverflow;
     private NetworkCaptureLease? _lastLease;
     private long? _lastCaptureEpoch;
 
@@ -64,6 +68,8 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             // No UID or purchase state survives server selection / Stop+Start.
             _correlations.Clear();
+            _quarantinedConnections.Clear();
+            _quarantineOverflow = false;
             _lastLease = message.CaptureLease;
             _lastCaptureEpoch = message.CaptureEpoch;
         }
@@ -73,6 +79,10 @@ internal sealed class DofusNetworkMessageProcessor(
         if (message.ConnectionId <= 0 ||
             message.CaptureLease is not { } lease ||
             !currentServerState.IsCaptureLeaseActive(lease))
+            return;
+
+        if (_quarantineOverflow ||
+            _quarantinedConnections.Contains(message.ConnectionId))
             return;
 
         FlowCorrelation correlation =
@@ -85,9 +95,6 @@ internal sealed class DofusNetworkMessageProcessor(
         // In particular, neither an item UID nor a pending purchase may be
         // reused by the other window. Missing window metadata is not proof
         // of a different owner and keeps the existing manual-server path.
-        if (correlation.WindowConflict)
-            return;
-
         if (message.CandidateWindow is { } window)
         {
             if (correlation.FirstVerifiedWindow is { } previous &&
@@ -96,7 +103,10 @@ internal sealed class DofusNetworkMessageProcessor(
                 correlation.ItemDetails.Clear();
                 correlation.PendingPurchaseRequest = null;
                 correlation.PendingPurchaseRequestAtUtc = default;
-                correlation.WindowConflict = true;
+                if (_quarantinedConnections.Count < MaximumQuarantinedConnections)
+                    _quarantinedConnections.Add(message.ConnectionId);
+                else
+                    _quarantineOverflow = true; // fail closed when bounded
                 return;
             }
 
