@@ -91,6 +91,9 @@ public sealed class AccountWireFieldComparisonStudy
                 return Report("krg-limit");
             }
 
+            // Reserve the first observed game flow even if its krg body is
+            // malformed. A second TCP Game must never replace that phase.
+            phase.GameSession = sessionNumber;
             Dictionary<string, ulong>? fields = ExtractUniqueScalars(body);
             if (fields is null || fields.Count == 0)
             {
@@ -105,7 +108,6 @@ public sealed class AccountWireFieldComparisonStudy
                 return Report("layout-rejected");
             }
 
-            phase.GameSession = sessionNumber;
             phase.Snapshots++;
             if (phase.Fields is null)
             {
