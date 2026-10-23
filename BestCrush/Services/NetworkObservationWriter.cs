@@ -25,7 +25,8 @@ internal sealed class NetworkObservationWriter(
         string,
         CancellationToken,
         Task> applyNetworkCrushAsync,
-    ILogger<DofusNetworkCaptureService> logger)
+    ILogger<DofusNetworkCaptureService> logger,
+    WindowScopedNetworkEquipmentState? windowEquipmentState = null)
 {
     private readonly Dictionary<
         long,
@@ -38,7 +39,9 @@ internal sealed class NetworkObservationWriter(
         CancellationToken cancellationToken,
         bool allowEquipmentPriceRefresh = true,
         bool requireEquipment = false,
-        bool requireStackable = false)
+        bool requireStackable = false,
+        DofusClientWindowKey? verifiedWindow = null,
+        long captureEpoch = -1)
     {
         string serverName = lease.ServerName;
 
@@ -83,6 +86,9 @@ internal sealed class NetworkObservationWriter(
                 checked((long)market.ItemId),
                 serverName,
                 observedAtUtc);
+            RememberWindowEquipment(
+                checked((long)market.ItemId), observedAtUtc, lease,
+                captureEpoch, verifiedWindow);
 
             if (!allowEquipmentPriceRefresh)
             {
@@ -169,7 +175,9 @@ internal sealed class NetworkObservationWriter(
             ItemDetailObservation> itemDetails,
         DateTime observedAtUtc,
         NetworkCaptureLease lease,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DofusClientWindowKey? verifiedWindow = null,
+        long captureEpoch = -1)
     {
         string serverName = lease.ServerName;
 
@@ -217,7 +225,9 @@ internal sealed class NetworkObservationWriter(
                     item.ItemId,
                     observedAtUtc,
                     lease,
-                    cancellationToken);
+                    cancellationToken,
+                    verifiedWindow,
+                    captureEpoch);
 
                 NetworkCrushRuneResult[] runes =
                     line.Runes
@@ -282,7 +292,9 @@ internal sealed class NetworkObservationWriter(
         ulong itemId,
         DateTime observedAtUtc,
         NetworkCaptureLease lease,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DofusClientWindowKey? verifiedWindow = null,
+        long captureEpoch = -1)
     {
         if (itemId == 0 ||
             !currentServerState.IsCaptureLeaseActive(lease))
@@ -328,6 +340,9 @@ internal sealed class NetworkObservationWriter(
             dofusDbId,
             serverName,
             observedAtUtc);
+        RememberWindowEquipment(
+            dofusDbId, observedAtUtc, lease,
+            captureEpoch, verifiedWindow);
 
         await debugWriter.WriteEventDebugAsync(
             observedAtUtc,
@@ -335,6 +350,24 @@ internal sealed class NetworkObservationWriter(
             cancellationToken);
     }
 
+
+    // Shadow state only: retaining the legacy global focus is intentional
+    // until wheel targeting can demand an independently verified client.
+    // Never record rune/resource IDs, unverified windows or an inactive lease.
+    private void RememberWindowEquipment(
+        long equipmentId, DateTime observedAtUtc,
+        NetworkCaptureLease lease, long captureEpoch,
+        DofusClientWindowKey? verifiedWindow)
+    {
+        if (windowEquipmentState is null ||
+            verifiedWindow is not { } window ||
+            captureEpoch < 0 ||
+            !currentServerState.IsCaptureLeaseActive(lease))
+            return;
+
+        windowEquipmentState.Remember(
+            window, lease, captureEpoch, equipmentId, observedAtUtc);
+    }
 
     private bool IsMarketCaptureEnabled(
         MarketObjectType objectType)
