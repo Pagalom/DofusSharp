@@ -17,6 +17,102 @@ public sealed class DofusNetworkRoutingTest
     private static readonly DateTime ObservedAt =
         new(2026, 10, 10, 12, 0, 0, DateTimeKind.Utc);
 
+    private static byte[] CandidateRow(ulong id, string name, ulong level = 50) =>
+        Message(Unsigned(3, id), Bytes(4, Message(
+            Unsigned(3, level),
+            Bytes(6, System.Text.Encoding.UTF8.GetBytes(name)))));
+
+    private static byte[] CandidateRoster(params (ulong Id, string Name)[] rows) =>
+        Message(rows.Select(row =>
+            Bytes(2, CandidateRow(row.Id, row.Name))).ToArray());
+
+    private static byte[] CandidateSelected(ulong id, string name) =>
+        Bytes(1, Bytes(1, CandidateRow(id, name)));
+
+    [Fact]
+    public async Task OptInRosterObserverReceivesRealWorkerReplayButCannotWriteAccounts()
+    {
+        CurrentServerState manualServer = new();
+        // The observer must reference the SAME server state as the worker.
+        // Harness creates the state, so use its supplied observer factory.
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync(
+            (state, workspace) => new EphemeralCandidateRosterWireObserver(state, workspace));
+
+        EphemeralCandidateRosterGroupsState workspace = harness.RosterWorkspace!;
+        DofusClientWindowKey a = new(101, 1201);
+        DofusClientWindowKey b = new(102, 1202);
+        long epoch = harness.Service.CaptureEpochForReplay;
+        NetworkCaptureLease lease = harness.ServerState.GetCaptureLease()!.Value;
+
+        await harness.Service.ReplayMessageAsync("S→C", "ksc",
+            CandidateRoster((101, "Sable-Ciel"), (102, "Roche-Lune")),
+            ObservedAt, connectionId: 11, candidateWindow: a);
+        await harness.Service.ReplayMessageAsync("S→C", "ksb",
+            CandidateSelected(101, "Sable-Ciel"),
+            ObservedAt.AddSeconds(1), connectionId: 11, candidateWindow: a);
+        await harness.Service.ReplayMessageAsync("S→C", "ksc",
+            CandidateRoster((201, "Hiver-Rouge")),
+            ObservedAt.AddSeconds(2), connectionId: 22, candidateWindow: b);
+        await harness.Service.ReplayMessageAsync("S→C", "ksb",
+            CandidateSelected(201, "Hiver-Rouge"),
+            ObservedAt.AddSeconds(3), connectionId: 22, candidateWindow: b);
+
+        workspace.LiveWindowCount.Should().Be(2);
+        workspace.Compare(a, b, lease, epoch)
+            .Should().Be(EphemeralCandidateRosterGroupsState
+                .Comparison.DisjointRosterCandidates);
+        new CurrentAccountProfessionsState().ActiveSnapshot.Should().BeNull();
+        new CurrentCharacterState().Characters.Should().BeEmpty();
+        harness.Notifications.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task OptInRosterReplayIsInvalidatedByManualServerChangeAndCaptureRestart()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync(
+            (server, workspace) => new EphemeralCandidateRosterWireObserver(server, workspace));
+        var workspace = harness.RosterWorkspace!;
+        DofusClientWindowKey a = new(101, 1201);
+        long firstEpoch = harness.Service.CaptureEpochForReplay;
+
+        await harness.Service.ReplayMessageAsync("S→C", "ksc",
+            CandidateRoster((101, "Sable-Ciel")),
+            ObservedAt, connectionId: 11, candidateWindow: a);
+        await harness.Service.ReplayMessageAsync("S→C", "ksb",
+            CandidateSelected(101, "Sable-Ciel"),
+            ObservedAt.AddSeconds(1), connectionId: 11, candidateWindow: a);
+        workspace.LiveWindowCount.Should().Be(1);
+
+        harness.ServerState.SelectServer("OTHER_SERVER");
+        workspace.LiveWindowCount.Should().Be(0);
+        harness.Service.Stop();
+        harness.Service.ResumeReplayForTests();
+        workspace.LiveWindowCount.Should().Be(0);
+
+        await harness.Service.ReplayMessageAsync("S→C", "ksc",
+            CandidateRoster((101, "Sable-Ciel")),
+            ObservedAt.AddSeconds(2),
+            recordedCaptureEpoch: firstEpoch,
+            connectionId: 12, candidateWindow: a);
+        workspace.LiveWindowCount.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task WithoutExplicitOptInNoRosterGroupsAreCreatedByWireReplay()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey a = new(101, 1201);
+        await harness.Service.ReplayMessageAsync("S→C", "ksc",
+            CandidateRoster((101, "Sable-Ciel")), ObservedAt,
+            connectionId: 11, candidateWindow: a);
+        await harness.Service.ReplayMessageAsync("S→C", "ksb",
+            CandidateSelected(101, "Sable-Ciel"), ObservedAt.AddSeconds(1),
+            connectionId: 11, candidateWindow: a);
+        harness.RosterWorkspace.Should().BeNull();
+        new CurrentCharacterState().Characters.Should().BeEmpty();
+        new CurrentAccountProfessionsState().ActiveSnapshot.Should().BeNull();
+    }
+
     [Fact]
     public async Task VerifiedWindowsGetSeparateShadowEquipmentWithoutChangingLegacyGlobalState()
     {
@@ -2124,7 +2220,8 @@ public sealed class DofusNetworkRoutingTest
             DofusNetworkCaptureService service,
             List<NetworkCrushCapture> crushes,
             List<MarketDataChangedEventArgs>
-                notifications)
+                notifications,
+            EphemeralCandidateRosterGroupsState? rosterWorkspace = null)
         {
             this.database = database;
             this.provider = provider;
@@ -2137,7 +2234,10 @@ public sealed class DofusNetworkRoutingTest
             Service = service;
             Crushes = crushes;
             Notifications = notifications;
+            RosterWorkspace = rosterWorkspace;
         }
+
+        public EphemeralCandidateRosterGroupsState? RosterWorkspace { get; }
 
         public CurrentServerState
             ServerState
@@ -2184,7 +2284,9 @@ public sealed class DofusNetworkRoutingTest
         }
 
         public static async Task<RoutingHarness>
-            CreateAsync()
+            CreateAsync(Func<CurrentServerState,
+                EphemeralCandidateRosterGroupsState,
+                EphemeralCandidateRosterWireObserver>? observerFactory = null)
         {
             TestDatabase database =
                 new();
@@ -2281,6 +2383,12 @@ public sealed class DofusNetworkRoutingTest
                 ILogger<DofusNetworkCaptureService>>
                 logger = new();
 
+            EphemeralCandidateRosterGroupsState? candidateWorkspace =
+                observerFactory is null ? null : new();
+            EphemeralCandidateRosterWireObserver? candidateObserver =
+                candidateWorkspace is null ? null :
+                observerFactory!(serverState, candidateWorkspace);
+
             DofusNetworkCaptureService service =
                 new(
                     provider
@@ -2304,7 +2412,8 @@ public sealed class DofusNetworkRoutingTest
 
                         return Task.CompletedTask;
                     },
-                    logger.Object);
+                    logger.Object,
+                    rosterWireObserver: candidateObserver);
 
             string mapPath =
                 Path.Combine(
@@ -2325,7 +2434,8 @@ public sealed class DofusNetworkRoutingTest
                 notifier,
                 service,
                 crushes,
-                notifications);
+                notifications,
+                candidateWorkspace);
         }
 
         public Task ReplayAsync(
