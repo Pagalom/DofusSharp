@@ -257,6 +257,11 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
     private void OnServerSelectionChanged()
     {
+        // A UI server context change must NEVER revoke other live windows'
+        // game leases in automatic multi-server capture.
+        if (_currentServerState.AutomaticRoutingEnabled)
+            return;
+
         _lastNetworkEquipmentState.Clear();
         _windowEquipmentState?.Clear();
         _rosterWireObserver?.OnManualServerChanged();
@@ -897,6 +902,22 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                      routed.CandidateWindow.Value) == true));
                             _windowServerAttributionState.ObserveGame(
                                 routed, windowOwnerValid);
+                        }
+
+                        if (_currentServerState.AutomaticRoutingEnabled)
+                        {
+                            NetworkCaptureLease? verifiedServerLease =
+                                routed.CandidateWindow is { } window
+                                ? _currentServerState.GetGameCaptureLease(
+                                    window, routed.CaptureEpoch,
+                                    routed.ConnectionId)
+                                : null;
+                            // The UI selection and the discovery lease
+                            // can NEVER authorize economic writes.
+                            routed = routed with
+                            {
+                                CaptureLease = verifiedServerLease
+                            };
                         }
 
                         await _messageProcessor
