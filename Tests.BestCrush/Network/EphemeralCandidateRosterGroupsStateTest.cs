@@ -221,6 +221,38 @@ public sealed class EphemeralCandidateRosterGroupsStateTest
     }
 
     [Fact]
+    public void OnlyConfirmedSameFlowSelectedLevelCanBeProjectedToAWindowCard()
+    {
+        var state = new EphemeralCandidateRosterGroupsState();
+        state.Observe(A, Lease, 10, 2, 101, [101, 102],
+                selectedLevelCandidate: 57)
+            .Should().BeTrue();
+
+        state.GetWindowCards(Lease, 10).Should().ContainSingle().Which
+            .Should().Be(new CandidateWindowRosterCard(A, 2, 57));
+        state.GetWindowCards(new NetworkCaptureLease("Other", 2), 10)
+            .Should().BeEmpty();
+        state.GetWindowCards(Lease, 11).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void ContradictoryLevelOnSameConnectionRevokesCandidateInsteadOfUpdating()
+    {
+        var state = new EphemeralCandidateRosterGroupsState();
+        state.Observe(A, Lease, 10, 2, 101, [101],
+                selectedLevelCandidate: 3)
+            .Should().BeTrue();
+        state.Observe(A, Lease, 10, 2, 101, [101],
+                selectedLevelCandidate: 4)
+            .Should().BeFalse();
+
+        state.GetWindowCards(Lease, 10).Should().BeEmpty();
+        state.Observe(A, Lease, 10, 3, 101, [101],
+                selectedLevelCandidate: 4)
+            .Should().BeFalse("the contradictory HWND is quarantined");
+    }
+
+    [Fact]
     public void DebugStringCannotExposeIdsWindowsNamesOrCredentials()
     {
         var state = new EphemeralCandidateRosterGroupsState();
