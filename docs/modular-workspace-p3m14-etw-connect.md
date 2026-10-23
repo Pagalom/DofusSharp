@@ -58,8 +58,12 @@ Le nombre \`exact-tuples\` signifie que le PID a été récupéré depuis un év
 Si ETW ne démarre pas (privilèges, session concurrente, version), la sortie indique :
 
 \`\`\`text
-p3m14=start-failed reason=... hint=run-elevated-check-ETW-session-conflict
+p3m14=start-failed stage=... reason=... hresult=0x... elevated=yes|no|unknown account=unverified server=unverified
 \`\`\`
+
+**P3m.14a — diagnostic d'accès ETW (23/10/2026).** La compilation Windows et les **918 tests** ont réussi (deux avertissements laissés de côté). En revanche, le démarrage ETW échoue avec `UnauthorizedAccessException`, y compris après validation d'un contrôle UAC. La cause exacte n'est **pas encore identifiée** ; il serait prématuré de changer de provider ou d'arrêter une autre session ETW. Le journal de démarrage indique désormais l'étape précise (`session-construction`, `kernel-provider-enablement`, `event-source-acquisition`, `callback-registration`, `event-processing-start` ou `capture-or-other`), le HRESULT de l'exception d'origine, et les droits administrateur du **processus effectif**. Ces champs ne contiennent aucun identifiant réseau ou personnel.
+
+Si l'échec persiste, transmettre **uniquement** cette nouvelle ligne `p3m14=start-failed` après `git fetch` et `git merge --ff-only FETCH_HEAD`. Les 918 tests ne valident pas encore le mode ETW réel.
 
 **Aucun PID, UUID, port local, IP ni nom de compte n'est affiché**, même en cas d'échec.
 
@@ -94,7 +98,7 @@ dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- -
 
 - **Confirmé avant P3m.14 :** premier test multicomptes Draconiros/Kourial \`two-window-links-candidate\`.
 - **Confirmé avant P3m.14 :** sur reconnexion, sélection #5 Draconiros sans PID, Game #6 dans la bonne fenêtre, \`owner-missing=1\`.
-- **Checkpoint Windows connu :** 897 tests réussis avant P3m.13c/d/e ; les évolutions ultérieures et P3m.14 **nécessitent une nouvelle validation Windows**.
+- **Checkpoint Windows récent :** 918 tests réussis, 0 échec, le 23/10/2026 avec 2 avertissements ; ETW n'a pas encore démarré en conditions réelles. Le correctif de diagnostic P3m.14a nécessite une nouvelle compilation.
 - **Tests synthétiques :** index ETW exact, isolation des tuples, horodatage, délai ETW, refus des conflits PID/génération, débordement, intégration avec propriétaire unique et quarantaine ; pas de test ETW réel sans Windows.
 - **À confirmer :** présence effective des événements \`TcpIpConnect\` sur le Windows utilisateur, droits ETW, livraison des événements à temps, correspondance du PID et de la fenêtre, comportement lors d'une reconnexion.
 
