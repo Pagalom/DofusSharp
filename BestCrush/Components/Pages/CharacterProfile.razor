@@ -13,6 +13,7 @@
         // selection-screen windows must never display an active character
         // card. Network ownership still comes exclusively from TCP/OS.
         var visibleCandidateSheets = VisibleCandidateSheets;
+        var serverLinkedWithoutRoster = ServerLinkedWithoutRoster(visibleCandidateSheets);
     }
     <div class="profile-page-intro">
         <h1>Personnages</h1>
@@ -22,8 +23,8 @@
         </p>
     </div>
 
-    @if (CurrentCandidateWindowCardsState.IsResearchEnabled &&
-         visibleCandidateSheets.Count > 0)
+    @if (visibleCandidateSheets.Count > 0 ||
+         serverLinkedWithoutRoster.Count > 0)
     {
         <section class="profile-sheet-section" aria-label="Fiches temporaires des fenêtres Dofus">
             <div class="profile-section-heading">
@@ -42,6 +43,17 @@
                                         IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
                                         OnSelect="@(() => SelectDofusClient(client.Key))" />
                 }
+                @foreach (DofusClientWindow client in serverLinkedWithoutRoster)
+                {
+                    <CharacterSheetCard @key="client.Key"
+                                        DisplayName="@client.DisplayName"
+                                        ClassName="@client.ClassName"
+                                        ServerName="@WindowServerAttributionState.ForWindow(client.Key)?.ServerName"
+                                        ServerId="@WindowServerAttributionState.ForWindow(client.Key)?.ServerId"
+                                        IsExperimental="true"
+                                        IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
+                                        OnSelect="@(() => SelectDofusClient(client.Key))" />
+                }
             </div>
         </section>
     }
@@ -50,7 +62,7 @@
             CurrentCharacterState.IsCharacterConnected(profile.Key)))
     {
         <section class="profile-sheet-section" aria-label="Fiches de personnages confirmés">
-            @if (visibleCandidateSheets.Count > 0)
+            @if (visibleCandidateSheets.Count > 0 || serverLinkedWithoutRoster.Count > 0)
             {
                 <div class="profile-section-heading">
                     <h2>Fiches avec identité vérifiée</h2>
@@ -76,6 +88,7 @@
     }
 
     @if (visibleCandidateSheets.Count == 0 &&
+         serverLinkedWithoutRoster.Count == 0 &&
          !CurrentCharacterState.Characters.Any(profile =>
              CurrentCharacterState.IsCharacterConnected(profile.Key)))
     {
@@ -106,6 +119,19 @@
             CandidateCharacterSheetVisibility.Visible(
                 CurrentCandidateWindowCardsState.Cards,
                 CurrentDofusClientsState.Clients);
+
+    private IReadOnlyList<DofusClientWindow> ServerLinkedWithoutRoster(
+        IReadOnlyList<(CandidateWindowRosterCard Candidate, DofusClientWindow Client)>
+            visibleCandidateSheets)
+    {
+        HashSet<DofusClientWindowKey> alreadyDisplayed =
+            visibleCandidateSheets.Select(pair => pair.Candidate.Window).ToHashSet();
+        return CurrentDofusClientsState.Clients
+            .Where(client => client.HasCharacterTitle &&
+                !alreadyDisplayed.Contains(client.Key) &&
+                WindowServerAttributionState.ForWindow(client.Key) is not null)
+            .ToArray();
+    }
 
     protected override void OnInitialized()
     {
