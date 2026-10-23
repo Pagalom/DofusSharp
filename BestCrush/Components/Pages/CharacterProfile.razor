@@ -1,160 +1,97 @@
 @page "/profile"
 @implements IDisposable
-@inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
-@inject BestCrush.Services.CurrentAccountProfessionsState CurrentAccountProfessionsState
-@inject BestCrush.Services.CurrentCandidateWindowCardsState CurrentCandidateWindowCardsState
-@inject BestCrush.Services.CurrentDofusClientsState CurrentDofusClientsState
+@using BestCrush.Services
+@inject CurrentCharacterState CurrentCharacterState
+@inject CurrentAccountProfessionsState CurrentAccountProfessionsState
+@inject CurrentCandidateWindowCardsState CurrentCandidateWindowCardsState
+@inject CurrentDofusClientsState CurrentDofusClientsState
 
-<div class="container py-4">
-    <h1>Personnages — session actuelle</h1>
-    <p class="text-secondary">
-        Les fiches sont créées automatiquement quand un personnage est identifié
-        de manière fiable. Elles existent uniquement en mémoire et disparaissent
-        à la fermeture de BestCrush.
-    </p>
+<div class="character-profile-page container-fluid px-1 px-md-3 py-4">
+    <div class="profile-page-intro">
+        <h1>Personnages</h1>
+        <p>
+            Vos personnages actifs, leurs richesses et leurs métiers.
+            Les informations non encore recueillies restent indiquées comme telles.
+        </p>
+    </div>
 
-    @if (CurrentCandidateWindowCardsState.IsResearchEnabled)
+    @if (CurrentCandidateWindowCardsState.IsResearchEnabled &&
+         CurrentCandidateWindowCardsState.Cards.Count > 0)
     {
-        <section class="mb-4" aria-label="Fenêtres Dofus candidates en mémoire">
-            <h2 class="h5">Fenêtres reliées — étude réseau expérimentale</h2>
-            <p class="small text-secondary">
-                Ces cartes représentent des fenêtres Windows dont les messages
-                ksc/ksb sont cohérents. Le nom provient du titre de la fenêtre,
-                pas d'une identité réseau confirmée. Aucun compte Ankama,
-                serveur réseau ou métier n'est vérifié.
-            </p>
-            @if (CurrentCandidateWindowCardsState.Cards.Count == 0)
-            {
-                <p class="text-secondary small">
-                    Aucun groupe candidat relié pour le moment.
-                    Les cartes n'apparaissent qu'après une liaison réseau.
-                </p>
-            }
-            else
-            {
-                <div class="d-flex flex-wrap gap-3">
-                    @foreach (BestCrush.Services.CandidateWindowRosterCard candidate in CurrentCandidateWindowCardsState.Cards)
+        <section class="profile-sheet-section" aria-label="Fiches temporaires des fenêtres Dofus">
+            <div class="profile-section-heading">
+                <h2>Fiches de la session</h2>
+            </div>
+            <div class="profile-sheet-grid">
+                @foreach (CandidateWindowRosterCard candidate in CurrentCandidateWindowCardsState.Cards)
+                {
+                    @if (CurrentDofusClientsState.Clients.FirstOrDefault(
+                        client => client.Key == candidate.Window) is { } client)
                     {
-                        @if (CurrentDofusClientsState.Clients.FirstOrDefault(client => client.Key == candidate.Window) is { } client)
-                        {
-                            <div @key="candidate.Window" class="card" style="min-width: 260px; max-width: 360px;">
-                                <div class="card-body">
-                                    <h3 class="h6 card-title">@client.DisplayName</h3>
-                                    <p class="small text-secondary mb-2">
-                                        Fenêtre Dofus détectée localement — groupe candidat, non vérifié
-                                    </p>
-                                    <p class="small mb-2">
-                                        Personnages candidats dans la liste : @candidate.CandidateCount
-                                    </p>
-                                    <p class="small mb-3">
-                                        Classe d'après le titre : @(client.ClassName ?? "Inconnue")
-                                    </p>
-                                    <button type="button"
-                                            class="btn btn-sm @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "btn-secondary" : "btn-outline-primary")"
-                                            @onclick="() => SelectDofusClient(client.Key)">
-                                        @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "Fenêtre ciblée" : "Cibler cette fenêtre")
-                                    </button>
-                                </div>
-                            </div>
-                        }
+                        <CharacterSheetCard @key="candidate.Window"
+                                            DisplayName="@client.DisplayName"
+                                            ClassName="@client.ClassName"
+                                            Level="@candidate.SelectedLevelCandidate"
+                                            IsExperimental="true"
+                                            IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
+                                            OnSelect="@(() => SelectDofusClient(client.Key))" />
                     }
-                </div>
-            }
-            <p class="small text-secondary mt-2">
-                Fermeture de la fenêtre : suppression de cette carte, même sans nouveau paquet réseau.
-                Aucune donnée de ces groupes n'est écrite dans les profils ou les métiers.
-            </p>
+                }
+            </div>
         </section>
     }
 
-    @if (CurrentCharacterState.ServerName is null)
+    @if (CurrentCharacterState.Characters.Any(profile =>
+            CurrentCharacterState.IsCharacterConnected(profile.Key)))
     {
-        <div class="alert alert-info" role="status">
-            Aucun serveur sélectionné. Le contexte personnage reste indéterminé.
-        </div>
-    }
-    else if (CurrentCharacterState.Characters.Count == 0)
-    {
-        <div class="alert alert-secondary" role="status">
-            Aucun personnage identifié sur @CurrentCharacterState.ServerName.
-            L'identification réseau et la lecture des inventaires
-            nécessitent encore la validation du protocole Dofus.
-        </div>
-    }
-    else
-    {
-        <div class="d-flex flex-wrap gap-3">
-            @foreach (BestCrush.Services.CharacterSessionProfile character in CurrentCharacterState.Characters)
+        <section class="profile-sheet-section" aria-label="Fiches de personnages confirmés">
+            @if (CurrentCandidateWindowCardsState.Cards.Count > 0)
             {
-                <div class="card" style="min-width: 260px; max-width: 360px;">
-                    <div class="card-body">
-                        <h2 class="h5 card-title">@character.Name</h2>
-                        <p class="small text-secondary">Serveur : @character.Key.ServerName</p>
-                        <p class="small mb-2">
-                            Niveau : @(character.Level?.ToString() ?? "Non observé")
-                            | Classe : @(character.ClassId?.ToString() ?? "Non observée")
-                        </p>
-                        <p class="small mb-2">
-                            Kamas en poche : @(character.PocketKamas?.ToString("N0") ?? "Non observés")
-                        </p>
-                        <p class="small mb-2">
-                            Kamas en banque : @(character.BankKamas?.ToString("N0") ?? "Non observés")
-                        </p>
-                        <p class="small mb-2">
-                            Inventaire : @(character.Inventory is null ? "Non observé" : $"{character.Inventory.Count} lignes")
-                        </p>
-                        <p class="small mb-2">
-                            Banque : @(character.BankInventory is null ? "Non observée" : $"{character.BankInventory.Count} lignes")
-                        </p>
-                        <section class="mb-3" aria-label="Métiers partagés du compte">
-                            <h3 class="h6">Métiers (compte + serveur)</h3>
-                            @if (CurrentAccountProfessionsState.ForCharacter(character) is { } sharedProfessions)
-                            {
-                                <table class="table table-sm">
-                                    <thead>
-                                        <tr>
-                                            <th scope="col">Métier</th>
-                                            <th scope="col">Niveau</th>
-                                            <th scope="col">XP cumulée</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (BestCrush.Services.AccountProfessionProgress profession in sharedProfessions.Professions.OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase))
-                                        {
-                                            <tr>
-                                                <td>@profession.Name</td>
-                                                <td>@profession.Level</td>
-                                                <td>@profession.CumulativeExperience.ToString("N0")</td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </table>
-                            }
-                            else
-                            {
-                                <p class="small text-secondary">
-                                    Non disponibles : compte et serveur non vérifiés.
-                                    Les métiers sont partagés, pas propres au personnage.
-                                </p>
-                            }
-                        </section>
-                        <button class="btn btn-sm @(CurrentCharacterState.ActiveCharacterKey == character.Key ? "btn-secondary" : "btn-outline-primary")"
-                                type="button"
-                                disabled="@(!CurrentCharacterState.IsCharacterConnected(character.Key))"
-                                @onclick="() => SelectCharacter(character.Key)">
-                            @(CurrentCharacterState.ActiveCharacterKey == character.Key ? "Personnage ciblé" : "Cibler ce personnage")
-                        </button>
-                    </div>
+                <div class="profile-section-heading">
+                    <h2>Fiches avec identité vérifiée</h2>
                 </div>
             }
+            <div class="profile-sheet-grid">
+                @foreach (CharacterSessionProfile character in CurrentCharacterState.Characters
+                    .Where(profile => CurrentCharacterState.IsCharacterConnected(profile.Key)))
+                {
+                    <CharacterSheetCard @key="character.Key"
+                                        DisplayName="@character.Name"
+                                        ClassName="@DofusClassDisplayNames.ForId(character.ClassId)"
+                                        Level="@character.Level"
+                                        PocketKamas="@character.PocketKamas"
+                                        BankKamas="@character.BankKamas"
+                                        Professions="@CurrentAccountProfessionsState.ForCharacter(character)?.Professions"
+                                        IsSelected="@(CurrentCharacterState.ActiveCharacterKey == character.Key)"
+                                        OnSelect="@(() => SelectCharacter(character.Key))" />
+                }
+            </div>
+        </section>
+    }
+
+    @if (CurrentCandidateWindowCardsState.Cards.Count == 0 &&
+         !CurrentCharacterState.Characters.Any(profile =>
+             CurrentCharacterState.IsCharacterConnected(profile.Key)))
+    {
+        <div class="profile-empty" role="status">
+            <span class="profile-empty-icon" aria-hidden="true">♜</span>
+            <div>
+                <strong>Aucun personnage chargé pour le moment</strong>
+                <p>Ouvrez un personnage dans Dofus. Sa fiche apparaîtra dès que
+                    BestCrush pourra associer sa fenêtre aux messages de chargement.</p>
+            </div>
         </div>
     }
 
-    <p class="text-secondary mt-4">
-        La sélection automatique suivra la fenêtre Dofus ciblée après
-        validation de la détection réseau. Le choix manuel reste possible
-        parmi les personnages détectés durant cette session.
-    </p>
+    @if (CurrentCandidateWindowCardsState.IsResearchEnabled)
+    {
+        <p class="profile-research-note">
+            Les fiches expérimentales utilisent le nom et la classe du titre Windows,
+            et un niveau candidat issu des messages réseau. Les métiers et les kamas
+            seront affichés après attribution fiable ; aucune donnée n'est inventée
+            ni sauvegardée dans le profil.
+        </p>
+    }
 </div>
 
 @code {
@@ -165,12 +102,12 @@
         CurrentDofusClientsState.Changed += OnCharacterChanged;
     }
 
-    private void SelectDofusClient(BestCrush.Services.DofusClientWindowKey key)
+    private void SelectDofusClient(DofusClientWindowKey key)
     {
         CurrentDofusClientsState.SelectWindow(key);
     }
 
-    private void SelectCharacter(BestCrush.Services.CharacterKey key)
+    private void SelectCharacter(CharacterKey key)
     {
         CurrentCharacterState.SelectCharacter(key);
     }
