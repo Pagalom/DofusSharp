@@ -81,6 +81,16 @@ public sealed class WindowServerAttributionStateTest
     }
 
     [Fact]
+    public void SelectionAndGameOnTheSameTcpTokenCannotBeLinked()
+    {
+        var state = Start();
+        state.ObserveSelection(A, 1, 21, 295, At);
+        state.ObserveGame(Wire("ksc", Ksc((101, "Alpha-One")), game: 21), true);
+        state.ObserveGame(Wire("ksb", Ksb(101, "Alpha-One"), game: 21), true);
+        state.ForWindow(A).Should().BeNull();
+    }
+
+    [Fact]
     public void ASelectionCannotBeAttachedToAnotherWindow()
     {
         var state = Start();
