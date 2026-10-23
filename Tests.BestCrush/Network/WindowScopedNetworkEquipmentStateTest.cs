@@ -158,6 +158,128 @@ public sealed class WindowScopedNetworkEquipmentStateTest
     }
 
     [Fact]
+    public void WheelTokenForOneWindowNeverReadsOtherWindowsLastEquipment()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+        state.Remember(Second, Draconiros, 31, 43, T0.AddSeconds(1));
+
+        WindowEquipmentFocusToken a =
+            state.GetFocusToken(First, Draconiros)!;
+        WindowEquipmentFocusToken b =
+            state.GetFocusToken(Second, Draconiros)!;
+
+        a.Window.Should().Be(First);
+        a.Equipment.DofusDbId.Should().Be(42);
+        b.Window.Should().Be(Second);
+        b.Equipment.DofusDbId.Should().Be(43);
+        state.IsCurrent(a).Should().BeTrue();
+        state.IsCurrent(b).Should().BeTrue();
+    }
+
+    [Fact]
+    public void MissingWindowHasNoWheelTokenEvenIfGlobalOrAnotherWindowHasEquipment()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        LastNetworkEquipmentState legacy = new();
+        legacy.Set(42, Draconiros.ServerName, T0);
+        state.Remember(First, Draconiros, 31, 42, T0);
+
+        state.GetFocusToken(Second, Draconiros).Should().BeNull();
+        state.IsCurrent(null).Should().BeFalse();
+        legacy.GetForServer(Draconiros.ServerName)
+            .Should().NotBeNull();
+    }
+
+    [Fact]
+    public void WheelTokenRejectsAnotherManualServerOrServerGeneration()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+
+        state.GetFocusToken(First,
+            new NetworkCaptureLease("Kourial", 5)).Should().BeNull();
+        state.GetFocusToken(First,
+            new NetworkCaptureLease("Draconiros", 6)).Should().BeNull();
+        state.GetFocusToken(First, Draconiros).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void UpdatingOneWindowInvalidatesItsPendingWheelButNotOtherClient()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+        state.Remember(Second, Draconiros, 31, 43, T0);
+        WindowEquipmentFocusToken oldA =
+            state.GetFocusToken(First, Draconiros)!;
+        WindowEquipmentFocusToken oldB =
+            state.GetFocusToken(Second, Draconiros)!;
+
+        state.Remember(First, Draconiros, 31, 44, T0.AddSeconds(1));
+
+        state.IsCurrent(oldA).Should().BeFalse();
+        state.IsCurrent(oldB).Should().BeTrue();
+        state.GetFocusToken(Second, Draconiros)!.Equipment.DofusDbId
+            .Should().Be(43);
+    }
+
+    [Fact]
+    public void WindowClosureInvalidatesPendingAsyncFocusToken()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+        WindowEquipmentFocusToken token =
+            state.GetFocusToken(First, Draconiros)!;
+
+        state.RemoveMissingWindows([Second]);
+
+        state.IsCurrent(token).Should().BeFalse();
+        state.GetFocusToken(First, Draconiros).Should().BeNull();
+    }
+
+    [Fact]
+    public void CaptureRestartInvalidatesTokenEvenForSameEquipmentAndTimestamp()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+        WindowEquipmentFocusToken old =
+            state.GetFocusToken(First, Draconiros)!;
+
+        state.Remember(First, Draconiros, 32, 42, T0);
+
+        state.IsCurrent(old).Should().BeFalse();
+        state.GetFocusToken(First, Draconiros)!.CaptureEpoch.Should().Be(32);
+    }
+
+    [Fact]
+    public void ClearForShutdownInvalidatesWheelTokenAndNewInstanceStartsEmpty()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+        WindowEquipmentFocusToken token =
+            state.GetFocusToken(First, Draconiros)!;
+        state.Clear();
+
+        state.IsCurrent(token).Should().BeFalse();
+        new WindowScopedNetworkEquipmentState()
+            .GetFocusToken(First, Draconiros).Should().BeNull();
+    }
+
+    [Fact]
+    public void RecycledWindowKeyCannotReadPreviousClientsEquipment()
+    {
+        WindowScopedNetworkEquipmentState state = new();
+        state.Remember(First, Draconiros, 31, 42, T0);
+
+        DofusClientWindowKey reusedHandle = new(First.Handle, 9999);
+        state.GetFocusToken(reusedHandle, Draconiros).Should().BeNull();
+        state.GetFocusToken(new DofusClientWindowKey(0, 1201),
+            Draconiros).Should().BeNull();
+        state.GetFocusToken(new DofusClientWindowKey(101, 0),
+            Draconiros).Should().BeNull();
+    }
+
+    [Fact]
     public void CapacityLimitCannotReplaceAnotherClientEquipment()
     {
         WindowScopedNetworkEquipmentState state = new();
