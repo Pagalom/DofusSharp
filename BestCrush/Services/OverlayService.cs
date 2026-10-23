@@ -29,6 +29,11 @@ public sealed class OverlayService(
     private Window? _overlayWindow;
     private OverlayPage? _overlayPage;
 
+    // Ephemeral verified-window equipment, separate from the legacy global
+    // slot. Never persist window or character-specific focus state.
+    private WindowScopedNetworkEquipmentState? _windowEquipmentState;
+    private long _middleFocusRequestVersion;
+
     // F8 est le seul usage OCR du produit :
     // il capture l'infobulle actuellement survolée afin de
     // définir le focus équipement. Le clic molette, lui,
@@ -132,6 +137,12 @@ private bool _hasF7VisibilitySnapshot;
         {
             return;
         }
+
+        // This is a singleton registered by MauiProgram. Resolve it without
+        // changing OverlayService's public DI constructor/API.
+        using (IServiceScope scope = serviceScopeFactory.CreateScope())
+            _windowEquipmentState = scope.ServiceProvider
+                .GetService<WindowScopedNetworkEquipmentState>();
 
         LoadStoredLayout();
 
