@@ -1578,14 +1578,14 @@ private bool _hasF7VisibilitySnapshot;
                 ref _middleFocusRequestVersion);
             long focusVersion = Interlocked.Read(
                 ref _equipmentFocusMutationVersion);
+            DofusClientWindowKey target = new(
+                targetWindow.Handle.ToInt64(), targetWindow.ProcessId);
             NetworkCaptureLease? lease =
-                currentServerState.GetCaptureLease();
+                currentServerState.GetWindowCaptureLease(target);
 
             if (lease is { } selectedLease &&
                 _windowEquipmentState is { } windows)
             {
-                DofusClientWindowKey target = new(
-                    targetWindow.Handle.ToInt64(), targetWindow.ProcessId);
                 WindowEquipmentFocusToken? token =
                     windows.GetFocusToken(target, selectedLease);
 
