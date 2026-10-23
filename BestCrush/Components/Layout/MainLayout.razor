@@ -24,33 +24,10 @@
         </div>
 
         <div class="d-flex align-items-center justify-content-end gap-2">
-            @if (_servers is null)
-            {
-                <div class="spinner-border spinner-border-sm text-primary" role="status">
-                    <span class="visually-hidden">Chargement du serveur...</span>
-                </div>
-            }
-            else
-            {
-                <div class="dropdown">
-                    <button class="btn btn-outline-secondary dropdown-toggle"
-                            type="button" data-bs-toggle="dropdown" aria-expanded="false">
-                        Serveur : @(_currentServer?.Name ?? "Choisir un serveur")
-                    </button>
-                    <ul class="dropdown-menu dropdown-menu-end">
-                        @foreach (DofocusServer server in _servers)
-                        {
-                            <li>
-                                <a class="dropdown-item @(server.Name == _currentServer?.Name ? "active" : null)"
-                                   href="#" @onclick:preventDefault="true"
-                                   @onclick="() => SelectServer(server)">
-                                    @server.Name
-                                </a>
-                            </li>
-                        }
-                    </ul>
-                </div>
-            }
+            <span class="border rounded px-3 py-2 small"
+                  title="Serveur du client Dofus ciblé, identifié automatiquement par son ID réseau">
+                Serveur : @(_currentServer?.Name ?? "Identification en cours")
+            </span>
 
             <div class="d-flex align-items-center gap-1"
                  role="group" aria-label="Fenêtres Dofus détectées cette session">
@@ -180,32 +157,24 @@
     {
         NavigationManager.LocationChanged += OnLocationChanged;
 
-        Task<IReadOnlyCollection<DofocusServer>> serversTask =
-            ServersService.GetServers();
-        Task<DofocusServer?> currentServerTask =
-            ServersService.GetCurrentServer();
-
-        await Task.WhenAll(serversTask, currentServerTask);
-
-        _servers = serversTask.Result;
-        _currentServer = currentServerTask.Result;
+        _servers = await ServersService.GetServers();
+        // Legacy global choice is no longer used or restored.
+        WorkspacePreferences.Remove(ServersService.LastServerPreferenceKey);
+        _currentServer = null;
 
         // One-time compatibility cleanup: M2 briefly used preferences to
         // remember character names. No character data may survive app exit.
         foreach (DofocusServer knownServer in _servers)
             WorkspacePreferences.Remove($"Workspace.CharacterName.{knownServer.Name}");
 
-        if (_currentServer is null)
-            CurrentServerState.Clear();
-        else
-            CurrentServerState.SelectServer(_currentServer.Name);
-
-        CurrentCharacterState.SelectServer(_currentServer?.Name);
+        CurrentServerState.Clear();
+        CurrentCharacterState.SelectServer(null);
         CurrentCharacterState.Changed += OnCharacterChanged;
         CurrentDofusClientsState.Changed += OnDofusClientChanged;
         CurrentCandidateWindowCardsState.Changed += OnDofusClientChanged;
         WindowServerAttributionState.Changed += OnDofusClientChanged;
         LiveClientNetworkBindings.Changed += OnDofusClientChanged;
+        SyncSelectedWindowServer();
         GuardLegacyRoute();
 
         if (OperatingSystem.IsWindows())
@@ -238,7 +207,39 @@
         CurrentDofusClientsState.SelectWindow(key);
 
     private void OnDofusClientChanged() =>
-        _ = InvokeAsync(StateHasChanged);
+        _ = InvokeAsync(() =>
+        {
+            SyncSelectedWindowServer();
+            GuardLegacyRoute();
+            StateHasChanged();
+        });
+
+    private void SyncSelectedWindowServer()
+    {
+        DofusClientWindow? selected = CurrentDofusClientsState.SelectedClient;
+        string? serverName = selected is { } client
+            ? WindowServerAttributionState.ForWindow(client.Key)?.ServerName
+            : null;
+
+        if (string.Equals(_currentServer?.Name, serverName,
+                StringComparison.Ordinal))
+            return;
+
+        _currentServer = serverName is null
+            ? null
+            : _servers?.FirstOrDefault(server =>
+                string.Equals(server.Name, serverName,
+                    StringComparison.OrdinalIgnoreCase))
+              ?? new DofocusServer { Name = serverName };
+
+        // This is a display/module context only: CurrentServerState never
+        // uses the UI choice to authorize network writes in auto mode.
+        if (_currentServer is null)
+            CurrentServerState.Clear();
+        else
+            CurrentServerState.SelectServer(_currentServer.Name);
+        CurrentCharacterState.SelectServer(_currentServer?.Name);
+    }
 
     private async Task PollDofusClientsAsync(CancellationToken cancellationToken)
     {
@@ -269,6 +270,7 @@
                     // Independent one-second Win32 inventory: a candidate
                     // character card disappears even with NO TCP traffic.
                     CurrentCandidateWindowCardsState.RemoveMissingWindows(liveClientKeys);
+                    WindowServerAttributionState.RemoveMissingWindows(liveClientKeys);
                     // Remove ephemeral per-window equipment even when the
                     // closed Dofus client generates no further TCP traffic.
                     WindowEquipmentState.RemoveMissingWindows(liveClientKeys);
@@ -283,27 +285,6 @@
         {
             // Layout disposed; stop polling without retaining client metadata.
         }
-    }
-
-    private async Task SelectServer(DofocusServer server)
-    {
-        // Reject queued captures during the change; never activate a new
-        // context until the preference and selection are both committed.
-        bool changed = !string.Equals(
-            CurrentServerState.ServerName, server.Name, StringComparison.Ordinal);
-        if (changed)
-            CurrentServerState.Clear();
-
-        await ServersService.SetCurrentServerAsync(server);
-        CurrentServerState.SelectServer(server.Name);
-        _currentServer = server;
-        CurrentCharacterState.SelectServer(server.Name);
-
-        // Legacy routes are server-scoped; other module URLs are independent.
-        if (ActiveTab == "concassage")
-            NavigationManager.NavigateTo(KnownRoutes.Server(server), true);
-        else
-            StateHasChanged();
     }
 
     public async ValueTask DisposeAsync()
