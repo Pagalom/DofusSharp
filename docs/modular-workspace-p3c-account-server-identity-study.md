@@ -282,3 +282,35 @@ dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- -
 **Limite décisive :** une égalité/différence de progression ne prouve pas l'identité compte, même si les résultats du test sont nets. Cette étude sert à caractériser la portée des données métiers et à préparer une recherche d'identité **indépendante**, qui demeure nécessaire avant toute attribution automatique ou stockage.
 
 La suite de tests P3c.2 (12 cas supplémentaires, 971 au total attendus après la base P3m.19 de 959) n'a **pas encore fait l'objet d'un retour de validation Windows dans ce fil**.
+
+## Retour de terrain P3c.3 — professions A1 / B / A2 (23 octobre 2026)
+
+L'opérateur a rejoué l'ordre prévu **compte A → compte B → compte A**, une seule instance Dofus à la fois, et transmis des sorties `--profession-continuity` :
+
+| Phase | Session Game | ipz (octets) | Référence A1 | `f5` |
+| --- | --- | ---: | --- | --- |
+| A1 | #2 | 174 | `baseline=created` | 20 valides |
+| B | #4 | 213 | `levels-equal=no xp-equal=no` | `f5-set-equal=yes` |
+| A2 | #6 | 213 | `levels-equal=no xp-equal=no` | `f5-set-equal=yes` |
+
+**Ce qui est prouvé :** les trois messages sont des `ipz` à 20 entrées décodables, avec un ensemble candidat `f5` constant. B et A2 ont une progression de métiers **différente d'A1**, sans valeur imprimée.
+
+**Ce qui ne l'est pas :** le format actuel compare les deux dernières captures uniquement à A1. Les mêmes tailles (213 octets) et les deux comparaisons `no` ne prouvent en aucun cas que **B et A2 sont identiques entre eux**. Ces observations ne vérifient ni compte Ankama ni serveur logique, et ne prouvent pas non plus le parcours déclaré au niveau du protocole.
+
+### Correctif d'observabilité P3c.3
+
+Le mode `--profession-continuity` existant conserve maintenant en RAM **la dernière capture valide** en plus de la référence A1, et ajoute sur chaque message valide suivant :
+
+- `previous-f5-set-equal=yes|no`
+- `previous-levels-equal=yes|no|unavailable`
+- `previous-xp-equal=yes|no|unavailable`
+
+`levels-equal` et `xp-equal` conservent leur sens historique : comparaison à **A1** ; `previous-...` compare uniquement à **la capture ipz valide immédiatement précédente**, pas à un compte identifié. Une trame invalide ou aux `f5` dupliqués ne remplace pas le dernier état, et un `f5` différent rend les comparaisons de progression `unavailable`.
+
+Aucune sortie de niveau, XP, identifiant de métier, nom, hash ou payload ; seulement des booléens catégoriels. Pas de modification de l'ingestion métier de BestCrush, aucune persistance, aucune attribution de compte.
+
+**Essai Windows après mise à jour :** avec l'interface renvoyée par `--list`, relancer `--profession-continuity` dans le même ordre **A1 → B → A2** ; fermer chaque fenêtre entre deux phases, vérifier qu'une seule ligne `ipz` validée est utilisée dans chaque phase. Recopier uniquement les trois lignes `PROFESSION_CONTINUITY` avec leurs numéros de session. Une seconde connexion A à la place de B empêcherait de tester le contraste voulu : vérifier localement les deux clients.
+
+Si A2 diffère encore d'A1, le statut de l'expérience sera **anomalie de continuité observée, cause inconnue** jusqu'à examen de preuves de sélection de personnage et de connexion. Le statut `account=unverified server=unverified` reste obligatoire.
+
+**Tests :** 5 tests additionnels couvrent A-B-B, A-B-A, trames invalides intermédiaires, changement du set `f5` et non-divulgation. Après les 959 tests P3m.19 et les 12 tests P3c.2 en attente de confirmation Windows, total prévisionnel = **976 tests** (sous réserve de compilation/découverte des tests).
