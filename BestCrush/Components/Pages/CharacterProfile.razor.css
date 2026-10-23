@@ -1,0 +1,75 @@
+.character-profile-page {
+    max-width: 1490px;
+    margin: 0 auto;
+}
+
+.profile-page-intro { margin-bottom: 26px; }
+
+.profile-page-intro h1 {
+    margin: 0 0 6px;
+    color: #25323a;
+    font-size: clamp(1.8rem, 2.9vw, 2.35rem);
+    font-weight: 790;
+    letter-spacing: -.025em;
+}
+
+.profile-page-intro p {
+    color: #656d71;
+    max-width: 800px;
+    margin: 0;
+    font-size: .9rem;
+}
+
+.profile-sheet-section { margin: 0 0 28px; }
+
+.profile-section-heading h2 {
+    font-weight: 750;
+    font-size: 1.05rem;
+    color: #303a40;
+    margin: 0 0 14px;
+}
+
+.profile-sheet-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+    align-items: start;
+}
+
+.profile-empty {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 24px;
+    background: #eee8d9;
+    border: 1px solid #d1c6b2;
+    border-radius: 12px;
+    color: #354047;
+    max-width: 900px;
+}
+
+.profile-empty-icon {
+    font-size: 2.1rem;
+    color: #987e48;
+}
+
+.profile-empty strong {
+    font-size: 1rem;
+}
+
+.profile-empty p {
+    margin: 5px 0 0;
+    font-size: .86rem;
+    color: #6a6e6d;
+}
+
+.profile-research-note {
+    font-size: .76rem;
+    color: #747778;
+    margin-top: 10px;
+    max-width: 1080px;
+}
+
+@media (max-width: 1020px) {
+    .profile-sheet-grid { grid-template-columns: 1fr; }
+}
