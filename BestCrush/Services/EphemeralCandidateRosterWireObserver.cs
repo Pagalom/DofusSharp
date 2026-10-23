@@ -168,7 +168,8 @@ internal sealed class EphemeralCandidateRosterWireObserver(
             // same-flow selection equality has been checked.
             _pending.Remove(key);
             if (!state.Observe(window, lease, message.CaptureEpoch,
-                    message.ConnectionId, selected, members))
+                    message.ConnectionId, selected, members,
+                    selectedLevelCandidate: selection.Candidates[0].Level))
             {
                 Reject(key);
                 return Result.Rejected;
