@@ -14,7 +14,12 @@ public readonly record struct AccountServerKey(
 /// must come from a validated protocol mapping, not guessed f5 candidates.
 /// </summary>
 public sealed record AccountProfessionProgress(
-    string Name, int Level, ulong CumulativeExperience);
+    string Name, int Level, ulong CumulativeExperience,
+    // P3c.12 presentation-only. Future verified network ingestion can
+    // supply f1.f3 and f1.f6. Unknown thresholds remain null, never
+    // replaced by guesses or a percentage based on total XP.
+    ulong? LevelStartCumulativeExperience = null,
+    ulong? NextLevelCumulativeExperience = null);
 
 /// <summary>
 /// Account + server snapshot, independent of all character profiles.
