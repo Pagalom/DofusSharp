@@ -50,6 +50,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --window-server-etw");
     Console.WriteLine("Pour comparer anonymement les métiers entre connexions TCP :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-continuity");
+    Console.WriteLine("Pour rechercher des chemins numériques candidats de compte (A-X / A-Y / B-Z / A-X) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --account-wire-study");
     Console.WriteLine("Pour suivre ksc → ksb → ipz par session TCP, sans référence privée :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-flow");
     Console.WriteLine("Pour rechercher localement le nom/niveau dans les messages candidats :");
@@ -93,6 +95,12 @@ Console.WriteLine(options.WindowFlowLink
     : $"BestCrush Network Probe — mapping de référence {map.ClientBuild} (build réel du jeu non vérifié)");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
+if (options.AccountWireStudy)
+{
+    Console.WriteLine("P3c.4 : étude exploratoire UNIQUEMENT S→C:krg, 4 fenêtres successives, un seul client ouvert à la fois.");
+    Console.WriteLine("Aucune lecture C→S d'authentification, aucun identifiant ou niveau affiché ni persisté.");
+    Console.WriteLine("Les chemins candidats ne prouvent JAMAIS un compte ; account=unverified.");
+}
 if (options.ConnectionSelectionStudy)
 {
     Console.WriteLine("P3m.11 : étude du protocole Connection distinct de type.ankama.com ; sélection numérique candidate A-B-A.");
@@ -588,6 +596,45 @@ else if (options.ServerRouteStudy || options.ServerWireStudy)
         foreach (string line in wireStudy.Summarize())
             Console.WriteLine(line);
     }
+}
+else if (options.AccountWireStudy)
+{
+    AccountWireFieldComparisonStudy study = new();
+    using CharacterMetadataProbe probe = new(
+        devices[options.DeviceIndex.Value], options.Port,
+        accountWireStudy: study);
+    probe.Start();
+    Console.WriteLine("P3c.4 : fermer tous les clients Dofus avant la première phase.");
+    bool allPhasesCompleted = true;
+    for (int phase = 0; phase < 4; phase++)
+    {
+        if (!study.StartPhase(phase))
+        {
+            allPhasesCompleted = false;
+            break;
+        }
+
+        Console.WriteLine(phase switch
+        {
+            0 => "PHASE 1 A-X : compte A, personnage X sur le serveur commun.",
+            1 => "PHASE 2 A-Y : même compte A et même serveur, PERSONNAGE Y différent.",
+            2 => "PHASE 3 B-Z : autre compte B sur le MEME serveur, personnage Z.",
+            _ => "PHASE 4 A-X : reprendre exactement le personnage X initial du compte A."
+        });
+        Console.WriteLine("Attendre le chargement, fermer entièrement la fenêtre, puis appuyer sur Entrée (ou Ctrl+C).");
+        Task<string?> nextLine = Task.Run(() => Console.ReadLine());
+        while (!nextLine.IsCompleted && !stop.Wait(TimeSpan.FromMilliseconds(100))) { }
+        if (stop.IsSet || (nextLine.IsCompleted && nextLine.Result is null))
+        {
+            allPhasesCompleted = false;
+            break;
+        }
+    }
+    probe.Stop();
+    if (!allPhasesCompleted)
+        Console.WriteLine("p3c4=stopped-early account=unverified server=unverified");
+    foreach (string line in study.Summarize())
+        Console.WriteLine(line);
 }
 else if (options.CharacterScan)
 {
