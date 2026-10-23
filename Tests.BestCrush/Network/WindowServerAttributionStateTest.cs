@@ -196,6 +196,68 @@ public sealed class WindowServerAttributionStateTest
     }
 
     [Fact]
+    public void TwoWindowsOnSameServerHaveDistinctButSameMarketGameLeases()
+    {
+        var state = Start();
+        Loaded(state, A, 295, gameFlow: 21);
+        Loaded(state, B, 295, selectionFlow: 12, gameFlow: 22,
+            characterId: 202, name: "Bravo-Two");
+        CurrentServerState server = new(state, automaticRoutingEnabled: true);
+
+        NetworkCaptureLease first = server.GetWindowCaptureLease(A)!.Value;
+        NetworkCaptureLease second = server.GetWindowCaptureLease(B)!.Value;
+
+        first.ServerName.Should().Be("Draconiros");
+        second.ServerName.Should().Be("Draconiros");
+        first.Should().NotBe(second);
+        server.IsCaptureLeaseActive(first).Should().BeTrue();
+        server.IsCaptureLeaseActive(second).Should().BeTrue();
+
+        // Global UI selection has no authority over either lease.
+        server.SelectServer("Tylezia");
+        server.GetCaptureLease().Should().BeNull();
+        server.IsCaptureLeaseActive(first).Should().BeTrue();
+        server.IsCaptureLeaseActive(second).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ClosingOneWindowDoesNotRevokeAnotherWindowsSameServerLease()
+    {
+        var state = Start();
+        Loaded(state, A, 295, gameFlow: 21);
+        Loaded(state, B, 295, selectionFlow: 12, gameFlow: 22,
+            characterId: 202, name: "Bravo-Two");
+        CurrentServerState server = new(state, automaticRoutingEnabled: true);
+        NetworkCaptureLease first = server.GetWindowCaptureLease(A)!.Value;
+        NetworkCaptureLease second = server.GetWindowCaptureLease(B)!.Value;
+
+        state.RemoveMissingWindows([B]);
+
+        server.IsCaptureLeaseActive(first).Should().BeFalse();
+        server.IsCaptureLeaseActive(second).Should().BeTrue();
+        server.GetWindowCaptureLease(A).Should().BeNull();
+    }
+
+    [Fact]
+    public void NewGameAttemptCannotReuseOldServerLeaseForSameWindow()
+    {
+        var state = Start();
+        Loaded(state, A, 295);
+        CurrentServerState server = new(state, automaticRoutingEnabled: true);
+        NetworkCaptureLease old = server.GetWindowCaptureLease(A)!.Value;
+
+        state.ObserveGame(Wire("ksc", Ksc((101, "Alpha-One")),
+            game: 31), ownerRevalidated: true);
+        server.IsCaptureLeaseActive(old).Should().BeFalse();
+
+        Loaded(state, A, 293, selectionFlow: 32, gameFlow: 33);
+        NetworkCaptureLease replacement = server.GetWindowCaptureLease(A)!.Value;
+        replacement.ServerName.Should().Be("Tylezia");
+        server.IsCaptureLeaseActive(old).Should().BeFalse();
+        server.IsCaptureLeaseActive(replacement).Should().BeTrue();
+    }
+
+    [Fact]
     public void OldCaptureEpochCannotRestoreARevokedServer()
     {
         var state = Start();
