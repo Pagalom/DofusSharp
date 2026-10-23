@@ -11,6 +11,7 @@
 @inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
 @inject BestCrush.Services.CurrentDofusClientsState CurrentDofusClientsState
 @inject BestCrush.Services.LiveDofusClientNetworkBindings LiveClientNetworkBindings
+@inject BestCrush.Services.WindowScopedNetworkEquipmentState WindowEquipmentState
 @inject BestCrush.Services.DofusWindowService DofusWindowService
 
 <div class="min-vh-100 container-fluid px-3 px-xl-4 d-flex flex-column" data-bs-theme="@_theme">
@@ -257,9 +258,13 @@
 
                     // A closed window must lose its network marker even if
                     // its TCP connection produces no more captured packets.
-                    LiveClientNetworkBindings.RemoveMissingWindows(
+                    DofusClientWindowKey[] liveClientKeys =
                         CurrentDofusClientsState.Clients
-                            .Select(client => client.Key).ToArray());
+                            .Select(client => client.Key).ToArray();
+                    LiveClientNetworkBindings.RemoveMissingWindows(liveClientKeys);
+                    // Remove ephemeral per-window equipment even when the
+                    // closed Dofus client generates no further TCP traffic.
+                    WindowEquipmentState.RemoveMissingWindows(liveClientKeys);
                 });
             }
             while (await timer.WaitForNextTickAsync(cancellationToken));
