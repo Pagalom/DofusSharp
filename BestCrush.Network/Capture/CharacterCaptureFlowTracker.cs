@@ -42,7 +42,8 @@ public sealed record CharacterCaptureEvent(
     string? ProfessionContinuitySummary = null,
     string? ProfessionXpStudySummary = null,
     string? AccountWireFieldSummary = null,
-    string? RosterContinuitySummary = null);
+    string? RosterContinuitySummary = null,
+    string? ConcurrentRosterSummary = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -94,6 +95,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly ConnectionServerSelectionStudy? _connectionSelectionStudy;
     private readonly AccountWireFieldComparisonStudy? _accountWireStudy;
     private readonly CharacterRosterContinuityStudy? _rosterStudy;
+    private readonly ConcurrentCharacterRosterStudy? _concurrentRosterStudy;
     private readonly HashSet<string> _characterNameOpCodes;
     private int _nextNumber;
 
@@ -127,7 +129,8 @@ public sealed class CharacterCaptureFlowTracker
         ServerNameWireStudy? serverNameStudy = null,
         ConnectionServerSelectionStudy? connectionSelectionStudy = null,
         AccountWireFieldComparisonStudy? accountWireStudy = null,
-        CharacterRosterContinuityStudy? rosterStudy = null)
+        CharacterRosterContinuityStudy? rosterStudy = null,
+        ConcurrentCharacterRosterStudy? concurrentRosterStudy = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -361,6 +364,23 @@ public sealed class CharacterCaptureFlowTracker
                 nameof(rosterStudy));
         _rosterStudy = rosterStudy;
 
+        if (concurrentRosterStudy is not null &&
+            (rosterStudy is not null || accountWireStudy is not null ||
+             connectionSelectionStudy is not null || serverNameStudy is not null ||
+             ktaCharacterStudy is not null || ktaScopeStudy is not null ||
+             serverWireStudy is not null || crossOpcodeStudy is not null ||
+             identityPairStudy is not null || expectedClassId is not null ||
+             identityFieldsReference is not null ||
+             characterNameReference is not null || shapeKeys is not null ||
+             professionReferences is not null || studyReferences is not null ||
+             identifyReferences is not null || decodeIpz || showCandidateJobIds ||
+             studyProfessionFlow || studyProfessionContinuity ||
+             professionXpStudy is not null || _characterNameOpCodes.Count > 0))
+            throw new ArgumentException(
+                "Concurrent roster study requires its own passive diagnostic.",
+                nameof(concurrentRosterStudy));
+        _concurrentRosterStudy = concurrentRosterStudy;
+
         if ((studyProfessionFlow || studyProfessionContinuity || professionXpStudy is not null) &&
             (shapeKeys is not null || professionReferences is not null ||
              decodeIpz || studyReferences is not null ||
@@ -413,6 +433,7 @@ public sealed class CharacterCaptureFlowTracker
             {
                 Session previous = _flows[expired];
                 previous.ProfessionFlow = null;
+                _concurrentRosterStudy?.ObserveClosedSession(previous.Number);
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, previous.Number, direction,
                     CharacterCaptureEventKind.Evicted));
@@ -429,6 +450,7 @@ public sealed class CharacterCaptureFlowTracker
                     KeyValuePair<CharacterCaptureFlowKey, Session> oldest =
                         _flows.MinBy(pair => pair.Value.LastSeenUtc);
                     oldest.Value.ProfessionFlow = null;
+                    _concurrentRosterStudy?.ObserveClosedSession(oldest.Value.Number);
                     events.Add(new CharacterCaptureEvent(
                         observedAtUtc, oldest.Value.Number, direction,
                         CharacterCaptureEventKind.Evicted));
@@ -439,6 +461,7 @@ public sealed class CharacterCaptureFlowTracker
                 _flows.Add(key, flow);
                 _accountWireStudy?.ObserveOpenedSession(flow.Number);
                 _rosterStudy?.ObserveOpenedSession(flow.Number);
+                _concurrentRosterStudy?.ObserveOpenedSession(flow.Number);
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
                     CharacterCaptureEventKind.Opened));
@@ -447,6 +470,7 @@ public sealed class CharacterCaptureFlowTracker
             {
                 // Reused socket 4-tuple: never share TCP frame state.
                 flow.ProfessionFlow = null;
+                _concurrentRosterStudy?.ObserveClosedSession(flow.Number);
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
                     CharacterCaptureEventKind.Closed));
@@ -454,6 +478,7 @@ public sealed class CharacterCaptureFlowTracker
                 _flows[key] = flow;
                 _accountWireStudy?.ObserveOpenedSession(flow.Number);
                 _rosterStudy?.ObserveOpenedSession(flow.Number);
+                _concurrentRosterStudy?.ObserveOpenedSession(flow.Number);
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
                     CharacterCaptureEventKind.Opened));
@@ -572,6 +597,8 @@ public sealed class CharacterCaptureFlowTracker
                                     _accountWireStudy?.Observe(
                                         flow.Number, direction, any.Key, any.Body),
                                     _rosterStudy?.Observe(
+                                        flow.Number, direction, any.Key, any.Body),
+                                    _concurrentRosterStudy?.Observe(
                                         flow.Number, direction, any.Key, any.Body)));
                             }
                         }
@@ -585,6 +612,7 @@ public sealed class CharacterCaptureFlowTracker
                     flow.KscDecodedCandidates = null;
                     flow.ProfessionFlow = null;
                     flow.Closed = true;
+                    _concurrentRosterStudy?.ObserveClosedSession(flow.Number);
                     events.Add(new CharacterCaptureEvent(
                         observedAtUtc, flow.Number, direction,
                         CharacterCaptureEventKind.Evicted));
@@ -601,6 +629,7 @@ public sealed class CharacterCaptureFlowTracker
                 flow.KscDecodedCandidates = null;
                 flow.ProfessionFlow = null;
                 flow.Closed = true;
+                _concurrentRosterStudy?.ObserveClosedSession(flow.Number);
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
                     CharacterCaptureEventKind.Closed));
