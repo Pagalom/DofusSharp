@@ -52,6 +52,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-continuity");
     Console.WriteLine("Pour rechercher des chemins numériques candidats de compte (A-X / A-Y / B-Z / A-X) :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --account-wire-study");
+    Console.WriteLine("Pour étudier les listes de personnages ksc/ksb comme groupes de compte candidats :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --account-roster-study");
     Console.WriteLine("Pour suivre ksc → ksb → ipz par session TCP, sans référence privée :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --profession-flow");
     Console.WriteLine("Pour rechercher localement le nom/niveau dans les messages candidats :");
@@ -95,6 +97,12 @@ Console.WriteLine(options.WindowFlowLink
     : $"BestCrush Network Probe — mapping de référence {map.ClientBuild} (build réel du jeu non vérifié)");
 Console.WriteLine($"Interface : [{options.DeviceIndex}] {devices[options.DeviceIndex.Value].Name}");
 Console.WriteLine($"Filtre    : tcp port {options.Port}");
+if (options.AccountRosterStudy)
+{
+    Console.WriteLine("P3c.5 : recherche d'un groupe de personnages candidat depuis S→C:ksc/ksb, jamais d'un identifiant Ankama.");
+    Console.WriteLine("Quatre phases manuelles A-X / A-Y / B-Z / A-X, une seule fenêtre Dofus à la fois.");
+    Console.WriteLine("Aucun nom ou identifiant réseau ne sera affiché, enregistré ni haché.");
+}
 if (options.AccountWireStudy)
 {
     Console.WriteLine("P3c.4 : étude exploratoire UNIQUEMENT S→C:krg, 4 fenêtres successives, un seul client ouvert à la fois.");
@@ -597,6 +605,45 @@ else if (options.ServerRouteStudy || options.ServerWireStudy)
             Console.WriteLine(line);
     }
 }
+else if (options.AccountRosterStudy)
+{
+    CharacterRosterContinuityStudy study = new();
+    using CharacterMetadataProbe probe = new(
+        devices[options.DeviceIndex.Value], options.Port,
+        rosterStudy: study);
+    Console.WriteLine("P3c.5 : fermer totalement TOUS les clients avant la première phase.");
+    probe.Start();
+    bool completed = true;
+    for (int phase = 0; phase < 4; phase++)
+    {
+        if (!study.StartPhase(phase))
+        {
+            completed = false;
+            break;
+        }
+
+        Console.WriteLine(phase switch
+        {
+            0 => "PHASE 1 A-X : compte A, personnage X sur le serveur commun.",
+            1 => "PHASE 2 A-Y : même compte et même serveur, personnage Y DISTINCT de X.",
+            2 => "PHASE 3 B-Z : compte B DISTINCT sur le MEME serveur, personnage Z.",
+            _ => "PHASE 4 A-X : revenir au MEME personnage X du compte A."
+        });
+        Console.WriteLine("Attendre ksc et ksb, fermer totalement Dofus puis Entrée ; Ctrl+C pour arrêter.");
+        Task<string?> read = Task.Run(() => Console.ReadLine());
+        while (!read.IsCompleted && !stop.Wait(TimeSpan.FromMilliseconds(100))) { }
+        if (stop.IsSet || (read.IsCompleted && read.Result is null))
+        {
+            completed = false;
+            break;
+        }
+    }
+    probe.Stop();
+    if (!completed)
+        Console.WriteLine("p3c5=stopped-early account=unverified server=unverified");
+    foreach (string line in study.Summarize())
+        Console.WriteLine(line);
+}
 else if (options.AccountWireStudy)
 {
     AccountWireFieldComparisonStudy study = new();
@@ -832,7 +879,8 @@ internal sealed record ProbeOptions(
     bool ServerNameStudy,
     bool ConnectionSelectionStudy,
     int? ExpectedClassId,
-    bool AccountWireStudy)
+    bool AccountWireStudy,
+    bool AccountRosterStudy)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -878,6 +926,7 @@ internal sealed record ProbeOptions(
         bool serverNameStudy = false;
         bool connectionSelectionStudy = false;
         bool accountWireStudy = false;
+        bool accountRosterStudy = false;
         int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
@@ -924,6 +973,9 @@ internal sealed record ProbeOptions(
                     break;
                 case "--account-wire-study":
                     accountWireStudy = true;
+                    break;
+                case "--account-roster-study":
+                    accountRosterStudy = true;
                     break;
                 case "--profession-xp-study":
                     professionXpStudy = true;
@@ -1021,7 +1073,8 @@ internal sealed record ProbeOptions(
             (ktaF1Control ? 1 : 0) + (ktaCharacterCompare ? 1 : 0) +
             (serverNameStudy ? 1 : 0) +
             (connectionSelectionStudy ? 1 : 0) +
-            (accountWireStudy ? 1 : 0);
+            (accountWireStudy ? 1 : 0) +
+            (accountRosterStudy ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -1053,6 +1106,7 @@ internal sealed record ProbeOptions(
             identityName, identityFields, identityPair,
             identityCrossOpcodes, serverRouteStudy, serverWireStudy,
             ktaF1Control, ktaCharacterCompare, serverNameStudy,
-            connectionSelectionStudy, expectedClassId, accountWireStudy);
+            connectionSelectionStudy, expectedClassId, accountWireStudy,
+            accountRosterStudy);
     }
 }
