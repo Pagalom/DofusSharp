@@ -740,3 +740,27 @@ L'opérateur confirme : **1086 tests exécutés, 1086 réussis, 0 échec, 0 igno
 **Prochaine étape : essai réel contrôlé sans nouvelle modification de code.** Fermer BestCrush et les clients Dofus ; lancer la version **Debug** de BestCrush avec `$env:BESTCRUSH_P3C10_ROSTER_STUDY = "1"`, sélectionner manuellement le serveur souhaité, ouvrir A-X, puis B-Z en laissant A ouvert, fermer et reconnecter B. Ne partager que les lignes `p3c10=` (status et compteurs anonymes), jamais les journaux complets ni les trames. Terminer en effaçant la variable du PowerShell : `Remove-Item Env:BESTCRUSH_P3C10_ROSTER_STUDY`.
 
 Ce checkpoint **ne valide aucun compte Ankama, aucune identité de serveur réseau, aucune attribution de métiers**, et ne justifie pas de les activer. Le mode Release et le lancement normal sans variable restent sans observateur.
+
+
+## P3c.10 — Capture réelle BestCrush Debug confirmée (23 octobre 2026)
+
+**Préalable automatisé validé :** 1086/1086 tests Windows réussis, 0 échec, 0 ignoré, 7,5 s. L'application MAUI Debug a démarré par `dotnet run` avec `BESTCRUSH_P3C10_ROSTER_STUDY=1`. Aucun `p3c10` n'est apparu sur le terminal pendant l'essai ; les événements sont dans le fichier Serilog quotidien `%LOCALAPPDATA%\BestCrush\Logs\bestcrush20261023.log`. Les avertissements NU1701 concernant `OpenCvSharp4.WpfExtensions` et MacCatalyst n'ont pas empêché le build Windows.
+
+**Extraction de l'opérateur** via `Get-ChildItem "$env:LOCALAPPDATA\BestCrush\Logs" -Filter "bestcrush*.log" | Select-String "p3c10="` :
+
+| Heure locale Europe/Paris | Ligne de diagnostic anonyme | Interprétation |
+| --- | --- | --- |
+| 18:59:18.535 | `status=enabled mode=debug-opt-in` | Opt-in Debug actif |
+| 18:59:20.936 | `status=reset reason=manual-server-change` | Réinitialisation après sélection manuelle |
+| 18:59:46.286 | `status=pending linked-windows=0 equal-roster-pairs=0 disjoint-roster-pairs=0` | Premier roster candidat `ksc` en attente |
+| 18:59:51.400 | `status=linked linked-windows=1 equal-roster-pairs=0 disjoint-roster-pairs=0` | Premier `ksb` lié au premier roster |
+| 19:00:17.496 | `status=pending linked-windows=1 equal-roster-pairs=0 disjoint-roster-pairs=0` | Deuxième roster candidat en attente, première fenêtre conservée |
+| 19:00:20.765 | `status=linked linked-windows=2 equal-roster-pairs=0 disjoint-roster-pairs=1` | Deux fenêtres simultanément liées, ensembles candidats disjoints |
+| 19:00:51.869 | `status=pending linked-windows=1 equal-roster-pairs=0 disjoint-roster-pairs=0` | L'ancien lien B a disparu pendant la reconnexion ; A subsiste |
+| 19:00:54.488 | `status=linked linked-windows=2 equal-roster-pairs=0 disjoint-roster-pairs=1` | B reconnecté et relié, distinct de A |
+
+Chaque sortie comportait `account=unverified server=unverified`. Aucune sortie `status=rejected` dans les lignes fournies. **Résultat P3c.10 : PASS, sur ce scénario réel** : le worker de BestCrush observe `ksc/ksb`, rattache deux groupes candidats disjoints à deux fenêtres Windows simultanées et retrouve le second groupe après sa reconnexion sans perdre le premier. Le retour de `linked-windows=2` constitue une preuve de fonctionnement local du diagnostic, mais **ne prouve ni des comptes Ankama ni l'identité du serveur réseau**. Le scénario n'a pas produit d'identifiants de compte validés, d'association de métiers, ni de validation du changement de personnage dans une même fenêtre. Il ne démontre pas non plus la disparition d'une fenêtre sans trafic ultérieur.
+
+**Attention :** le nombre `disjoint-roster-pairs=1` provient d'ensembles de candidats numériques comparés, et n'autorise aucune fusion de métiers ou publication de `VerifiedAccountServerKey`. La sélection manuelle du serveur reste suffisante pour les fonctions économiques, sans vérification de serveur imposée.
+
+**Étape suivante recommandée :** une petite intégration de présentation éphémère seulement, liée à l'inventaire de fenêtres OS existant, sans répliquer dans SQLite et sans transférer de données vers `CurrentCharacterState` ou `CurrentAccountProfessionsState` tant que les identités sémantiques ne sont pas indépendamment confirmées. Avant d'autoriser une identité métier, protéger aussi le changement de personnage dans la même fenêtre, la fermeture sans nouveaux paquets et les erreurs de visibilité du socket.
