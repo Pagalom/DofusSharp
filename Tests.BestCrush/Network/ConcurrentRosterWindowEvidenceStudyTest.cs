@@ -152,6 +152,16 @@ public sealed class ConcurrentRosterWindowEvidenceStudyTest
     }
 
     [Fact]
+    public void BCannotBorrowSameGameOrdinalEvenWithOtherSocketAndWindow()
+    {
+        var study = new ConcurrentRosterWindowEvidenceStudy();
+        Observe(study, 0, 2, SocketA).Should().Contain("os-matched");
+        Observe(study, 1, 2, SocketB)
+            .Should().Contain("status=conflicted");
+        study.Summarize()[1].Should().Contain("reason=A-B-same-game");
+    }
+
+    [Fact]
     public void ClosingABeforeBReconnectMakesReportIncomplete()
     {
         var study = new ConcurrentRosterWindowEvidenceStudy();
