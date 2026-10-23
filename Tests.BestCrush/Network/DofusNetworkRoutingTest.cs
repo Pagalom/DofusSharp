@@ -18,6 +18,108 @@ public sealed class DofusNetworkRoutingTest
         new(2026, 10, 10, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
+    public async Task VerifiedWindowsGetSeparateShadowEquipmentWithoutChangingLegacyGlobalState()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey a = new(101, 1201);
+        DofusClientWindowKey b = new(102, 1202);
+        long epoch = harness.Service.CaptureEpochForReplay;
+        NetworkCaptureLease lease = harness.ServerState.GetCaptureLease()!.Value;
+
+        await harness.ReplayAsync(
+            "jzs", Message(Unsigned(2, 9), Unsigned(3, 42)),
+            ObservedAt, connectionId: 11, candidateWindow: a);
+        await harness.ReplayAsync(
+            "jzs", Message(Unsigned(2, 9), Unsigned(3, 43)),
+            ObservedAt.AddSeconds(1), connectionId: 22,
+            candidateWindow: b);
+
+        harness.WindowEquipment.Get(a, lease, epoch)!.DofusDbId.Should().Be(42);
+        harness.WindowEquipment.Get(b, lease, epoch)!.DofusDbId.Should().Be(43);
+        // P3m.17 only shadows attribution. The wheel/global behavior is
+        // unchanged until there is an explicitly safe window-targeted reader.
+        harness.LastEquipment.GetForServer(RoutingHarness.Server)!
+            .DofusDbId.Should().Be(43);
+    }
+
+    [Fact]
+    public async Task UnverifiedWindowOrRuneCannotProduceWindowEquipment()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey a = new(101, 1201);
+        long epoch = harness.Service.CaptureEpochForReplay;
+        NetworkCaptureLease lease = harness.ServerState.GetCaptureLease()!.Value;
+
+        await harness.ReplayAsync(
+            "jzn", Market(42),
+            ObservedAt, connectionId: 11);
+
+        harness.WindowEquipment.Get(a, lease, epoch).Should().BeNull();
+        harness.LastEquipment.GetForServer(RoutingHarness.Server)!
+            .DofusDbId.Should().Be(42);
+
+        await harness.ReplayAsync(
+            "jzs", JzsMarket(100, 78,
+                JzsOffer(100, 301, 78, 139, 1399, 14284, 151014)),
+            ObservedAt.AddSeconds(1), connectionId: 22,
+            candidateWindow: a);
+
+        harness.WindowEquipment.Get(a, lease, epoch).Should().BeNull();
+    }
+
+    [Fact]
+    public async Task WindowShadowIgnoresConflictingConnectionContext()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey a = new(101, 1201);
+        DofusClientWindowKey b = new(102, 1202);
+        long epoch = harness.Service.CaptureEpochForReplay;
+        NetworkCaptureLease lease = harness.ServerState.GetCaptureLease()!.Value;
+
+        await harness.ReplayAsync(
+            "jzn", Market(42), ObservedAt,
+            connectionId: 11, candidateWindow: a);
+        await harness.ReplayAsync(
+            "jzn", Market(43), ObservedAt.AddSeconds(1),
+            connectionId: 11, candidateWindow: b);
+
+        harness.WindowEquipment.Get(a, lease, epoch)!.DofusDbId.Should().Be(42);
+        harness.WindowEquipment.Get(b, lease, epoch).Should().BeNull();
+        harness.LastEquipment.GetForServer(RoutingHarness.Server)!
+            .DofusDbId.Should().Be(42);
+    }
+
+    [Fact]
+    public async Task WindowShadowDoesNotSurviveServerChangeOrCaptureRestart()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey a = new(101, 1201);
+        long firstEpoch = harness.Service.CaptureEpochForReplay;
+        NetworkCaptureLease firstLease = harness.ServerState.GetCaptureLease()!.Value;
+
+        await harness.ReplayAsync(
+            "jzn", Market(42), ObservedAt,
+            connectionId: 11, candidateWindow: a);
+        harness.WindowEquipment.Get(a, firstLease, firstEpoch).Should().NotBeNull();
+
+        harness.ServerState.SelectServer("OTHER_SERVER");
+        harness.WindowEquipment.Get(a, firstLease, firstEpoch).Should().BeNull();
+
+        NetworkCaptureLease secondLease = harness.ServerState.GetCaptureLease()!.Value;
+        await harness.ReplayAsync(
+            "jzn", Market(43), ObservedAt.AddSeconds(1),
+            connectionId: 12, candidateWindow: a);
+        harness.WindowEquipment.Get(a, secondLease, firstEpoch)!.DofusDbId
+            .Should().Be(43);
+
+        harness.Service.Stop();
+        harness.WindowEquipment.Get(a, secondLease, firstEpoch).Should().BeNull();
+        harness.Service.ResumeReplayForTests();
+        harness.WindowEquipment.Get(a, secondLease,
+            harness.Service.CaptureEpochForReplay).Should().BeNull();
+    }
+
+    [Fact]
     public async Task JzsSelectionFocusesKnownEquipmentWithoutWritingPrices()
     {
         await using RoutingHarness harness =
