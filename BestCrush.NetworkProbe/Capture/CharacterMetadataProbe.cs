@@ -1,3 +1,5 @@
+using System.Net;
+using System.Net.Sockets;
 using BestCrush.Network.Capture;
 using BestCrush.Network.Protocol;
 using PacketDotNet;
@@ -36,7 +38,8 @@ internal sealed class CharacterMetadataProbe(
     ConnectionServerSelectionStudy? connectionSelectionStudy = null,
     AccountWireFieldComparisonStudy? accountWireStudy = null,
     CharacterRosterContinuityStudy? rosterStudy = null,
-    ConcurrentCharacterRosterStudy? concurrentRosterStudy = null) : IDisposable
+    ConcurrentCharacterRosterStudy? concurrentRosterStudy = null,
+    ConcurrentRosterWindowEvidenceStudy? windowEvidenceStudy = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
@@ -49,6 +52,13 @@ internal sealed class CharacterMetadataProbe(
     private readonly bool _accountWireProbe = accountWireStudy is not null;
     private readonly bool _rosterProbe = rosterStudy is not null;
     private readonly bool _concurrentRosterProbe = concurrentRosterStudy is not null;
+    private readonly ConcurrentCharacterRosterStudy? _concurrentRosterStudy =
+        concurrentRosterStudy;
+    private readonly ConcurrentRosterWindowEvidenceStudy? _windowEvidence =
+        windowEvidenceStudy;
+    private readonly object _windowEvidenceSync = new();
+    private readonly Dictionary<int, TcpSocketTuple> _sessionSockets = [];
+    private const int MaxWindowStudySessions = 128;
     private readonly CharacterCaptureFlowTracker _flows = new(
         shapeKeys: shapeKeys, professionReferences: professionReferences,
         decodeIpz: decodeIpz, studyReferences: studyReferences,
@@ -120,6 +130,19 @@ internal sealed class CharacterMetadataProbe(
     /// Counts only. The Windows OS socket count is limited to IPv4 and
     /// remote port; it does not identify the owner or prove Dofus identity.
     /// </summary>
+    /// <summary>
+    /// A P3c.7 study only: collect categorical evidence for exact Game
+    /// tuple -> unique Windows socket PID -> unique live Dofus HWND.
+    /// Do not print or persist tuple, PID or HWND, even on failure.
+    /// </summary>
+    public void WriteConcurrentWindowSummary()
+    {
+        if (_windowEvidence is null)
+            return;
+        foreach (string line in _windowEvidence.Summarize())
+            Console.WriteLine(line);
+    }
+
     public void WriteTrafficStatus(string phase)
     {
         int sockets;
@@ -183,6 +206,8 @@ internal sealed class CharacterMetadataProbe(
             _ktaCharacterStudy?.ObserveEvents(events);
             _serverNameStudy?.ObserveEvents(events);
             _connectionSelectionStudy?.ObserveEvents(key, events);
+            if (_windowEvidence is not null)
+                ObserveConcurrentWindowEvidence(ip, tcp, events);
 
             foreach (CharacterCaptureEvent entry in events)
             {
@@ -311,6 +336,86 @@ internal sealed class CharacterMetadataProbe(
             // byte contents, TCP endpoint details, or stack traces.
             Console.Error.WriteLine(
                 $"[metadata probe] Paquet ignoré : {ex.GetType().Name}.");
+        }
+    }
+
+    private void ObserveConcurrentWindowEvidence(
+        IPPacket ip, TcpPacket tcp, IReadOnlyList<CharacterCaptureEvent> events)
+    {
+        if (_windowEvidence is null || _concurrentRosterStudy is null ||
+            ip.SourceAddress.AddressFamily != AddressFamily.InterNetwork ||
+            ip.DestinationAddress.AddressFamily != AddressFamily.InterNetwork)
+            return;
+
+        TcpSocketTuple? socket = TcpSocketTuple.FromPacket(
+            ip.SourceAddress, tcp.SourcePort,
+            ip.DestinationAddress, tcp.DestinationPort, port);
+        if (socket is null)
+            return;
+
+        lock (_windowEvidenceSync)
+        {
+            foreach (CharacterCaptureEvent entry in events)
+            {
+                if (entry.Kind == CharacterCaptureEventKind.Opened)
+                {
+                    if (_sessionSockets.Count < MaxWindowStudySessions &&
+                        !_sessionSockets.ContainsKey(entry.SessionNumber))
+                        _sessionSockets.Add(entry.SessionNumber, socket.Value);
+                    continue;
+                }
+
+                if (entry.Kind is CharacterCaptureEventKind.Closed or
+                    CharacterCaptureEventKind.Evicted)
+                {
+                    _windowEvidence.ObserveClosed(entry.SessionNumber);
+                    _sessionSockets.Remove(entry.SessionNumber);
+                    continue;
+                }
+
+                if (entry.Kind != CharacterCaptureEventKind.Message ||
+                    entry.Opcode != "ksb" ||
+                    entry.ConcurrentRosterSummary is null ||
+                    !entry.ConcurrentRosterSummary.Contains(
+                        "status=linked", StringComparison.Ordinal) ||
+                    !_sessionSockets.TryGetValue(
+                        entry.SessionNumber, out TcpSocketTuple saved) ||
+                    saved != socket.Value)
+                    continue;
+
+                for (int stage = 0; stage < 3; stage++)
+                {
+                    if (_concurrentRosterStudy.LinkedGameSession(stage) !=
+                        entry.SessionNumber)
+                        continue;
+
+                    IReadOnlyList<TcpSocketOwner> owners;
+                    IReadOnlyList<ConcurrentRosterWindowEvidenceStudy.WindowCandidate>
+                        windows;
+                    try
+                    {
+                        owners = WindowsDofusSocketTable.EstablishedIPv4(port);
+                        windows = WindowsDofusSocketTable.VisibleWindows()
+                            .Select(w => new ConcurrentRosterWindowEvidenceStudy
+                                .WindowCandidate(w.Handle, w.ProcessId))
+                            .ToArray();
+                    }
+                    catch (Exception ex) when (
+                        ex is System.ComponentModel.Win32Exception or
+                              InvalidOperationException or
+                              System.Runtime.InteropServices.ExternalException)
+                    {
+                        owners = [];
+                        windows = [];
+                    }
+
+                    string status = _windowEvidence.ObserveLinked(
+                        stage, entry.SessionNumber, socket.Value,
+                        owners, windows);
+                    Console.WriteLine("WINDOW_ROSTER=[" + status + "]");
+                    break;
+                }
+            }
         }
     }
 
