@@ -15,7 +15,8 @@ internal sealed class DofusNetworkMessageProcessor(
     // TCP connection ID. Never use a selected window or character name as
     // evidence that two messages belong to the same connection.
     private const int MaximumCorrelationFlows = 64;
-    private const int MaximumQuarantinedConnections = 128;
+    // Association lifetime is the capture lease, not the business-cache LRU.
+    private const int MaximumVerifiedWindowTokens = 8192;
     private static readonly TimeSpan CorrelationIdleTimeout = TimeSpan.FromHours(1);
 
     private sealed class FlowCorrelation
@@ -24,16 +25,15 @@ internal sealed class DofusNetworkMessageProcessor(
         internal PurchaseRequestObservation? PendingPurchaseRequest;
         internal DateTime PendingPurchaseRequestAtUtc;
         internal DateTime LastSeenUtc;
-        // A window is only an OS client context, not an account/character.
-        // The same logical TCP token must never switch between two windows.
-        internal DofusClientWindowKey? FirstVerifiedWindow;
     }
 
     private readonly Dictionary<long, FlowCorrelation> _correlations = [];
-    // Separate from the LRU-like correlation cache: eviction/idle expiry must
-    // never resurrect a token whose OS client context was contradictory.
-    private readonly HashSet<long> _quarantinedConnections = [];
-    private bool _quarantineOverflow;
+    // Null means permanently quarantined within this lease/epoch.
+    // Keep the first verified Windows context independently of short-lived
+    // UID/purchase caches, including after business-cache eviction.
+    private readonly Dictionary<long, DofusClientWindowKey?>
+        _verifiedWindowByConnection = [];
+    private bool _windowBindingOverflow;
     private NetworkCaptureLease? _lastLease;
     private long? _lastCaptureEpoch;
 
@@ -68,8 +68,8 @@ internal sealed class DofusNetworkMessageProcessor(
         {
             // No UID or purchase state survives server selection / Stop+Start.
             _correlations.Clear();
-            _quarantinedConnections.Clear();
-            _quarantineOverflow = false;
+            _verifiedWindowByConnection.Clear();
+            _windowBindingOverflow = false;
             _lastLease = message.CaptureLease;
             _lastCaptureEpoch = message.CaptureEpoch;
         }
@@ -81,38 +81,47 @@ internal sealed class DofusNetworkMessageProcessor(
             !currentServerState.IsCaptureLeaseActive(lease))
             return;
 
-        if (_quarantineOverflow ||
-            _quarantinedConnections.Contains(message.ConnectionId))
+        if (_windowBindingOverflow)
             return;
 
-        FlowCorrelation correlation =
-            CorrelationFor(message.ConnectionId, message.ObservedAtUtc);
-
-        // Defense-in-depth for the client/socket routing boundary. A logical
-        // connection ID is expected to belong to just one OS window. Should
-        // contradictory *verified* window metadata ever reach this worker,
-        // quarantine that entire token for the rest of its capture lease.
-        // In particular, neither an item UID nor a pending purchase may be
-        // reused by the other window. Missing window metadata is not proof
-        // of a different owner and keeps the existing manual-server path.
-        if (message.CandidateWindow is { } window)
+        // A verified OS window is NOT a game identity. It is nevertheless a
+        // stable expectation for one opaque logical TCP token. A conflicting
+        // assignment must not allow caches to cross clients, even if the
+        // business-cache entry was evicted long ago.
+        if (_verifiedWindowByConnection.TryGetValue(
+                message.ConnectionId, out DofusClientWindowKey? firstWindow))
         {
-            if (correlation.FirstVerifiedWindow is { } previous &&
-                previous != window)
+            if (firstWindow is null) // already quarantined
+                return;
+
+            if (message.CandidateWindow is { } changedWindow &&
+                firstWindow.Value != changedWindow)
             {
-                correlation.ItemDetails.Clear();
-                correlation.PendingPurchaseRequest = null;
-                correlation.PendingPurchaseRequestAtUtc = default;
-                if (_quarantinedConnections.Count < MaximumQuarantinedConnections)
-                    _quarantinedConnections.Add(message.ConnectionId);
-                else
-                    _quarantineOverflow = true; // fail closed when bounded
+                _verifiedWindowByConnection[message.ConnectionId] = null;
+                _correlations.Remove(message.ConnectionId);
+                return;
+            }
+        }
+        else if (message.CandidateWindow is { } firstVerifiedWindow)
+        {
+            if (_verifiedWindowByConnection.Count >=
+                MaximumVerifiedWindowTokens)
+            {
+                // Do not silently drop an earlier association and then
+                // accept a recycled logical token for a different window.
+                _windowBindingOverflow = true;
+                _correlations.Clear();
                 return;
             }
 
-            correlation.FirstVerifiedWindow ??= window;
+            _verifiedWindowByConnection.Add(
+                message.ConnectionId, firstVerifiedWindow);
         }
 
+        // Absence of window metadata is not proof of a different owner:
+        // the existing manually chosen server remains authoritative.
+        FlowCorrelation correlation =
+            CorrelationFor(message.ConnectionId, message.ObservedAtUtc);
         RecentItemDetailsCache itemDetails = correlation.ItemDetails;
 
         await debugWriter.WriteWireDebugAsync(
