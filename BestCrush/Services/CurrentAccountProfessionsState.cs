@@ -42,7 +42,18 @@ public sealed class CurrentAccountProfessionsState
     /// P3c remains pending and no writer sets either value today.
     /// </summary>
     public AccountProfessionsSnapshot? ForCharacter(
-        CharacterSessionProfile character)
+        CharacterSessionProfile character) =>
+        ForVerifiedSnapshot(character, ActiveSnapshot);
+
+    /// <summary>
+    /// Pure comparison boundary for future *verified* account snapshots.
+    /// No network ingestion, account inference or persistence is permitted.
+    /// Keeping the comparison separate lets tests prove two accounts on the
+    /// same server remain isolated without ever populating the live state.
+    /// </summary>
+    internal static AccountProfessionsSnapshot? ForVerifiedSnapshot(
+        CharacterSessionProfile character,
+        AccountProfessionsSnapshot? snapshot)
     {
         ArgumentNullException.ThrowIfNull(character);
 
@@ -53,7 +64,6 @@ public sealed class CurrentAccountProfessionsState
                 StringComparison.OrdinalIgnoreCase))
             return null;
 
-        AccountProfessionsSnapshot? snapshot = ActiveSnapshot;
         return snapshot is not null &&
             string.Equals(snapshot.Key.AccountIdentity, verified.AccountIdentity,
                 StringComparison.Ordinal) &&
