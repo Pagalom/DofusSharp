@@ -158,7 +158,9 @@ internal sealed class DofusNetworkMessageProcessor(
                     item.ItemId,
                     message.ObservedAtUtc,
                     lease,
-                    cancellationToken);
+                    cancellationToken,
+                    message.CandidateWindow,
+                    message.CaptureEpoch);
 
                 await debugWriter.WriteEventDebugAsync(
                     message.ObservedAtUtc,
@@ -186,7 +188,9 @@ internal sealed class DofusNetworkMessageProcessor(
                     item.ItemId,
                     message.ObservedAtUtc,
                     lease,
-                    cancellationToken);
+                    cancellationToken,
+                    message.CandidateWindow,
+                    message.CaptureEpoch);
 
                 await debugWriter.WriteEventDebugAsync(
                     message.ObservedAtUtc,
@@ -214,7 +218,9 @@ internal sealed class DofusNetworkMessageProcessor(
                     item.ItemId,
                     message.ObservedAtUtc,
                     lease,
-                    cancellationToken);
+                    cancellationToken,
+                    message.CandidateWindow,
+                    message.CaptureEpoch);
 
                 await debugWriter.WriteEventDebugAsync(
                     message.ObservedAtUtc,
@@ -243,7 +249,9 @@ internal sealed class DofusNetworkMessageProcessor(
                     result.Item.ItemId,
                     message.ObservedAtUtc,
                     lease,
-                    cancellationToken);
+                    cancellationToken,
+                    message.CandidateWindow,
+                    message.CaptureEpoch);
 
                 await debugWriter.WriteEventDebugAsync(
                     message.ObservedAtUtc,
@@ -331,7 +339,9 @@ internal sealed class DofusNetworkMessageProcessor(
                         message.ObservedAtUtc,
                         lease,
                         cancellationToken,
-                        allowEquipmentPriceRefresh: false);
+                        allowEquipmentPriceRefresh: false,
+                        verifiedWindow: message.CandidateWindow,
+                        captureEpoch: message.CaptureEpoch);
                 }
             }
 
@@ -381,7 +391,9 @@ internal sealed class DofusNetworkMessageProcessor(
                     listing.ItemId,
                     message.ObservedAtUtc,
                     lease,
-                    cancellationToken);
+                    cancellationToken,
+                    message.CandidateWindow,
+                    message.CaptureEpoch);
 
                 await debugWriter.WriteEventDebugAsync(
                     message.ObservedAtUtc,
@@ -411,7 +423,9 @@ internal sealed class DofusNetworkMessageProcessor(
                     itemId.Value,
                     message.ObservedAtUtc,
                     lease,
-                    cancellationToken);
+                    cancellationToken,
+                    message.CandidateWindow,
+                    message.CaptureEpoch);
 
                 await debugWriter.WriteEventDebugAsync(
                     message.ObservedAtUtc,
@@ -438,7 +452,9 @@ internal sealed class DofusNetworkMessageProcessor(
                         message.ObservedAtUtc,
                         lease,
                         cancellationToken,
-                        requireEquipment: true);
+                        requireEquipment: true,
+                        verifiedWindow: message.CandidateWindow,
+                        captureEpoch: message.CaptureEpoch);
                 }
 
                 MarketObservation? stackablePrices =
@@ -455,7 +471,9 @@ internal sealed class DofusNetworkMessageProcessor(
                         message.ObservedAtUtc,
                         lease,
                         cancellationToken,
-                        requireStackable: true);
+                        requireStackable: true,
+                        verifiedWindow: message.CandidateWindow,
+                        captureEpoch: message.CaptureEpoch);
                 }
             }
 
@@ -483,7 +501,9 @@ internal sealed class DofusNetworkMessageProcessor(
                     market,
                     message.ObservedAtUtc,
                     lease,
-                    cancellationToken);
+                    cancellationToken,
+                        verifiedWindow: message.CandidateWindow,
+                        captureEpoch: message.CaptureEpoch);
             }
 
             return;
@@ -525,7 +545,9 @@ internal sealed class DofusNetworkMessageProcessor(
                     itemDetails.Items,
                     message.ObservedAtUtc,
                     lease,
-                    cancellationToken);
+                    cancellationToken,
+                    message.CandidateWindow,
+                    message.CaptureEpoch);
             }
         }
     }
