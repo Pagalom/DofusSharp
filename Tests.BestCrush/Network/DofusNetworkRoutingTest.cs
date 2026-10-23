@@ -2016,6 +2016,7 @@ public sealed class DofusNetworkRoutingTest
             CurrentServerState serverState,
             LastNetworkEquipmentState
                 lastEquipment,
+            WindowScopedNetworkEquipmentState windowEquipment,
             RoutingSettings settings,
             MarketDataChangeNotifier notifier,
             DofusNetworkCaptureService service,
@@ -2028,6 +2029,7 @@ public sealed class DofusNetworkRoutingTest
 
             ServerState = serverState;
             LastEquipment = lastEquipment;
+            WindowEquipment = windowEquipment;
             Settings = settings;
             Notifier = notifier;
             Service = service;
@@ -2046,6 +2048,8 @@ public sealed class DofusNetworkRoutingTest
         {
             get;
         }
+
+        public WindowScopedNetworkEquipmentState WindowEquipment { get; }
 
         public RoutingSettings
             Settings
@@ -2096,6 +2100,7 @@ public sealed class DofusNetworkRoutingTest
 
             services.AddScoped<
                 MarketPriceService>();
+            services.AddSingleton<WindowScopedNetworkEquipmentState>();
 
             services.AddScoped<
                 CoefficientService>();
@@ -2150,6 +2155,8 @@ public sealed class DofusNetworkRoutingTest
 
             LastNetworkEquipmentState lastEquipment =
                 new();
+            WindowScopedNetworkEquipmentState windowEquipment =
+                provider.GetRequiredService<WindowScopedNetworkEquipmentState>();
 
             RoutingSettings settings =
                 new();
@@ -2211,6 +2218,7 @@ public sealed class DofusNetworkRoutingTest
                 provider,
                 serverState,
                 lastEquipment,
+                windowEquipment,
                 settings,
                 notifier,
                 service,
