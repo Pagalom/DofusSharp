@@ -88,7 +88,7 @@ public sealed class CurrentCandidateWindowCardsStateTest
         Send(observer, server, "ksb", Selected(101, "Sable-Ciel"), A, 11)
             .Should().Be(EphemeralCandidateRosterWireObserver.Result.Linked);
         cards.Cards.Should().ContainSingle().Which.Should().Be(
-            new CandidateWindowRosterCard(A, 2));
+            new CandidateWindowRosterCard(A, 2, 50));
         cards.HasCandidateLink(A).Should().BeTrue();
     }
 
@@ -103,8 +103,8 @@ public sealed class CurrentCandidateWindowCardsStateTest
 
         cards.Cards.Should().BeEquivalentTo(new[]
         {
-            new CandidateWindowRosterCard(A, 2),
-            new CandidateWindowRosterCard(B, 1)
+            new CandidateWindowRosterCard(A, 2, 50),
+            new CandidateWindowRosterCard(B, 1, 50)
         });
         new CurrentAccountProfessionsState().ActiveSnapshot.Should().BeNull();
         new CurrentCharacterState().Characters.Should().BeEmpty();
@@ -151,8 +151,8 @@ public sealed class CurrentCandidateWindowCardsStateTest
             (201, "Hiver-Rouge"));
         cards.Cards.Should().BeEquivalentTo(new[]
         {
-            new CandidateWindowRosterCard(A, 1),
-            new CandidateWindowRosterCard(ReopenedB, 1)
+            new CandidateWindowRosterCard(A, 1, 50),
+            new CandidateWindowRosterCard(ReopenedB, 1, 50)
         });
     }
 
@@ -216,6 +216,33 @@ public sealed class CurrentCandidateWindowCardsStateTest
         text.Should().NotContain("101");
         text.Should().NotContain("1101");
         text.Should().NotContain("SelectedManually");
+    }
+
+    [Fact]
+    public void SelectedLevelIsOnlyReadFromConfirmedMatchingKsbOnSameWindow()
+    {
+        var (cards, observer, server) = Create();
+        Send(observer, server, "ksc", Roster((101, "Sable-Ciel")), A, 11)
+            .Should().Be(EphemeralCandidateRosterWireObserver.Result.Pending);
+
+        cards.Cards.Should().BeEmpty();
+        Send(observer, server, "ksb", Selected(101, "Sable-Ciel"), B, 11)
+            .Should().Be(EphemeralCandidateRosterWireObserver.Result.Rejected);
+        cards.Cards.Should().BeEmpty();
+
+        Link(observer, server, A, 12, 101, "Sable-Ciel", (101, "Sable-Ciel"));
+        cards.Cards.Should().ContainSingle().Which.SelectedLevelCandidate.Should().Be(50);
+        new CurrentCharacterState().Characters.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void SelectedLevelIsRevokedWithClosedWindowEvenWithoutPackets()
+    {
+        var (cards, observer, server) = Create();
+        Link(observer, server, A, 11, 101, "Sable-Ciel", (101, "Sable-Ciel"));
+        cards.Cards.Single().SelectedLevelCandidate.Should().Be(50);
+        cards.RemoveMissingWindows([]);
+        cards.Cards.Should().BeEmpty();
     }
 
     [Fact]
