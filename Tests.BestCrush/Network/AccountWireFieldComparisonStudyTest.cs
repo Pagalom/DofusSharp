@@ -133,14 +133,109 @@ public sealed class AccountWireFieldComparisonStudyTest
     }
 
     [Fact]
-    public void ContradictorySecondKrgCannotReplaceFirstSnapshot()
+    public void ChangingNumericFieldIsExcludedButPhaseRemainsAvailable()
     {
         AccountWireFieldComparisonStudy study = new();
         study.StartPhase(0);
         Read(study, 2, 101, 7301);
         study.Observe(2, CharacterCaptureDirection.ServerToClient, "krg",
-            Krg(101, 7402)).Should().Contain("status=contradictory-snapshot");
+            Krg(101, 7402)).Should().Contain("status=observed");
+
+        string phase = study.Summarize()[0];
+        phase.Should().Contain("status=recorded");
+        phase.Should().Contain("fields=2");
+        phase.Should().Contain("krg=2 unstable-dropped=1");
+        phase.Should().Contain("account=unverified");
+    }
+
+    [Fact]
+    public void SameSessionLoadingStagesKeepOnlySharedStablePaths()
+    {
+        AccountWireFieldComparisonStudy study = new();
+        for (int phase = 0; phase < 4; phase++)
+        {
+            study.StartPhase(phase).Should().BeTrue();
+            int session = phase + 1;
+            ulong character = phase switch { 0 or 3 => 101, 1 => 102, _ => 201 };
+            ulong account = phase == 2 ? 7402UL : 7301UL;
+
+            study.ObserveOpenedSession(session);
+            byte[] first = Message(
+                Unsigned(2, character),
+                Unsigned(11, account),
+                Unsigned(12, (ulong)(8000 + phase)),
+                Bytes(10, Message(Unsigned(3, 295))));
+            study.Observe(session, CharacterCaptureDirection.ServerToClient,
+                "krg", first).Should().Contain("status=observed");
+            study.Observe(session, CharacterCaptureDirection.ServerToClient,
+                "krg", Krg(character, account))
+                .Should().Contain("status=observed");
+
+            study.Summarize()[phase].Should().Contain("unstable-dropped=1");
+        }
+
+        string summary = study.Summarize().Last();
+        summary.Should().Contain("status=compared");
+        summary.Should().Contain("account-shaped-paths=[krg:f11]");
+        summary.Should().NotContain("krg:f12");
+        summary.Should().Contain("semantic=unverified");
+    }
+
+    [Fact]
+    public void OnceDroppedChangingPathIsNeverReintroducedByLaterUpdate()
+    {
+        AccountWireFieldComparisonStudy study = new();
+        study.StartPhase(0);
+        Read(study, 2, 101, 7301);
+        study.Observe(2, CharacterCaptureDirection.ServerToClient,
+            "krg", Krg(101, 7402)).Should().Contain("status=observed");
+        study.Observe(2, CharacterCaptureDirection.ServerToClient,
+            "krg", Krg(101, 7301)).Should().Contain("status=observed");
+
+        study.Summarize()[0].Should().Contain("fields=2");
+        study.Summarize()[0].Should().Contain("krg=3 unstable-dropped=1");
+    }
+
+    [Fact]
+    public void NoFieldStableAcrossLoadingStagesFailsClosed()
+    {
+        AccountWireFieldComparisonStudy study = new();
+        study.StartPhase(0);
+        Read(study, 2, 101, 7301);
+        study.Observe(2, CharacterCaptureDirection.ServerToClient,
+            "krg", Krg(102, 7402, server: 355))
+            .Should().Contain("status=no-stable-fields");
+
         study.Summarize()[0].Should().Contain("status=conflicted");
+        study.Summarize().Last().Should().Contain("status=incomplete");
+    }
+
+    [Fact]
+    public void MalformedSecondKrgInvalidatesPreviouslyValidPhase()
+    {
+        AccountWireFieldComparisonStudy study = new();
+        study.StartPhase(0);
+        Read(study, 2, 101, 7301);
+        study.Observe(2, CharacterCaptureDirection.ServerToClient,
+            "krg", [0x80]).Should().Contain("status=layout-rejected");
+
+        study.Summarize()[0].Should().Contain("status=conflicted");
+        study.Summarize().Last().Should().Contain("status=incomplete");
+    }
+
+    [Fact]
+    public void UnboundedKrgMessagesFailClosedInsteadOfEvictingOlderEvidence()
+    {
+        AccountWireFieldComparisonStudy study = new();
+        study.StartPhase(0);
+        Read(study, 2, 101, 7301);
+        for (int i = 1; i < 8; i++)
+            study.Observe(2, CharacterCaptureDirection.ServerToClient,
+                "krg", Krg(101, 7301)).Should().Contain("status=observed");
+
+        study.Observe(2, CharacterCaptureDirection.ServerToClient,
+            "krg", Krg(101, 7301)).Should().Contain("status=krg-limit");
+        study.Summarize().Last().Should().Contain("status=incomplete");
     }
 
     [Fact]
