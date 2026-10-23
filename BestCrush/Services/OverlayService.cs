@@ -678,6 +678,9 @@ private bool _hasF7VisibilitySnapshot;
         if (requestVersion !=
                 Interlocked.Read(ref _middleFocusRequestVersion) ||
             !currentServerState.IsCaptureLeaseActive(request.Lease) ||
+            (currentServerState.AutomaticRoutingEnabled &&
+             !string.Equals(currentServerState.ServerName,
+                 request.Lease.ServerName, StringComparison.Ordinal)) ||
             _windowEquipmentState?.IsCurrent(request) != true)
             return false;
 
