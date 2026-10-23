@@ -640,45 +640,48 @@ private bool _hasF7VisibilitySnapshot;
         _ = RefreshFocusedProfitabilityAsync();
     }
 
-    private async Task FocusLastNetworkEquipmentAsync()
+    private async Task FocusLastNetworkEquipmentAsync(
+        WindowEquipmentFocusToken request, long requestVersion)
     {
-        string? serverName =
-            currentServerState.ServerName;
-
-        LastNetworkEquipmentSnapshot? snapshot =
-            lastNetworkEquipmentState
-                .GetForServer(
-                    serverName
-                );
-
-        if (snapshot is null)
-        {
+        // The click snapshots the verified OS window + manual server lease.
+        // Recheck after database access: another click, closed Dofus window,
+        // capture reset or server change must make the pending focus inert.
+        if (!IsValidMiddleClickRequest(request, requestVersion))
             return;
-        }
 
-        using IServiceScope scope =
-            serviceScopeFactory.CreateScope();
+        using IServiceScope scope = serviceScopeFactory.CreateScope();
+        ItemsService itemsService = scope.ServiceProvider
+            .GetRequiredService<ItemsService>();
 
-        ItemsService itemsService =
-            scope.ServiceProvider
-                .GetRequiredService<ItemsService>();
+        Equipment? equipment = await itemsService
+            .GetEquipmentAsync(request.Equipment.DofusDbId)
+            .ConfigureAwait(false);
 
-        Equipment? equipment =
-            await itemsService
-                .GetEquipmentAsync(
-                    snapshot.DofusDbId
-                )
-                .ConfigureAwait(false);
-
-        if (equipment is null)
-        {
+        if (equipment is null ||
+            !IsValidMiddleClickRequest(request, requestVersion))
             return;
-        }
 
-        await FocusEquipmentAsync(
-            equipment
-        )
-        .ConfigureAwait(false);
+        await FocusEquipmentAsync(equipment).ConfigureAwait(false);
+    }
+
+    private bool IsValidMiddleClickRequest(
+        WindowEquipmentFocusToken request, long requestVersion)
+    {
+        if (requestVersion !=
+                Interlocked.Read(ref _middleFocusRequestVersion) ||
+            !currentServerState.IsCaptureLeaseActive(request.Lease) ||
+            _windowEquipmentState?.IsCurrent(request) != true)
+            return false;
+
+        // A cached pointer event is not enough: a closed/changed window
+        // must not receive another client's network equipment.
+        DofusWindowInfo[] matching = dofusWindowService
+            .ListVisibleDofusWindows()
+            .Where(window =>
+                window.Handle.ToInt64() == request.Window.Handle &&
+                window.ProcessId == request.Window.ProcessId)
+            .Take(2).ToArray();
+        return matching.Length == 1;
     }
 
     public async Task FocusEquipmentAsync(
