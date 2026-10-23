@@ -20,11 +20,13 @@ internal sealed class EphemeralCandidateRosterGroupsState
     }
 
     private sealed class Entry(
-        long connectionId, ulong selected, HashSet<ulong> roster)
+        long connectionId, ulong selected, HashSet<ulong> roster,
+        int? selectedLevelCandidate)
     {
         internal readonly long ConnectionId = connectionId;
         internal readonly ulong Selected = selected;
         internal readonly HashSet<ulong> Roster = roster;
+        internal readonly int? SelectedLevelCandidate = selectedLevelCandidate;
     }
 
     private readonly object _gate = new();
@@ -92,7 +94,8 @@ internal sealed class EphemeralCandidateRosterGroupsState
 
             return _windows
                 .Select(pair => new CandidateWindowRosterCard(
-                    pair.Key, pair.Value.Roster.Count))
+                    pair.Key, pair.Value.Roster.Count,
+                    pair.Value.SelectedLevelCandidate))
                 .OrderBy(card => card.Window.ProcessId)
                 .ThenBy(card => card.Window.Handle)
                 .ToArray();
@@ -113,12 +116,14 @@ internal sealed class EphemeralCandidateRosterGroupsState
         NetworkCaptureLease lease,
         long captureEpoch, long connectionId,
         ulong selectedCandidate,
-        IReadOnlyCollection<ulong> rosterCandidates)
+        IReadOnlyCollection<ulong> rosterCandidates,
+        int? selectedLevelCandidate = null)
     {
         ArgumentNullException.ThrowIfNull(rosterCandidates);
         if (!ValidWindow(window) ||
             !ValidScope(lease, captureEpoch) ||
             connectionId <= 0 || selectedCandidate == 0 ||
+            selectedLevelCandidate is < 1 or > 200 ||
             rosterCandidates.Count is < 1 or > MaxRosterMembers ||
             rosterCandidates.Any(value => value == 0))
             return false;
@@ -144,7 +149,8 @@ internal sealed class EphemeralCandidateRosterGroupsState
                 if (connectionId == current.ConnectionId)
                 {
                     if (current.Selected == selectedCandidate &&
-                        current.Roster.SetEquals(roster))
+                        current.Roster.SetEquals(roster) &&
+                        current.SelectedLevelCandidate == selectedLevelCandidate)
                         return true;
 
                     // Contradictory identity on the same TCP epoch must not
@@ -179,7 +185,8 @@ internal sealed class EphemeralCandidateRosterGroupsState
             }
 
             _windows[window] = new Entry(
-                connectionId, selectedCandidate, roster);
+                connectionId, selectedCandidate, roster,
+                selectedLevelCandidate);
             return true;
         }
     }
