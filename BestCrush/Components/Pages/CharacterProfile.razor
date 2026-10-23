@@ -48,6 +48,7 @@
                     <CharacterSheetCard @key="client.Key"
                                         DisplayName="@client.DisplayName"
                                         ClassName="@client.ClassName"
+                                        Level="@WindowServerAttributionState.SelectedLevelCandidate(client.Key)"
                                         ServerName="@WindowServerAttributionState.ForWindow(client.Key)?.ServerName"
                                         ServerId="@WindowServerAttributionState.ForWindow(client.Key)?.ServerId"
                                         IsExperimental="true"
@@ -106,12 +107,13 @@
          serverLinkedWithoutRoster.Count > 0)
     {
         <p class="profile-research-note">
-            Association serveur expérimentale issue des messages Connection et
-            ksc/ksb. Attention : les prix et coefficients utilisent encore le
-            serveur global historique dans ce jalon. Ne pas collecter de
-            données économiques de plusieurs serveurs simultanément.
-            Les noms/classes proviennent des titres Windows ; les niveaux
-            candidats ne sont montrés que lorsqu'ils sont observés.
+            Serveurs attribués par connexion TCP et par fenêtre après
+            identification d'un ServerId et chargement cohérent ksc/ksb.
+            Les prix et coefficients des fenêtres identifiées sont mutualisés
+            par serveur. Une fenêtre sans serveur identifié ne peut pas
+            enregistrer d'observations de marché.
+            Les noms et classes proviennent des titres Windows ; les niveaux
+            affichés sont des candidats issus du réseau.
         </p>
     }
 </div>
@@ -131,8 +133,7 @@
             visibleCandidateSheets.Select(pair => pair.Candidate.Window).ToHashSet();
         return CurrentDofusClientsState.Clients
             .Where(client => client.HasCharacterTitle &&
-                !alreadyDisplayed.Contains(client.Key) &&
-                WindowServerAttributionState.ForWindow(client.Key) is not null)
+                !alreadyDisplayed.Contains(client.Key))
             .ToArray();
     }
 
