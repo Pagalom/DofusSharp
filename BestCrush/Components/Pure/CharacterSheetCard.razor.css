@@ -154,7 +154,15 @@
 
 .sheet-section-title span { color: var(--sheet-gold); }
 
-.sheet-job-list { display: grid; gap: 7px; }
+.sheet-job-list {
+    display: grid;
+    gap: 7px;
+    max-height: 440px;
+    overflow-y: auto;
+    padding-right: 4px;
+    scrollbar-width: thin;
+    scrollbar-color: #7d8d78 #263438;
+}
 
 .sheet-job {
     display: flex;
