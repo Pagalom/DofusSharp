@@ -10,6 +10,7 @@
 @inject BestCrush.Services.CurrentServerState CurrentServerState
 @inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
 @inject BestCrush.Services.CurrentDofusClientsState CurrentDofusClientsState
+@inject BestCrush.Services.CurrentCandidateWindowCardsState CurrentCandidateWindowCardsState
 @inject BestCrush.Services.LiveDofusClientNetworkBindings LiveClientNetworkBindings
 @inject BestCrush.Services.WindowScopedNetworkEquipmentState WindowEquipmentState
 @inject BestCrush.Services.DofusWindowService DofusWindowService
@@ -58,8 +59,8 @@
                     {
                         <button @key="client.Key"
                                 type="button"
-                                class="character-avatar @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "active" : "") @(LiveClientNetworkBindings.IsLinked(client.Key) ? "network-linked" : "")"
-                                title="@($"{client.DisplayName}{(client.ClassName is null ? "" : $" — {client.ClassName}")} — fenêtre Dofus (flux TCP {(LiveClientNetworkBindings.IsLinked(client.Key) ? "relié" : "non relié")}, compte non vérifié)")"
+                                class="character-avatar @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "active" : "") @(LiveClientNetworkBindings.IsLinked(client.Key) ? "network-linked" : "") @(CurrentCandidateWindowCardsState.HasCandidateLink(client.Key) ? "candidate-roster-linked" : "")"
+                                title="@($"{client.DisplayName}{(client.ClassName is null ? "" : $" — {client.ClassName}")} — fenêtre Dofus (flux TCP {(LiveClientNetworkBindings.IsLinked(client.Key) ? "relié" : "non relié")}, groupe candidat {(CurrentCandidateWindowCardsState.HasCandidateLink(client.Key) ? "lié" : "non lié")}, compte non vérifié)")"
                                 aria-label="@($"Cibler la fenêtre de {client.DisplayName}")"
                                 aria-pressed="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
                                 @onclick="() => SelectDofusClient(client.Key)">
@@ -92,7 +93,7 @@
 
             <a class="btn btn-outline-secondary"
                href="@KnownRoutes.Profile()"
-               title="Afficher les fiches personnages (données réseau attribuées uniquement après vérification)"
+               title="Afficher les fiches vérifiées et les fenêtres candidates expérimentales séparément"
                aria-label="Ouvrir les fiches des personnages">
                 @(CurrentDofusClientsState.SelectedClient?.DisplayName ?? CurrentCharacterState.ActiveProfile?.Name ?? "Personnages")
             </a>
@@ -201,6 +202,7 @@
         CurrentCharacterState.SelectServer(_currentServer?.Name);
         CurrentCharacterState.Changed += OnCharacterChanged;
         CurrentDofusClientsState.Changed += OnDofusClientChanged;
+        CurrentCandidateWindowCardsState.Changed += OnDofusClientChanged;
         LiveClientNetworkBindings.Changed += OnDofusClientChanged;
         GuardLegacyRoute();
 
@@ -262,6 +264,9 @@
                         CurrentDofusClientsState.Clients
                             .Select(client => client.Key).ToArray();
                     LiveClientNetworkBindings.RemoveMissingWindows(liveClientKeys);
+                    // Independent one-second Win32 inventory: a candidate
+                    // character card disappears even with NO TCP traffic.
+                    CurrentCandidateWindowCardsState.RemoveMissingWindows(liveClientKeys);
                     // Remove ephemeral per-window equipment even when the
                     // closed Dofus client generates no further TCP traffic.
                     WindowEquipmentState.RemoveMissingWindows(liveClientKeys);
@@ -304,6 +309,7 @@
         NavigationManager.LocationChanged -= OnLocationChanged;
         CurrentCharacterState.Changed -= OnCharacterChanged;
         CurrentDofusClientsState.Changed -= OnDofusClientChanged;
+        CurrentCandidateWindowCardsState.Changed -= OnDofusClientChanged;
         LiveClientNetworkBindings.Changed -= OnDofusClientChanged;
 
         if (_clientPollingCancellation is { } cancellation)
