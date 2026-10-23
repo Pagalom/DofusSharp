@@ -33,6 +33,42 @@ public sealed class DofusWindowService
 #endif
     }
 
+    /// <summary>
+    /// Strict target for a pointer event: require the actual top-level
+    /// Windows hit-test result, never the foreground or first Dofus client.
+    /// Unconnected to middle-click until the remaining routing checks pass.
+    /// </summary>
+    public DofusWindowInfo? GetDofusWindowAtScreenPoint(int x, int y)
+    {
+#if WINDOWS
+        IntPtr hit = WindowFromPoint(new ScreenPoint(x, y));
+        if (hit == IntPtr.Zero)
+            return null;
+
+        IntPtr topLevel = GetAncestor(hit, 2);
+        return ResolvePointerTarget(GetDofusWindows(), topLevel, x, y);
+#else
+        return null;
+#endif
+    }
+
+    internal static DofusWindowInfo? ResolvePointerTarget(
+        IReadOnlyList<DofusWindowInfo> windows,
+        IntPtr topLevelHandle, int x, int y)
+    {
+        ArgumentNullException.ThrowIfNull(windows);
+        if (topLevelHandle == IntPtr.Zero)
+            return null;
+
+        DofusWindowInfo[] matches = windows
+            .Where(w => w.Handle == topLevelHandle &&
+                w.ProcessId > 0 && w.Width > 0 && w.Height > 0 &&
+                (long)x >= w.X && (long)x < (long)w.X + w.Width &&
+                (long)y >= w.Y && (long)y < (long)w.Y + w.Height)
+            .Take(2).ToArray();
+        return matches.Length == 1 ? matches[0] : null;
+    }
+
     public DofusWindowInfo? GetActiveDofusWindow()
     {
 #if WINDOWS
@@ -179,6 +215,19 @@ public sealed class DofusWindowService
     private static extern bool IsWindowVisible(
         IntPtr hwnd
     );
+
+    [StructLayout(LayoutKind.Sequential)]
+    private readonly struct ScreenPoint(int x, int y)
+    {
+        public readonly int X = x;
+        public readonly int Y = y;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(ScreenPoint point);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
 
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
