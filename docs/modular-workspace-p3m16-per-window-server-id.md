@@ -42,7 +42,10 @@ risquerait de mélanger les marchés.
   privée ne sort dans les journaux.
 - La fiche Personnages affiche « Serveur : X — ID Y,
   association expérimentale », ou
-  « Serveur : identification en cours » sans preuve.
+  « Serveur : identification en cours » sans preuve, pour une
+  fiche candidate déjà affichée. Une fenêtre avec serveur identifié
+  peut aussi afficher sa fiche depuis son seul titre local, sans
+  dépendre du mode Debug P3c.10 (niveau alors non observé).
 
 ## Limites connues, très importantes
 
