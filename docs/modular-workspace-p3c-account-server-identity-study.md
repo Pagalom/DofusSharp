@@ -371,3 +371,39 @@ Après chaque phase, le probe doit obtenir un seul message `S→C krg` valable s
 **Tests synthétiques ajoutés :** 13 cas isolés (motif positif, motif absent, champ dépendant du personnage, contrôle C→S, conflit multi-Game, contradiction de même Game, duplication identique, trame malformée, mauvaise époque/phase, isolation et non-divulgation).
 
 **Checkpoint Windows P3c.4 confirmé par l'opérateur le 23 octobre 2026 : 989 tests réussis, 0 échec, 0 ignoré, 7,5 s.** Cela couvre les 959 tests antérieurs et les 30 nouveaux tests P3c.2–P3c.4. Le comportement réel du diagnostic `--account-wire-study` et la sémantique d'un éventuel champ d'identité Ankama **restent à vérifier** par capture réelle. Un nombre de tests seul ne confirme ni la sémantique du protocole ni l'identité Ankama.
+
+## P3c.4b — Deux messages krg par chargement (capture terrain 23 octobre 2026)
+
+**Observation réelle, un seul client à la fois, phases opérateur A-X → A-Y → B-Z → A-X :**
+
+| Phase | Game TCP | 1er `S→C krg` | 2e `S→C krg` | Ancien statut |
+| --- | ---: | ---: | ---: | --- |
+| A-X | #2 | 828 octets | 851 octets | `contradictory-snapshot` |
+| A-Y | #4 | 812 octets | 808 octets | `recorded`, 7 chemins |
+| B-Z | #6 | 812 octets | 808 octets | `recorded`, 7 chemins |
+| A-X (retour) | #8 | 828 octets | 851 octets | `contradictory-snapshot` |
+
+Bilan du premier diagnostic : `phase1=conflicted`, `phase2=recorded`, `phase3=recorded`, `phase4=conflicted`, `summary=incomplete`. **Aucun compte ni candidat de compte n'a été identifié.**
+
+**Défaut réel du diagnostic P3c.4 :** deux messages `krg` sur **la même session Game** peuvent différer pendant un chargement ordinaire. Le code exigeait auparavant une identité de tous les chemins numériques entre deux `krg` ; une simple évolution temporelle rejetait donc toute la phase. Les mêmes tailles `812 → 808` pour A-Y et B-Z ne prouvent aucune égalité de valeurs.
+
+### Correction P3c.4b (expérimentale seulement)
+
+- Pour chaque phase, conserver uniquement **l'intersection de chemins scalaires stables**, présents et de valeur identique dans **tous les `krg` valides** de l'unique session Game. Les chemins fluctuants ou disparus sont supprimés de manière irréversible, même s'ils réapparaissent ensuite.
+- Deux messages successifs qui diffèrent n'entraînent plus automatiquement `conflicted` ; un défaut de trame après une observation valide, une seconde session Game, zéro champ stable ou plus de **8 messages `krg`** font toujours échouer la phase.
+- Un message malformé sur la première session Game ne permet pas de remplacer silencieusement cette session par une autre.
+- Le résumé par phase affiche uniquement `fields=N krg=M unstable-dropped=K` et le statut. **Aucune valeur, hash ou identifiant privé n'est affiché/persisté.**
+- Le motif interphase recherché reste **A-X = A-Y = A-X2 ≠ B-Z** au même chemin numérique. Ce n'est **pas une preuve sémantique** d'identité de compte, même en cas de correspondance.
+- Aucune modification à la capture métier en production, aux profils RAM, aux métiers ni à la base de données.
+
+**Checkpoint de test à refaire sur Windows :** 989 tests réussis avant P3c.4b ; 6 tests additionnels sur les mises à jour, la disparition d'un chemin, les ambiguïtés et la non-réutilisation d'une autre session Game, soit **995 tests attendus**.
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --account-wire-study
+```
+
+Index `6` à vérifier via `--list`. Refaire le même parcours **quatre phases**, arrêter chaque client entièrement avant Entrée. À communiquer : les lignes `ACCOUNT_WIRE`, `p3c4=phase` et `p3c4=summary`, sans corps réseau, noms ou identifiants.
