@@ -243,3 +243,42 @@ L'index `6` correspondait à une capture ancienne ; **ne pas supposer qu'il rest
 `CurrentAccountProfessionsState.ForVerifiedSnapshot` est un comparateur pur de snapshots **déjà vérifiés**. Il reste séparé de l'ingestion, et les tests synthétiques vérifient que deux comptes sur le même serveur ne peuvent jamais s'emprunter leurs métiers, que deux personnages d'un compte/serveur peuvent lire le même snapshot, et qu'aucun métier n'est restauré au redémarrage. **Aucune observation de métier n'est ajoutée en production.**
 
 L'étape suivante dépendra de ces formes et des captures réelles anonymisées : choix prudent des seuls champs S→C pertinents, expérience comparative contrôlée (même compte/personnages différents vs comptes distincts même serveur), puis validation sémantique avant tout branchement automatique.
+
+## Résultat terrain P3c.2 — captures A1 / B / A2 (23 octobre 2026)
+
+L'opérateur a effectué dans le même processus de diagnostic trois chargements successifs : **compte A, compte B distinct sur le même serveur, puis retour au même personnage du compte A**. Les données de personnages, comptes et corps des messages ne sont pas publiées.
+
+| Session Game | ksc (octets) | krg (octets) | ksb (octets) | ipg (octets) |
+| --- | ---: | ---: | ---: | ---: |
+| A1 : #2 | 90 | 828 | 153 | 449 |
+| B : #4 | 69 | 812 | 129 | 449 |
+| A2 : #6 | 90 | 828 | 153 | 449 |
+
+- Les trois séquences ont observé `ksc`, `krg`, `ksb` et `ipg` en direction **S→C**, sur des sessions distinctes. Les sessions de connexion transitoires #1, #3 et #5 ont été clôturées avant les Game correspondants.
+- **A1 et A2** ont les mêmes tailles et les mêmes formes protobuf échantillonnées sur les quatre opcodes. C'est cohérent avec la reconnexion du même personnage, mais les valeurs ne sont pas comparées.
+- **B** diffère en taille sur `ksc`, `krg`, `ksb`. Une des formes échantillonnées `krg` sur A comprend aussi `?1.6:v` que B n'a pas ; cela pourrait être propre au personnage ou à son état.
+- `ipg` a une taille de **449 octets**, une forme racine `1:lenx20` et une forme échantillonnée identiques dans les trois sessions. **Aucune égalité de valeurs, de niveaux métiers, d'identité ou de comptes ne découle des mêmes formes/tailles.**
+- Ce mode diagnostic ne rapporte ni valeur numérique ni secret ; il n'est pas possible de déduire un identifiant de compte des seules lignes.
+
+**Conclusion : account=unverified ; server=unverified au sens des preuves protocole.** La sélection manuelle du serveur dans BestCrush demeure autoritaire pour l'économie et aucune validation de serveur n'est imposée.
+
+### Étape suivante : étudier les métiers, sans prétendre confirmer le compte
+
+Le mode expérimental **déjà existant** `--profession-continuity` compare les snapshots `S→C ipz` d'une session à la première observation, uniquement par des résultats `equal/no/unavailable` et sans affichage des niveaux, XP ou identifiants. Les formes `ipg` ci-dessus ne sont **pas** les contenus `ipz` ; il faut un nouveau test ciblé sur le bon opcode.
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --list
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device <INDEX> --profession-continuity
+```
+
+1. Fermer toutes les fenêtres du jeu, lancer le probe **avant** le compte A.
+2. Ouvrir le compte A sur le serveur commun et charger un personnage jusqu'à l'observation `PROFESSION_CONTINUITY=[p3b=ipz ... baseline=created]`. Fermer entièrement sa fenêtre.
+3. Ouvrir le **compte B différent**, même serveur, et attendre `baseline=compared`. Fermer entièrement sa fenêtre.
+4. Revenir au **même personnage du compte A**, attendre un nouveau `baseline=compared`. Puis terminer par `Ctrl+C`.
+5. Transmettre seulement les lignes `PROFESSION_CONTINUITY=` et les numéros anonymes des sessions, sans identifiants de compte, captures de paquets ni contenu `wire.jsonl`.
+
+**Attentes qualitatives, pas des résultats prédéfinis :** les 20 clés candidates `f5` pourraient représenter un référentiel commun ; si le compte B possède des métiers réellement différents, `levels-equal=no` ou `xp-equal=no` serait cohérent. Un compte B tout neuf avec valeurs par défaut et un compte A comparable pourraient néanmoins donner `yes` partout. Le retour A2 devrait concorder avec A1 en l'absence de progression entre les deux.
+
+**Limite décisive :** une égalité/différence de progression ne prouve pas l'identité compte, même si les résultats du test sont nets. Cette étude sert à caractériser la portée des données métiers et à préparer une recherche d'identité **indépendante**, qui demeure nécessaire avant toute attribution automatique ou stockage.
+
+La suite de tests P3c.2 (12 cas supplémentaires, 971 au total attendus après la base P3m.19 de 959) n'a **pas encore fait l'objet d'un retour de validation Windows dans ce fil**.
