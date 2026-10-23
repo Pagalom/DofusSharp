@@ -265,6 +265,9 @@
                     // Remove ephemeral per-window equipment even when the
                     // closed Dofus client generates no further TCP traffic.
                     WindowEquipmentState.RemoveMissingWindows(liveClientKeys);
+                    // Identity-verified character cards are ephemeral too:
+                    // only their previously proven OS window can revoke them.
+                    CurrentCharacterState.RemoveMissingWindows(liveClientKeys);
                 });
             }
             while (await timer.WaitForNextTickAsync(cancellationToken));
