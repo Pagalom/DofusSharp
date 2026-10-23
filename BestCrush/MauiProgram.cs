@@ -51,6 +51,9 @@ public static class MauiProgram
             builder.Services.AddSingleton<IWorkspacePreferences, MauiWorkspacePreferences>();
             builder.Services.AddSingleton<CurrentCharacterState>();
             builder.Services.AddSingleton<CurrentDofusClientsState>();
+            // Inactive by default; only an explicitly opted-in Debug capture
+            // exposes ephemeral unverified network candidate cards.
+            builder.Services.AddSingleton<CurrentCandidateWindowCardsState>();
             builder.Services.AddSingleton<LiveDofusClientNetworkBindings>();
             builder.Services.AddSingleton<CurrentAccountProfessionsState>();
             builder.Services.AddSingleton<ServersService>();
