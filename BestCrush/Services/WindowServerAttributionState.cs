@@ -56,7 +56,13 @@ public sealed class WindowServerAttributionState
     private readonly object _sync = new();
     private readonly Dictionary<DofusClientWindowKey, List<Selection>> _selections = [];
     private readonly Dictionary<long, Game> _games = [];
-    private readonly Dictionary<DofusClientWindowKey, WindowServerAttribution> _loaded = [];
+    // Each loaded server belongs to the exact Game TCP token and capture epoch.
+    // Its generation is unique even if two windows share the same server ID.
+    private sealed record Loaded(
+        WindowServerAttribution Server, long CaptureEpoch,
+        long ConnectionId, long Generation, int? LevelCandidate);
+    private readonly Dictionary<DofusClientWindowKey, Loaded> _loaded = [];
+    private long _nextGeneration;
     private readonly HashSet<DofusClientWindowKey> _closedWindows = [];
     private long _epoch = -1;
 
@@ -65,7 +71,50 @@ public sealed class WindowServerAttributionState
     public WindowServerAttribution? ForWindow(DofusClientWindowKey window)
     {
         lock (_sync)
-            return _loaded.GetValueOrDefault(window);
+            return _loaded.TryGetValue(window, out Loaded? loaded)
+                ? loaded.Server : null;
+    }
+
+    public int? SelectedLevelCandidate(DofusClientWindowKey window)
+    {
+        lock (_sync)
+            return _loaded.TryGetValue(window, out Loaded? loaded)
+                ? loaded.LevelCandidate : null;
+    }
+
+    /// <summary>
+    /// Per-window game lease. Distinct windows on the same Dofus server
+    /// return the SAME ServerName but independent revocable credentials.
+    /// Never return a lease for a Connection-only or different Game socket.
+    /// </summary>
+    internal NetworkCaptureLease? GetGameLease(
+        DofusClientWindowKey window, long captureEpoch, long connectionId)
+    {
+        lock (_sync)
+            return _loaded.TryGetValue(window, out Loaded? loaded) &&
+                !_closedWindows.Contains(window) &&
+                loaded.CaptureEpoch == captureEpoch &&
+                loaded.ConnectionId == connectionId
+                    ? new NetworkCaptureLease(
+                        loaded.Server.ServerName, loaded.Generation,
+                        window, captureEpoch, connectionId)
+                    : null;
+    }
+
+    internal bool IsGameLeaseActive(NetworkCaptureLease lease)
+    {
+        if (lease.Window is not { } window || lease.CaptureEpoch < 0 ||
+            lease.ConnectionId <= 0)
+            return false;
+
+        lock (_sync)
+            return _loaded.TryGetValue(window, out Loaded? loaded) &&
+                !_closedWindows.Contains(window) &&
+                loaded.CaptureEpoch == lease.CaptureEpoch &&
+                loaded.ConnectionId == lease.ConnectionId &&
+                loaded.Generation == lease.Generation &&
+                string.Equals(loaded.Server.ServerName, lease.ServerName,
+                    StringComparison.Ordinal);
     }
 
     /// <summary>Only a newer capture epoch resets quarantined window keys.</summary>
@@ -190,8 +239,10 @@ public sealed class WindowServerAttributionState
                          selected, game.Roster) &&
                      DofusServerIdCatalog.NameFor(selection.Id) is { } serverName)
             {
-                _loaded[window] = new WindowServerAttribution(
-                    selection.Id, serverName);
+                _loaded[window] = new Loaded(
+                    new WindowServerAttribution(selection.Id, serverName),
+                    message.CaptureEpoch, message.ConnectionId,
+                    ++_nextGeneration, selected.Candidates[0].Level);
                 changed = true;
             }
             else
