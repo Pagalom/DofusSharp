@@ -418,6 +418,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
         // Replay uses the same Stop/Resume epoch semantics as Npcap.
         Interlocked.Increment(ref _captureEpoch);
+        _windowEquipmentState?.Clear();
         _started = true;
     }
 
@@ -433,6 +434,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 return;
 
             Interlocked.Increment(ref _captureEpoch);
+            _windowEquipmentState?.Clear();
             _started = true;
         }
     }
@@ -714,6 +716,12 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
                     _clientBindings.Reconcile(
                         captureEpoch, _clientSockets, _clientWindows);
+                    // Closing a client prunes its shadow equipment when
+                    // the next OS window snapshot is observed.
+                    if (_currentServerState.GetCaptureLease() is { } liveLease &&
+                        _currentServerState.IsCaptureLeaseActive(liveLease))
+                        _windowEquipmentState?.Reconcile(
+                            liveLease, captureEpoch, _clientWindows);
                 }
 
                 if (_started && captureEpoch == Interlocked.Read(ref _captureEpoch) &&
