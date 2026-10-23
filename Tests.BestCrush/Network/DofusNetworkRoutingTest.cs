@@ -875,6 +875,44 @@ public sealed class DofusNetworkRoutingTest
     }
 
     [Fact]
+    public async Task FirstVerifiedWindowSurvivesBusinessCacheEviction()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey clientA = new(101, 1201);
+        DofusClientWindowKey clientB = new(102, 1202);
+
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt, connectionId: 11, candidateWindow: clientA);
+
+        for (int index = 0; index < 70; index++)
+        {
+            await harness.ReplayAsync(
+                "kei", PurchaseRequest(100, 1, (ulong)(700 + index)),
+                ObservedAt.AddSeconds(index + 1),
+                connectionId: 100 + index, candidateWindow: clientA);
+        }
+
+        // Although the flow-11 purchase cache was evicted, its verified
+        // window assignment must still reject a contradictory client B.
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt.AddMinutes(3), connectionId: 11,
+            candidateWindow: clientB);
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt.AddMinutes(3).AddSeconds(1),
+            connectionId: 11, candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(100, 601, 15, 140),
+            ObservedAt.AddMinutes(3).AddSeconds(2),
+            connectionId: 11, candidateWindow: clientA);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .Should().BeEmpty();
+    }
+
+    [Fact]
     public async Task CaptureRestartClearsOldWindowQuarantine()
     {
         await using RoutingHarness harness = await RoutingHarness.CreateAsync();
