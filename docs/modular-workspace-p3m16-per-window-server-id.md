@@ -88,7 +88,7 @@ fenêtre et vérifier la disparition de son attribution.
 
 Tests synthétiques ajoutés :
 `Tests.BestCrush/Network/WindowServerAttributionStateTest.cs`
-(15 cas, soit **1132 tests attendus** si les 1117 antérieurs
+(16 cas, soit **1133 tests attendus** si les 1117 antérieurs
 restent présents). **Compilation et tests Windows non encore confirmés
 pour ce jalon.**
 
