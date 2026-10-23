@@ -41,6 +41,42 @@ internal sealed class EphemeralCandidateRosterGroupsState
         get { lock (_gate) return _windows.Count; }
     }
 
+    /// <summary>
+    /// Only cardinalities leave the RAM-only workspace. The returned
+    /// statistics are not account counts or authenticated identities.
+    /// </summary>
+    internal readonly record struct AnonymousCounts(
+        int LinkedWindows, int EqualRosterPairs, int DisjointRosterPairs)
+    {
+        public override string ToString() =>
+            $"linked-windows={LinkedWindows}" +
+            $" equal-roster-pairs={EqualRosterPairs}" +
+            $" disjoint-roster-pairs={DisjointRosterPairs}" +
+            " account=unverified server=unverified";
+    }
+
+    internal AnonymousCounts GetAnonymousCounts(
+        NetworkCaptureLease lease, long captureEpoch)
+    {
+        lock (_gate)
+        {
+            if (_lease != lease || _captureEpoch != captureEpoch)
+                return new AnonymousCounts(0, 0, 0);
+
+            Entry[] entries = _windows.Values.ToArray();
+            int equal = 0, disjoint = 0;
+            for (int i = 0; i < entries.Length; i++)
+                for (int j = i + 1; j < entries.Length; j++)
+                {
+                    if (entries[i].Roster.SetEquals(entries[j].Roster))
+                        equal++;
+                    else if (!entries[i].Roster.Overlaps(entries[j].Roster))
+                        disjoint++;
+                }
+            return new AnonymousCounts(entries.Length, equal, disjoint);
+        }
+    }
+
     public override string ToString() =>
         "[candidate roster workspace: redacted account=unverified]";
 
