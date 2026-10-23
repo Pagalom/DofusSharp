@@ -457,3 +457,28 @@ Le diagnostic requiert :
 Aucune connexion, identité, nom, hash ou liste n'est affiché ni persisté. La mémoire disparaît avec le probe. Aucun changement aux overlays, à F7/F8, à la molette, aux métiers en production, à SQLite ou aux fiches personnages. Cette piste complète la recherche d'un champ d'identité de compte, mais ne remplace pas une preuve indépendante.
 
 **Validation Windows requise :** dernier checkpoint confirmé 989 tests P3c.4 ; 6 tests P3c.4b publiés (validation non communiquée), puis 17 tests P3c.5 publiés : **1012 tests attendus**, sous réserve du build Windows et de la découverte des tests.
+
+## P3c.5 — Résultat terrain confirmé (23 octobre 2026)
+
+L'opérateur confirme le checkpoint Windows **1012 tests réussis / 0 échec / 0 ignoré / 8,1 secondes** après ajout des 17 tests P3c.5.
+
+Parcours réel successif A-X → A-Y → B-Z → retour A-X, sur le même serveur, un seul client à la fois :
+
+| Phase | Session TCP Game | S→C ksc | S→C ksb | Nombre dans roster | Statut |
+| --- | ---: | ---: | ---: | ---: | --- |
+| A-X | #2 | 157 octets | 153 octets | 2 | linked |
+| A-Y | #4 | 157 octets | 127 octets | 2 | linked |
+| B-Z | #6 | 69 octets | 129 octets | 1 | linked |
+| A-X retour | #8 | 157 octets | 153 octets | 2 | linked |
+
+Sortie récapitulative exacte et anonyme :
+
+```
+p3c5=summary status=roster-group-candidate same-account-rosters=yes cross-account-distinct=yes cross-account-disjoint=yes selected-x-y-distinct=yes selected-x-return-equal=yes account=unverified server=unverified semantic=unverified
+```
+
+**Preuves positives et négatives dans ce protocole :** les deux personnages différents de A et le retour à X disposent des mêmes deux identifiants candidats de roster `ksc` ; le personnage Z de B a un roster d'un membre entièrement disjoint ; chaque `ksb` trouve son candidat dans la liste de **sa propre connexion**. Le modèle de données candidat devient réellement intéressant pour le regroupement éphémère de personnages durant une session.
+
+**Limite :** cela ne valide ni un compte Ankama identifié sémantiquement, ni le serveur du flux, ni une identité compte+serveur indépendante, ni l'isolation en présence de deux connexions ouvertes **en simultané**. Le mode est expérimental et ne doit pas écrire `VerifiedAccountServerKey`, les métiers, le profil ou SQLite.
+
+**Étape suivante recommandée :** caractérisation multiclient simultanée A-X et B-Z : les deux TCP/ksc/ksb doivent coexister sans emprunt du roster ou du personnage de l'autre, avec fermeture/reconnexion et une comparaison anonyme des groupes. Conserver cette étude séparée de la production et de la sélection manuelle du serveur.
