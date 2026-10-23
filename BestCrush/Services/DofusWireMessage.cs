@@ -10,4 +10,7 @@ internal sealed record DofusWireMessage(
     TaskCompletionSource<bool>? Completion = null,
     long ConnectionId = 0,
     // Local Windows client association ONLY; never a verified Ankama identity.
-    DofusClientWindowKey? CandidateWindow = null);
+    DofusClientWindowKey? CandidateWindow = null,
+    // Internal replay tests can supply a synthetic *prevalidated* OS window.
+    // Real Npcap messages never set this flag and are always revalidated.
+    bool SyntheticWindowForReplay = false);
