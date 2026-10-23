@@ -831,7 +831,8 @@ internal sealed record ProbeOptions(
     bool KtaCharacterCompare,
     bool ServerNameStudy,
     bool ConnectionSelectionStudy,
-    int? ExpectedClassId)
+    int? ExpectedClassId,
+    bool AccountWireStudy)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -876,6 +877,7 @@ internal sealed record ProbeOptions(
         bool ktaCharacterCompare = false;
         bool serverNameStudy = false;
         bool connectionSelectionStudy = false;
+        bool accountWireStudy = false;
         int? expectedClassId = null;
         bool showCandidateJobIds = false;
         string? shapeKeysCsv = null;
@@ -919,6 +921,9 @@ internal sealed record ProbeOptions(
                     break;
                 case "--profession-continuity":
                     professionContinuity = true;
+                    break;
+                case "--account-wire-study":
+                    accountWireStudy = true;
                     break;
                 case "--profession-xp-study":
                     professionXpStudy = true;
@@ -1015,7 +1020,8 @@ internal sealed record ProbeOptions(
             (serverRouteStudy ? 1 : 0) + (serverWireStudy ? 1 : 0) +
             (ktaF1Control ? 1 : 0) + (ktaCharacterCompare ? 1 : 0) +
             (serverNameStudy ? 1 : 0) +
-            (connectionSelectionStudy ? 1 : 0);
+            (connectionSelectionStudy ? 1 : 0) +
+            (accountWireStudy ? 1 : 0);
         if (selectedModes > 1)
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
@@ -1047,6 +1053,6 @@ internal sealed record ProbeOptions(
             identityName, identityFields, identityPair,
             identityCrossOpcodes, serverRouteStudy, serverWireStudy,
             ktaF1Control, ktaCharacterCompare, serverNameStudy,
-            connectionSelectionStudy, expectedClassId);
+            connectionSelectionStudy, expectedClassId, accountWireStudy);
     }
 }
