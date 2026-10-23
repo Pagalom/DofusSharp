@@ -482,3 +482,43 @@ p3c5=summary status=roster-group-candidate same-account-rosters=yes cross-accoun
 **Limite :** cela ne valide ni un compte Ankama identifié sémantiquement, ni le serveur du flux, ni une identité compte+serveur indépendante, ni l'isolation en présence de deux connexions ouvertes **en simultané**. Le mode est expérimental et ne doit pas écrire `VerifiedAccountServerKey`, les métiers, le profil ou SQLite.
 
 **Étape suivante recommandée :** caractérisation multiclient simultanée A-X et B-Z : les deux TCP/ksc/ksb doivent coexister sans emprunt du roster ou du personnage de l'autre, avec fermeture/reconnexion et une comparaison anonyme des groupes. Conserver cette étude séparée de la production et de la sélection manuelle du serveur.
+
+## P3c.6 — Étude des groupes candidats avec deux clients simultanés
+
+**Point de départ confirmé :** P3c.5 a été validé en vrai par l'opérateur le 23/10/2026, avec **1012 tests automatisés réussis**, deux personnages A-X/A-Y sur un compte, un personnage B-Z sur un autre compte sur le même serveur, et une reconnexion A-X. `roster-group-candidate` obtenu, mais ni identifiant Ankama ni serveur réseau sémantiquement authentifié.
+
+### Objectif
+
+Contrôler **deux connexions Game concurrentes**, sans association implicite à une fenêtre ni à un compte : garder A ouvert, connecter B, **fermer et reconnecter B en maintenant A ouvert**. Le diagnostic existant de fenêtres P3m.19 est indépendant. Cette expérience ne prouve pas encore le lien PID/HWND↔roster et n'alimente pas le profil en production.
+
+Mode expérimental ajouté **sans modification aux chemins BestCrush de production** :
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 6 --account-roster-concurrent
+```
+
+Vérifier l'interface Npcap (par `--list`) ; `6` est un **exemple historique**. Fermer **tous les clients Dofus avant le démarrage** et lancer le probe avant d'ouvrir les clients.
+
+1. **Étape 1 :** ouvrir le compte **A**, personnage **X**, même serveur économique choisi pour l'expérience, attendre le `ksc` puis `ksb`, **garder A OUVERT**, appuyer sur **Entrée** dans le probe.
+2. **Étape 2 :** ouvrir **B**, personnage **Z**, sur le même serveur, attendre `ksc` et `ksb`, puis **fermer uniquement la fenêtre B** ; A reste ouvert. Appuyer sur **Entrée**.
+3. **Étape 3 :** **rouvrir B**, reprendre exactement **Z** sur le même serveur, attendre `ksc` et `ksb` ; **garder A et B ouverts**, puis appuyer sur **Entrée**.
+4. Copier seulement les lignes `CONCURRENT_ROSTER` et `p3c6=` de la sortie (pas de contenu binaire, noms, identifiants, titres Windows, captures pcap, ni `--all`). Après le bilan, fermer les clients librement.
+
+### Critères du diagnostic
+
+- Un `ksc` décodable et un `ksb` correspondant au **même TCP Game** pour chaque rôle ; la liste doit rester constante pendant cette session ; toute contradiction ou 2e Game candidat dans le même rôle bloque ce rôle.
+- Pour être acceptée, l'étape B1 nécessite A encore lié et ouvert ; l'étape B2 nécessite A toujours lié/ouvert, B1 lié **et fermé**.
+- Des messages tardifs de B1 après sa fermeture ne modifient pas son groupe ; une fin de flux A avant la liaison de B2 rend l'expérience incomplète.
+- `B-reconnect-roster-stable=yes` signifie que les ensembles candidats du premier B et de son retour sont égaux, avec le même personnage chargé candidat.
+- `A-B-disjoint=yes` exige zéro membre candidat partagé entre A et chacune des connexions B ; `both-overlap-A=yes` exige que les deux observations B aient été obtenues tandis que la connexion A était encore ouverte.
+- Le statut possible `concurrent-roster-group-candidate` ne vaut **ni preuve d'identité de compte**, ni preuve d'association à une fenêtre, ni preuve du serveur Dofus. `account=unverified server=unverified semantic=unverified` reste inchangé.
+- Seuls les messages `ksc`/`ksb` **serveur vers client** sont décodés ; les contenus d'authentification `knc`/`kod` ne sont jamais inspectés. Tous les candidats restent en RAM sans hash ni log de valeur.
+- Aucun ajout à `CurrentCharacterState`, `CurrentAccountProfessionsState`, SQLite, routes métier, overlays F7/F8 ou molette réseau.
+
+**Validation attendue sur Windows :** 16 nouveaux tests synthétiques de sécurité/isolation, donc **1028 tests attendus**, sur la base P3c.5 confirmée 1012/1012. L'étape reste **à valider** jusqu'à réception du résultat Windows et de la capture réelle.
+
+**Si le parcours réussit :** étudier ensuite le rattachement `TCP/ksc/ksb → PID/HWND` avec la preuve d'appartenance OS déjà disponible en P3m.19, en protégeant changement de personnage, fermeture de fenêtre, réemploi TCP et réinitialisation de capture. Toute attribution automatique de compte/métiers nécessitera des preuves indépendantes et restera non active entre-temps.
