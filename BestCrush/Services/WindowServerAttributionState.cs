@@ -64,6 +64,10 @@ public sealed class WindowServerAttributionState
     private readonly Dictionary<DofusClientWindowKey, Loaded> _loaded = [];
     private long _nextGeneration;
     private readonly HashSet<DofusClientWindowKey> _closedWindows = [];
+    // Negative title evidence only: once a window has actually displayed
+    // a character title, returning to the launcher/selection title revokes
+    // its previous game/server lease without closing the process.
+    private readonly HashSet<DofusClientWindowKey> _seenCharacterTitle = [];
     private long _epoch = -1;
 
     public event Action? Changed;
@@ -142,6 +146,7 @@ public sealed class WindowServerAttributionState
             _selections.Clear();
             _games.Clear();
             _closedWindows.Clear();
+            _seenCharacterTitle.Clear();
         }
         if (changed) Changed?.Invoke();
     }
@@ -212,6 +217,7 @@ public sealed class WindowServerAttributionState
             else if (message.Key == "ksc")
             {
                 changed = _loaded.Remove(window);
+                _seenCharacterTitle.Remove(window);
                 // Even an unknown/ambiguous next Game invalidates the
                 // prior server until a fresh completed load is observed.
                 if (_games.Count >= MaximumPendingGameFlows ||
@@ -265,6 +271,42 @@ public sealed class WindowServerAttributionState
     }
 
     /// <summary>
+    /// A local title is NEVER proof of identity or ServerId. It can,
+    /// however, revoke an existing loaded Game lease when the same visible
+    /// window returns from a previously observed character title to a
+    /// generic Dofus title. The Win32 inventory runs even without packets.
+    /// </summary>
+    public void ReconcileCharacterTitles(
+        IReadOnlyCollection<DofusClientWindow> clients)
+    {
+        ArgumentNullException.ThrowIfNull(clients);
+        bool changed = false;
+        lock (_sync)
+        {
+            foreach (DofusClientWindow client in clients)
+            {
+                if (!_loaded.ContainsKey(client.Key))
+                    continue;
+                if (client.HasCharacterTitle)
+                {
+                    _seenCharacterTitle.Add(client.Key);
+                    continue;
+                }
+                if (!_seenCharacterTitle.Remove(client.Key))
+                    continue;
+
+                changed |= _loaded.Remove(client.Key);
+                _selections.Remove(client.Key);
+                foreach (long flow in _games
+                    .Where(pair => pair.Value.Window == client.Key)
+                    .Select(pair => pair.Key).ToArray())
+                    _games.Remove(flow);
+            }
+        }
+        if (changed) Changed?.Invoke();
+    }
+
+    /// <summary>
     /// A closed window is quarantined against HWND/PID reuse until the next
     /// capture epoch, even if the game stops sending network traffic.
     /// </summary>
@@ -282,6 +324,7 @@ public sealed class WindowServerAttributionState
                 .Distinct().Where(w => !live.Contains(w)).ToArray())
             {
                 changed |= _loaded.Remove(window);
+                _seenCharacterTitle.Remove(window);
                 _selections.Remove(window);
                 foreach (long flow in _games.Where(g => g.Value.Window == window)
                     .Select(g => g.Key).ToArray())
