@@ -258,6 +258,26 @@ public sealed class WindowServerAttributionStateTest
     }
 
     [Fact]
+    public void LocalWindowReturningToCharacterSelectionRevokesServerLease()
+    {
+        var state = Start();
+        Loaded(state, A, 295);
+        CurrentServerState server = new(state, automaticRoutingEnabled: true);
+        NetworkCaptureLease lease = server.GetWindowCaptureLease(A)!.Value;
+
+        state.ReconcileCharacterTitles([
+            new DofusClientWindow(A, "Alpha-One", "Iop", "3.6", true)
+        ]);
+        server.IsCaptureLeaseActive(lease).Should().BeTrue();
+
+        state.ReconcileCharacterTitles([
+            new DofusClientWindow(A, "Client Dofus", null, "3.6", true)
+        ]);
+        server.IsCaptureLeaseActive(lease).Should().BeFalse();
+        state.ForWindow(A).Should().BeNull();
+    }
+
+    [Fact]
     public void OldCaptureEpochCannotRestoreARevokedServer()
     {
         var state = Start();
