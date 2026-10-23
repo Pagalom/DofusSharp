@@ -51,7 +51,7 @@
                                     </p>
                                     <button type="button"
                                             class="btn btn-sm @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "btn-secondary" : "btn-outline-primary")"
-                                            @onclick="() => CurrentDofusClientsState.SelectWindow(client.Key)">
+                                            @onclick="() => SelectDofusClient(client.Key)">
                                         @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "Fenêtre ciblée" : "Cibler cette fenêtre")
                                     </button>
                                 </div>
@@ -164,6 +164,9 @@
         CurrentCandidateWindowCardsState.Changed += OnCharacterChanged;
         CurrentDofusClientsState.Changed += OnCharacterChanged;
     }
+
+    private void SelectDofusClient(BestCrush.Services.DofusClientWindowKey key) =>
+        CurrentDofusClientsState.SelectWindow(key);
 
     private void SelectCharacter(BestCrush.Services.CharacterKey key)
     {
