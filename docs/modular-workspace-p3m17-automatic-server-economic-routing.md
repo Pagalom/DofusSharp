@@ -44,6 +44,7 @@ L'item UID et les requêtes d'achat restent corrélés par `ConnectionId`. Le pr
 - Les équipements réseau mémorisés pour la molette sont conservés **par fenêtre et bail**, pour éviter qu'une fenêtre Tylezia écrase le dernier équipement d'une fenêtre Draconiros.
 - Un clic sur la molette n'utilise un bail que pour la fenêtre réellement pointée ; le focus économique est refusé si le serveur UI actif est différent.
 - Une fermeture Windows révoque le bail. Le retour d'une fenêtre précédemment reconnue comme personnage à un titre générique (écran des personnages) révoque également le bail.
+- Le point ambré expérimental (`ksc/ksb`) reste disponible en mode Debug P3c.10 : son état de recherche est isolé du bail économique et n'a plus besoin d'une sélection globale.
 
 ### Limites et sécurité
 
@@ -64,7 +65,7 @@ Le contrôle pré-écriture garantit l'absence d'attribution au **nouveau mauvai
 - Tests intégrés du worker replay/SQLite : écritures A et B sur deux serveurs distincts, écritures A et B dans **le même historique** de Draconiros, refus d'enregistrement lorsque B n'a aucun ServerId, révocation d'anciennes connexions.
 - Les tests antérieurs restent présents.
 
-**Total attendu à ce jalon : 1143 tests** (1117 confirmés sur Windows avant P3m.16, puis 26 nouveaux cas). À confirmer.
+**Total attendu à ce jalon : 1144 tests** (1117 confirmés sur Windows avant P3m.16, puis 27 nouveaux cas). À confirmer.
 
 ## Commandes Windows
 
