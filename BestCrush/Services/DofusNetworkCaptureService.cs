@@ -130,6 +130,11 @@ public sealed class DofusNetworkCaptureService : IDisposable
 #if WINDOWS
         _clientBindings = clientBindings;
         _dofusWindowService = dofusWindowService;
+        // Resolve the process-lifetime singleton without changing the
+        // public constructor signature (tests can omit this staged service).
+        using (IServiceScope scope = serviceScopeFactory.CreateScope())
+            _windowEquipmentState = scope.ServiceProvider
+                .GetService<WindowScopedNetworkEquipmentState>();
         _networkDebugWriter =
             new NetworkDebugWriter(
                 currentServerState,
@@ -146,7 +151,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     marketDataChangeNotifier,
                     _networkDebugWriter,
                     applyNetworkCrushAsync,
-                    logger);
+                    logger,
+                    _windowEquipmentState);
 
         _messageProcessor =
             new DofusNetworkMessageProcessor(
