@@ -30,6 +30,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly CurrentServerState _currentServerState;
     private readonly LastNetworkEquipmentState _lastNetworkEquipmentState;
 #if WINDOWS
+    private readonly WindowScopedNetworkEquipmentState? _windowEquipmentState;
     private readonly LiveDofusClientNetworkBindings? _clientBindings;
     private readonly DofusWindowService? _dofusWindowService;
 #endif
