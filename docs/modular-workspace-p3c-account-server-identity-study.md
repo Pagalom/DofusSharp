@@ -732,3 +732,11 @@ Si la configuration locale de l'application Windows ne permet pas `dotnet run`, 
 Dans le jeu, sélectionner manuellement un même serveur, lancer **A-X**, attendre l'affichage complet, puis lancer **B-Z** tout en gardant A ouvert ; fermer et relancer B si utile. Ne copier **que les lignes commençant par `p3c10=`** du terminal/journal Debug, et les éventuelles erreurs de build/test. Ne pas partager le journal intégral, le corps de messages, un dump mémoire, le PCAP, les noms, les tokens ou les identifiants. Si `status=rejected` apparaît, cela peut signaler une fenêtre non attribuable au moment de `ksc`/ `ksb` ; **ne pas en inférer** une erreur de compte Ankama.
 
 **Attention :** ce diagnostic Debug dépend de l'association OS déjà existante dans `LiveDofusClientNetworkBindings` avec inventaires rafraîchis périodiquement ; il n'est pas une réexécution exacte du snapshot Windows ponctuel P3c.7. Pour une intégration multicomptes réelle, il restera nécessaire de tester les fermetures hors trafic, les connexions recyclées et le changement de personnage. Aucune publication de données de professions n'est autorisée.
+
+## P3c.10 — Checkpoint Windows confirmé le 23 octobre 2026
+
+L'opérateur confirme : **1086 tests exécutés, 1086 réussis, 0 échec, 0 ignoré, 7,5 secondes**. Cela valide le build/test de l'implémentation du diagnostic P3c.10, pas encore son fonctionnement sur un flux Dofus réel.
+
+**Prochaine étape : essai réel contrôlé sans nouvelle modification de code.** Fermer BestCrush et les clients Dofus ; lancer la version **Debug** de BestCrush avec `$env:BESTCRUSH_P3C10_ROSTER_STUDY = "1"`, sélectionner manuellement le serveur souhaité, ouvrir A-X, puis B-Z en laissant A ouvert, fermer et reconnecter B. Ne partager que les lignes `p3c10=` (status et compteurs anonymes), jamais les journaux complets ni les trames. Terminer en effaçant la variable du PowerShell : `Remove-Item Env:BESTCRUSH_P3C10_ROSTER_STUDY`.
+
+Ce checkpoint **ne valide aucun compte Ankama, aucune identité de serveur réseau, aucune attribution de métiers**, et ne justifie pas de les activer. Le mode Release et le lancement normal sans variable restent sans observateur.
