@@ -434,7 +434,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
         CancellationToken cancellationToken = default,
         NetworkCaptureLease? recordedLease = null,
         long? recordedCaptureEpoch = null,
-        long connectionId = 1)
+        long connectionId = 1,
+        DofusClientWindowKey? candidateWindow = null)
     {
         if (_map is null ||
             _worker is null)
@@ -466,7 +467,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     lease,
                     captureEpoch,
                     completion,
-                    connectionId)))
+                    connectionId,
+                    candidateWindow)))
         {
             throw new InvalidOperationException(
                 "Le canal réseau n'accepte plus de messages.");
