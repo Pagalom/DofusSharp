@@ -837,6 +837,75 @@ public sealed class DofusNetworkRoutingTest
     }
 
     [Fact]
+    public async Task QuarantinedTokenCannotReviveWhenCorrelationsAreEvicted()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey clientA = new(101, 1201);
+        DofusClientWindowKey clientB = new(102, 1202);
+
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt, connectionId: 11, candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt.AddSeconds(1), connectionId: 11,
+            candidateWindow: clientB);
+
+        // Exhaust the bounded per-flow cache, but not the independent
+        // quarantine. An evicted token must not be accepted again.
+        for (int index = 0; index < 70; index++)
+        {
+            await harness.ReplayAsync(
+                "kei", PurchaseRequest(100, 1, (ulong)(700 + index)),
+                ObservedAt.AddSeconds(index + 2),
+                connectionId: 100 + index, candidateWindow: clientA);
+        }
+
+        await harness.ReplayAsync(
+            "kei", PurchaseRequest(100, 1, 601),
+            ObservedAt.AddMinutes(3), connectionId: 11,
+            candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kef", PurchaseOffer(100, 601, 15, 140),
+            ObservedAt.AddMinutes(3).AddSeconds(1),
+            connectionId: 11, candidateWindow: clientA);
+
+        (await harness.ReadPricesAsync(MarketObjectType.Rune, 100))
+            .Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CaptureRestartClearsOldWindowQuarantine()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        DofusClientWindowKey clientA = new(101, 1201);
+        DofusClientWindowKey clientB = new(102, 1202);
+        byte[] crush = CurrentCrush(
+            CurrentCrushRow(9022491, 1.615723f,
+                CurrentCrushRune(100, 6)));
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42),
+            ObservedAt, connectionId: 11, candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kag", crush, ObservedAt.AddSeconds(1),
+            connectionId: 11, candidateWindow: clientB);
+
+        harness.Service.Stop();
+        harness.Service.ResumeReplayForTests();
+
+        await harness.ReplayAsync(
+            "kch", CurrentItemDetail(9022491, 42),
+            ObservedAt.AddSeconds(2), connectionId: 11,
+            candidateWindow: clientA);
+        await harness.ReplayAsync(
+            "kag", crush, ObservedAt.AddSeconds(3),
+            connectionId: 11, candidateWindow: clientA);
+
+        harness.Crushes.Should().ContainSingle();
+    }
+
+    [Fact]
     public async Task ReconnectToSameWindowRequiresNewUidAndPurchaseCorrelations()
     {
         await using RoutingHarness harness = await RoutingHarness.CreateAsync();
