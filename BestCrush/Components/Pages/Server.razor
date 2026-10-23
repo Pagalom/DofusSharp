@@ -879,9 +879,8 @@
         if (ShowSettingsFromQuery)
             _showSettings = true;
 
-        CurrentServerState.SelectServer(
-            ServerName
-        );
+        if (!CurrentServerState.AutomaticRoutingEnabled)
+            CurrentServerState.SelectServer(ServerName);
 
         if (string.Equals(
             _loadedServerName,
@@ -989,9 +988,8 @@
     async Task FocusInOverlay(
         Equipment equipment)
     {
-        CurrentServerState.SelectServer(
-            ServerName
-        );
+        if (!CurrentServerState.AutomaticRoutingEnabled)
+            CurrentServerState.SelectServer(ServerName);
 
         await OverlayService
             .FocusEquipmentAsync(
