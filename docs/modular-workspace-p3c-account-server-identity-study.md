@@ -522,3 +522,35 @@ Vérifier l'interface Npcap (par `--list`) ; `6` est un **exemple historique**. 
 **Validation attendue sur Windows :** 16 nouveaux tests synthétiques de sécurité/isolation, donc **1028 tests attendus**, sur la base P3c.5 confirmée 1012/1012. L'étape reste **à valider** jusqu'à réception du résultat Windows et de la capture réelle.
 
 **Si le parcours réussit :** étudier ensuite le rattachement `TCP/ksc/ksb → PID/HWND` avec la preuve d'appartenance OS déjà disponible en P3m.19, en protégeant changement de personnage, fermeture de fenêtre, réemploi TCP et réinitialisation de capture. Toute attribution automatique de compte/métiers nécessitera des preuves indépendantes et restera non active entre-temps.
+
+## P3c.6 — Résultats réels des deux essais simultanés (23 octobre 2026)
+
+**Premier essai : procédure invalide, protection correcte** — à l'étape 1, le Game #2 a produit `ksc 69` / `ksb 129`, puis, **avant Entrée**, un second Game #4 a produit `ksc 157` dans la même étape. Le verrou `multiple-game-sessions` a correctement mis l'étape 1 en `conflicted`, sans attribuer une liste à un autre client ; `summary=incomplete`. Il ne s'agit **pas** d'une preuve de confusion A/B, mais d'un cas de sécurité déclenché par l'ordre des connexions par rapport aux phases opérateur.
+
+**Deuxième essai : protocole intégral réussi** — l'opérateur a relancé `--account-roster-concurrent` sur l'interface réseau `[3]`, sans changer de serveur :
+
+| Étape | Session Game | `S→C ksc` | `S→C ksb` | Roster candidats | État Game au bilan |
+| --- | ---: | ---: | ---: | ---: | --- |
+| A-X initial | #2 | 157 octets | 153 octets | 2 | ouvert |
+| B-Z pendant A-X | #4 | 69 octets | 129 octets | 1 | fermé |
+| B-Z reconnecté pendant A-X | #6 | 69 octets | 129 octets | 1 | ouvert |
+
+Les trois étapes ont obtenu `status=linked`, sans contradiction. B1 a été fermé avant le lancement de B2 ; A est resté lié et ouvert lorsque B1 et B2 ont été chargés.
+
+Résumé exact et anonyme :
+
+```
+p3c6=summary status=concurrent-roster-group-candidate B-reconnect-roster-stable=yes A-B-disjoint=yes A-B-distinct=yes both-overlap-A=yes account=unverified server=unverified semantic=unverified
+```
+
+**Conclusion P3c.6 :** pendant ce scénario, les deux flux Game simultanés portent des listes de personnages candidates différentes et disjointes ; la liste et le personnage chargé candidats de B restent stables après reconnexion, sans fermer le Game A. Le routage temporel par étape est propre, mais le probe **n'a pas encore prouvé quel PID/HWND est propriétaire de chacun de ces flux** et n'établit ni compte Ankama authentifié ni serveur réseau vérifié.
+
+**Checkpoint automatisé :** 1012/1012 confirmés pour P3c.5. Les **16 tests P3c.6** ont été ajoutés dans le code et la capture réelle a réussi ; l'opérateur n'a **pas encore fourni le récapitulatif de la suite Windows P3c.6**. Ne pas annoncer 1028/1028 comme validés.
+
+### Prochain jalon P3c.7 — preuve locale de la fenêtre propriétaire
+
+Étudier le raccordement **Game TCP capturé (quadruplet exact) → socket Windows unique → PID unique → HWND Dofus visible unique → roster `ksc`/`ksb` du même Game**, à partir des primitives déjà disponibles de P3k/P3m.19.
+
+Critères de sûreté : vérifier 2 clients simultanés avec **fenêtres distinctes**, maintien de A pendant fermeture/réouverture de B, réévaluation du propriétaire OS (et non attribution par numéro global de phase), éviction immédiate des liaisons de fenêtre fermées, échec fermé si un PID a deux HWND Dofus, si le socket/propriétaire est absent ou contradictoire, ou si un paquet est retardé au-delà du cycle de connexion. Conserver les preuves **en RAM seulement**, aucune valeur d'identifiant, nom, tuple, PID ou HWND dans les traces.
+
+Le serveur choisi manuellement reste le seul contexte économique ; **ne pas imposer une validation de serveur**. Un lien Windows prouvé ne constitue **pas** une identité de compte Ankama. Les métiers et fiches personnages restent non alimentés par ces diagnostics jusqu'à leur validation indépendante.
