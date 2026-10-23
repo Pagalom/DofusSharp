@@ -1,0 +1,158 @@
+@using System.Globalization
+@using BestCrush.Services
+
+<article class="character-sheet" aria-label="@($"Fiche de {DisplayName}")">
+    <header class="sheet-header">
+        <div class="sheet-portrait">
+            <img src="img/character-portrait-placeholder.svg"
+                 width="104" height="126"
+                 alt="Portrait fantasy générique, illustration du personnage indisponible"
+                 loading="lazy" />
+            <span class="sheet-portrait-class" aria-hidden="true">@ClassInitial</span>
+        </div>
+        <div class="sheet-headline">
+            <h2 class="sheet-name">@DisplayName</h2>
+            <div class="sheet-character-meta">
+                <span class="sheet-level">NIVEAU @(Level?.ToString(CultureInfo.CurrentCulture) ?? "—")</span>
+                <span class="sheet-meta-separator" aria-hidden="true"></span>
+                <span class="sheet-class">@ClassName</span>
+            </div>
+            <p class="sheet-origin">@((IsExperimental) ? "Données de personnage provisoires" : "Fiche de personnage")</p>
+        </div>
+    </header>
+
+    <div class="sheet-body">
+        <div class="sheet-wallets" aria-label="Richesses">
+            <div class="sheet-wallet">
+                <div class="sheet-wallet-caption">
+                    <img src="img/kama-24.png" alt="" width="22" height="22" />
+                    <span>Kamas</span>
+                </div>
+                <strong class="sheet-wallet-amount">@(PocketKamas?.ToString("N0", CultureInfo.CurrentCulture) ?? "Non observés")</strong>
+            </div>
+            <div class="sheet-wallet">
+                <div class="sheet-wallet-caption">
+                    <span class="sheet-wallet-bank" aria-hidden="true">▤</span>
+                    <span>Banque</span>
+                </div>
+                <strong class="sheet-wallet-amount">@(BankKamas?.ToString("N0", CultureInfo.CurrentCulture) ?? "Non observés")</strong>
+            </div>
+        </div>
+
+        <section class="sheet-jobs" aria-label="Métiers et progression">
+            <h3 class="sheet-section-title">
+                <span aria-hidden="true">⚒</span>
+                Métiers
+            </h3>
+            @if (Professions is { Count: > 0 })
+            {
+                <div class="sheet-job-list">
+                    @foreach (AccountProfessionProgress job in Professions
+                        .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase))
+                    {
+                        <div class="sheet-job" @key="job.Name">
+                            <span class="sheet-job-icon" aria-hidden="true">@ProfessionIcon(job.Name)</span>
+                            <div class="sheet-job-content">
+                                <div class="sheet-job-head">
+                                    <strong class="sheet-job-name">@job.Name</strong>
+                                    <span class="sheet-job-level">Niv. @job.Level</span>
+                                </div>
+                                @if (job.Level >= 200)
+                                {
+                                    <div class="sheet-job-track" role="progressbar"
+                                         aria-label="@($"{job.Name} : niveau maximal")"
+                                         aria-valuenow="100" aria-valuemin="0" aria-valuemax="100">
+                                        <div class="sheet-job-fill" style="width:100%"></div>
+                                    </div>
+                                    <div class="sheet-job-xp">Niveau maximal</div>
+                                }
+                                else if (ProfessionProgressPresentation.For(job) is { } progress)
+                                {
+                                    <div class="sheet-job-track" role="progressbar"
+                                         aria-label="@($"{job.Name} : {progress.Percent.ToString("0.#", CultureInfo.CurrentCulture)} %")"
+                                         aria-valuenow="@progress.Percent.ToString("0.##", CultureInfo.InvariantCulture)"
+                                         aria-valuemin="0" aria-valuemax="100">
+                                        <div class="sheet-job-fill"
+                                             style="@($"width:{progress.Percent.ToString("0.##", CultureInfo.InvariantCulture)}%")"></div>
+                                    </div>
+                                    <div class="sheet-job-xp">
+                                        @progress.EarnedInLevel.ToString("N0", CultureInfo.CurrentCulture)
+                                        /
+                                        @progress.RequiredInLevel.ToString("N0", CultureInfo.CurrentCulture) XP
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="sheet-job-track sheet-job-track--unknown" aria-hidden="true"></div>
+                                    <div class="sheet-job-xp">
+                                        Progression non observée
+                                        @if (job.CumulativeExperience > 0)
+                                        {
+                                            <span> · XP cumulée : @job.CumulativeExperience.ToString("N0", CultureInfo.CurrentCulture)</span>
+                                        }
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="sheet-empty-jobs">
+                    <span class="sheet-empty-jobs-symbol" aria-hidden="true">⚒</span>
+                    <span>Les niveaux et progressions des métiers ne sont pas encore attribués à cette fiche.</span>
+                </div>
+            }
+        </section>
+    </div>
+
+    <footer class="sheet-footer">
+        <span class="sheet-footnote">
+            @(IsExperimental ? "Nom et classe issus de la fenêtre ; niveau candidat issu du réseau." : "Données attribuées après vérification.")
+        </span>
+        @if (CanSelect)
+        {
+            <button class="sheet-target @(IsSelected ? "sheet-target--selected" : "")"
+                    type="button" @onclick="OnSelect" disabled="@IsSelected">
+                @(IsSelected ? "Fenêtre ciblée" : "Cibler")
+            </button>
+        }
+    </footer>
+</article>
+
+@code {
+    [Parameter, EditorRequired] public string DisplayName { get; set; } = "Personnage";
+    [Parameter] public string? ClassName { get; set; }
+    [Parameter] public int? Level { get; set; }
+    [Parameter] public long? PocketKamas { get; set; }
+    [Parameter] public long? BankKamas { get; set; }
+    [Parameter] public IReadOnlyList<AccountProfessionProgress>? Professions { get; set; }
+    [Parameter] public bool IsExperimental { get; set; }
+    [Parameter] public bool IsSelected { get; set; }
+    [Parameter] public bool CanSelect { get; set; } = true;
+    [Parameter] public EventCallback OnSelect { get; set; }
+
+    private string ClassInitial =>
+        string.IsNullOrWhiteSpace(ClassName) ? "?" : ClassName.Trim()[..1].ToUpperInvariant();
+
+    // UI-only glyphs; no profession IDs are inferred from their display names.
+    private static string ProfessionIcon(string name) => name.ToLowerInvariant() switch
+    {
+        "forgeron" or "forgemage" => "⚒",
+        "sculpteur" or "sculptemage" => "🪵",
+        "mineur" => "⛏",
+        "pêcheur" => "🐟",
+        "bijoutier" or "joaillomage" => "💎",
+        "cordonnier" or "cordomage" => "👢",
+        "tailleur" or "costumage" => "🧵",
+        "alchimiste" => "⚗",
+        "bûcheron" => "🌲",
+        "chasseur" => "🏹",
+        "paysan" => "🌾",
+        "façonneur" or "façomage" => "🛡",
+        "bricoleur" => "🔧",
+        "éleveur" => "🐣",
+        _ => "✦"
+    };
+}
