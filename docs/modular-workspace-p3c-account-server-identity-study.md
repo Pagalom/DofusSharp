@@ -595,6 +595,6 @@ Les lignes par phase P3c.7 sont `status=os-matched|unavailable|conflicted` et le
 
 ### Tests et précautions
 
-**15 tests synthétiques** supplémentaires pour le lien OS : deux Game simultanés + reconnexion, absence de fuite de PID/HWND/tuple, collisions propriétaire/PID, fermeture de A, perte d'owner pendant B, changements de propriétaire, arrivée tardive B1, nouvelle session et observations répétées. Après **1012 tests P3c.5 confirmés**, **16 cas P3c.6 ajoutés** et **15 cas P3c.7 nouveaux**, **1043 tests attendus** sous Windows, non encore exécutés sur le poste de l'opérateur.
+**16 tests synthétiques** supplémentaires pour le lien OS : deux Game simultanés + reconnexion, absence de fuite de PID/HWND/tuple, collisions propriétaire/PID, fermeture de A, perte d'owner pendant B, changements de propriétaire, arrivée tardive B1, nouvelle session et observations répétées. Après **1012 tests P3c.5 confirmés**, **16 cas P3c.6 ajoutés** et **16 cas P3c.7 nouveaux**, **1044 tests attendus** sous Windows, non encore exécutés sur le poste de l'opérateur.
 
 **Portée des résultats :** un lien exact TCP/PID/HWND n'authentifie pas un compte Dofus ni un serveur logique ; `account=unverified server=unverified semantic=unverified` demeure obligatoire et l'intégration des métiers au profil reste désactivée.
