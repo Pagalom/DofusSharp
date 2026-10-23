@@ -2,6 +2,8 @@
 @implements IDisposable
 @inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
 @inject BestCrush.Services.CurrentAccountProfessionsState CurrentAccountProfessionsState
+@inject BestCrush.Services.CurrentCandidateWindowCardsState CurrentCandidateWindowCardsState
+@inject BestCrush.Services.CurrentDofusClientsState CurrentDofusClientsState
 
 <div class="container py-4">
     <h1>Personnages — session actuelle</h1>
@@ -10,6 +12,60 @@
         de manière fiable. Elles existent uniquement en mémoire et disparaissent
         à la fermeture de BestCrush.
     </p>
+
+    @if (CurrentCandidateWindowCardsState.IsResearchEnabled)
+    {
+        <section class="mb-4" aria-label="Fenêtres Dofus candidates en mémoire">
+            <h2 class="h5">Fenêtres reliées — étude réseau expérimentale</h2>
+            <p class="small text-secondary">
+                Ces cartes représentent des fenêtres Windows dont les messages
+                ksc/ksb sont cohérents. Le nom provient du titre de la fenêtre,
+                pas d'une identité réseau confirmée. Aucun compte Ankama,
+                serveur réseau ou métier n'est vérifié.
+            </p>
+            @if (CurrentCandidateWindowCardsState.Cards.Count == 0)
+            {
+                <p class="text-secondary small">
+                    Aucun groupe candidat relié pour le moment.
+                    Les cartes n'apparaissent qu'après une liaison réseau.
+                </p>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap gap-3">
+                    @foreach (BestCrush.Services.CandidateWindowRosterCard candidate in CurrentCandidateWindowCardsState.Cards)
+                    {
+                        @if (CurrentDofusClientsState.Clients.FirstOrDefault(client => client.Key == candidate.Window) is { } client)
+                        {
+                            <div @key="candidate.Window" class="card" style="min-width: 260px; max-width: 360px;">
+                                <div class="card-body">
+                                    <h3 class="h6 card-title">@client.DisplayName</h3>
+                                    <p class="small text-secondary mb-2">
+                                        Fenêtre Dofus détectée localement — groupe candidat, non vérifié
+                                    </p>
+                                    <p class="small mb-2">
+                                        Personnages candidats dans la liste : @candidate.CandidateCount
+                                    </p>
+                                    <p class="small mb-3">
+                                        Classe d'après le titre : @(client.ClassName ?? "Inconnue")
+                                    </p>
+                                    <button type="button"
+                                            class="btn btn-sm @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "btn-secondary" : "btn-outline-primary")"
+                                            @onclick="() => CurrentDofusClientsState.SelectWindow(client.Key)">
+                                        @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "Fenêtre ciblée" : "Cibler cette fenêtre")
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+            <p class="small text-secondary mt-2">
+                Fermeture de la fenêtre : suppression de cette carte, même sans nouveau paquet réseau.
+                Aucune donnée de ces groupes n'est écrite dans les profils ou les métiers.
+            </p>
+        </section>
+    }
 
     @if (CurrentCharacterState.ServerName is null)
     {
@@ -102,8 +158,12 @@
 </div>
 
 @code {
-    protected override void OnInitialized() =>
+    protected override void OnInitialized()
+    {
         CurrentCharacterState.Changed += OnCharacterChanged;
+        CurrentCandidateWindowCardsState.Changed += OnCharacterChanged;
+        CurrentDofusClientsState.Changed += OnCharacterChanged;
+    }
 
     private void SelectCharacter(BestCrush.Services.CharacterKey key)
     {
@@ -113,6 +173,10 @@
     private void OnCharacterChanged() =>
         _ = InvokeAsync(StateHasChanged);
 
-    public void Dispose() =>
+    public void Dispose()
+    {
         CurrentCharacterState.Changed -= OnCharacterChanged;
+        CurrentCandidateWindowCardsState.Changed -= OnCharacterChanged;
+        CurrentDofusClientsState.Changed -= OnCharacterChanged;
+    }
 }
