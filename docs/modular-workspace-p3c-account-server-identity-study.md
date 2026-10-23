@@ -654,3 +654,39 @@ Nouveau composant purement RAM `BestCrush/Services/EphemeralCandidateRosterGroup
 **Tests additionnels :** 17 tests xUnit dans `EphemeralCandidateRosterGroupsStateTest.cs` couvrent l'isolation de deux fenêtres, la comparaison égal/disjoint/inconnu, les nouvelles connexions et messages tardifs, les contradictions, le nettoyage à fermeture, le redémarrage Npcap, la génération du serveur manuel, les limites de taille et la non-divulgation.
 
 **Checkpoint suivant : 1061 tests attendus**, sous réserve de compilation/tests Windows. Aucun résultat de validation P3c.8 n'a encore été fourni.
+
+## P3c.8 — Checkpoint Windows 1061/1061 (23 octobre 2026)
+
+L'opérateur confirme la compilation Windows et la suite xUnit complète **1061 tests exécutés, 1061 réussis, 0 échec, 0 ignoré, 7,3 secondes**. Les 17 nouveaux tests `EphemeralCandidateRosterGroupsStateTest` sont donc validés sous Windows. Cela confirme le socle purement RAM de P3c.8 ; **aucun rattachement des métiers n'est activé**.
+
+## P3c.9 — Observateur ksc/ksb à injection explicite (staging, 23 octobre 2026)
+
+**Objectif :** vérifier la connexion entre le vrai worker de messages `DofusNetworkCaptureService` et `EphemeralCandidateRosterGroupsState` en **rejeu synthétique**, avant une future activation de capture live. La liaison `ksc`/`ksb` utilise les chemins candidats observés en P3c.5, mais ne prouve aucun compte Ankama ni serveur réseau officiel.
+
+### Implémentation désactivée par défaut
+
+- Nouveau composant interne `EphemeralCandidateRosterWireObserver` : ne considère que les messages `S→C ksc` et `S→C ksb`, sur **le même token de connexion logique TCP**, le même bail de serveur **choisi manuellement**, la même époque de capture et la même fenêtre OS candidate revalidée **au moment de la consommation par le worker**.
+- Conserve temporairement dans sa mémoire le `ksc` décodé (y compris ses noms candidats **sans jamais les imprimer**) jusqu'à réception d'un `ksb` concordant sur la même connexion. Après concordance, ne transfère au workspace P3c.8 que l'ensemble numérique candidat et le candidat sélectionné, sans nom, niveau ni classe.
+- Les messages `C→S`, les opcodes autres que `ksc/ksb`, les fenêtres non résolues, les époques périmées, les baux non actifs, les collisions de fenêtre/token et les contradictions ne fournissent **aucune** donnée utilisable. Les flux contradictoires sont bloqués sans repli sur le titre, l'ordre des connexions, le focus, une identité de compte ni les métiers.
+- Fermeture de fenêtre : `ReconcileWindows` invalide les liens ET les listes en attente et met en quarantaine le HWND/PID jusqu'au changement d'époque de capture. Une déconnexion n'efface que le token actif ; un ancien message ne peut défaire une nouvelle connexion.
+- Changement du serveur manuel : effacement immédiat de l'état RAM (sans validation imposée du serveur). Stop/Start Npcap : nouvelle époque, effacement et interdiction des messages de l'ancienne époque. Les identifiants candidats, les HWND, les PID, les IP et les corps de messages ne sont **ni imprimés, ni persistés, ni hachés**.
+- `DofusNetworkCaptureService` accepte un **observateur interne optionnel** via sa construction utilisée en tests ; **le constructeur public et l'enregistrement DI de production ne lui en fournissent aucun**. L'observateur ne s'exécute qu'après le routeur métier, dans un `try/catch` séparé : il ne doit pas bloquer prix, concassage ou historique. En rejeu, le drapeau synthétique de fenêtre est explicitement contrôlé par le harness de tests.
+- **Ce jalon ne permet pas d'utiliser l'outil de capture live pour publier les groupes** : la réception live des événements par cet observateur n'est pas activée dans l'application ordinaire. Une activation opt-in distincte ne sera envisageable qu'après validation Windows et vérifications de sécurité supplémentaires.
+- `CurrentCharacterState`, `CurrentAccountProfessionsState`, `VerifiedAccountServerKey`, les données économiques, les overlays F7/F8, la molette et SQLite restent inchangés. Aucune identité de compte ni preuve de serveur réseau n'est créée.
+
+### Tests ajoutés (à valider Windows)
+
+**17 tests isolés** de l'observateur `EphemeralCandidateRosterWireObserverTest` : deux groupes disjoints, deux personnages d'un même groupe, nom discordant, mélange interflux/interfenêtres, absence de propriétaire, refus de messages C→S, messages répétés, fermeture/réemploi de fenêtre, déconnexion et reconnexion, changement de bail manuel, époques périmées, redaction.
+
+**3 tests de bout en bout** dans `DofusNetworkRoutingTest` : le vrai worker de rejeu envoie les messages synthétiques `ksc/ksb` à l'observateur uniquement sur injection explicite ; changement de serveur et redémarrage détruisent les candidats ; aucun observateur ni compte/métier n'apparaît en production non opt-in.
+
+**Checkpoint Windows visé : 1081 tests** (1061 confirmés + 20 nouveaux). Compilation et tests **non effectués par l'agent** : environnement local de validation .NET/MAUI Windows indisponible. Ne pas présenter 1081 comme un résultat acquis.
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush\BestCrush.csproj -f net10.0-windows10.0.19041.0
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+**Suite après validation :** caractériser en opt-in une liaison de capture live qui ne publie que des **indicateurs anonymes**, puis éprouver fermeture de fenêtres, reconnexion, changement de personnage, serveur manuel et capture Stop/Start ; l'attribution de professions à `VerifiedAccountServerKey` demeure interdite sans preuve de compte+serveur indépendante.
