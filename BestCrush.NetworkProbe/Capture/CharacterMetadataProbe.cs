@@ -33,7 +33,8 @@ internal sealed class CharacterMetadataProbe(
     KtaFieldScopeStudy? ktaScopeStudy = null,
     KtaSelectedCharacterStudy? ktaCharacterStudy = null,
     ServerNameWireStudy? serverNameStudy = null,
-    ConnectionServerSelectionStudy? connectionSelectionStudy = null) : IDisposable
+    ConnectionServerSelectionStudy? connectionSelectionStudy = null,
+    AccountWireFieldComparisonStudy? accountWireStudy = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
@@ -43,6 +44,7 @@ internal sealed class CharacterMetadataProbe(
     private readonly KtaSelectedCharacterStudy? _ktaCharacterStudy = ktaCharacterStudy;
     private readonly ServerNameWireStudy? _serverNameStudy = serverNameStudy;
     private readonly ConnectionServerSelectionStudy? _connectionSelectionStudy = connectionSelectionStudy;
+    private readonly bool _accountWireProbe = accountWireStudy is not null;
     private readonly CharacterCaptureFlowTracker _flows = new(
         shapeKeys: shapeKeys, professionReferences: professionReferences,
         decodeIpz: decodeIpz, studyReferences: studyReferences,
@@ -61,7 +63,8 @@ internal sealed class CharacterMetadataProbe(
         ktaScopeStudy: ktaScopeStudy,
         ktaCharacterStudy: ktaCharacterStudy,
         serverNameStudy: serverNameStudy,
-        connectionSelectionStudy: connectionSelectionStudy);
+        connectionSelectionStudy: connectionSelectionStudy,
+        accountWireStudy: accountWireStudy);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;
@@ -209,6 +212,10 @@ internal sealed class CharacterMetadataProbe(
                     entry.Kind == CharacterCaptureEventKind.Message &&
                     entry.ProfessionContinuitySummary is null)
                     continue;
+                if (_accountWireProbe &&
+                    entry.Kind == CharacterCaptureEventKind.Message &&
+                    entry.AccountWireFieldSummary is null)
+                    continue;
                 if (_professionXpProbe &&
                     entry.Kind == CharacterCaptureEventKind.Message &&
                     entry.ProfessionXpStudySummary is null)
@@ -263,6 +270,7 @@ internal sealed class CharacterMetadataProbe(
                       (_identityFieldProbe ? $" IDENTITY_FIELDS=[{entry.CharacterIdentityFieldSummary}]" : "") +
                       (_professionFlowProbe ? $" PROFESSION_FLOW=[{entry.ProfessionFlowSummary}]" : "") +
                       (_professionContinuityProbe ? $" PROFESSION_CONTINUITY=[{entry.ProfessionContinuitySummary}]" : "") +
+                      (_accountWireProbe ? $" ACCOUNT_WIRE=[{entry.AccountWireFieldSummary}]" : "") +
                       (_professionXpProbe
                           ? $" {(_professionJobProbe ? "PROFESSION_JOB" : "PROFESSION_XP")}=[{entry.ProfessionXpStudySummary}]" : "")
                     : entry.Kind.ToString().ToUpperInvariant();
