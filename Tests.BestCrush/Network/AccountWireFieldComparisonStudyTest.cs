@@ -261,6 +261,21 @@ public sealed class AccountWireFieldComparisonStudyTest
     }
 
     [Fact]
+    public void RejectedFirstKrgCannotBeReplacedByAnotherGameSession()
+    {
+        AccountWireFieldComparisonStudy study = new();
+        study.StartPhase(0);
+        study.ObserveOpenedSession(2);
+        study.Observe(2, CharacterCaptureDirection.ServerToClient, "krg",
+            [0x80]).Should().Contain("status=layout-rejected");
+
+        Read(study, 3, 101, 7301)
+            .Should().Contain("status=multiple-game-sessions");
+        study.Summarize()[0].Should().Contain("status=conflicted");
+        study.Summarize().Last().Should().Contain("status=incomplete");
+    }
+
+    [Fact]
     public void DiagnosticDoesNotMixWithOtherStudyModes()
     {
         AccountWireFieldComparisonStudy study = new();
