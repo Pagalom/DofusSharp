@@ -33,6 +33,9 @@ public sealed class OverlayService(
     // slot. Never persist window or character-specific focus state.
     private WindowScopedNetworkEquipmentState? _windowEquipmentState;
     private long _middleFocusRequestVersion;
+    // Any explicit focus (including F8 or a manual UI action) supersedes
+    // an older middle-click still waiting for a database lookup.
+    private long _equipmentFocusMutationVersion;
 
     // F8 est le seul usage OCR du produit :
     // il capture l'infobulle actuellement survolée afin de
@@ -641,12 +644,15 @@ private bool _hasF7VisibilitySnapshot;
     }
 
     private async Task FocusLastNetworkEquipmentAsync(
-        WindowEquipmentFocusToken request, long requestVersion)
+        WindowEquipmentFocusToken request, long requestVersion,
+        long previousFocusVersion)
     {
         // The click snapshots the verified OS window + manual server lease.
         // Recheck after database access: another click, closed Dofus window,
         // capture reset or server change must make the pending focus inert.
-        if (!IsValidMiddleClickRequest(request, requestVersion))
+        if (previousFocusVersion !=
+                Interlocked.Read(ref _equipmentFocusMutationVersion) ||
+            !IsValidMiddleClickRequest(request, requestVersion))
             return;
 
         using IServiceScope scope = serviceScopeFactory.CreateScope();
@@ -658,6 +664,8 @@ private bool _hasF7VisibilitySnapshot;
             .ConfigureAwait(false);
 
         if (equipment is null ||
+            previousFocusVersion !=
+                Interlocked.Read(ref _equipmentFocusMutationVersion) ||
             !IsValidMiddleClickRequest(request, requestVersion))
             return;
 
@@ -687,6 +695,7 @@ private bool _hasF7VisibilitySnapshot;
     public async Task FocusEquipmentAsync(
         Equipment equipment)
     {
+        Interlocked.Increment(ref _equipmentFocusMutationVersion);
         ClearF7VisibilitySnapshot();
 
         focusedEquipmentState.SetEquipment(
@@ -1567,6 +1576,8 @@ private bool _hasF7VisibilitySnapshot;
             // An empty click also cancels a previous asynchronous focus.
             long requestVersion = Interlocked.Increment(
                 ref _middleFocusRequestVersion);
+            long focusVersion = Interlocked.Read(
+                ref _equipmentFocusMutationVersion);
             NetworkCaptureLease? lease =
                 currentServerState.GetCaptureLease();
 
@@ -1584,7 +1595,7 @@ private bool _hasF7VisibilitySnapshot;
                 {
                     _ = Task.Run(() =>
                         FocusLastNetworkEquipmentAsync(
-                            token, requestVersion));
+                            token, requestVersion, focusVersion));
                 }
             }
         }
