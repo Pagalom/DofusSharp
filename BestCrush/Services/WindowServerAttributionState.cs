@@ -176,7 +176,8 @@ public sealed class WindowServerAttributionState
                             .ToArray();
                         // Multiple selectors (even identical IDs) are
                         // ambiguous. Never choose the last or first.
-                        if (recent.Length == 1 && recent[0].Id > 0)
+                        if (recent.Length == 1 && recent[0].Id > 0 &&
+                            recent[0].ConnectionId != message.ConnectionId)
                             eligible = recent[0];
                     }
                     _games.Add(message.ConnectionId, new Game(window, roster, eligible));
