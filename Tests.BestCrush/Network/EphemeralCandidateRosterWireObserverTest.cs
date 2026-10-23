@@ -63,6 +63,34 @@ public sealed class EphemeralCandidateRosterWireObserverTest
     }
 
     [Fact]
+    public void AutomaticPerWindowServerModeStillShowsAmberRosterMarkers()
+    {
+        WindowServerAttributionState attribution = new();
+        CurrentServerState server = new(
+            attribution, automaticRoutingEnabled: true);
+        EphemeralCandidateRosterGroupsState workspace = new();
+        EphemeralCandidateRosterWireObserver observer = new(server, workspace);
+        observer.OnCaptureEpochChanged(1);
+
+        server.GetCaptureLease().Should().BeNull();
+        observer.Observe(Wire(server, "ksc",
+            Ksc((101, "Sable-Ciel")), A, 11), true)
+            .Should().Be(EphemeralCandidateRosterWireObserver.Result.Pending);
+        observer.Observe(Wire(server, "ksb",
+            Ksb(101, "Sable-Ciel"), A, 11), true)
+            .Should().Be(EphemeralCandidateRosterWireObserver.Result.Linked);
+        observer.ReadWindowCards().Should().ContainSingle()
+            .Which.Window.Should().Be(A);
+
+        // An unrelated selection displayed by the UI must not reset
+        // the researched ksc/ksb TCP-to-window evidence.
+        server.SelectServer("Tylezia");
+        observer.ReadWindowCards().Should().ContainSingle();
+        observer.ReconcileWindows([]);
+        observer.ReadWindowCards().Should().BeEmpty();
+    }
+
+    [Fact]
     public void RealWireFamilyCanLinkTwoDisjointRostersOnlyWhenOwnerIsPrevalidated()
     {
         var (observer, state, server) = Create();
