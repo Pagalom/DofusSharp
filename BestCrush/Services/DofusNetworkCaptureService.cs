@@ -722,16 +722,25 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                             .TryGetSelectedServerCandidate(
                                                 frame, out int selectedServerId))
                                     {
-                                        // Short Connection sockets may appear
-                                        // between periodic Windows table
-                                        // refreshes; force one exact-tuple
-                                        // owner lookup while payload is live.
+                                        // Preserve the exact TCP owner validated
+                                        // just before decoding this frame. The
+                                        // Connection socket can disappear between
+                                        // two Windows TCP-table reads: a forced
+                                        // second scan must NOT discard an owner
+                                        // we already verified for this same flow.
+                                        // Only retry the OS lookup when the first
+                                        // lookup returned no verified window.
                                         DofusClientWindowKey? selectedWindow =
-                                            ObserveLiveDofusClient(
-                                                ip.SourceAddress, tcp.SourcePort,
-                                                ip.DestinationAddress, tcp.DestinationPort,
-                                                captureEpoch, connectionId,
-                                                forceRefresh: true);
+                                            ResolveSelectionWindow(
+                                                candidateWindow,
+                                                () => ObserveLiveDofusClient(
+                                                    ip.SourceAddress, tcp.SourcePort,
+                                                    ip.DestinationAddress, tcp.DestinationPort,
+                                                    captureEpoch, connectionId,
+                                                    forceRefresh: true));
+
+                                        _windowServerAttributionState.RecordSelectionFrame(
+                                            captureEpoch, selectedWindow is not null);
                                         if (selectedWindow is { } owner)
                                             _windowServerAttributionState.ObserveSelection(
                                                 owner, captureEpoch,
@@ -787,6 +796,16 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 "Paquet Dofus ignoré après erreur de décodage.");
         }
     }
+
+    /// <summary>
+    /// Preserve an already proven exact TCP/HWND owner. A second OS inventory
+    /// cannot make earlier proof disappear merely because the short-lived
+    /// Connection socket closed while we decoded its selection frame.
+    /// </summary>
+    internal static DofusClientWindowKey? ResolveSelectionWindow(
+        DofusClientWindowKey? alreadyLinkedWindow,
+        Func<DofusClientWindowKey?> refreshExactSocketOwner) =>
+        alreadyLinkedWindow ?? refreshExactSocketOwner();
 
     private DofusClientWindowKey? ObserveLiveDofusClient(
         System.Net.IPAddress source, int sourcePort,
