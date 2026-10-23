@@ -83,6 +83,18 @@ internal sealed class WindowScopedNetworkEquipmentState
         }
     }
 
+    internal void RemoveMissingWindows(IReadOnlyCollection<DofusClientWindowKey> current)
+    {
+        ArgumentNullException.ThrowIfNull(current);
+        lock (_sync)
+        {
+            HashSet<DofusClientWindowKey> live = current.ToHashSet();
+            foreach (DofusClientWindowKey key in _byWindow.Keys.ToArray())
+                if (!live.Contains(key))
+                    _byWindow.Remove(key);
+        }
+    }
+
     internal void Clear()
     {
         lock (_sync)
