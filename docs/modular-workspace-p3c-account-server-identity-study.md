@@ -598,3 +598,36 @@ Les lignes par phase P3c.7 sont `status=os-matched|unavailable|conflicted` et le
 **16 tests synthétiques** supplémentaires pour le lien OS : deux Game simultanés + reconnexion, absence de fuite de PID/HWND/tuple, collisions propriétaire/PID, fermeture de A, perte d'owner pendant B, changements de propriétaire, arrivée tardive B1, nouvelle session et observations répétées. Après **1012 tests P3c.5 confirmés**, **16 cas P3c.6 ajoutés** et **16 cas P3c.7 nouveaux**, **1044 tests attendus** sous Windows, non encore exécutés sur le poste de l'opérateur.
 
 **Portée des résultats :** un lien exact TCP/PID/HWND n'authentifie pas un compte Dofus ni un serveur logique ; `account=unverified server=unverified semantic=unverified` demeure obligatoire et l'intégration des métiers au profil reste désactivée.
+
+## P3c.7 — Validation terrain des fenêtres et des listes candidates (23 octobre 2026)
+
+**Parcours réel de l'opérateur :** après fermeture de tous les clients, ouvrir A-X et le conserver, ouvrir B-Z et fermer uniquement B, puis reconnecter B-Z en conservant A et B ouverts. Le diagnostic utilisé est `--account-roster-window` (P3c.7) ; aucun identifiant, nom, socket, PID ni HWND réel communiqué.
+
+| Étape | TCP Game | ksc / ksb (octets) | Liste | Fenêtre Windows | État final |
+| --- | --- | --- | ---: | --- | --- |
+| A-X | #2 | 157 / 153 | 2 | `os-matched` | Game ouvert |
+| B-Z premier | #4 | 69 / 129 | 1 | `os-matched` | Game fermé |
+| B-Z reconnecté | #6 | 69 / 129 | 1 | `os-matched` | Game ouvert |
+
+**Contrôle réseau P3c.6 :**
+```
+p3c6=summary status=concurrent-roster-group-candidate B-reconnect-roster-stable=yes A-B-disjoint=yes A-B-distinct=yes both-overlap-A=yes account=unverified server=unverified semantic=unverified
+```
+
+**Contrôle propriétaire OS P3c.7 :**
+```
+p3c7=stage=1 status=os-matched game-closed=no A-still-matched=not-applicable reason=none account=unverified server=unverified
+p3c7=stage=2 status=os-matched game-closed=yes A-still-matched=yes reason=none account=unverified server=unverified
+p3c7=stage=3 status=os-matched game-closed=no A-still-matched=yes reason=none account=unverified server=unverified
+p3c7=summary status=window-roster-link-candidate A-window-stable-across-B=yes A-B-distinct-windows=yes account=unverified server=unverified semantic=unverified
+```
+
+**Conclusion stricte :** le scénario établit expérimentalement un **rattachement technique cohérent Game TCP → socket Windows propriétaire unique → HWND unique → même session `ksc`/`ksb`**, avec comptes candidats simultanés disjoints et retour de B sur son groupe candidat. Cela ne prouve pas un identifiant de compte Ankama ni le serveur logique. Aucun métier, profil, volet UI, SQLite ou historique n'a été alimenté depuis ce diagnostic. Le contexte économique de serveur choisi manuellement reste autoritaire, sans validation forcée.
+
+**Remarque d'observabilité :** dans la capture, `WINDOW_ROSTER=[p3c7=stage=N status=os-matched...]` était affiché **avant** la ligne `S→C ksb` correspondante. L'explication est technique : `CharacterMetadataProbe` calculait et *imprimait* le diagnostic OS pendant le prétraitement du lot TCP, **avant** d'afficher les événements décodés du lot. Cela ne constitue pas une liaison au message `ksc` précédent. Un correctif ne changeant **que l'ordre d'affichage** publie maintenant `WINDOW_ROSTER` immédiatement après la ligne `ksb` déclenchante, selon l'index de l'événement dans le lot. Il ne change ni la logique de liaison ni le comportement de production. Ce correctif attend un nouveau checkpoint de compilation/tests Windows.
+
+**État automatisé :** dernier total **effectivement confirmé par l'opérateur : 1012/1012**, avant P3c.6 (16 tests) et P3c.7 (16 tests). **1044 tests attendus**, mais aucun bilan Windows pour ces ajouts n'est encore communiqué dans ce fil. Ne pas annoncer 1044/1044 sans mesure.
+
+### Suite possible, distincte de la production
+
+L'étape de développement la moins intrusive est un **index éphémère expérimental, strictement en RAM**, qui pourrait conserver pour la durée d'une capture les groupes candidats `ksc` et leurs fenêtres **uniquement après** résolution exacte du propriétaire du Game. Le lien devra être invalidé à la fermeture de fenêtre, au changement de capture, au changement de serveur manuel, à la perte de socket, à une sélection contradictoire, ou à tout réemploi de tuple TCP. Rien ne doit renseigner `VerifiedAccountServerKey` sans preuve sémantique indépendante ; la publication des professions compte + serveur reste bloquée.
