@@ -63,10 +63,14 @@ internal sealed class DofusNetworkMessageProcessor(
         DofusWireMessage message,
         CancellationToken cancellationToken)
     {
-        if (_lastLease != message.CaptureLease ||
-            _lastCaptureEpoch != message.CaptureEpoch)
+        if (_lastCaptureEpoch != message.CaptureEpoch ||
+            (!currentServerState.AutomaticRoutingEnabled &&
+             _lastLease != message.CaptureLease))
         {
-            // No UID or purchase state survives server selection / Stop+Start.
+            // Capture restart always clears correlations. In auto mode,
+            // different game windows have independent server leases;
+            // switching between their packets MUST NOT clear other
+            // connection-local item UID and purchase correlations.
             _correlations.Clear();
             _verifiedWindowByConnection.Clear();
             _windowBindingOverflow = false;
