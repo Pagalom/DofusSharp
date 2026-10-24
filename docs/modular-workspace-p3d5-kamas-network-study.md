@@ -580,3 +580,91 @@ correspondants, jamais les valeurs privées.
 
 Aucune modification du routeur métier, de
 `CharacterSessionProfile`, du craft ou de SQLite.
+
+## P3d.5.7 — Validation croisée des lignes inventaire + banque (24/10/2026)
+
+Nouvelle capture `--character-shape --shape-keys irl,irp`
+d'un **même personnage**, avec fermeture intégrale de Dofus
+et nouvelle connexion après un transfert d'une pile entière
+de banque vers inventaire. Un seul client Dofus en cours
+d'essai, probe Npcap actif pendant la reconnexion.
+
+| TCP du probe | Heure UTC | Sens | Opcode | Taille | Nombre d'enregistrements |
+|---|---|---|---|---:|---:|
+| #2 avant transfert | 03:35:08.078 | S→C | `irl` | 12533 | `root.f2`: **502** |
+| #2 avant transfert | 03:35:13.849 | S→C | `irp` | 11616 | `root.f2`: **559** |
+| #4 après transfert | 03:35:31.112 | S→C | `irl` | 12545 | `root.f2`: **503** |
+| #4 après transfert | 03:35:38.010 | S→C | `irp` | 11669 | `root.f2`: **558** |
+
+Les variations sont **opposées et exactement égales à
+une ligne** : inventaire `502 → 503`, banque `559 → 558`.
+La forme interne `f2[].f1` est identique dans
+`irl` et `irp` pour les chemins échantillonnés.
+
+### Conclusion étayée
+
+- `irl.f2[]` et `irp.f2[]` sont désormais des **collections
+  de lignes de stock très fortement étayées** par un contrôle
+  croisé positif et négatif et une reconnexion.
+- Cette expérience ne démontre **ni** les quantités totales,
+  **ni** la signification de chaque champ numérique,
+  **ni** la façon dont les piles fusionnent,
+  ni les champs de Kamas.
+
+### Correspondance à contrôler avec le décodeur `kch` réel
+
+Le protocole `kch` utilisé pour corréler les concassages
+(`Tests.BestCrush/Network/NetworkPayload.cs` et
+`BestCrush.Network/protocol-map.json`, route
+`item_detail_current`, observée le 11/10/2026)
+dispose d'une instance imbriquée sous `root.f3.f1`
+avec :
+
+- `f3` : quantité, déjà validée pour **l'objet de `kch`** ;
+- `f4` : `ItemId`, déjà validé pour **l'objet de `kch`** ;
+- `f5` : `ItemUid`, déjà validé pour **l'objet de `kch`**.
+
+Dans les lignes de stock `irl.f2[].f1` et
+`irp.f2[].f1` et les deltas `iqx.f2.f1`,
+`iqz.f1.f1`, les champs `f3`, `f4`, `f5`
+ont précisément les mêmes **types protobuf**.
+**Hypothèse forte de réutilisation d'un objet réseau**, mais
+il serait incorrect de transférer sans vérification
+les significations `kch` aux messages `irl/irp/iqx/iqz`.
+
+`f7:len` apparaît dans certaines lignes et certains
+deltas ; c'est un **candidat opaque de caractéristiques**
+éventuelles (et pas encore une preuve).
+L'étude doit conserver chaque instance `UID`
+et ses effets, sans écraser les différences de jet.
+
+### Prochaine étude P3d.5.8 — Équipement avec effets
+
+Effectuer dans un seul client une capture **forme seule**,
+avant la connexion :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --character-shape --shape-keys irp,irl,iqx,iqz,irx,iqm,kch
+```
+
+1. Ouvrir la banque ; choisir un seul équipement avec des
+   caractéristiques non vides (pas une ressource), connu
+   comme une seule instance et absent de l'inventaire.
+2. Transférer l'équipement entier banque → inventaire,
+   noter l'heure locale **à la seconde**.
+3. Attendre au moins cinq secondes et retransférer le
+   même équipement inventaire → banque, noter l'heure.
+4. Arrêter par `Ctrl+C` et ne transmettre que les
+   `shape=[...]`, jamais les statistiques/UID/ID bruts.
+
+Chercher si les deltas porteurs de la ligne affichent
+`...7:len` de manière reproductible et si les mêmes
+champs structuraux `3:v,4:v,5:v` sont présents.
+Le mode actuel n'explore pas la profondeur des
+`f7` et **ne valide aucune valeur** ; une étude locale
+à références numériques anonymisées sera nécessaire
+avant toute intégration métier.
+
+**Statut : détection de deux listes de stock confirmée
+expérimentalement ; champs numériques et statistiques
+non décodés ; pas de migration, SQLite ni UI.**
