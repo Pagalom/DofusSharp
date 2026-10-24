@@ -63,6 +63,25 @@ internal sealed class TcpHandshakeWindowEvidence
         }
     }
 
+    /// <summary>
+    /// A later TCP-table lookup that disagrees with a same-generation SYN
+    /// owner is NOT allowed to replace it. This also quarantines explicit
+    /// conflict evidence rather than falling back to a guessed owner.
+    /// </summary>
+    internal bool ConflictsWith(
+        long captureEpoch, long connectionId, TcpSocketTuple socket,
+        DofusClientWindowKey proposedWindow, DateTime atUtc)
+    {
+        lock (_gate)
+            return captureEpoch == _epoch &&
+                _byConnection.TryGetValue(connectionId, out Evidence? prior) &&
+                atUtc.Kind == DateTimeKind.Utc &&
+                atUtc >= prior.ObservedAtUtc &&
+                atUtc - prior.ObservedAtUtc <= MaximumAge &&
+                (prior.Conflicted || prior.Socket != socket ||
+                 prior.Window != proposedWindow);
+    }
+
     internal DofusClientWindowKey? Resolve(
         long captureEpoch, long connectionId, TcpSocketTuple socket,
         DateTime whenUtc, Func<IReadOnlyList<DofusClientWindowKey>> liveWindows)
