@@ -1,6 +1,25 @@
-# P3d.5 — Kamas en poche / banque : caractérisation du réseau
+# P3d.5 — Kamas, inventaire et banque : caractérisation du réseau
 
 ## Objectif
+
+Étudier les **quatre flux de patrimoine** d'une session Dofus :
+
+1. Kamas en poche.
+2. Objets de l'inventaire personnel.
+3. Kamas en banque.
+4. Objets du coffre de banque.
+
+**Décision de produit :** conserver les objets en mémoire pour les modules
+fonctionnels (craft, calcul de ressources déjà possédées, rentabilité),
+sans afficher de liste d'objets ni leurs statistiques dans la fiche
+personnage. Celle-ci ne conserve que la présentation des deux montants
+de Kamas, quand ils sont vérifiés. Aucun objet n'est sauvegardé dans
+SQLite par cette phase.
+
+Les deux stocks restent indépendants : une ressource est disponible
+`inventaire` ou `banque` uniquement après observation positive
+de ce conteneur. Pour le craft, une quantité non observée vaut
+**inconnue**, jamais zéro.
 
 Étudier séparément les deux cases de richesse déjà présentes dans
 `CharacterSheetCard` :
@@ -17,6 +36,99 @@ n'ont pas d'identité de personnage confirmée.
 
 Les prix observés en HDV ne sont **pas** un solde de Kamas. L'absence
 d'observation doit rester `null`, jamais `0`.
+
+## Tests et implémentations déjà retrouvés
+
+Cette phase doit **réutiliser** les bases existantes plutôt que créer
+un deuxième décodeur d'objets incompatible.
+
+### Décodage des instances
+
+`BestCrush.Network/Protocol/SemanticDecoders.cs` définit déjà :
+
+- `ItemDetailObservation(ItemUid, ItemId, Quantity, Stats)` ;
+- `ItemStatObservation(EffectId, Value)` ;
+- `InventoryQuantityObservation(ItemUid, NewQuantity)` ;
+- `InventoryRemoveObservation(ItemUid)`.
+
+Le détail d'une instance doit distinguer **trois éléments** :
+
+| Champ | Sens | Usage |
+|---|---|---|
+| `ItemId` | Référence d'objet commune aux copies du même type | Recettes, affichage dans les modules métiers |
+| `ItemUid` | Instance/lot concret observé sur le flux | Mises à jour et identification d'équipements distincts |
+| `Quantity` | Nombre possédé dans cette instance/lot | Calcul de ressources disponibles |
+| `Stats` | Effets `EffectId` et valeurs signées propres à l'instance | Évaluation d'un équipement, craft/forgemagie et statistiques |
+
+Les caractéristiques peuvent être absentes ou répétées ; **ne pas
+dédupliquer** les effets par `EffectId`. Un `ItemUid` n'est pas
+l'identifiant du type d'objet et ne doit pas être mélangé avec l'UID
+de cotation d'une annonce HDV.
+
+`Tests.BestCrush/Network/ItemDecoderTest.cs` contient déjà des
+scénarios `kdb`/`isa` (enveloppe objet, UID, ID, quantité, stats
+avec valeurs négatives et répétées), `iuq` (sortie craft),
+`kbu` (résultat FM), `isf` (quantité modifiée) et `irz`
+(suppression d'un UID). Ses fixtures sont synthétiques et ne
+valident **pas** à elles seules les opcodes sur Dofus 3 courant.
+
+`Tests.BestCrush/Network/RecentItemDetailsCacheTest.cs` protège
+l'association bornée UID → détail d'objet (LRU et éviction) ;
+**ce cache sert aujourd'hui à la corrélation de concassage, pas à
+un inventaire exhaustif**.
+
+`Tests.BestCrush/Network/DofusNetworkRoutingTest.cs` protège le
+routage d'objets `kdb/isa/iuq/kbu`, le couplage actuel
+`kch → kag` (instance → équipement concassé), la séparation
+de deux connexions et le refus de recycler un même UID sur un autre
+client. `kch/kag` sont corroborés par des observations réelles
+(11/10/2026), contrairement aux autres routes historiques.
+
+### Modèle temporaire des personnages, non alimenté en production
+
+`BestCrush/Services/CurrentCharacterState.cs` contient déjà
+`CharacterInventoryItem(ItemId, InstanceUid, Quantity)` et des
+champs distincts `Inventory`, `BankInventory`, `PocketKamas`,
+`BankKamas`. Il ne conserve **pas encore les `Stats`** au
+niveau de `CharacterInventoryItem`.
+
+`Tests.BestCrush/Network/CharacterSessionStateTest.cs` vérifie :
+
+- stocks des personnages A et B indépendants ;
+- inventaire inconnu (`null`) distinct d'un inventaire observé
+  vide (`[]`) ;
+- refus des valeurs négatives, des connexions étrangères
+  et des messages tardifs ;
+- purge des montants et stocks lors d'une nouvelle connexion.
+
+**Cette couche ne reçoit pas aujourd'hui de snapshots d'inventaire
+réseau vérifiés.** Elle est un prototype de stockage temporaire,
+pas la preuve que le solde ou la banque sont synchronisés.
+
+### Craft : données attendues et limite actuelle
+
+`BestCrush.Domain/Services/CraftCostService.cs` utilise
+actuellement les recettes et les observations de prix du marché ;
+`Tests.BestCrush/CraftCostServiceTest.cs` valide le coût minimal
+par lots x1/x10/x100, y compris les équipements ingrédients,
+sans consulter le stock possédé.
+
+L'intégration future devra exposer au calculateur de craft un **snapshot
+de stock en lecture seule** (séparé du détail de fiche) avec :
+
+- `ownedInventory` et `ownedBank` par `ItemId`, sans détruire
+  les lignes d'équipements par `ItemUid` et `Stats` ;
+- `required`, `available`, `missingToBuy`, calculés seulement
+  sur des stocks réellement connus ;
+- un choix explicite d'inclure la banque ou non, car un objet en banque
+  n'est pas immédiatement dans l'inventaire du personnage ;
+- le coût de **ce qui reste à acheter**, sans modifier les règles
+  de prix, la combinaison optimale de lots ni les observations SQLite.
+
+L'inventaire personnel est rattaché à une fenêtre/connexion validée ;
+l'éventuelle mutualisation de la banque entre plusieurs personnages
+requiert toujours une **preuve distincte de compte + serveur** (P3c).
+Ne pas inférer qu'une banque inconnue est vide ou partagée.
 
 ## Phase 1 : localisation d'opcodes sans toucher au programme
 
@@ -47,10 +159,20 @@ session de capture neuve ; ne pas activer d'autres modes de recherche.
 3. Effectuer une action bénigne **qui modifie réellement les kamas en
    poche** (par exemple achat d'un objet bon marché), attendre le
    rafraîchissement de l'inventaire et noter l'heure de l'action.
-4. Ouvrir l'interface de banque, sans changer de compte ni de
+4. Dans l'inventaire personnel, ajouter un objet (ramassage
+   ou fabrication) puis retirer ou consommer un objet, en notant
+   les heures : identifier ajout, quantité et suppression séparément.
+   Choisir si possible une ressource empilable et un équipement
+   porteur de caractéristiques.
+5. Ouvrir l'interface de banque, sans changer de compte ni de
    personnage. Noter l'heure de l'ouverture. Si possible, effectuer
    un petit dépôt de kamas contrôlé, puis noter l'heure.
-5. Arrêter le probe par `Ctrl+C`.
+6. Déplacer une petite pile de ressources inventaire → banque,
+   puis banque → inventaire. Vérifier l'impact sur **les deux**
+   conteneurs ; une mise à jour ne vaut pas snapshot intégral.
+7. Fermer la banque et refaire une action d'inventaire pour vérifier
+   que son flux n'est pas attribué par erreur à la banque.
+8. Arrêter le probe par `Ctrl+C`.
 
 Comparer les séries de messages **S→C**, par session et par tranche
 horaire. L'identification d'un opcode fréquent pendant l'action n'est
@@ -73,6 +195,14 @@ capture affichant des informations privées. Ne pas activer `--all`.
 
 - Démontrer un champ numérique de solde par comparaison locale avant /
   après, puis par au moins un second changement de solde indépendant.
+- Caractériser le **snapshot complet** de l'inventaire et celui de la
+  banque ; ne pas construire une liste complète à partir de seuls
+  ajouts ou d'un cache LRU d'objets.
+- Vérifier séparément l'ID du type, l'UID d'instance, la quantité et
+  la structure d'effets; conserver les caractéristiques des équipements.
+- Appliquer les deltas quantité/suppression seulement après le
+  snapshot fiable de **leur** conteneur, et conserver la cohérence
+  après dépôt/retrait banque et crafting.
 - Identifier la provenance et le type de chaque message (Game S→C
   du client correct ; banque distincte du portefeuille).
 - N'accepter qu'un message associé au **bail TCP Game + fenêtre +
@@ -93,6 +223,10 @@ capture affichant des informations privées. Ne pas activer `--all`.
 
 ## État
 
-**P3d.5.0 : protocole d'observation préparé, aucun opcode de richesse
-prouvé et aucun solde affiché automatiquement.** La phase suivante sera
-construite à partir des observations contrôlées de l'opérateur.
+**P3d.5.0 : protocole d'observation élargi, aucun opcode de
+richesse ni de snapshot complet inventaire/banque validé.**
+Aucun nouveau solde ni item n'est affiché ou utilisé dans le craft.
+Les décodeurs unitaires existants restent réutilisables sous
+réserve de vérification sur la version courante de Dofus.
+La phase suivante sera construite à partir des observations
+contrôlées de l'opérateur.
