@@ -6,8 +6,16 @@
         <div class="sheet-portrait">
             <img src="img/character-portrait-placeholder.svg"
                  width="104" height="126"
-                 alt="Portrait fantasy générique, illustration du personnage indisponible"
+                 alt="Portrait générique si la tête de classe locale est indisponible"
                  loading="lazy" />
+            @if (DofusLocalArtwork.ClassPortrait(ClassName) is { } portraitPath &&
+                 !_missingArtPaths.Contains(portraitPath))
+            {
+                <img class="sheet-portrait-local" src="@portraitPath"
+                     alt="@($"Portrait générique de la classe {ClassName}")"
+                     width="104" height="126" loading="lazy"
+                     @onerror="() => MarkMissingArtwork(portraitPath)" />
+            }
             <span class="sheet-portrait-class" aria-hidden="true">@ClassInitial</span>
         </div>
         <div class="sheet-headline">
@@ -70,7 +78,16 @@
                         .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase))
                     {
                         <div class="sheet-job" @key="job.Name">
-                            <span class="sheet-job-icon" aria-hidden="true">@ProfessionIcon(job.Name)</span>
+                            <span class="sheet-job-icon" aria-hidden="true">
+                                <span>@ProfessionIcon(job.Name)</span>
+                                @if (DofusLocalArtwork.ProfessionIcon(job.Name) is { } jobIcon &&
+                                     !_missingArtPaths.Contains(jobIcon))
+                                {
+                                    <img class="sheet-job-art" src="@jobIcon" alt=""
+                                         width="36" height="36" loading="lazy"
+                                         @onerror="() => MarkMissingArtwork(jobIcon)" />
+                                }
+                            </span>
                             <div class="sheet-job-content">
                                 <div class="sheet-job-head">
                                     <strong class="sheet-job-name">@job.Name</strong>
@@ -141,6 +158,10 @@
 </article>
 
 @code {
+    private readonly HashSet<string> _missingArtPaths = new(StringComparer.Ordinal);
+
+    private void MarkMissingArtwork(string path) => _missingArtPaths.Add(path);
+
     [Parameter, EditorRequired] public string DisplayName { get; set; } = "Personnage";
     [Parameter] public string? ClassName { get; set; }
     [Parameter] public int? Level { get; set; }
