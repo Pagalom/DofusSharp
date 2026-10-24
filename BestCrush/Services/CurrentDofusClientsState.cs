@@ -55,6 +55,7 @@ public sealed class CurrentDofusClientsState
     private IReadOnlyList<DofusClientWindow> _clients = [];
     private DofusClientWindowKey? _selected;
     private DofusClientWindowKey? _lastDofusForeground;
+    private bool _awaitingForegroundAfterBrowse;
 
     public event Action? Changed;
 
@@ -80,6 +81,18 @@ public sealed class CurrentDofusClientsState
                     ? _clients.FirstOrDefault(client => client.Key == key)
                     : null;
         }
+    }
+
+    /// <summary>
+    /// A server-browsing click necessarily took focus to BestCrush. The
+    /// one-second polling loop may not have observed that short transition.
+    /// Treat the next Dofus foreground as a new activation even if the
+    /// previous sampled state still marked the same window foreground.
+    /// </summary>
+    public void ExpectGameActivationAfterBrowsing()
+    {
+        lock (_sync)
+            _awaitingForegroundAfterBrowse = true;
     }
 
     public bool SelectWindow(DofusClientWindowKey key)
@@ -147,11 +160,14 @@ public sealed class CurrentDofusClientsState
             {
                 bool wasSameForeground = _clients.Any(client =>
                     client.Key == focused && client.IsForeground);
-                if (!wasSameForeground)
+                if (!wasSameForeground || _awaitingForegroundAfterBrowse)
                     activated = focused;
 
-                if (_lastDofusForeground != focused || !wasSameForeground)
+                if (_lastDofusForeground != focused ||
+                    !wasSameForeground || _awaitingForegroundAfterBrowse)
                     _selected = focused;
+
+                _awaitingForegroundAfterBrowse = false;
                 _lastDofusForeground = focused;
             }
             else if (_lastDofusForeground is { } prior && !seen.Contains(prior))
