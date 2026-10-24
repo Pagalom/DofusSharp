@@ -6,6 +6,7 @@
 @inject CurrentCandidateWindowCardsState CurrentCandidateWindowCardsState
 @inject CurrentDofusClientsState CurrentDofusClientsState
 @inject WindowServerAttributionState WindowServerAttributionState
+@inject ServerViewFilterState ViewFilter
 
 <div class="character-profile-page container-fluid px-1 px-md-3 py-4">
     @{
@@ -58,6 +59,7 @@
                                         ServerId="@WindowServerAttributionState.ForWindow(client.Key)?.ServerId"
                                         IsExperimental="true"
                                         IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
+                                        IsBrowsingManually="@ViewFilter.IsBrowsingManually"
                                         OnSelect="@(() => SelectDofusClient(client.Key))" />
                 }
                 @foreach (DofusClientWindow client in serverLinkedWithoutRoster)
@@ -70,6 +72,7 @@
                                         ServerId="@WindowServerAttributionState.ForWindow(client.Key)?.ServerId"
                                         IsExperimental="true"
                                         IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
+                                        IsBrowsingManually="@ViewFilter.IsBrowsingManually"
                                         OnSelect="@(() => SelectDofusClient(client.Key))" />
                 }
             </div>
@@ -99,6 +102,7 @@
                                         BankKamas="@character.BankKamas"
                                         Professions="@CurrentAccountProfessionsState.ForCharacter(character)?.Professions"
                                         IsSelected="@(CurrentCharacterState.ActiveCharacterKey == character.Key)"
+                                        IsBrowsingManually="@ViewFilter.IsBrowsingManually"
                                         OnSelect="@(() => SelectCharacter(character.Key))" />
                 }
             </div>
@@ -160,6 +164,7 @@
         CurrentCandidateWindowCardsState.Changed += OnCharacterChanged;
         CurrentDofusClientsState.Changed += OnCharacterChanged;
         WindowServerAttributionState.Changed += OnCharacterChanged;
+        ViewFilter.Changed += OnCharacterChanged;
     }
 
     private void SelectDofusClient(DofusClientWindowKey key)
@@ -181,5 +186,6 @@
         CurrentCandidateWindowCardsState.Changed -= OnCharacterChanged;
         CurrentDofusClientsState.Changed -= OnCharacterChanged;
         WindowServerAttributionState.Changed -= OnCharacterChanged;
+        ViewFilter.Changed -= OnCharacterChanged;
     }
 }
