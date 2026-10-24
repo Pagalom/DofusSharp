@@ -124,3 +124,17 @@
     border-radius: 50%;
     background: #bb8241;
 }
+
+
+/* Class head pictures are bundled under wwwroot and never fetched remotely. */
+.character-avatar { overflow: visible; }
+.character-avatar img.character-avatar-local {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border-radius: .32rem;
+    object-fit: cover;
+    display: block;
+}
+.character-avatar-initial { z-index: 1; }
