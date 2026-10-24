@@ -12,6 +12,8 @@ public sealed class ServerViewFilterState
     private bool _browsingManually;
     private DofusClientWindowKey? _targetWindow;
 
+    public event Action? Changed;
+
     public string? ServerName => _serverName;
     public bool IsBrowsingManually => _browsingManually;
     public DofusClientWindowKey? TargetWindow => _targetWindow;
@@ -25,6 +27,7 @@ public sealed class ServerViewFilterState
             !string.Equals(_serverName, serverName, StringComparison.OrdinalIgnoreCase);
         _browsingManually = true;
         _serverName = serverName;
+        if (changed) Changed?.Invoke();
         return changed;
     }
 
@@ -39,6 +42,7 @@ public sealed class ServerViewFilterState
         _browsingManually = false;
         _targetWindow = window;
         _serverName = networkServer;
+        if (changed) Changed?.Invoke();
         return changed;
     }
 
