@@ -31,6 +31,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-compare");
     Console.WriteLine("Pour verifier si f10 est stable sur deux objets aux jets differents :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-type-study");
+    Console.WriteLine("Pour comparer f10 aux EffectId du catalogue DofusDb sur deux Kwaks (connexion API) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-dofusdb-study");
     Console.WriteLine("Pour voir les structures de champs des messages de connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --character-shape");
     Console.WriteLine("  (option) --shape-keys irl,ico,jei,isr");
@@ -209,13 +211,13 @@ else if (options.CharacterScan)
         : options.CharacterShape
             ? "Mode P1b : formes protobuf uniquement pour les opcodes ciblés ; aucune valeur enregistrée."
         : options.ItemEffectsShape || options.ItemEffectsCompare ||
-          options.ItemEffectsTypeStudy
+          options.ItemEffectsTypeStudy || options.ItemEffectsDofusDbStudy
             ? "Mode P3d.5 : structures internes f7 sur iqx/iqz/kch uniquement, valeurs et UID masqués."
             : "Mode P1a : métadonnées uniquement, flux TCP isolés, aucun payload enregistré.");
     if (options.CharacterShape)
         Console.WriteLine("Op codes ciblés : " + string.Join(", ", options.ShapeKeys.OrderBy(x => x)));
     if (options.ItemEffectsShape || options.ItemEffectsCompare ||
-        options.ItemEffectsTypeStudy)
+        options.ItemEffectsTypeStudy || options.ItemEffectsDofusDbStudy)
         Console.WriteLine("P3d.5 : capture un seul client ; affiche seulement les formes f7 et, si demandé, les champs correspondants, jamais les valeurs. Aucun contenu enregistré.");
     if (options.ProfessionFlow)
         Console.WriteLine("Étude P3a en RAM seulement ; aucune référence privée, compte/serveur et mapping NON vérifiés.");
@@ -453,6 +455,19 @@ if (options.ItemEffectsTypeStudy)
         return;
     }
     Console.WriteLine("References en RAM uniquement. Capturer les deux objets dans UNE meme session TCP, dans l'ordre de votre choix.");
+}
+
+ItemEffectDofusDbCatalogStudy? effectCatalogStudy = null;
+if (options.ItemEffectsDofusDbStudy)
+{
+    Console.WriteLine("P3d.5 : chargement des deux fiches publiques DofusDb (sans donnees de personnage)...");
+    effectCatalogStudy = await DofusDbEffectCatalogReferenceLoader.TryLoadAsync();
+    if (effectCatalogStudy is null)
+    {
+        Console.WriteLine("DOFUSDB=[catalogue-indisponible-ou-incompatible] : aucun diagnostic de correspondance lance.");
+        return;
+    }
+    Console.WriteLine("DOFUSDB=[catalogue-charge] : comparateur de f10 pret pour Kwakanneau A / Kwakture B. Version du catalogue non verifiee.");
 }
 
 using ManualResetEventSlim stop = new(false);
@@ -855,9 +870,10 @@ else if (options.CharacterScan)
         identityPairStudy,
         crossOpcodeStudy,
         itemEffectsShape: options.ItemEffectsShape || options.ItemEffectsCompare ||
-            options.ItemEffectsTypeStudy,
+            options.ItemEffectsTypeStudy || options.ItemEffectsDofusDbStudy,
         expectedEffectValues: expectedEffectValues,
-        effectTypeStudy: effectTypeStudy);
+        effectTypeStudy: effectTypeStudy,
+        effectCatalogStudy: effectCatalogStudy);
 
     probe.Start();
     if (options.IdentityPair)
@@ -1028,7 +1044,8 @@ internal sealed record ProbeOptions(
     bool ConcurrentRosterWindowStudy,
     bool ItemEffectsShape,
     bool ItemEffectsCompare,
-    bool ItemEffectsTypeStudy)
+    bool ItemEffectsTypeStudy,
+    bool ItemEffectsDofusDbStudy)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -1054,6 +1071,7 @@ internal sealed record ProbeOptions(
         bool itemEffectsShape = false;
         bool itemEffectsCompare = false;
         bool itemEffectsTypeStudy = false;
+        bool itemEffectsDofusDbStudy = false;
         bool professionMatch = false;
         bool professionDecode = false;
         bool professionStudy = false;
@@ -1114,6 +1132,9 @@ internal sealed record ProbeOptions(
                     break;
                 case "--item-effects-type-study":
                     itemEffectsTypeStudy = true;
+                    break;
+                case "--item-effects-dofusdb-study":
+                    itemEffectsDofusDbStudy = true;
                     break;
                 case "--profession-match":
                     professionMatch = true;
@@ -1235,6 +1256,7 @@ internal sealed record ProbeOptions(
             (characterShape ? 1 : 0) + (itemEffectsShape ? 1 : 0) +
             (itemEffectsCompare ? 1 : 0) +
             (itemEffectsTypeStudy ? 1 : 0) +
+            (itemEffectsDofusDbStudy ? 1 : 0) +
             (identityName ? 1 : 0) +
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
@@ -1267,7 +1289,8 @@ internal sealed record ProbeOptions(
         return new ProbeOptions(
             device, port, all, list,
             characterScan || characterShape || itemEffectsShape ||
-                itemEffectsCompare || itemEffectsTypeStudy || professionMatch ||
+                itemEffectsCompare || itemEffectsTypeStudy ||
+                itemEffectsDofusDbStudy || professionMatch ||
                 professionDecode || professionStudy || professionIdentify ||
                 professionFlow || professionContinuity || professionXpStudy ||
                 professionJobStudy || identityName || identityFields ||
@@ -1283,6 +1306,7 @@ internal sealed record ProbeOptions(
             connectionSelectionStudy, expectedClassId, accountWireStudy,
             accountRosterStudy, concurrentRosterStudy,
             concurrentRosterWindowStudy, itemEffectsShape,
-            itemEffectsCompare, itemEffectsTypeStudy);
+            itemEffectsCompare, itemEffectsTypeStudy,
+            itemEffectsDofusDbStudy);
     }
 }
