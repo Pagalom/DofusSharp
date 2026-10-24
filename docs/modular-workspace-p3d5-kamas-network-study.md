@@ -288,3 +288,67 @@ Le compteur complet des champs **racine** sera distinct des
 des objets ni des montants de Kamas.
 
 **Aucune modification du routeur métier, des vues, ni de SQLite.**
+
+## P3d.5.2 — Deuxième relevé réel : formes uniquement (24/10/2026)
+
+L'opérateur a relancé un unique client sur l'interface Npcap 3 avec
+`--character-shape --shape-keys mdp,ica,irl,ico,jei,isr`. Capture
+locale à 05:17, horodatages des messages en UTC (Europe/Paris UTC+2).
+Tous les messages ci-dessous proviennent de la **session TCP #2 S→C**.
+
+| Heure UTC | Opcode | Octets | Champs racine | Formes imbriquées échantillonnées |
+|---|---|---:|---|---|
+| 03:17:03.488 | `mdp` | 5857 | `1:lenx494` | `?1.1:vx3 ?1.2:vx3` |
+| 03:17:03.496 | `ica` | 2475 | `2:len 5:lenx173 6:lenx43` | `?5.1:vx3 ?5.2:vx3 ?6.1:vx3 ?6.3:lenx3` |
+| 03:17:03.496 | `irl` | 12495 | `2:lenx503 4:v` | `?2.1:lenx3 ?2.4:vx3` |
+| 03:17:03.505 | `ico` | 26472 | `2:lenx170` | `?2.1:vx3 ?2.2:vx3 ?2.3:lenx3 ?2.4:lenx3 ?2.5:lenx3` |
+| 03:17:03.505 | `jei` | 6002 | `1:lenx88` | `?1.3:vx3 ?1.4:lenx3` |
+| 03:17:05.298 | `isr` | 79574 | `3:lenx8806` | `?3.1:vx3 ?3.2:vx3` |
+
+L'opérateur déclare avoir ouvert son inventaire « à 5h17 »,
+**sans secondes**. Cette indication situe l'ouverture dans la même
+minute que la rafale initiale, sans permettre d'attribuer l'un
+de ces messages à l'ouverture de l'interface.
+
+**Interprétation limitée aux formes :**
+
+- `ico` présente des objets imbriqués variés, `irl` et `jei`
+  contiennent des collections répétées, `mdp` et `isr` des
+  paires scalaires ; leur sens métier demeure **inconnu**.
+- La présence de 8806 entrées `isr` **ne prouve pas**
+  8806 objets en inventaire ou en banque.
+- Aucun champ n'est validé comme ID, UID, quantité, effet,
+  solde de Kamas ni identifiant de compte.
+- Le mode `--character-shape` déduplique par forme et opcode
+  dans chaque session : une réémission identique peut être masquée.
+  L'absence de nouvelle ligne après l'ouverture ne démontre donc
+  **pas** l'absence de réponse réseau.
+
+### P3d.5.3 — Prochaine étape : différence temporelle contrôlée
+
+Revenir au mode `--character-scan` pour observer **tous**
+les opcodes, sans valeurs :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --character-scan
+```
+
+Depuis un seul client Dofus, lancé **après** le probe :
+
+1. Charger le personnage et attendre **15 secondes sans action**.
+2. Noter une heure avec les **secondes** puis ouvrir l'inventaire.
+3. Attendre 5 secondes, le fermer, attendre 5 secondes, l'ouvrir
+   une deuxième fois et noter de nouveau l'heure avec les secondes.
+4. Après 5 secondes, arrêter (`Ctrl+C`).
+
+Partager seulement les lignes **S→C/C→S** des périodes de repos
+et d'ouverture, et deux heures d'action ; aucun PCAP ni valeur.
+Un clic inventaire peut ne générer **aucun trafic** si le
+jeu possède déjà le snapshot en cache. Ne jamais déclarer
+un opcode « inventaire » à partir de sa seule proximité temporelle.
+Si les deux ouvertures ne produisent rien de distinct, comparer
+dans une phase ultérieure une modification réelle de pile d'objet,
+puis l'ouverture et les transferts de banque.
+
+**Statut : caractérisation structurale confirmée ; sémantique
+inventaire, banque et Kamas toujours non validée.**
