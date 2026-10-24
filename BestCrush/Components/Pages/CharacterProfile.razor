@@ -3,6 +3,7 @@
 @using BestCrush.Services
 @inject CurrentCharacterState CurrentCharacterState
 @inject CurrentAccountProfessionsState CurrentAccountProfessionsState
+@inject CurrentWindowProfessionsState CurrentWindowProfessionsState
 @inject CurrentCandidateWindowCardsState CurrentCandidateWindowCardsState
 @inject CurrentDofusClientsState CurrentDofusClientsState
 @inject WindowServerAttributionState WindowServerAttributionState
@@ -57,6 +58,8 @@
                                         Level="@candidate.SelectedLevelCandidate"
                                         ServerName="@WindowServerAttributionState.ForWindow(client.Key)?.ServerName"
                                         ServerId="@WindowServerAttributionState.ForWindow(client.Key)?.ServerId"
+                                        Professions="@CurrentWindowProfessionsState.ForWindow(client.Key)"
+                                        ProfessionsAreProvisional="true"
                                         IsExperimental="true"
                                         IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
                                         IsBrowsingManually="@ViewFilter.IsBrowsingManually"
@@ -70,6 +73,8 @@
                                         Level="@WindowServerAttributionState.SelectedLevelCandidate(client.Key)"
                                         ServerName="@WindowServerAttributionState.ForWindow(client.Key)?.ServerName"
                                         ServerId="@WindowServerAttributionState.ForWindow(client.Key)?.ServerId"
+                                        Professions="@CurrentWindowProfessionsState.ForWindow(client.Key)"
+                                        ProfessionsAreProvisional="true"
                                         IsExperimental="true"
                                         IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
                                         IsBrowsingManually="@ViewFilter.IsBrowsingManually"
@@ -100,7 +105,8 @@
                                         ServerName="@character.Key.ServerName"
                                         PocketKamas="@character.PocketKamas"
                                         BankKamas="@character.BankKamas"
-                                        Professions="@CurrentAccountProfessionsState.ForCharacter(character)?.Professions"
+                                        Professions="@(CurrentAccountProfessionsState.ForCharacter(character)?.Professions ?? CurrentWindowProfessionsState.ForWindow(CurrentCharacterState.WindowForCharacter(character.Key)))"
+                                        ProfessionsAreProvisional="@(CurrentAccountProfessionsState.ForCharacter(character) is null)"
                                         IsSelected="@(CurrentCharacterState.ActiveCharacterKey == character.Key)"
                                         IsBrowsingManually="@ViewFilter.IsBrowsingManually"
                                         OnSelect="@(() => SelectCharacter(character.Key))" />
@@ -161,6 +167,7 @@
     protected override void OnInitialized()
     {
         CurrentCharacterState.Changed += OnCharacterChanged;
+        CurrentWindowProfessionsState.Changed += OnCharacterChanged;
         CurrentCandidateWindowCardsState.Changed += OnCharacterChanged;
         CurrentDofusClientsState.Changed += OnCharacterChanged;
         WindowServerAttributionState.Changed += OnCharacterChanged;
@@ -183,6 +190,7 @@
     public void Dispose()
     {
         CurrentCharacterState.Changed -= OnCharacterChanged;
+        CurrentWindowProfessionsState.Changed -= OnCharacterChanged;
         CurrentCandidateWindowCardsState.Changed -= OnCharacterChanged;
         CurrentDofusClientsState.Changed -= OnCharacterChanged;
         WindowServerAttributionState.Changed -= OnCharacterChanged;
