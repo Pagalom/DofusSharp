@@ -1417,3 +1417,120 @@ porte réellement des données d'instance).
 
 **Aucun code de production, mapping d'effets,
 SQLite ou UI modifié lors de ce checkpoint de capture.**
+
+## P3d.5.15 — Contrôle f10 commun entre deux équipements
+
+### Référence visuelle — Kwakture de Flammes (24/10/2026)
+
+Infobulle communiquée par l'utilisateur :
+
+- **Kwakture de Flammes**, ceinture niveau **41**, panoplie Kwak de Flammes.
+- **+24 Vitalité**
+- **+26 Intelligence**
+- **+5 % Résistance Feu**
+- **+3 Fuite**
+
+La liste confirme précisément les références `24,26,5,3` de la
+capture P3d.5.14 (`f7[].f5:yes` pour `iqx/iqz`). Le prix
+moyen, le poids, le niveau et les informations de panoplie ne sont
+pas des effets d'instance et ne font pas partie du jeu de références.
+
+### Hypothèse testable sans décoder les codes privés
+
+La **Kwakture** et le **Kwakanneau de Flammes** possèdent
+en commun **Vitalité** et **Intelligence** avec valeurs différentes :
+
+| Type de caractéristique | Kwakanneau A | Kwakture B |
+|---|---:|---:|
+| Vitalité | 99 | 24 |
+| Intelligence | 20 | 26 |
+| Résistance Feu % | 0 (grisée, exclue) | 5 |
+| Fuite | absent | 3 |
+
+L'ancien `DecodeStats` historique utilisait
+`effect.f1` comme type d'effet et `effect.f10` comme valeur,
+mais la **capture actuelle démontre l'inverse concernant la valeur :
+`effect.f5`**, pas `f10`. Le numéro `f10` reste **inconnu**.
+Hypothèse : `f10` identifie le type d'effet, invariant
+sur les deux équipements pour Vitalité et Intelligence.
+
+Un **mode opt-in dédié** a été ajouté :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --item-effects-type-study
+```
+
+Il demande deux lignes locales :
+
+```text
+Objet A : 99,20
+Objet B : 24,26,5,3
+```
+
+**Convention stricte** : A doit contenir toutes ses caractéristiques
+non nulles ; B doit commencer par les caractéristiques communes
+**dans le même ordre**, puis ajouter les siennes. A et B doivent
+avoir des cardinalités différentes, toutes les valeurs au sein
+de chaque objet doivent être distinctes pour l'attribution fiable.
+
+Le diagnostic lit seulement `iqx/iqz/kch` **S→C**, en RAM,
+sur **un même flux TCP/session**. Il associe les entrées `f7[]`
+par leur valeur `f5`, puis vérifie la stabilité du `f10`
+pour chaque paire `99↔24` (Vitalité) et `20↔26`
+(Intelligence). Il ne journalise **jamais** les codes f10,
+les valeurs brutes réseau, les identifiants d'instance,
+le compte, les endpoints ou les payloads.
+
+Exemples de sorties **attendues si l'hypothèse est juste**
+(non encore observées sur le jeu réel) :
+
+```text
+ITEM_EFFECTS=[item=A other=pending]
+ITEM_EFFECTS=[item=B common-f10=[1:yes 2:yes] distinct-f10=yes]
+```
+
+`common-f10=[1:yes 2:yes]` indique que
+les codes des deux effets communs coïncident entre
+équipements malgré leurs jets différents.
+`distinct-f10=yes` exige que les codes soient
+distincts entre effets du même équipement, un garde-fou
+contre une constante systématique. Si un booléen est
+`no`, ne pas normaliser `f10` comme identifiant d'effet
+avant une nouvelle comparaison. Même si tous sont `yes`,
+il s'agit d'une **validation de stabilité**, pas encore
+d'une correspondance formelle vers les IDs publics.
+
+### Checkpoint Windows préalable
+
+Après validation de `git status --short --branch`,
+si les changements locaux ne sont pas recouverts,
+faire `git fetch origin feature/modular-workspace`
+puis `git merge --ff-only FETCH_HEAD`.
+Aucune restauration des modifications locales.
+
+```powershell
+dotnet build .\BestCrush.Network\BestCrush.Network.csproj
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Les nouveaux tests couvrent correspondance stable/non stable,
+messages malformés, codes d'effets égaux à tort, isolation de
+session et absence d'affichage des identifiants. **Ils n'ont pas
+encore été exécutés sur Windows** ; attendre la sortie utilisateur.
+
+### Manipulation manuelle (si checkpoint validé)
+
+La déconnexion complète de Dofus **n'est pas obligatoire**.
+Lancer le probe avant le premier transfert, donner les références
+ci-dessus, **garder le même personnage sur le même flux** et
+transférer **une fois chacun** des deux équipements.
+L'ordre des objets et le sens des mouvements ne changent pas
+le calcul. Si Dofus recrée un flux TCP entre les deux,
+recommencer les deux transferts dans une même session.
+`Ctrl+C` pour terminer puis partager les seuls résumés
+`ITEM_EFFECTS`.
+
+Aucune modification de `SemanticDecoders`, des tables SQLite,
+des stocks, des prix, des filtres multicomptes, des ateliers ou de
+l'affichage des fiches personnages.
