@@ -212,7 +212,6 @@ public sealed class CurrentCharacterState
                 _active = key;
         }
 
-        TargetRequested?.Invoke(key);
         Changed?.Invoke();
         return true;
     }
@@ -253,6 +252,9 @@ public sealed class CurrentCharacterState
             _active = key;
         }
 
+        // Only an explicit character click may terminate manual SQL browsing.
+        // Passive network identity updates must not request UI retargeting.
+        TargetRequested?.Invoke(key);
         Changed?.Invoke();
         return true;
     }
