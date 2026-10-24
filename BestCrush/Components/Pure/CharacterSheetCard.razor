@@ -74,8 +74,7 @@
                     <p class="sheet-origin">Métiers observés sur cette fenêtre Game — noms du référentiel public, compte non vérifié.</p>
                 }
                 <div class="sheet-job-list">
-                    @foreach (AccountProfessionProgress job in Professions
-                        .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase))
+                    @foreach (AccountProfessionProgress job in ProfessionDisplayOrder.ByCumulativeExperience(Professions))
                     {
                         <div class="sheet-job" @key="job.Name">
                             <span class="sheet-job-icon" aria-hidden="true">
