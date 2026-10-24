@@ -8,6 +8,7 @@
 @inject IWorkspacePreferences WorkspacePreferences
 @inject NavigationManager NavigationManager
 @inject BestCrush.Services.CurrentServerState CurrentServerState
+@inject BestCrush.Services.ServerViewFilterState ViewFilter
 @inject BestCrush.Services.CurrentCharacterState CurrentCharacterState
 @inject BestCrush.Services.CurrentDofusClientsState CurrentDofusClientsState
 @inject BestCrush.Services.CurrentCandidateWindowCardsState CurrentCandidateWindowCardsState
@@ -30,7 +31,7 @@
                         data-bs-toggle="dropdown"
                         aria-expanded="false"
                         title="Filtrer les prix, les coefficients et les historiques enregistrés par serveur. Cette sélection ne modifie pas les captures réseau.">
-                    @if (_viewFilter.IsBrowsingManually)
+                    @if (ViewFilter.IsBrowsingManually)
                     {
                         <span>Consulter : @(_currentServer?.Name ?? "Serveur inconnu")</span>
                     }
@@ -47,7 +48,7 @@
                         {
                             <li>
                                 <button type="button"
-                                        class="dropdown-item @(_viewFilter.IsBrowsingManually && string.Equals(_viewFilter.ServerName, server.Name, StringComparison.OrdinalIgnoreCase) ? "active" : null)"
+                                        class="dropdown-item @(ViewFilter.IsBrowsingManually && string.Equals(ViewFilter.ServerName, server.Name, StringComparison.OrdinalIgnoreCase) ? "active" : null)"
                                         @onclick="() => BrowseServer(server)">
                                     @server.Name
                                 </button>
@@ -160,7 +161,7 @@
 
     private IReadOnlyCollection<DofocusServer>? _servers;
     private DofocusServer? _currentServer;
-    private readonly ServerViewFilterState _viewFilter = new();
+
     private CancellationTokenSource? _clientPollingCancellation;
     private Task? _clientPollingTask;
 
@@ -255,7 +256,7 @@
     {
         // A browsing filter is NOT a Dofus server selection. It never
         // changes network owners, capture leases or character profiles.
-        _viewFilter.BrowseServer(server.Name);
+        ViewFilter.BrowseServer(server.Name);
         ApplyDisplayedServer(updateCharacterContext: false);
         GuardLegacyRoute();
     }
@@ -277,7 +278,7 @@
         {
             // Verified identities already include the actual server;
             // never infer it from a character's display name.
-            _viewFilter.FollowWindow(null, key.ServerName);
+            ViewFilter.FollowWindow(null, key.ServerName);
             ApplyDisplayedServer(updateCharacterContext: false);
             GuardLegacyRoute();
             StateHasChanged();
@@ -288,7 +289,7 @@
         if (!CurrentDofusClientsState.Clients.Any(client => client.Key == key))
             return;
 
-        _viewFilter.FollowWindow(
+        ViewFilter.FollowWindow(
             key, WindowServerAttributionState.ForWindow(key)?.ServerName);
         ApplyDisplayedServer(updateCharacterContext: true);
         GuardLegacyRoute();
@@ -312,13 +313,13 @@
 
         // New network observations must not steal a deliberately selected
         // SQL browsing server. An explicit click or game activation does.
-        if (_viewFilter.ReconcileTarget(selected?.Key, serverName))
+        if (ViewFilter.ReconcileTarget(selected?.Key, serverName))
             ApplyDisplayedServer(updateCharacterContext: true);
     }
 
     private void ApplyDisplayedServer(bool updateCharacterContext)
     {
-        string? name = _viewFilter.ServerName;
+        string? name = ViewFilter.ServerName;
         if (!string.Equals(_currentServer?.Name, name,
                 StringComparison.OrdinalIgnoreCase))
         {
