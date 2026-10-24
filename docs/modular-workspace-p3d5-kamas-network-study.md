@@ -1635,3 +1635,143 @@ caractérisation.
 aucune modification de production, de SQLite,
 d'interface ou de schéma de stock effectuée
 à ce checkpoint.
+
+## P3d.5.17 — Comparaison directe avec le catalogue DofusDb
+
+**Objectif :** vérifier avec le moins de captures possible si
+`item.f7[].f10`, stable entre Kwakanneau et Kwakture,
+est un identifiant **numériquement identique** à l'un des
+champs de référence DofusDb :
+`DofusDbItemEffect.EffectId`,
+`.Characteristic` ou `.ElementId`.
+La preuve de stabilité **ne** suffisait **pas** à
+prouver l'égalité numérique avec ces références.
+
+### Implémentation limitée au probe
+
+Nouveau commutateur opt-in :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --item-effects-dofusdb-study
+```
+
+Avant d'activer la capture, le processus récupère à
+travers le client DofusDb **existant dans le dépôt**
+les fiches publiques :
+
+| Alias | Équipement | ID public | Références de valeurs d'instance |
+|---|---|---|---|
+| A | Kwakanneau de Flammes | 2418 | 99,20 |
+| B | Kwakture de Flammes | 2427 | 24,26,5,3 |
+
+Sources d'identification publique des objets :
+https://dafous.app/objet/2418/kwakanneau-de-flammes
+et https://dafous.app/objet/2427/kwakture-de-flammes ;
+ces pages **ne prouvent pas** les identifiants internes
+des effets ni la compatibilité avec le client en cours.
+
+Le programme ne demande ni nom de personnage, ni
+UID, ni données privées à DofusDb : uniquement ces
+deux identifiants d'articles de catalogue.
+`DofusDbClient.Production().Items().GetAsync(...)`
+fait les requêtes, avec délai borné à dix secondes
+et validation du nom français exact des deux objets.
+En cas d'échec, de réponse absente, de nom différent
+ou de données incohérentes, l'outil affiche
+`DOFUSDB=[catalogue-indisponible-ou-incompatible]`
+et **n'exécute pas de capture**. Les références
+de catalogue restent en **RAM**, ne sont ni
+journalisées ni persistées.
+
+Lorsque DofusDb répond :
+
+```text
+DOFUSDB=[catalogue-charge]
+```
+
+Le probe reconnaît `iqx`, `iqz`, `kch`
+par le **multiensemble des valeurs `f5` déjà
+validées** et compare localement leurs `f10`
+avec les trois listes de codes publics.
+Il affiche uniquement, par alias A ou B :
+
+```text
+ITEM_EFFECTS=[item=A f10-vs-dofusdb-effectId=all|partial|none|unknown characteristicId=... elementId=... value-ranges=... catalog-effects=N wire-effects=N catalog-version=unverified]
+```
+
+L'indicateur `value-ranges` n'est qu'un
+contrôle auxiliaire pour les correspondances
+d'IDs d'effets, car le catalogue pourrait
+représenter certaines valeurs dans une autre
+unité et **n'est pas verrouillé sur la version
+du jeu**. Avec un matching incomplet des IDs,
+`value-ranges=incomplete-id-match` empêche
+une conclusion trompeuse. Les effets publics
+absents ou incomplets sont traités comme
+`unknown`, pas comme une preuve négative.
+
+**Protection de confidentialité :** aucun
+`EffectId`, `Characteristic`, `ElementId`,
+`f5`, `f10`, itemUID, payload, compte ou
+endpoint n'est affiché. Seuls les statuts
+d'égalité et les cardinalités sont produits.
+Les plafonds et filtres du probe existant
+restent actifs ; option exclusive, un seul
+client Dofus.
+
+### Checkpoint Windows indispensable
+
+Dans le dépôt `feature/modular-workspace`,
+préserver les modifications locales de
+`DofusSharp.sln`, `.vscode/`, backups et
+fichiers baseline.
+
+```powershell
+git status --short --branch
+git fetch origin feature/modular-workspace
+git diff --name-only HEAD FETCH_HEAD
+```
+
+Si aucun des chemins à modifier par le
+distant ne chevauche des changements locaux :
+
+```powershell
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.Network\BestCrush.Network.csproj
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Ensuite seulement, lancement du nouveau mode
+`--item-effects-dofusdb-study` **sans devoir
+redémarrer Dofus**. Si Dofus est déjà ouvert,
+démarrer le probe avant les transferts ;
+transférer le Kwakanneau puis la Kwakture
+une fois chacun (sens indifférent), puis
+`Ctrl+C`. Partager la sortie de ce mode.
+Le test compare chaque objet indépendamment :
+si seul A ou B apparaît, seule la comparaison
+correspondante est exploitable.
+
+### Garde-fous métier
+
+- `f7[].f5` = valeur : observations réelles
+  P3d.5.13–14 cohérentes.
+- `f7[].f10` = code stable de type :
+  observation réelle P3d.5.16 cohérente.
+- **Égalité numérique** avec l'un des IDs
+  DofusDb : **nouvelle hypothèse à tester**.
+- Catalogue DofusDb potentiellement
+  différent du build actuel de Dofus Unity :
+  un `none` ne suffit **pas** à invalider
+  la nature « identifiant stable de type » ;
+  il peut imposer un mapping de codes distinct.
+
+Aucune modification de `SemanticDecoders`
+en production, du profil protocolaire, des
+stocks (RAM/SQLite), des fiches, des prix,
+du traitement de craft/atelier/HDV, de F7/F8
+ou de la molette. Les nouveaux tests
+synthétiques ne constituent **pas** une
+validation sur Windows ; seuls les résultats
+fournis par l'opérateur peuvent la valider.
