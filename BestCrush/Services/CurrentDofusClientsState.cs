@@ -58,6 +58,14 @@ public sealed class CurrentDofusClientsState
 
     public event Action? Changed;
 
+    // Explicit UI targeting is meaningful even when the same card is clicked
+    // again: it ends temporary SQL browsing. Not proof of a TCP identity.
+    public event Action<DofusClientWindowKey>? TargetRequested;
+
+    // Trigger only on entry to an actual game foreground window, not on
+    // ordinary polling / window-title changes during manual SQL browsing.
+    public event Action<DofusClientWindowKey>? GameActivated;
+
     public IReadOnlyList<DofusClientWindow> Clients
     {
         get { lock (_sync) return _clients; }
@@ -88,6 +96,7 @@ public sealed class CurrentDofusClientsState
             _lastDofusForeground = null;
         }
 
+        TargetRequested?.Invoke(key);
         if (changed)
             Changed?.Invoke();
         return true;
@@ -103,6 +112,7 @@ public sealed class CurrentDofusClientsState
     {
         ArgumentNullException.ThrowIfNull(windows);
         bool changed;
+        DofusClientWindowKey? activated = null;
         lock (_sync)
         {
             DofusClientWindowKey? previousSelected = _selected;
@@ -135,7 +145,12 @@ public sealed class CurrentDofusClientsState
 
             if (foreground is { } focused && seen.Contains(focused))
             {
-                if (_lastDofusForeground != focused)
+                bool wasSameForeground = _clients.Any(client =>
+                    client.Key == focused && client.IsForeground);
+                if (!wasSameForeground)
+                    activated = focused;
+
+                if (_lastDofusForeground != focused || !wasSameForeground)
                     _selected = focused;
                 _lastDofusForeground = focused;
             }
@@ -148,6 +163,8 @@ public sealed class CurrentDofusClientsState
             changed = previousSelected != _selected || !_clients.SequenceEqual(next);
             _clients = next.ToArray();
         }
+        if (activated is { } window)
+            GameActivated?.Invoke(window);
         if (changed)
             Changed?.Invoke();
     }
