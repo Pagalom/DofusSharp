@@ -1119,3 +1119,110 @@ client actuel n'est pas contrôlée.
 
 **Aucune implémentation de stock ou d'effets
 activée en production dans P3d.5.11.**
+
+## P3d.5.12 — Structure f7 et protocole de comparaison des valeurs (24/10/2026)
+
+### Capture réelle — Kwakanneau de Flammes
+
+Après validation Windows des deux projets réseau et de **1248 tests
+réussis / 0 échec** (état **antérieur** aux ajouts de comparaison
+décrits ci-dessous), un probe
+`--item-effects-shape` a produit :
+
+```text
+[21:30:25.216 UTC] Session #1 S→C iqx 28 octets ITEM_EFFECTS=[effects=2 wire-shapes=[root=[10:v 5:v]x2]]
+[21:30:36.321 UTC] Session #1 S→C iqz 27 octets ITEM_EFFECTS=[effects=2 wire-shapes=[root=[10:v 5:v]x2]]
+```
+
+Le même anneau affichait **99 Vitalité**, **20 Intelligence**
+et une ligne de **0 % Résistance Feu** grisée.
+
+**Confirmé structurellement :**
+deux sous-messages `item.f7[]` par transfert ;
+chacun comporte les champs protobuf
+`f5:varint` et `f10:varint` ;
+les formes sont identiques en `iqx` (banque→inventaire)
+et `iqz` (inventaire→banque).
+
+**Hypothèse de mapping, non encore vérifiée par la valeur :**
+`f7[].f10` pourrait porter la **valeur de l'effet**
+(comme le champ `f10` de l'ancien `DecodeStats`),
+et `f7[].f5` son **identifiant d'effet**. Le format
+historique canonique utilisait `f1=effectId`,
+`f10=value` ; si confirmé, le remapping serait
+`f5→canonical.f1`, `f10→canonical.f10`.
+Le simple nombre de champs/leur forme ne prouve PAS
+les valeurs 99 et 20 ni la sémantique de f5.
+
+### Nouveau diagnostic anonyme à référence locale
+
+Afin d'éviter un dump privé et plusieurs captures
+inutiles, le mode exclusif
+`--item-effects-compare` a été ajouté sur
+`feature/modular-workspace`.
+
+- Il demande localement **1 à 16 entiers séparés
+  par des virgules** avant d'ouvrir le probe.
+- Ces nombres sont uniquement conservés en RAM
+  le temps de la session du processus.
+- Sur `iqx/iqz/kch` S→C ayant une instance candidate,
+  il compare sans ordre (multiensemble, y compris
+  doublons) les champs `f5` et `f10` des
+  `f7[]` avec les références saisies.
+- Il affiche seulement `match=[f5:yes/no/... f10:yes/no/...]`,
+  le nombre d'effets et les **types de champs** ;
+  il n'affiche ni références, ni valeurs du paquet,
+  ni UID ni ItemId. `incomplete` et `unrecognized`
+  sont explicitement distincts de `no`.
+- Nécessite l'option explicite ; le mode normal reste
+  inchangé. Bornes d'origine préservées
+  (4 Kio message, 1 Kio par effet, 64 effets,
+  24 rapports/session), isolation par flux.
+
+Des tests C# **synthétiques** ont été ajoutés pour
+le matching sur `f10`, l'ordre, les doublons,
+les entiers signés, les champs absents et les
+invariants de confidentialité / opt-in. Ces nouveaux
+tests et la compilation **restent à valider sur
+Windows** ; ne pas présenter les 1248 tests
+précédents comme couvrant le nouveau code.
+
+### Test suivant, après checkpoint Windows
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.Network\BestCrush.Network.csproj
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Si ces vérifications passent :
+fermer Dofus, démarrer
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --item-effects-compare
+```
+
+Quand le probe demande des références, taper **`99,20`**,
+puis connecter **un seul** client, ouvrir la banque
+et transférer le **Kwakanneau de Flammes** dans
+chaque sens, avec au moins cinq secondes entre
+les actions. Attendre `iqx` et `iqz`, puis
+`Ctrl+C`. Partager uniquement les
+`ITEM_EFFECTS=[...]`, pas les données réseau.
+
+**Critère positif prioritaire :**
+`effects=2 ... match=[f5:no f10:yes]`
+sur les deux directions, ce qui corroborerait
+la correspondance `f10=valeur`, mais **ne
+validerait pas à lui seul** `f5=effectId`.
+Tester ensuite indépendamment un second
+équipement doté d'autres valeurs d'effets.
+Les champs inconnus ne sont pas mappés
+en production avant la validation croisée.
+
+Cette étape ne touche **ni** au décodage
+métier de `kch/kag` ou des prix HDV
+**ni** au stock SQLite, aux ateliers, à
+la molette, à F7/F8, ou au serveur choisi.
