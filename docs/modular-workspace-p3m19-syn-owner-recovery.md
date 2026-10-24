@@ -71,6 +71,29 @@ Le test de retour à l'écran de serveur puis de reconnexion de **Pagalom** a é
 
 **Non encore validé :** deux serveurs différents simultanément, écritures économiques des deux fenêtres dans SQLite, latences et cas limites de reconnexion, tests Windows automatisés après P3m.19 (aucun nouveau total communiqué dans ce message). Ne pas confondre confirmation d'association affichée et validation de persistance économique.
 
+## Retour terrain — 24 octobre 2026, deux serveurs distincts
+
+Nouvelle capture utilisateur, BestCrush v0.2.0, avec deux fenêtres actives et **deux personnages portant exactement le même nom** :
+
+| Fenêtre | Personnage | Classe | Niveau | Serveur | ServerId |
+| --- | --- | --- | ---: | --- | ---: |
+| 1 | Pagalom | Eniripsa | 38 | Tylezia | 293 |
+| 2 | Pagalom | Ecaflip | 182 | Kourial | 355 |
+
+Les deux fiches montrent simultanément leur propre attribution serveur (association expérimentale). Cela confirme que le nom du personnage n'est pas utilisé comme identifiant unique pour choisir le serveur.
+
+Diagnostic agrégé affiché :
+```text
+sélections reçues=3 propriétaire TCP identifié=3 propriétaire introuvable=0
+preuves TCP à l'ouverture=6 preuves réutilisées=3
+chargements avec sélection=3 chargements sans sélection=0
+associations confirmées=2
+```
+
+**Confirmé en essai réel :** identification simultanée de deux fenêtres Dofus sur des serveurs différents, avec homonymie de personnages ; aucune des trois sélections ne manque de propriétaire TCP. Les deux associations affichées sont confirmées. Le compteur `3 chargements avec sélection / 2 associations confirmées` montre qu'un chargement additionnel n'a pas abouti à une confirmation comptabilisée ; la cause n'est pas établie et doit être surveillée.
+
+**Non confirmé par la capture :** l'isolement réel des écritures SQLite par serveur, le basculement de contexte du bandeau après ciblage successif des fenêtres, la pérennité sous reconnexions répétées de deux serveurs et le succès d'un nouveau build/test complet. Ces vérifications restent nécessaires avant release.
+
 ## Contrôle Windows à effectuer
 
 Les tests étaient à **1149 attendus** à l'issue du correctif P3m.18, mais le résultat n'a pas encore été transmis. P3m.19 ajoute **15 cas nouveaux** (9 faits + 6 théories). **1164 tests attendus**, à confirmer sur Windows ; aucun build ni essai Dofus ne sont déclarés réussis par anticipation.
