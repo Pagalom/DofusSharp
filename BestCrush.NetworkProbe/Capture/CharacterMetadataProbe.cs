@@ -40,7 +40,8 @@ internal sealed class CharacterMetadataProbe(
     CharacterRosterContinuityStudy? rosterStudy = null,
     ConcurrentCharacterRosterStudy? concurrentRosterStudy = null,
     ConcurrentRosterWindowEvidenceStudy? windowEvidenceStudy = null,
-    bool itemEffectsShape = false) : IDisposable
+    bool itemEffectsShape = false,
+    IReadOnlyList<long>? expectedEffectValues = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
@@ -82,7 +83,8 @@ internal sealed class CharacterMetadataProbe(
         accountWireStudy: accountWireStudy,
         rosterStudy: rosterStudy,
         concurrentRosterStudy: concurrentRosterStudy,
-        itemEffectsShape: itemEffectsShape);
+        itemEffectsShape: itemEffectsShape,
+        expectedEffectValues: expectedEffectValues);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _itemEffectsShapeMode = itemEffectsShape;
     private readonly Dictionary<int, int> _reportedEffectLines = new();
