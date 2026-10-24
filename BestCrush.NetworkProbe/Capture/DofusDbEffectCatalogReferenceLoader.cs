@@ -60,7 +60,8 @@ internal static class DofusDbEffectCatalogReferenceLoader
 
         ItemCatalogEffectReference[] effects = item.Effects
             .Select(e => new ItemCatalogEffectReference(
-                checked((ulong)e.EffectId!.Value), e.From, e.To))
+                checked((ulong)e.EffectId!.Value), e.From, e.To,
+                e.Characteristic, e.ElementId))
             .ToArray();
         return new ItemCatalogCandidateReference(label, values, effects);
     }
