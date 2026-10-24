@@ -314,9 +314,24 @@
     private void OnVerifiedCharacterTargetRequested(CharacterKey key) =>
         _ = InvokeAsync(() =>
         {
-            // Verified identities already include the actual server;
-            // never infer it from a character's display name.
-            ViewFilter.FollowWindow(null, key.ServerName);
+            // Prefer an independently verified Windows binding to a name.
+            // It also targets the same client in the avatar strip.
+            DofusClientWindowKey? window =
+                CurrentCharacterState.WindowForCharacter(key);
+            if (window is { } verified &&
+                CurrentDofusClientsState.SelectWindow(verified))
+            {
+                ViewFilter.FollowWindow(verified,
+                    WindowServerAttributionState.ForWindow(verified)?.ServerName ??
+                    key.ServerName);
+            }
+            else
+            {
+                // A verified CharacterKey includes its server identity;
+                // no association is inferred from a display name.
+                ViewFilter.FollowWindow(null, key.ServerName);
+            }
+
             ApplyDisplayedServer(updateCharacterContext: false);
             GuardLegacyRoute();
             StateHasChanged();
