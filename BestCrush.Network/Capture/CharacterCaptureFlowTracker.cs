@@ -77,6 +77,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly TimeSpan _idleTimeout;
     private readonly HashSet<string> _shapeKeys;
     private readonly bool _itemEffectsShape;
+    private readonly IReadOnlyList<long>? _expectedEffectValues;
     private readonly IReadOnlyList<ProfessionReference>? _professionReferences;
     private readonly bool _decodeIpz;
     private readonly IReadOnlyList<ProfessionStudyReference>? _studyReferences;
@@ -133,7 +134,8 @@ public sealed class CharacterCaptureFlowTracker
         AccountWireFieldComparisonStudy? accountWireStudy = null,
         CharacterRosterContinuityStudy? rosterStudy = null,
         ConcurrentCharacterRosterStudy? concurrentRosterStudy = null,
-        bool itemEffectsShape = false)
+        bool itemEffectsShape = false,
+        IReadOnlyList<long>? expectedEffectValues = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -148,6 +150,12 @@ public sealed class CharacterCaptureFlowTracker
             : new HashSet<string>(shapeKeys, StringComparer.Ordinal);
 
         _itemEffectsShape = itemEffectsShape;
+        if (expectedEffectValues is not null &&
+            (!itemEffectsShape || expectedEffectValues.Count is < 1 or > 16))
+            throw new ArgumentException(
+                "Effect references require the explicit shape probe and 1-16 values.",
+                nameof(expectedEffectValues));
+        _expectedEffectValues = expectedEffectValues?.ToArray();
 
         if (_shapeKeys.Any(key => !IsSafeOpcode(key)))
             throw new ArgumentException(
@@ -607,7 +615,8 @@ public sealed class CharacterCaptureFlowTracker
                                         flow.Number, direction, any.Key, any.Body),
                                     _itemEffectsShape &&
                                     direction == CharacterCaptureDirection.ServerToClient
-                                        ? ItemEffectsWireShapeStudy.Describe(any.Key, any.Body)
+                                        ? ItemEffectsWireShapeStudy.Describe(
+                                            any.Key, any.Body, _expectedEffectValues)
                                         : null));
                             }
                         }
