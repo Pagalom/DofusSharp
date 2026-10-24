@@ -33,7 +33,8 @@ public sealed class ItemEffectDofusDbCatalogStudy
                 x.ExpectedValues.Contains(0) ||
                 x.ExpectedValues.Distinct().Count() != x.ExpectedValues.Count ||
                 x.Effects.Count is < 1 or > 64 ||
-                x.Effects.Any(e => e.EffectId == 0)) ||
+                !x.Effects.Any(e => e.EffectId > 0 ||
+                    e.CharacteristicId is > 0 || e.ElementId is > 0)) ||
             first.ExpectedValues.Count == second.ExpectedValues.Count)
             throw new ArgumentException("Unsupported catalog reference set.");
     }
@@ -52,6 +53,7 @@ public sealed class ItemEffectDofusDbCatalogStudy
         if (item is null)
             return null;
 
+        bool hasEffectIds = item.Effects.Any(e => e.EffectId > 0);
         int matched = 0;
         int matchedCharacteristics = 0;
         int matchedElements = 0;
@@ -87,15 +89,15 @@ public sealed class ItemEffectDofusDbCatalogStudy
             }
         }
 
-        string ids = matched == pairs.Count
-            ? "all"
-            : matched == 0 ? "none" : "partial";
-
         static string Status(int count, int total, bool hasData) =>
             !hasData ? "unknown" : count == total ? "all" :
                 count == 0 ? "none" : "partial";
 
-        string ranges = rangeKnown == 0
+        string ids = Status(matched, pairs.Count, hasEffectIds);
+
+        string ranges = matched != pairs.Count
+            ? "incomplete-id-match"
+            : rangeKnown == 0
             ? "unknown"
             : rangeValid == rangeKnown ? "all" :
                 rangeValid == 0 ? "none" : "partial";
