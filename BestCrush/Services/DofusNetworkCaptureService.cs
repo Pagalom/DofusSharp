@@ -38,6 +38,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly EphemeralCandidateRosterWireObserver? _rosterWireObserver;
     private readonly CurrentCandidateWindowCardsState? _candidateCardsState;
     private readonly WindowServerAttributionState? _windowServerAttributionState;
+    private readonly ProfessionGameLinkStudy? _professionGameLinkStudy;
     private readonly TcpHandshakeWindowEvidence _handshakeWindowEvidence = new();
     private readonly bool _liveRosterDiagnostics;
     private int _liveRosterReportCount;
@@ -153,6 +154,20 @@ public sealed class DofusNetworkCaptureService : IDisposable
             _windowServerAttributionState = scope.ServiceProvider
                 .GetService<WindowServerAttributionState>();
         }
+#if DEBUG
+        // Opt-in only. The existing exact Game TCP/window attribution is
+        // observed, never changed. Logs contain no HWND/PID or wire values.
+        if (currentServerState.AutomaticRoutingEnabled &&
+            string.Equals(
+                Environment.GetEnvironmentVariable(
+                    "BESTCRUSH_P3D_PROFESSION_LINK_STUDY"),
+                "1", StringComparison.Ordinal))
+        {
+            _professionGameLinkStudy = new ProfessionGameLinkStudy();
+            logger.LogInformation(
+                "p3d=enabled mode=debug-opt-in account=unverified mapping=unverified");
+        }
+#endif
 #if DEBUG
         // No activation by production DI, settings, command-line argument,
         // or release build. Only an explicit per-process Debug environment
@@ -1021,6 +1036,21 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                 _map,
                                 routed,
                                 cancellationToken);
+
+                        // Read-only profession research: ipz is attributed
+                        // only when this exact Game TCP connection holds a
+                        // currently active, independently verified lease.
+                        // This does not populate character/account profiles.
+                        if (_professionGameLinkStudy is not null &&
+                            routed.Key == "ipz")
+                        {
+                            string? status = _professionGameLinkStudy.Observe(
+                                routed,
+                                routed.CaptureLease is { } gameLease &&
+                                _currentServerState.IsCaptureLeaseActive(gameLease));
+                            if (status is not null)
+                                logger.LogInformation("{P3dStatus}", status);
+                        }
 
                         // P3c.9 research observer is never constructed by
                         // production DI. Reuse the worker's exact
