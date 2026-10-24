@@ -1,5 +1,3 @@
-using BestCrush.Network.Protocol;
-
 namespace BestCrush.Network.Protocol;
 
 /// <summary>
@@ -15,7 +13,9 @@ public static class ItemEffectsWireShapeStudy
     private const int MaximumEffects = 64;
     private const int MaximumShapeVariants = 4;
 
-    public static string? Describe(string opcode, ReadOnlySpan<byte> body)
+    public static string? Describe(
+        string opcode, ReadOnlySpan<byte> body,
+        IReadOnlyList<long>? expectedEffectValues = null)
     {
         // Only three explicit candidate envelopes. This is not a generic
         // deserializer for arbitrary network traffic or a stock decoder.
@@ -77,8 +77,19 @@ public static class ItemEffectsWireShapeStudy
                 .Select(x => x.Key + "x" + x.Value));
             if (shapes.Count > MaximumShapeVariants)
                 variants += "; ...";
-            return "effects=" + effects.Length +
+            string result = "effects=" + effects.Length +
                 " wire-shapes=[" + (variants.Length == 0 ? "none" : variants) + "]";
+            if (expectedEffectValues is not null)
+            {
+                // Local references are compared without ever writing values,
+                // including to diagnostics. Check every effect, not only a sample.
+                if (expectedEffectValues.Count is < 1 or > 16)
+                    return null;
+                result += " match=[f5:" +
+                    MatchField(effects, 5, expectedEffectValues) +
+                    " f10:" + MatchField(effects, 10, expectedEffectValues) + "]";
+            }
+            return result;
         }
         catch (OverflowException)
         {
@@ -86,6 +97,32 @@ public static class ItemEffectsWireShapeStudy
             // might accidentally expose raw packet or user details in a log.
             return null;
         }
+    }
+
+    private static string MatchField(
+        IReadOnlyList<ProtoField> effects,
+        int fieldNumber,
+        IReadOnlyList<long> references)
+    {
+        if (effects.Count != references.Count)
+            return "incomplete";
+
+        List<long> values = new(effects.Count);
+        foreach (ProtoField effect in effects)
+        {
+            List<ProtoField>? fields = ProtoWire.ReadFields(effect.Bytes!);
+            if (fields is null)
+                return "unrecognized";
+            ProtoField[] candidates = fields.Where(f =>
+                f.Number == fieldNumber &&
+                f.WireType == ProtoWireType.Varint).ToArray();
+            if (candidates.Length != 1)
+                return "unrecognized";
+            values.Add(unchecked((long)candidates[0].Varint));
+        }
+        // Multiset comparison: field order may vary between bank/inventory.
+        return values.OrderBy(x => x).SequenceEqual(references.OrderBy(x => x))
+            ? "yes" : "no";
     }
 
     private static bool HasPositiveVarint(IReadOnlyList<ProtoField> fields, int number) =>
