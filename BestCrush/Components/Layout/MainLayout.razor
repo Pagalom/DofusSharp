@@ -24,10 +24,47 @@
         </div>
 
         <div class="d-flex align-items-center justify-content-end gap-2">
-            <span class="border rounded px-3 py-2 small"
-                  title="Serveur du client Dofus ciblé, identifié automatiquement par son ID réseau">
-                Serveur : @(_currentServer?.Name ?? "Identification en cours")
-            </span>
+            <div class="dropdown">
+                <button type="button"
+                        class="btn btn-outline-secondary dropdown-toggle"
+                        data-bs-toggle="dropdown"
+                        aria-expanded="false"
+                        title="Filtrer les prix, les coefficients et les historiques enregistrés par serveur. Cette sélection ne modifie pas les captures réseau.">
+                    @if (_viewFilter.IsBrowsingManually)
+                    {
+                        <span>Consulter : @(_currentServer?.Name ?? "Serveur inconnu")</span>
+                    }
+                    else
+                    {
+                        <span>Serveur : @(_currentServer?.Name ?? "Identification en cours")</span>
+                    }
+                </button>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><h6 class="dropdown-header">Consulter les données d'un serveur</h6></li>
+                    @if (_servers is not null)
+                    {
+                        @foreach (DofocusServer server in _servers)
+                        {
+                            <li>
+                                <button type="button"
+                                        class="dropdown-item @(_viewFilter.IsBrowsingManually && string.Equals(_viewFilter.ServerName, server.Name, StringComparison.OrdinalIgnoreCase) ? "active" : null)"
+                                        @onclick="() => BrowseServer(server)">
+                                    @server.Name
+                                </button>
+                            </li>
+                        }
+                    }
+                    <li><hr class="dropdown-divider" /></li>
+                    <li>
+                        <button type="button"
+                                class="dropdown-item"
+                                disabled="@(CurrentDofusClientsState.SelectedClient is null)"
+                                @onclick="FollowSelectedWindow">
+                            Revenir au serveur du personnage ciblé
+                        </button>
+                    </li>
+                </ul>
+            </div>
 
             <div class="d-flex align-items-center gap-1"
                  role="group" aria-label="Fenêtres Dofus détectées cette session">
@@ -123,6 +160,7 @@
 
     private IReadOnlyCollection<DofocusServer>? _servers;
     private DofocusServer? _currentServer;
+    private readonly ServerViewFilterState _viewFilter = new();
     private CancellationTokenSource? _clientPollingCancellation;
     private Task? _clientPollingTask;
 
@@ -146,10 +184,14 @@
         if (IsRouteCompatible)
             return;
 
+        string relativePath =
+            NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
         NavigationManager.NavigateTo(
-            _currentServer is null
-                ? KnownRoutes.Module("concassage")
-                : KnownRoutes.Server(_currentServer),
+            WorkspaceModules.ReplaceServerInRoute(
+                relativePath, _currentServer?.Name) ??
+                (_currentServer is null
+                    ? KnownRoutes.Module("concassage")
+                    : KnownRoutes.Server(_currentServer)),
             replace: true);
     }
 
@@ -170,7 +212,10 @@
         CurrentServerState.Clear();
         CurrentCharacterState.SelectServer(null);
         CurrentCharacterState.Changed += OnCharacterChanged;
+        CurrentCharacterState.TargetRequested += OnVerifiedCharacterTargetRequested;
         CurrentDofusClientsState.Changed += OnDofusClientChanged;
+        CurrentDofusClientsState.TargetRequested += OnWindowTargetRequested;
+        CurrentDofusClientsState.GameActivated += OnGameWindowActivated;
         CurrentCandidateWindowCardsState.Changed += OnDofusClientChanged;
         WindowServerAttributionState.Changed += OnDofusClientChanged;
         LiveClientNetworkBindings.Changed += OnDofusClientChanged;
@@ -206,6 +251,50 @@
     private void SelectDofusClient(DofusClientWindowKey key) =>
         CurrentDofusClientsState.SelectWindow(key);
 
+    private void BrowseServer(DofocusServer server)
+    {
+        // A browsing filter is NOT a Dofus server selection. It never
+        // changes network owners, capture leases or character profiles.
+        _viewFilter.BrowseServer(server.Name);
+        ApplyDisplayedServer(updateCharacterContext: false);
+        GuardLegacyRoute();
+    }
+
+    private void FollowSelectedWindow()
+    {
+        if (CurrentDofusClientsState.SelectedClient is { } client)
+            FollowWindow(client.Key);
+    }
+
+    private void OnWindowTargetRequested(DofusClientWindowKey key) =>
+        _ = InvokeAsync(() => FollowWindow(key));
+
+    private void OnGameWindowActivated(DofusClientWindowKey key) =>
+        _ = InvokeAsync(() => FollowWindow(key));
+
+    private void OnVerifiedCharacterTargetRequested(CharacterKey key) =>
+        _ = InvokeAsync(() =>
+        {
+            // Verified identities already include the actual server;
+            // never infer it from a character's display name.
+            _viewFilter.FollowWindow(null, key.ServerName);
+            ApplyDisplayedServer(updateCharacterContext: false);
+            GuardLegacyRoute();
+            StateHasChanged();
+        });
+
+    private void FollowWindow(DofusClientWindowKey key)
+    {
+        if (!CurrentDofusClientsState.Clients.Any(client => client.Key == key))
+            return;
+
+        _viewFilter.FollowWindow(
+            key, WindowServerAttributionState.ForWindow(key)?.ServerName);
+        ApplyDisplayedServer(updateCharacterContext: true);
+        GuardLegacyRoute();
+        StateHasChanged();
+    }
+
     private void OnDofusClientChanged() =>
         _ = InvokeAsync(() =>
         {
@@ -221,24 +310,38 @@
             ? WindowServerAttributionState.ForWindow(client.Key)?.ServerName
             : null;
 
-        if (string.Equals(_currentServer?.Name, serverName,
-                StringComparison.Ordinal))
-            return;
+        // New network observations must not steal a deliberately selected
+        // SQL browsing server. An explicit click or game activation does.
+        if (_viewFilter.ReconcileTarget(selected?.Key, serverName))
+            ApplyDisplayedServer(updateCharacterContext: true);
+    }
 
-        _currentServer = serverName is null
-            ? null
-            : _servers?.FirstOrDefault(server =>
-                string.Equals(server.Name, serverName,
-                    StringComparison.OrdinalIgnoreCase))
-              ?? new DofocusServer { Name = serverName };
+    private void ApplyDisplayedServer(bool updateCharacterContext)
+    {
+        string? name = _viewFilter.ServerName;
+        if (!string.Equals(_currentServer?.Name, name,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            _currentServer = name is null
+                ? null
+                : _servers?.FirstOrDefault(server =>
+                    string.Equals(server.Name, name,
+                        StringComparison.OrdinalIgnoreCase))
+                  ?? new DofocusServer { Name = name };
 
-        // This is a display/module context only: CurrentServerState never
-        // uses the UI choice to authorize network writes in auto mode.
-        if (_currentServer is null)
-            CurrentServerState.Clear();
-        else
-            CurrentServerState.SelectServer(_currentServer.Name);
-        CurrentCharacterState.SelectServer(_currentServer?.Name);
+            // In automatic routing mode, CurrentServerState is strictly a
+            // UI/calculation context: its name never authorizes a network
+            // write. All SQLite capture writes use per-Game server leases.
+            if (_currentServer is null)
+                CurrentServerState.Clear();
+            else
+                CurrentServerState.SelectServer(_currentServer.Name);
+        }
+
+        // A temporary SQL inspection must NEVER clear the active
+        // character or hide character cards from the session.
+        if (updateCharacterContext)
+            CurrentCharacterState.SelectServer(name);
     }
 
     private async Task PollDofusClientsAsync(CancellationToken cancellationToken)
@@ -293,7 +396,10 @@
     {
         NavigationManager.LocationChanged -= OnLocationChanged;
         CurrentCharacterState.Changed -= OnCharacterChanged;
+        CurrentCharacterState.TargetRequested -= OnVerifiedCharacterTargetRequested;
         CurrentDofusClientsState.Changed -= OnDofusClientChanged;
+        CurrentDofusClientsState.TargetRequested -= OnWindowTargetRequested;
+        CurrentDofusClientsState.GameActivated -= OnGameWindowActivated;
         CurrentCandidateWindowCardsState.Changed -= OnDofusClientChanged;
         WindowServerAttributionState.Changed -= OnDofusClientChanged;
         LiveClientNetworkBindings.Changed -= OnDofusClientChanged;
