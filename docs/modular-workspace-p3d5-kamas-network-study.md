@@ -1226,3 +1226,117 @@ Cette étape ne touche **ni** au décodage
 métier de `kch/kag` ou des prix HDV
 **ni** au stock SQLite, aux ateliers, à
 la molette, à F7/F8, ou au serveur choisi.
+
+## P3d.5.13 — Correspondance f5 observée et validation des pourcentages
+
+### Capture réelle du 24/10/2026, 21:39 UTC
+
+L'utilisateur a confirmé l'équipement **Kwakanneau de Flammes,
+niveau 42**, avec **+99 Vitalité**, **+20 Intelligence**,
+et une troisième ligne **0 % Résistance Feu**, affichée en gris.
+Deux séquences `--item-effects-compare` :
+
+1. Références saisies `99,20,0` : `iqx` et `iqz`
+   indiquent `effects=2`,
+   `match=[f5:incomplete f10:incomplete]`.
+   Le probe exige une comparaison bijective de **tous**
+   les effets ; trois références ne peuvent être
+   comparées à deux enregistrements. **Ceci ne démontre
+   pas qu'il existe un effet à zéro.**
+2. Références saisies `99,20` :
+   - 21:39:20.985 : `iqz`, 17 octets,
+     `effects=0 ... incomplete/incomplete` ;
+     message distinct, sémantique non prouvée,
+     **ne pas l'utiliser comme photographie d'inventaire**.
+   - 21:39:23.008 : `iqx`, 28 octets,
+     `effects=2 wire-shapes=[root=[10:v 5:v]x2]
+     match=[f5:yes f10:no]`.
+   - 21:39:25.032 : `iqz`, 28 octets,
+     `effects=2 wire-shapes=[root=[10:v 5:v]x2]
+     match=[f5:yes f10:no]`.
+
+**Conclusion solide :** pour cet exemplaire, les **deux
+valeurs non nulles affichées** forment exactement le
+multiensemble des valeurs `item.f7[].f5`, dans les
+deux directions du transfert. C'est la correction
+**expérimentale** de l'hypothèse P3d.5.12 :
+**`f5` est le candidat à la valeur des caractéristiques**,
+et non `f10`. Ne pas renommer `f10`
+« identifiant d'effet » avant preuve spécifique ;
+il peut être un ID d'effet ou un autre code associé.
+
+La ligne de résistance à **0 %** n'a pas d'entrée
+supplémentaire `f7` dans ce test, mais on ne peut
+pas encore affirmer que tous les effets nuls sont
+toujours absents du protocole. Les nombres de prix
+moyens présentés dans l'infobulle ne sont pas des
+caractéristiques d'instance et n'entrent pas dans
+la comparaison.
+
+### Contrôle prioritaire : statistique en pourcentage non nulle
+
+Utiliser une **autre pièce d'équipement** dans la banque,
+avec au moins une caractéristique en **% strictement
+différente de zéro**. Relever les valeurs visibles de
+TOUTES les caractéristiques non nulles ; inclure
+les valeurs en % sous forme de **nombre entier sans
+le symbole %** (par exemple `7` pour `+7 %`),
+sans `0` pour une ligne grisée à zéro.
+
+Si possible, utiliser une pièce avec :
+une caractéristique absolue (p. ex. +99 Vitalité)
+et une caractéristique pourcentage non nulle (p. ex.
++7 % Résistance), afin que le comparateur
+ne confonde pas la famille des effets. Exemple
+**illustratif**, pas une description d'objet réellement
+possédé : `99,7`.
+
+Après la synchronisation Git et les validations Windows,
+démarrer le mode **déjà existant** :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --item-effects-compare
+```
+
+Saisir les valeurs observées ; ouvrir un client Dofus
+après le démarrage du probe, ouvrir la banque et
+transférer une fois vers l'inventaire, puis une fois
+vers la banque en notant les instants. Partager
+uniquement le résumé anonymisé `ITEM_EFFECTS`.
+
+Interprétation :
+- `effects=N` égal au nombre d'effets non nuls,
+  et `f5:yes` dans les deux sens : renforce le
+  mapping `f5=valeur`, y compris pour le type
+  pourcentage et son unité affichée.
+- `f5:no` avec `effects=N` : une ou
+  plusieurs valeurs de pourcentage peuvent être
+  codées dans une autre unité (p. ex. facteur
+  décimal), ou d'autres valeurs différer.
+  **Ne pas changer les références au hasard** :
+  relever l'objet et analyser par étude locale
+  ciblée avant de conclure.
+- `incomplete` : dénombrement incompatible ;
+  corriger la liste des caractéristiques non
+  nulles et vérifier si l'objet a des effets
+  spéciaux non numériques.
+
+### Régression/tests
+
+Deux tests synthétiques ajoutés à
+`ItemEffectsWireShapeStudyTest` :
+- reproduire `f5:yes f10:no` en `iqx`
+  et `iqz` avec références non nulles,
+  et `incomplete` avec une référence
+  de zéro supplémentaire ;
+- vérifier que le comparateur peut rechercher
+  une valeur en pourcentage **sans effectuer
+  lui-même de conversion d'unité**, et que
+  les références incorrectes ne correspondent pas.
+
+Les valeurs artificielles des tests **ne prouvent
+rien de plus** sur le protocole réel. Le
+décodeur canonique métier, la base SQLite,
+les observations d'atelier, le calcul de craft
+et les HDV sont inchangés. Aucune exécution
+Windows du nouveau code n'est déclarée validée.
