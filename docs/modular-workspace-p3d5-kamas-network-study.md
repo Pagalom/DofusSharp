@@ -352,3 +352,71 @@ puis l'ouverture et les transferts de banque.
 
 **Statut : caractérisation structurale confirmée ; sémantique
 inventaire, banque et Kamas toujours non validée.**
+
+## P3d.5.4 — Transferts réels banque ↔ inventaire (24/10/2026)
+
+L'opérateur a exécuté le mode `--device 3 --character-scan`
+puis a effectué cinq actions, heures locales **approximatives**
+(UTC+2). Les métadonnées proviennent d'une **nouvelle**
+session TCP numérotée **#1** dans cette capture :
+les numéros de session du probe ne sont pas des identifiants
+persistants de personnage ou de compte.
+
+| Action déclarée (Europe/Paris) | Trace observée (UTC) | Observation |
+|---|---|---|
+| Ouvrir banque à ~05:23:07 | 03:23:02.222–03:23:03.256 : `ilt` 18 (C→S) puis `ilx` 16, `ilf` 26, `kis` 2, `lof` 7, `ith` 5, `jyf` 8, `irp` **11 677** (S→C) | Raffale liée temporellement au début du dialogue bancaire ; heure déclarée décalée d'environ 5 s, sémantique inconnue |
+| Transférer 1 unité banque → inventaire à ~05:23:34 | 03:23:33.525–.526 : `jys` 16 (C→S) puis `iqx` 27, `iqz` 28, `iqq` 6 (S→C) | Première séquence de transfert candidate |
+| Transférer 2 unités supplémentaires banque → inventaire à ~05:23:51 | 03:23:50.669–.670 : `jys` 16 (C→S) puis `irx` 8, `iqz` 28, `iqq` 6 (S→C) | Même requête de 16 octets, retour différent (`irx` au lieu de `iqx`) |
+| Transférer 3 unités inventaire → banque à ~05:24:10 | 03:24:09.835–03:24:10.848 : `jys` **6** (C→S), puis `iqz` 28, `iqm` 4, `iqq` 6 (S→C) | Forme de requête plus courte dans le sens inverse et retour `iqm` au lieu de `iqx/irx` |
+| Fermer banque à ~05:24:25 | 03:24:24.960 : `kbr` 2 (S→C) | Simple coïncidence temporelle candidate, non confirmée |
+
+Des `kne` / `knb` périodiques se produisent durant les pauses,
+indiquant un trafic de fond à exclure de toute inférence métier.
+
+### Bilan des hypothèses
+
+- **Forte corrélation temporelle** : `jys` correspond
+  aux trois actions de transfert déclarées.
+  La première et deuxième requête font 16 octets ;
+  la troisième (sens inverse) fait 6 octets. Ce sont
+  des **hypothèses d'usage**, pas un décodage prouvé.
+- `iqz` 28 + `iqq` 6 arrivent après chaque
+  transfert candidat, quel que soit son sens.
+- `iqx` 27 n'apparaît qu'au premier transfert,
+  `irx` 8 au deuxième, `iqm` 4 au troisième.
+  **Ne pas affirmer** qu'il s'agit respectivement d'ajout,
+  de quantité ou de suppression sans validation du contenu.
+- `irp` 11 677 octets est un candidat de chargement
+  de banque, mais la différence d'environ 5 secondes entre
+  l'heure de l'action et la trace empêche de conclure.
+  Sa taille ne suffit pas à établir qu'il s'agit d'une liste
+  d'objets ou du solde bancaire.
+- Aucun opcode n'est encore démontré porter `ItemId`,
+  `ItemUid`, `Quantity`, `Stats` ou des Kamas,
+  et aucune écriture en stock n'est permise sur cette seule base.
+
+### Capture suivante : formes contrôlées
+
+Faire une capture **nouvelle**, démarrée avant le jeu pour
+éviter la perte de la structure TCP de début de connexion :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --character-shape --shape-keys jys,iqx,irx,iqz,iqm,iqq,irp,ilt,ilx,ilf,kbr
+```
+
+Un seul client. Après chargement, ouvrir la banque, noter l'heure ;
+transférer 1 unité (banque → inventaire), 2 unités supplémentaires,
+puis les 3 unités dans l'autre sens, avec quelques secondes entre
+chaque geste ; fermer la banque. Communiquer uniquement les lignes
+`shape=[...]`, jamais les contenus de messages, valeurs, ID, UID,
+identifiants de compte ou captures d'inventaire.
+
+**Limite du mode :** seulement les **trois formes distinctes**
+par opcode et session sont émises ; une forme répétée ne produit
+pas une ligne à chaque transfert. Ne pas interpréter cette
+déduplication comme l'absence de message réseau.
+
+Ensuite comparer **localement**, sans export des valeurs,
+les candidats structuraux avec les opérations réellement faites.
+Ne modifier le fichier `BestCrush.Network/protocol-map.json`
+et les décodeurs qu'après preuve sur version courante.
