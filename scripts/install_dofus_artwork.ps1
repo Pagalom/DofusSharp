@@ -68,29 +68,32 @@ try {
     $jobFiles = @(Get-ChildItem -LiteralPath $jobSource -Filter '*.png' -File -Recurse)
     $headFiles = @(Get-ChildItem -LiteralPath $headSource -Filter '*.png' -File -Recurse)
 
-    # No implicit fallback to an icon from another profession.
+    # doduda exports 2x image names with their resolution suffix:
+    # e.g. job 2 -> 2-64.png; class head 70 -> 70-64.png.
+    # This is the upstream naming convention, not a guessed ID.
+    # Never silently choose a similarly named but different image.
     $foundJobs = @{}
     foreach ($id in $jobIds) {
-        $matches = @($jobFiles | Where-Object { $_.Name -eq "$id.png" })
+        $wanted = "$($id)-64.png"
+        $matches = @($jobFiles | Where-Object { $_.Name -eq $wanted })
         if ($matches.Count -ne 1) {
-            throw "Icone de metier absente ou ambigue pour ID $id ($($matches.Count))."
+            $examples = ($jobFiles | Select-Object -First 12 -ExpandProperty Name) -join ', '
+            throw "Icone de metier absente ou ambigue pour ID $id, fichier attendu $wanted ($($matches.Count)). Exemples archives : $examples"
         }
         $foundJobs[$id] = $matches[0].FullName
     }
 
     $foundHeads = @{}
     foreach ($id in $classIds) {
+        # DOFUS class-head picture IDs are breed ID x 10 (default male).
         $headId = $id * 10
-        $wanted = @("$($headId)_1.png", "$($headId)_0.png", "$headId.png")
-        $picked = $null
-        foreach ($name in $wanted) {
-            $matches = @($headFiles | Where-Object { $_.Name -eq $name })
-            if ($matches.Count -eq 1) { $picked = $matches[0].FullName; break }
+        $wanted = "$($headId)-64.png"
+        $matches = @($headFiles | Where-Object { $_.Name -eq $wanted })
+        if ($matches.Count -ne 1) {
+            $examples = ($headFiles | Select-Object -First 12 -ExpandProperty Name) -join ', '
+            throw "Portrait de classe absent ou ambigu pour ID $id, fichier attendu $wanted ($($matches.Count)). Exemples archives : $examples"
         }
-        if (-not $picked) {
-            throw "Portrait de classe absent pour ID $id (head=$headId)."
-        }
-        $foundHeads[$id] = $picked
+        $foundHeads[$id] = $matches[0].FullName
     }
 
     $jobsDest = Join-Path $webRoot 'jobs'
