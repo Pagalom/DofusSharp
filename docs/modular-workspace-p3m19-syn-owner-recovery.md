@@ -94,6 +94,14 @@ associations confirmées=2
 
 **Non confirmé par la capture :** l'isolement réel des écritures SQLite par serveur, le basculement de contexte du bandeau après ciblage successif des fenêtres, la pérennité sous reconnexions répétées de deux serveurs et le succès d'un nouveau build/test complet. Ces vérifications restent nécessaires avant release.
 
+## Retour terrain — 24 octobre 2026, basculement du bandeau
+
+L'utilisateur confirme avoir testé les commandes **Cibler** de chaque fiche et observé le serveur affiché en haut à droite basculer correctement entre **Tylezia (293)** et **Kourial (355)**, dans les deux sens. Le libellé correspond ainsi au client Dofus ciblé, indépendamment de l'homonymie Pagalom.
+
+**Validé :** sélecteur de fenêtre → contexte serveur affiché dans le bandeau.
+
+**Non encore validé :** écritures de prix/coefficient dans SQLite et isolation/mutualisation des observations par serveur. Les modules restent à tester avec une base sauvegardée ; le constat UI ne prouve pas l'absence de mélange des données économiques.
+
 ## Contrôle Windows à effectuer
 
 Les tests étaient à **1149 attendus** à l'issue du correctif P3m.18, mais le résultat n'a pas encore été transmis. P3m.19 ajoute **15 cas nouveaux** (9 faits + 6 théories). **1164 tests attendus**, à confirmer sur Windows ; aucun build ni essai Dofus ne sont déclarés réussis par anticipation.
