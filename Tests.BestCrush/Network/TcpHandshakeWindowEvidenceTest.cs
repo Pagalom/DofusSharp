@@ -41,6 +41,27 @@ public sealed class TcpHandshakeWindowEvidenceTest
     }
 
     [Fact]
+    public void DiagnosticsSeparateHandshakeOwnershipFromCompletedServerLink()
+    {
+        WindowServerAttributionState state = new(diagnosticsEnabled: true);
+        state.Reset(3);
+
+        state.RecordSynOwner(3, reused: false);
+        state.RecordSynOwner(3, reused: true);
+        state.RecordSynOwner(2, reused: false);
+
+        var counts = state.ReadDiagnostics();
+        counts.SynOwnersCaptured.Should().Be(1);
+        counts.SynOwnersReused.Should().Be(1);
+        counts.SelectionWithOwner.Should().Be(0);
+        counts.Confirmed.Should().Be(0);
+
+        state.Reset(4);
+        state.ReadDiagnostics().SynOwnersCaptured.Should().Be(0);
+        state.ReadDiagnostics().SynOwnersReused.Should().Be(0);
+    }
+
+    [Fact]
     public void ExactValidatedSynOwnerSurvivesSocketClosureUntilFrameDecoded()
     {
         TcpHandshakeWindowEvidence state = Start();
