@@ -51,6 +51,26 @@ Ce jalon n'intègre pas ETW à l'application. Notre sonde P3m.14 ETW avait déj�
 
 Lire la table TCP au SYN peut encore manquer une connexion trop brève ou un propriétaire non encore visible. Si les compteurs indiquent toujours `sélections > 0` et `propriétaires = 0`, il faudra revoir l'intégration d'une source de propriétaire indépendante de l'état courant de la table, par exemple ETW, avec gestion des privilèges, conflits, expirations et opt-in.
 
+## Retour terrain — 24 octobre 2026, deux fenêtres sur le même serveur
+
+Après la modification P3m.19, l'utilisateur a observé deux fiches simultanées :
+- Pagalom, Eniripsa niveau 38 → **Tylezia (ID 293)**.
+- Nahala, Iop niveau 2 → **Tylezia (ID 293)**.
+
+Le diagnostic affiché sur la même capture est :
+```text
+sélections reçues=2 propriétaire TCP identifié=2 propriétaire introuvable=0
+preuves TCP à l'ouverture=4 preuves réutilisées=1
+chargements avec sélection=2 chargements sans sélection=0
+associations confirmées=2
+```
+
+Le test de retour à l'écran de serveur puis de reconnexion de **Pagalom** a également été réalisé par l'utilisateur : l'ID serveur a été retrouvé à chaque reconnexion essayée. Nombre exact de répétitions non communiqué.
+
+**Validé en fonctionnement réel pour ce scénario :** récupération d'un propriétaire TCP fiable pour deux sélections, attribution correcte du même ID à deux fenêtres indépendantes, absence de propriétaire manquant sur cette capture, et récupération de Pagalom après reconnexion. Le correctif a supprimé le symptôme observé dans les captures P3m.18 sans nécessiter ETW pour ces deux fenêtres.
+
+**Non encore validé :** deux serveurs différents simultanément, écritures économiques des deux fenêtres dans SQLite, latences et cas limites de reconnexion, tests Windows automatisés après P3m.19 (aucun nouveau total communiqué dans ce message). Ne pas confondre confirmation d'association affichée et validation de persistance économique.
+
 ## Contrôle Windows à effectuer
 
 Les tests étaient à **1149 attendus** à l'issue du correctif P3m.18, mais le résultat n'a pas encore été transmis. P3m.19 ajoute **15 cas nouveaux** (9 faits + 6 théories). **1164 tests attendus**, à confirmer sur Windows ; aucun build ni essai Dofus ne sont déclarés réussis par anticipation.
