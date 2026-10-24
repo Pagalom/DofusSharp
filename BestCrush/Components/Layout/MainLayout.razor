@@ -1,10 +1,13 @@
+@using BestCrush.Domain
 @using BestCrush.Domain.Services
+@using Microsoft.EntityFrameworkCore
 @using DofusSharp.Dofocus.ApiClients.Models.Servers
 @using Microsoft.AspNetCore.Components.Routing
 @inherits LayoutComponentBase
 @implements IAsyncDisposable
 @using BestCrush.Services
 @inject ServersService ServersService
+@inject IDbContextFactory<BestCrushDbContext> DbContextFactory
 @inject IWorkspacePreferences WorkspacePreferences
 @inject NavigationManager NavigationManager
 @inject BestCrush.Services.CurrentServerState CurrentServerState
@@ -200,7 +203,36 @@
     {
         NavigationManager.LocationChanged += OnLocationChanged;
 
-        _servers = await ServersService.GetServers();
+        IReadOnlyCollection<DofocusServer> catalog =
+            await ServersService.GetServers();
+
+        // Make archived/local market servers browseable even if DoFocus
+        // no longer lists them. Read distinct server names only: this
+        // filter does not query, amend or persist character identities.
+        await using (BestCrushDbContext database =
+            await DbContextFactory.CreateDbContextAsync())
+        {
+            string[] recordedPrices = await database.MarketPriceObservations
+                .AsNoTracking()
+                .Select(row => row.ServerName).Distinct().ToArrayAsync();
+            string[] recordedCoefficients = await database.CoefficientObservations
+                .AsNoTracking()
+                .Select(row => row.ServerName).Distinct().ToArrayAsync();
+            string[] recordedCrushes = await database.CrushHistorySessions
+                .AsNoTracking()
+                .Select(row => row.ServerName).Distinct().ToArrayAsync();
+
+            _servers = catalog.Concat(recordedPrices
+                    .Concat(recordedCoefficients)
+                    .Concat(recordedCrushes)
+                    .Where(name => !string.IsNullOrWhiteSpace(name))
+                    .Select(name => new DofocusServer { Name = name }))
+                .GroupBy(server => server.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderBy(server => server.Name,
+                    StringComparer.CurrentCultureIgnoreCase)
+                .ToArray();
+        }
         // Legacy global choice is no longer used or restored.
         WorkspacePreferences.Remove(ServersService.LastServerPreferenceKey);
         _currentServer = null;
@@ -258,7 +290,13 @@
         // changes network owners, capture leases or character profiles.
         ViewFilter.BrowseServer(server.Name);
         ApplyDisplayedServer(updateCharacterContext: false);
-        GuardLegacyRoute();
+
+        if (ActiveTab == "concassage" &&
+            WorkspaceModules.ServerFromRoute(
+                NavigationManager.ToBaseRelativePath(NavigationManager.Uri)) is null)
+            NavigationManager.NavigateTo(KnownRoutes.Server(server.Name));
+        else
+            GuardLegacyRoute();
     }
 
     private void FollowSelectedWindow()
