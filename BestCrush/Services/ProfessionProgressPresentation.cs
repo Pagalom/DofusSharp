@@ -1,8 +1,9 @@
 namespace BestCrush.Services;
 
 /// <summary>
-/// Pure UI projection of cumulative profession XP. Never deduces level
-/// boundaries from a level number, because Dofus progression is non-linear.
+/// Pure UI projection of cumulative profession XP. Only displays progress
+/// when both validated level boundaries are provided by the caller.
+/// DOFUS 3 job thresholds are quadratic, not a linear percentage of level.
 /// This is NOT a writer for account or character professions.
 /// </summary>
 public static class ProfessionProgressPresentation
