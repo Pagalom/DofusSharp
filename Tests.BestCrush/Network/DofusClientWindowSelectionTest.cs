@@ -73,6 +73,62 @@ public sealed class DofusClientWindowSelectionTest
     }
 
     [Fact]
+    public void ExplicitClickOnAlreadySelectedWindowStillRestoresManualBrowse()
+    {
+        CurrentDofusClientsState state = new();
+        DofusClientWindowKey key = Key(101, 1001);
+        state.Update([Window(101, 1001,
+            "Alice - Ecaflip - 3.7.12.12 - Release")]);
+        int requests = 0;
+        state.TargetRequested += requested =>
+        {
+            requested.Should().Be(key);
+            requests++;
+        };
+
+        state.SelectWindow(key).Should().BeTrue();
+        state.SelectWindow(key).Should().BeTrue();
+        requests.Should().Be(2,
+            "two explicit card clicks must each revoke browsing even when targeting the same window");
+    }
+
+    [Fact]
+    public void ReturningToSameDofusWindowRaisesRealActivationOnlyOnce()
+    {
+        CurrentDofusClientsState state = new();
+        DofusClientWindowKey key = Key(101, 1001);
+        DofusWindowInfo first = Window(101, 1001,
+            "Alice - Ecaflip - 3.7.12.12 - Release");
+        List<DofusClientWindowKey> activations = [];
+        state.GameActivated += window => activations.Add(window);
+
+        state.Update([first], key);
+        state.Update([first], key);
+        activations.Should().Equal(key);
+
+        state.Update([first]); // User switches to BestCrush to browse SQL.
+        state.Update([first], key); // User returns to same Dofus.
+        activations.Should().Equal(key, key);
+    }
+
+    [Fact]
+    public void GameActivationOverridesPreviouslyTargetedOtherWindow()
+    {
+        CurrentDofusClientsState state = new();
+        DofusWindowInfo first = Window(101, 1001,
+            "Alice - Ecaflip - 3.7.12.12 - Release");
+        DofusWindowInfo second = Window(102, 1002,
+            "Alice - Iop - 3.7.12.12 - Release");
+        state.Update([first, second], Key(101, 1001));
+        state.SelectWindow(Key(102, 1002)).Should().BeTrue();
+        state.SelectedClient!.Key.Should().Be(Key(102, 1002));
+
+        state.Update([first, second]);
+        state.Update([first, second], Key(101, 1001));
+        state.SelectedClient!.Key.Should().Be(Key(101, 1001));
+    }
+
+    [Fact]
     public void UnknownClientCannotBeSelectedOrBecomeKnownFromTitleAlone()
     {
         CurrentDofusClientsState state = new();
