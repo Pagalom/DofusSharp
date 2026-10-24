@@ -43,7 +43,8 @@
                         <span>Serveur : @(_currentServer?.Name ?? "Identification en cours")</span>
                     }
                 </button>
-                <ul class="dropdown-menu dropdown-menu-end">
+                <ul class="dropdown-menu dropdown-menu-end"
+                    style="max-height: 55vh; overflow-y: auto;">
                     <li><h6 class="dropdown-header">Consulter les données d'un serveur</h6></li>
                     @if (_servers is not null)
                     {
@@ -322,8 +323,7 @@
                 CurrentDofusClientsState.SelectWindow(verified))
             {
                 ViewFilter.FollowWindow(verified,
-                    WindowServerAttributionState.ForWindow(verified)?.ServerName ??
-                    key.ServerName);
+                    ServerForTargetWindow(verified) ?? key.ServerName);
             }
             else
             {
@@ -342,8 +342,7 @@
         if (!CurrentDofusClientsState.Clients.Any(client => client.Key == key))
             return;
 
-        ViewFilter.FollowWindow(
-            key, WindowServerAttributionState.ForWindow(key)?.ServerName);
+        ViewFilter.FollowWindow(key, ServerForTargetWindow(key));
         ApplyDisplayedServer(updateCharacterContext: true);
         GuardLegacyRoute();
         StateHasChanged();
@@ -357,11 +356,30 @@
             StateHasChanged();
         });
 
+    /// <summary>
+    /// The protocol-owned window server always wins. An independently
+    /// verified character key may supply its own server only for UI
+    /// targeting, never for accepting network market writes.
+    /// </summary>
+    private string? ServerForTargetWindow(DofusClientWindowKey window)
+    {
+        string? detected =
+            WindowServerAttributionState.ForWindow(window)?.ServerName;
+        if (detected is not null)
+            return detected;
+
+        CharacterSessionProfile? verified = CurrentCharacterState.ActiveProfile;
+        return verified is not null &&
+            CurrentCharacterState.WindowForCharacter(verified.Key) == window
+                ? verified.Key.ServerName
+                : null;
+    }
+
     private void SyncSelectedWindowServer()
     {
         DofusClientWindow? selected = CurrentDofusClientsState.SelectedClient;
         string? serverName = selected is { } client
-            ? WindowServerAttributionState.ForWindow(client.Key)?.ServerName
+            ? ServerForTargetWindow(client.Key)
             : null;
 
         // New network observations must not steal a deliberately selected
