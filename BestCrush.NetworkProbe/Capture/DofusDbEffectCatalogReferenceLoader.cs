@@ -54,13 +54,13 @@ internal static class DofusDbEffectCatalogReferenceLoader
         string label, IReadOnlyList<long> values, DofusDbItem item)
     {
         if (item.Effects is null ||
-            item.Effects.Count is < 1 or > 64 ||
-            item.Effects.Any(e => e.EffectId is null or <= 0))
+            item.Effects.Count is < 1 or > 64)
             return null;
 
         ItemCatalogEffectReference[] effects = item.Effects
             .Select(e => new ItemCatalogEffectReference(
-                checked((ulong)e.EffectId!.Value), e.From, e.To,
+                e.EffectId is > 0 ? checked((ulong)e.EffectId.Value) : 0,
+                e.From, e.To,
                 e.Characteristic, e.ElementId))
             .ToArray();
         return new ItemCatalogCandidateReference(label, values, effects);
