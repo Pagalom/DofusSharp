@@ -101,8 +101,8 @@ public sealed class ServerViewFilterStateTest
         characters.SelectCharacter(key).Should().BeTrue();
         characters.SelectCharacter(key).Should().BeTrue();
 
-        requested.Should().Equal(key, key,
-            "each explicit click, including repeated clicks, restores the character view");
+        // Repeated clicks must notify even when the target remains unchanged.
+        requested.Should().Equal(key, key);
     }
 
     [Fact]
