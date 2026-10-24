@@ -15,6 +15,11 @@ ne constituent pas une autorisation de redistribution. Les PNG ne sont
 pas publiés dans le dépôt. Avant de distribuer un installeur contenant
 ces fichiers, clarifier les droits applicables.
 
+Voir également la [notice relative aux ressources d'Ankama](../NOTICE-RESSOURCES-ANKAMA.md),
+qui précise qu'aucune autorisation de redistribution des visuels n'est
+actuellement confirmée et qu'ils ne doivent pas être intégrés aux
+releases publiques en attendant une réponse.
+
 ## Installation ponctuelle (Windows)
 
 Depuis la racine du dépôt, dans PowerShell :
