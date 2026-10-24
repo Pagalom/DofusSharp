@@ -51,7 +51,9 @@ public sealed record ServerLinkDiagnostics(
     int SelectionWithoutOwner,
     int GameWithSelection,
     int GameWithoutSelection,
-    int Confirmed);
+    int Confirmed,
+    int SynOwnersCaptured = 0,
+    int SynOwnersReused = 0);
 
 public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false)
 {
@@ -64,6 +66,8 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
     private int _gameWithSelection;
     private int _gameWithoutSelection;
     private int _confirmed;
+    private int _synOwnersCaptured;
+    private int _synOwnersReused;
 
     public ServerLinkDiagnostics ReadDiagnostics()
     {
@@ -71,7 +75,23 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
             return new ServerLinkDiagnostics(
                 _selectionFrames, _selectionWithOwner,
                 _selectionWithoutOwner, _gameWithSelection,
-                _gameWithoutSelection, _confirmed);
+                _gameWithoutSelection, _confirmed,
+                _synOwnersCaptured, _synOwnersReused);
+    }
+
+    internal void RecordSynOwner(long epoch, bool reused)
+    {
+        lock (_sync)
+        {
+            if (epoch != _epoch)
+                return;
+
+            if (reused)
+                _synOwnersReused++;
+            else
+                _synOwnersCaptured++;
+        }
+        if (DiagnosticsEnabled) Changed?.Invoke();
     }
 
     /// <summary>
@@ -201,6 +221,8 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
             _gameWithSelection = 0;
             _gameWithoutSelection = 0;
             _confirmed = 0;
+            _synOwnersCaptured = 0;
+            _synOwnersReused = 0;
         }
         if (changed || DiagnosticsEnabled) Changed?.Invoke();
     }
