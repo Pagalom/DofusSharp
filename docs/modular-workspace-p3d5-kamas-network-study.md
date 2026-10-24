@@ -1534,3 +1534,104 @@ recommencer les deux transferts dans une même session.
 Aucune modification de `SemanticDecoders`, des tables SQLite,
 des stocks, des prix, des filtres multicomptes, des ateliers ou de
 l'affichage des fiches personnages.
+
+## P3d.5.16 — Corrélation f10 validée pour Vitalité et Intelligence
+
+### Captures confirmées le 24/10/2026 à 21:57 UTC
+
+Après le checkpoint Windows rapporté par l'opérateur
+**1260 tests réussis, 0 échec, 9,1 s**, il a exécuté
+`--item-effects-type-study` avec les deux références
+locales :
+
+- A — **Kwakanneau de Flammes** : `99,20`, dans
+  l'ordre Vitalité, Intelligence ;
+- B — **Kwakture de Flammes** : `24,26,5,3`,
+  dans l'ordre Vitalité, Intelligence, 5 % Résistance
+  Feu, Fuite.
+
+Résultat issu de la capture réelle :
+
+```text
+[21:56:59.313 UTC] Session #1 S→C OPENED
+[21:57:07.422 UTC] Session #1 S→C iqx 27 octets ITEM_EFFECTS=[item=A other=pending]
+[21:57:10.447 UTC] Session #1 S→C iqx 42 octets ITEM_EFFECTS=[item=B common-f10=[1:yes 2:yes] distinct-f10=yes]
+```
+
+Il s'agit **deux fois de `iqx`**, dans **la même
+session TCP #1**, sans relance de Dofus entre les
+observations.
+
+**Ce qui est expérimentalement établi :**
+
+1. La paire `f7[].f10` associée à la Vitalité
+   est identique entre A (+99) et B (+24).
+2. Celle associée à l'Intelligence est identique
+   entre A (+20) et B (+26).
+3. Les codes `f10` sont distincts pour les
+   différents effets d'un même objet dans les
+   deux captures (`distinct-f10=yes`).
+4. L'identification des effets a été faite
+   par valeur `f7[].f5` dans des ensembles
+   comportant chacun des valeurs distinctes
+   ; les noms proviennent des infobulles
+   observées en jeu, pas du paquet.
+
+**Hypothèse fortement corroborée :**
+`f7[].f10` identifie le **type d'effet**,
+et `f7[].f5` porte sa **valeur courante**.
+Cela ne prouve **pas encore** que le nombre `f10`
+est exactement le `EffectId` (ou l'ID de
+caractéristique) de DofusDb. Aucune valeur de
+`f10` n'est diffusée dans la sortie du probe.
+
+### Optimisation de la suite
+
+Le code `BestCrush.Network/Protocol/SemanticDecoders.cs`
+possède déjà un modèle `ItemDetailObservation`
+avec `ItemStatObservation(ulong EffectId,long Value)`
+et un parseur `TryDecodeItemObject` utilisé
+par l'ancienne chaîne d'inventaire, la
+forgemagie, les crafts et la corrélation
+du concassage. L'ancien schéma **canonique**
+emploie `effect.f1 = EffectId` et
+`effect.f10 = Value`.
+
+Le nouveau schéma expérimental est **différent** :
+`wire.item.f7[].f10` est candidat à l'identifiant
+de type et `wire.item.f7[].f5` est la valeur.
+Le normaliseur de champs du dépôt peut en théorie
+convertir `wire.f7 → canonical.f3` et,
+à l'intérieur, `wire.f10 → canonical.f1`,
+`wire.f5 → canonical.f10`. **Ne pas
+appliquer ce remapping à la production tant
+que f10 n'a pas été confronté aux IDs
+DofusDb actuels.**
+
+Priorité suggérée : comparer, sur un nombre
+réduit d'effets connus (Vitalité, Intelligence,
+Résistance Feu %, Fuite), les valeurs `f10`
+uniquement **dans la machine locale**
+avec le catalogue DofusDb en version compatible.
+En cas de discordance, enregistrer un mapping
+distinct `wire-effect-code ↔ DofusDb effect id`
+en protocole versionné sans supposer une identité
+numérique.
+
+Ensuite, mutualiser un décodeur d'instance
+portant `UID, ItemId, quantité, effets`
+sur les enveloppes `kch/iqx/iqz/irl/irp`,
+en maintenant **inconnue** (`null`)
+la quantité ou la liste des effets si
+une observation ne les transmet pas.
+Les adaptateurs de slots d'atelier, craft,
+concassage et annonces HDV doivent réutiliser
+ce type, sans assimiler `MarketListingUid`
+à un UID d'instance et sans réécrire `jzs`
+(prix) ni les routes legacy avant leur
+caractérisation.
+
+**Statut :** observation réelle documentée ;
+aucune modification de production, de SQLite,
+d'interface ou de schéma de stock effectuée
+à ce checkpoint.
