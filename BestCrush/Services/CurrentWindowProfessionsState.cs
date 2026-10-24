@@ -102,7 +102,7 @@ public sealed class CurrentWindowProfessionsState(CurrentServerState serverState
                       single.ExperienceCounter >= prior.CumulativeExperience))
             {
                 Dictionary<ulong, AccountProfessionProgress> updated =
-                    new(old.Professions);
+                    old.Professions.ToDictionary(entry => entry.Key, entry => entry.Value);
                 updated[id] = prior with
                 {
                     Level = single.Level,
