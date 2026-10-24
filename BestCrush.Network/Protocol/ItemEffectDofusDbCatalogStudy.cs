@@ -102,6 +102,22 @@ public sealed class ItemEffectDofusDbCatalogStudy
             : rangeValid == rangeKnown ? "all" :
                 rangeValid == 0 ? "none" : "partial";
 
+        // An effect added by smithmagic can be absent from this item's
+        // natural catalog while retaining a valid DofusDb EffectId. Compare
+        // only with the other PUBLIC item reference; never log the code.
+        int unlistedCount = pairs.Count(p =>
+            !item.Effects.Any(e => e.EffectId > 0 && e.EffectId == p.Code));
+        int knownInOtherCatalog = pairs.Count(p =>
+            !item.Effects.Any(e => e.EffectId > 0 && e.EffectId == p.Code) &&
+            _items.Where(x => !ReferenceEquals(x, item))
+                .SelectMany(x => x.Effects)
+                .Any(e => e.EffectId > 0 && e.EffectId == p.Code));
+        int unusedCatalogCodes = item.Effects
+            .Where(e => e.EffectId > 0)
+            .Select(e => e.EffectId)
+            .Distinct()
+            .Count(id => !pairs.Any(p => p.Code == id));
+
         return "item=" + item.Label +
             " f10-vs-dofusdb-effectId=" + ids +
             " characteristicId=" + Status(matchedCharacteristics,
@@ -111,6 +127,9 @@ public sealed class ItemEffectDofusDbCatalogStudy
             " value-ranges=" + ranges +
             " catalog-effects=" + item.Effects.Count +
             " wire-effects=" + pairs.Count +
+            " unlisted-on-item=" + unlistedCount +
+            " unlisted-known-on-other=" + knownInOtherCatalog +
+            " catalog-codes-unobserved=" + unusedCatalogCodes +
             " catalog-version=unverified";
     }
 }
