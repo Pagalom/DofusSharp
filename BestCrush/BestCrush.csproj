@@ -104,4 +104,19 @@
       <ProjectReference Include="..\DofusSharp.DofusDb.ApiClients\DofusSharp.DofusDb.ApiClients.csproj" />
     </ItemGroup>
 
+    <!-- Legal-release guard: official DOFUS job/class PNGs installed for
+         private development are not cleared for public redistribution.
+         Fail closed on Release rather than silently bundling them. -->
+    <Target Name="PreventRestrictedDofusArtworkInRelease"
+            BeforeTargets="PrepareForBuild"
+            Condition="'$(Configuration)' == 'Release'">
+        <ItemGroup>
+            <_RestrictedDofusArtwork
+                Include="$(MSBuildProjectDirectory)\wwwroot\img\dofus\**\*.png" />
+        </ItemGroup>
+        <Error
+            Condition="'@(_RestrictedDofusArtwork)' != ''"
+            Text="Publication bloquee : images officielles DOFUS detectees sous wwwroot/img/dofus. Les deplacer temporairement avant toute compilation Release ou obtenir et documenter l'autorisation d'Ankama. Voir NOTICE-RESSOURCES-ANKAMA.md. En developpement, utiliser Debug." />
+    </Target>
+
 </Project>
