@@ -61,6 +61,10 @@
             </h3>
             @if (Professions is { Count: > 0 })
             {
+                @if (ProfessionsAreProvisional)
+                {
+                    <p class="sheet-origin">Métiers observés sur cette fenêtre Game — noms du référentiel public, compte non vérifié.</p>
+                }
                 <div class="sheet-job-list">
                     @foreach (AccountProfessionProgress job in Professions
                         .OrderBy(x => x.Name, StringComparer.CurrentCultureIgnoreCase))
@@ -145,6 +149,7 @@
     [Parameter] public long? PocketKamas { get; set; }
     [Parameter] public long? BankKamas { get; set; }
     [Parameter] public IReadOnlyList<AccountProfessionProgress>? Professions { get; set; }
+    [Parameter] public bool ProfessionsAreProvisional { get; set; }
     [Parameter] public bool IsExperimental { get; set; }
     [Parameter] public bool IsSelected { get; set; }
     // SQL browsing never changes the actual Dofus window selection.
