@@ -32,6 +32,7 @@ public sealed class OverlayService(
     // Ephemeral verified-window equipment, separate from the legacy global
     // slot. Never persist window or character-specific focus state.
     private WindowScopedNetworkEquipmentState? _windowEquipmentState;
+    private CurrentDofusClientsState? _dofusClientsState;
     private long _middleFocusRequestVersion;
     // Any explicit focus (including F8 or a manual UI action) supersedes
     // an older middle-click still waiting for a database lookup.
@@ -144,8 +145,12 @@ private bool _hasF7VisibilitySnapshot;
         // This is a singleton registered by MauiProgram. Resolve it without
         // changing OverlayService's public DI constructor/API.
         using (IServiceScope scope = serviceScopeFactory.CreateScope())
+        {
             _windowEquipmentState = scope.ServiceProvider
                 .GetService<WindowScopedNetworkEquipmentState>();
+            _dofusClientsState = scope.ServiceProvider
+                .GetService<CurrentDofusClientsState>();
+        }
 
         LoadStoredLayout();
 
@@ -330,27 +335,38 @@ private bool _hasF7VisibilitySnapshot;
 
     public void RequestTooltipRead()
     {
-        if (!currentServerState.HasSelectedServer)
-        {
-            PostUi(
-                marketCaptureOverlayService
-                    .ShowServerSelectionRequired
-            );
-
-            return;
-        }
-
         DofusWindowInfo? dofusWindow =
             dofusWindowService
                 .GetActiveDofusWindow();
 
         if (dofusWindow is null)
         {
-            PostUi(
-                marketCaptureOverlayService
-                    .ShowReadCancelled
-            );
+            PostUi(marketCaptureOverlayService.ShowReadCancelled);
+            return;
+        }
 
+        if (currentServerState.AutomaticRoutingEnabled)
+        {
+            DofusClientWindowKey target = new(
+                dofusWindow.Handle.ToInt64(), dofusWindow.ProcessId);
+            NetworkCaptureLease? gameLease =
+                currentServerState.GetWindowCaptureLease(target);
+
+            // F8 is an explicit in-game action. The temporary SQL filter
+            // must NEVER provide the server context for this tooltip.
+            if (gameLease is not { } verified ||
+                !currentServerState.IsCaptureLeaseActive(verified))
+            {
+                PostUi(marketCaptureOverlayService.ShowServerSelectionRequired);
+                return;
+            }
+
+            currentServerState.SelectServer(verified.ServerName);
+            _dofusClientsState?.SelectWindow(target);
+        }
+        else if (!currentServerState.HasSelectedServer)
+        {
+            PostUi(marketCaptureOverlayService.ShowServerSelectionRequired);
             return;
         }
 
@@ -1589,6 +1605,16 @@ private bool _hasF7VisibilitySnapshot;
             if (lease is { } selectedLease &&
                 _windowEquipmentState is { } windows)
             {
+                if (currentServerState.AutomaticRoutingEnabled &&
+                    currentServerState.IsCaptureLeaseActive(selectedLease))
+                {
+                    // A wheel click on the real Dofus window is another
+                    // explicit game focus: restore that window's server
+                    // before calculating, never the SQL browsing server.
+                    currentServerState.SelectServer(selectedLease.ServerName);
+                    _dofusClientsState?.SelectWindow(target);
+                }
+
                 WindowEquipmentFocusToken? token =
                     windows.GetFocusToken(target, selectedLease);
 
