@@ -1775,3 +1775,115 @@ ou de la molette. Les nouveaux tests
 synthétiques ne constituent **pas** une
 validation sur Windows ; seuls les résultats
 fournis par l'opérateur peuvent la valider.
+
+## P3d.5.18 — Effets de forgemagie hors catalogue (24/10/2026)
+
+### Capture réelle : catalogue DofusDb vs deux instances
+
+`--item-effects-dofusdb-study` a obtenu
+`DOFUSDB=[catalogue-charge]` et **six** deltas
+S→C dans **la même session TCP** (21:10 UTC,
+horloge de la capture datée du 24/10/2026 dans
+l'historique du projet ; sortie horodatée 22:10 UTC) :
+
+```text
+22:10:44.775 iqz B f10-vs-dofusdb-effectId=all characteristicId=none elementId=none value-ranges=all catalog-effects=4 wire-effects=4
+22:10:45.784 iqz A f10-vs-dofusdb-effectId=partial characteristicId=none elementId=none value-ranges=incomplete-id-match catalog-effects=2 wire-effects=2
+22:10:46.786 iqx B f10-vs-dofusdb-effectId=all characteristicId=none elementId=none value-ranges=all catalog-effects=4 wire-effects=4
+22:10:48.801 iqx A f10-vs-dofusdb-effectId=partial characteristicId=none elementId=none value-ranges=incomplete-id-match catalog-effects=2 wire-effects=2
+22:10:49.806 iqz A f10-vs-dofusdb-effectId=partial characteristicId=none elementId=none value-ranges=incomplete-id-match catalog-effects=2 wire-effects=2
+22:10:50.819 iqz B f10-vs-dofusdb-effectId=all characteristicId=none elementId=none value-ranges=all catalog-effects=4 wire-effects=4
+```
+
+La **Kwakture de Flammes (B)** valide numériquement,
+pour ses **quatre effets réels**, `f7[].f10 ==
+DofusDbItemEffect.EffectId` (sur ce catalogue).
+L'identité numérique n'est pas observée avec
+`Characteristic` ou `ElementId`.
+
+**Le Kwakanneau de Flammes (A)** montre une
+correspondance `EffectId` partielle,
+de façon parfaitement répétée. Ce constat
+n'invalide pas le schéma `f10=effectId` :
+la référence catalogue de l'anneau décrit
+les **jets naturels**, pas nécessairement
+l'instance forgemagée.
+
+Les fiches publiques contemporaines :
+- https://dafous.app/objet/2418/kwakanneau-de-flammes
+  donne **16–20 Intelligence**, **4–5 % Résistance Feu**,
+  **pas de Vitalité naturelle**.
+- https://dafous.app/objet/2427/kwakture-de-flammes
+  donne **21–30 Vitalité**, **21–30 Intelligence**,
+  **5 % Résistance Feu**, **2–3 Fuite**.
+
+L'anneau observé dans la capture personnelle
+présente **+99 Vitalité**, **+20 Intelligence**,
+et **0 % Résistance Feu** grisée. Hypothèse
+particulièrement plausible : la forgemagie a
+**ajouté de la Vitalité** et **fait tomber la
+résistance naturelle à zéro**. Ce diagnostic
+reste une inférence : aucune séquence de
+forgemagie de cet anneau n'a été interceptée.
+
+La capture précédente P3d.5.16 a déjà confirmé que
+le code f10 de la Vitalité est **stable entre A
+et B**, or B valide ses EffectId sur DofusDb.
+Le décalage A est donc **attendu pour une
+instance possédant un effet hors catalogue
+de base**, plutôt qu'une preuve d'un numéro
+de code entièrement différent.
+
+### Ajustement du diagnostic et tests
+
+`ItemEffectDofusDbCatalogStudy` rapporte désormais
+trois indicateurs agrégés (sans révéler aucun code) :
+
+- `unlisted-on-item=N` : effets réellement reçus
+  dont le `f10` ne figure pas parmi les
+  `EffectId` naturels de cet objet ;
+- `unlisted-known-on-other=N` : combien de ces
+  effets sont connus comme types valides dans
+  le catalogue **de l'autre objet** ;
+- `catalog-codes-unobserved=N` : nombre de
+  codes `EffectId` de la fiche théorique non
+  présents dans le delta d'instance.
+  Une absence peut correspondre à un effet
+  tombé à zéro, mais ne le prouve pas.
+
+Dans le cas de la forgemagie suspectée,
+l'anneau devrait produire
+`unlisted-on-item=1 unlisted-known-on-other=1
+catalog-codes-unobserved=1`. Cette sortie
+est une **prévision à vérifier**, pas une
+capture réelle à ce jour. La ceinture devrait
+produire `0/0/0`.
+
+Des tests synthétiques ont été ajoutés
+pour un anneau avec Vitalité ajoutée,
+résistance disparue, et cas témoin où
+l'effet hors catalogue est véritablement
+inconnu. Pas de changement de la production
+`BestCrush` ni de SQLite.
+
+### Validation Windows et contrôle minimal
+
+Exécuter le checkpoint habituel après
+un `git status` prudent :
+`git fetch origin feature/modular-workspace`
+puis `git merge --ff-only FETCH_HEAD` seulement
+si aucun chemin modifié localement n'est
+recouvert. Compiler `BestCrush.NetworkProbe`,
+puis `dotnet test .\\Tests.BestCrush\\Tests.BestCrush.csproj`.
+Ne pas affirmer que les nouveaux tests sont
+validés avant leurs résultats Windows.
+
+Relancer le **même mode**
+`--item-effects-dofusdb-study`.
+Un seul transfert de l'anneau et, si utile,
+de la ceinture suffit pour tester
+ces indicateurs, sans redémarrer Dofus.
+Ne pas activer de règle de décodage produit
+tant que le cas de FM et l'identification
+numérique des effets n'ont pas été
+explicitement confirmés.
