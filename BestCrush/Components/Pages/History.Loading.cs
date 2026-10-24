@@ -9,10 +9,26 @@ namespace BestCrush.Components.Pages;
 
 public partial class History
 {
+    private string? _loadedServerName;
+
     protected override async Task OnInitializedAsync()
     {
         LoadAnalyticsPresets();
         await LoadCatalogsAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.Equals(_loadedServerName, ServerName,
+                StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _loadedServerName = ServerName;
+        // Never leave old-server history rows visible under a new server
+        // label while an asynchronous query loads the new SQL filter.
+        _marketHistory = null;
+        _itemHistory = null;
+        _crushHistory = null;
         await LoadCurrentAsync();
     }
 
