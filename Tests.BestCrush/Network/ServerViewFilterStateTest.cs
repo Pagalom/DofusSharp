@@ -78,6 +78,34 @@ public sealed class ServerViewFilterStateTest
     }
 
     [Fact]
+    public void OnlyExplicitCharacterTargetingEndsManualSqlBrowsing()
+    {
+        CurrentCharacterState characters = new();
+        characters.SelectServer("Tylezia");
+        List<CharacterKey> requested = [];
+        characters.TargetRequested += requested.Add;
+
+        CharacterConnectionScope scope = new(
+            "Tylezia", "verified-flow", 1, 1, 11);
+        CharacterIdentityAssessment confirmed = new(
+            CharacterIdentityStatus.Confirmed, scope,
+            new ConfirmedCharacterIdentity(101, "Pagalom", 4, 38));
+        characters.ObserveConfirmedCharacter(
+            confirmed, isVerifiedTargetWindow: true,
+            verifiedWindow: TyleziaWindow).Should().BeTrue();
+
+        requested.Should().BeEmpty(
+            "passive confirmed network observations must not end SQL browsing");
+
+        CharacterKey key = new("Tylezia", 101);
+        characters.SelectCharacter(key).Should().BeTrue();
+        characters.SelectCharacter(key).Should().BeTrue();
+
+        requested.Should().Equal(key, key,
+            "each explicit click, including repeated clicks, restores the character view");
+    }
+
+    [Fact]
     public void RoutineNetworkUpdatesCannotOverwriteManualBrowsingFilter()
     {
         ServerViewFilterState view = new();
