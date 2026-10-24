@@ -269,4 +269,123 @@ public sealed class ItemEffectsWireShapeStudyTest
             Iqx(percent, vitality), [700, 99])
             .Should().Contain("match=[f5:no f10:no]");
     }
+
+    [Fact]
+    public void TwoItemsWithDifferentRollsRetainTheSameCandidateCodesForSharedEffects()
+    {
+        ItemEffectTypeStabilityStudy study = new([99, 20], [24, 26, 5, 3]);
+        byte[] kwakanneau = Iqx(
+            Message(Unsigned(5, 99), Unsigned(10, 1001)),
+            Message(Unsigned(5, 20), Unsigned(10, 1002)));
+        byte[] kwakture = Iqz(
+            Message(Unsigned(5, 5), Unsigned(10, 1003)),
+            Message(Unsigned(5, 26), Unsigned(10, 1002)),
+            Message(Unsigned(5, 3), Unsigned(10, 1004)),
+            Message(Unsigned(5, 24), Unsigned(10, 1001)));
+
+        study.Observe(1, "iqx", kwakanneau)
+            .Should().Be("item=A other=pending");
+
+        string? summary = study.Observe(1, "iqz", kwakture);
+        summary.Should().Be(
+            "item=B common-f10=[1:yes 2:yes] distinct-f10=yes");
+        foreach (string privateValue in new[]
+                 { "1001", "1002", "1003", "1004", "9022491", "6924" })
+            summary.Should().NotContain(privateValue);
+    }
+
+    [Fact]
+    public void DistinctCandidateCodesAndCrossedNamesFailClosed()
+    {
+        ItemEffectTypeStabilityStudy study = new([99, 20], [24, 26, 5, 3]);
+        study.Observe(3, "iqx", Iqx(
+            Message(Unsigned(5, 99), Unsigned(10, 1001)),
+            Message(Unsigned(5, 20), Unsigned(10, 1002))));
+
+        string? wrong = study.Observe(3, "iqz", Iqz(
+            Message(Unsigned(5, 24), Unsigned(10, 1002)),
+            Message(Unsigned(5, 26), Unsigned(10, 1001)),
+            Message(Unsigned(5, 5), Unsigned(10, 1003)),
+            Message(Unsigned(5, 3), Unsigned(10, 1004))));
+
+        wrong.Should().Be("item=B common-f10=[1:no 2:no] distinct-f10=yes");
+    }
+
+    [Fact]
+    public void CrossSessionMessagesNeverCompareItemCodes()
+    {
+        ItemEffectTypeStabilityStudy study = new([99, 20], [24, 26, 5, 3]);
+        study.Observe(1, "iqx", Iqx(
+            Message(Unsigned(5, 99), Unsigned(10, 1001)),
+            Message(Unsigned(5, 20), Unsigned(10, 1002))))
+            .Should().Be("item=A other=pending");
+
+        study.Observe(2, "iqz", Iqz(
+            Message(Unsigned(5, 24), Unsigned(10, 1001)),
+            Message(Unsigned(5, 26), Unsigned(10, 1002)),
+            Message(Unsigned(5, 5), Unsigned(10, 1003)),
+            Message(Unsigned(5, 3), Unsigned(10, 1004))))
+            .Should().Be("item=B other=pending");
+
+        study.Observe(1, "other", Iqx())
+            .Should().BeNull();
+        study.Observe(0, "iqx", Iqx())
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void MalformedEffectsOrWrongReferenceSetDoNotProduceAStabilityResult()
+    {
+        ItemEffectTypeStabilityStudy study = new([99, 20], [24, 26, 5, 3]);
+        study.Observe(1, "iqx", Iqx(
+            Message(Unsigned(5, 99)), Message(Unsigned(5, 20))))
+            .Should().BeNull();
+
+        study.Observe(1, "iqx", Iqx(
+            Message(Unsigned(5, 99), Unsigned(10, 1001)),
+            Message(Unsigned(5, 99), Unsigned(10, 1002))))
+            .Should().BeNull();
+
+        study.Observe(1, "iqx", Iqx(
+            Message(Unsigned(5, 98), Unsigned(10, 1001)),
+            Message(Unsigned(5, 20), Unsigned(10, 1002))))
+            .Should().BeNull();
+    }
+
+    [Fact]
+    public void FlowTrackerKeepsTypeStudyOptInAndPrivate()
+    {
+        ItemEffectTypeStabilityStudy study = new([99, 20], [24, 26, 5, 3]);
+        CharacterCaptureFlowTracker tracker = new(
+            itemEffectsShape: true, effectTypeStudy: study);
+        CharacterCaptureFlowKey flow = new(
+            "127.0.0.1", 40001, "10.0.0.10", 5555);
+        DateTime time = new(2026, 10, 24, 21, 0, 0, DateTimeKind.Utc);
+        byte[] first = Frame(Any("iqx", Iqx(
+            Message(Unsigned(5, 99), Unsigned(10, 1001)),
+            Message(Unsigned(5, 20), Unsigned(10, 1002)))));
+        byte[] second = Frame(Any("iqz", Iqz(
+            Message(Unsigned(5, 24), Unsigned(10, 1001)),
+            Message(Unsigned(5, 26), Unsigned(10, 1002)),
+            Message(Unsigned(5, 5), Unsigned(10, 1003)),
+            Message(Unsigned(5, 3), Unsigned(10, 1004)))));
+
+        CharacterCaptureEvent one = tracker.Observe(
+            flow, CharacterCaptureDirection.ServerToClient,
+            100, first, time)
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        one.ItemEffectsShape.Should().Be("item=A other=pending");
+
+        CharacterCaptureEvent two = tracker.Observe(
+            flow, CharacterCaptureDirection.ServerToClient,
+            (uint)(100 + first.Length), second, time.AddSeconds(2))
+            .Single(e => e.Kind == CharacterCaptureEventKind.Message);
+        two.ItemEffectsShape.Should().Contain("common-f10=[1:yes 2:yes]");
+        string report = System.Text.Json.JsonSerializer.Serialize(two);
+        foreach (string sensitive in new[] { "1001", "1002", "1003", "1004" })
+            report.Should().NotContain(sensitive);
+
+        Action invalid = () => new CharacterCaptureFlowTracker(effectTypeStudy: study);
+        invalid.Should().Throw<ArgumentException>();
+    }
 }
