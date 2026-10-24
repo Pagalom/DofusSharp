@@ -97,6 +97,35 @@ public sealed class ModularWorkspaceNavigationTest
         WorkspaceModules.ActiveSlug(route).Should().BeNull();
     }
 
+    [Theory]
+    [InlineData("servers/Tylezia", "/servers/Kourial")]
+    [InlineData("servers/Tylezia/equipment-prices", "/servers/Kourial/equipment-prices")]
+    [InlineData("servers/Tylezia/rune-prices", "/servers/Kourial/rune-prices")]
+    [InlineData("servers/Tylezia/resource-prices", "/servers/Kourial/resource-prices")]
+    [InlineData("servers/Tylezia/coefficients", "/servers/Kourial/coefficients")]
+    [InlineData("servers/Tylezia/history?tab=items", "/servers/Kourial/history?tab=items")]
+    public void SqlBrowsingSwitchesServerWithoutChangingCurrentPage(
+        string relativePath, string expected)
+    {
+        WorkspaceModules.ReplaceServerInRoute(relativePath, "Kourial")
+            .Should().Be(expected);
+    }
+
+    [Fact]
+    public void ReturningToUnknownCharacterServerLeavesScopedHistoryPage()
+    {
+        WorkspaceModules.ReplaceServerInRoute(
+            "servers/Kourial/history", null)
+            .Should().Be("/modules/concassage");
+    }
+
+    [Fact]
+    public void ProfilePageRemainsOpenWhileInspectingAnotherServer()
+    {
+        WorkspaceModules.ReplaceServerInRoute(
+            "profile", "Kourial").Should().BeNull();
+    }
+
     [Fact]
     public void CharacterAndGlobalSettingsHaveDistinctRoutes()
     {
