@@ -15,9 +15,9 @@ public readonly record struct AccountServerKey(
 /// </summary>
 public sealed record AccountProfessionProgress(
     string Name, int Level, ulong CumulativeExperience,
-    // P3c.12 presentation-only. Future verified network ingestion can
-    // supply f1.f3 and f1.f6. Unknown thresholds remain null, never
-    // replaced by guesses or a percentage based on total XP.
+    // Presentation-only. Verified window-local Game samples may attach
+    // boundaries from the validated DOFUS 3 profession XP reference.
+    // Unknown or contradictory thresholds remain null; no guessed progress.
     ulong? LevelStartCumulativeExperience = null,
     ulong? NextLevelCumulativeExperience = null);
 
