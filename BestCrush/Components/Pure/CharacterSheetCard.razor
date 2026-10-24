@@ -128,9 +128,9 @@
         </span>
         @if (CanSelect)
         {
-            <button class="sheet-target @(IsSelected ? "sheet-target--selected" : "")"
-                    type="button" @onclick="OnSelect" disabled="@IsSelected">
-                @(IsSelected ? "Fenêtre ciblée" : "Cibler")
+            <button class="sheet-target @(IsTargetButtonSelected ? "sheet-target--selected" : "")"
+                    type="button" @onclick="OnSelect" disabled="@IsTargetButtonSelected">
+                @(IsTargetButtonSelected ? "Fenêtre ciblée" : "Cibler")
             </button>
         }
     </footer>
@@ -147,8 +147,14 @@
     [Parameter] public IReadOnlyList<AccountProfessionProgress>? Professions { get; set; }
     [Parameter] public bool IsExperimental { get; set; }
     [Parameter] public bool IsSelected { get; set; }
+    // SQL browsing never changes the actual Dofus window selection.
+    // A manually browsed server must still allow clicking the targeted card
+    // to return to the server attributed to its real window.
+    [Parameter] public bool IsBrowsingManually { get; set; }
     [Parameter] public bool CanSelect { get; set; } = true;
     [Parameter] public EventCallback OnSelect { get; set; }
+
+    private bool IsTargetButtonSelected => IsSelected && !IsBrowsingManually;
 
     private string ClassInitial =>
         string.IsNullOrWhiteSpace(ClassName) ? "?" : ClassName.Trim()[..1].ToUpperInvariant();
