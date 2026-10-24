@@ -230,3 +230,61 @@ Les décodeurs unitaires existants restent réutilisables sous
 réserve de vérification sur la version courante de Dofus.
 La phase suivante sera construite à partir des observations
 contrôlées de l'opérateur.
+
+## P3d.5.1 — Premier relevé réel : chargement puis ouverture d'inventaire (24/10/2026)
+
+L'opérateur a exécuté `--device 3 --character-scan` avec un seul client
+Dofus et a transmis un relevé **de métadonnées uniquement**. Le
+rattachement TCP est stable : session #1 ouverte puis fermée,
+session **#2** active, `ksc` puis `ksb` reçus.
+
+Parmi les messages **S→C** du chargement de session #2 :
+
+| Opcode | Taille de corps | Heure UTC | Constat |
+|---|---:|---|---|
+| `mdp` | 5 857 octets | 03:14:52.802 | Gros message initial |
+| `ica` | 2 485 octets | 03:14:52.802 | Message initial |
+| `irl` | 12 532 octets | 03:14:52.803 | Gros message initial |
+| `ico` | 26 472 octets | 03:14:52.819 | Gros message initial |
+| `jei` | 6 002 octets | 03:14:52.819 | Message initial |
+| `ifg` | 4 322 octets | 03:14:53.836 | Message initial |
+| `isr` | 79 574 octets | 03:14:54.544 | Gros message, juste après un `jgm` C→S |
+
+À 03:14:54.526, un premier `jgm` C→S précède `jhb` ; un
+second `jgm` C→S est observé à 03:14:54.544, immédiatement
+avant `isr`. **Il manque l'horodatage de l'action humaine exacte**.
+Cette proximité n'établit donc ni que `jgm` signifie « ouvrir
+l'inventaire », ni que `isr` en est le snapshot.
+
+Des messages `icj` répétés suivent `ico`; sans preuve,
+**ne pas** les interpréter comme des lignes d'objets.
+Aucune visite de banque, modification contrôlée de quantité ni
+comparaison avant/après sur un même solde n'est validée par cette trace.
+Aucun opcode de Kamas, d'inventaire ou de banque n'est prouvé.
+
+**Lien aux recherches P1b** :
+`docs/modular-workspace-p1b-protobuf-shape-study.md` avait déjà repéré
+`mdp,irl,ico,jei,isr` dans les rafales de chargement, sans
+signification métier établie. Le relevé P3d.5.1 reproduit
+leurs présences, sans lever cette incertitude.
+
+### Étape suivante — formes protobuf (zéro valeur de compte ou objet)
+
+Reprendre une **nouvelle** capture, probe lancé avant le client :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --character-shape --shape-keys mdp,ica,irl,ico,jei,isr
+```
+
+Charger le personnage, attendre le calme pendant environ 10 secondes,
+noter l'heure locale de l'ouverture de l'inventaire,
+ouvrir/fermer, attendre 5 secondes et arrêter avec `Ctrl+C`.
+Ne transmettre que les lignes `shape=[...]` et les heures des
+actions, sans payload brut.
+
+Le compteur complet des champs **racine** sera distinct des
+**échantillons** imbriqués, comme prévu par P1b. Les champs
+`?f...` ne sont que des hypothèses de sous-messages, pas
+des objets ni des montants de Kamas.
+
+**Aucune modification du routeur métier, des vues, ni de SQLite.**
