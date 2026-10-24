@@ -42,12 +42,12 @@ public sealed class ItemEffectDofusDbCatalogStudyTest
         ItemEffectDofusDbCatalogStudy study = NewStudy();
         study.Observe("iqx", Iqx((99, 1001), (20, 1002)))
             .Should().Be("item=A f10-vs-dofusdb-effectId=all " +
-                "value-ranges=all catalog-effects=3 wire-effects=2 " +
+                "characteristicId=unknown elementId=unknown value-ranges=all catalog-effects=3 wire-effects=2 " +
                 "catalog-version=unverified");
         study.Observe("iqz", Iqz(
             (5, 1003), (26, 1002), (3, 1004), (24, 1001)))
             .Should().Be("item=B f10-vs-dofusdb-effectId=all " +
-                "value-ranges=all catalog-effects=4 wire-effects=4 " +
+                "characteristicId=unknown elementId=unknown value-ranges=all catalog-effects=4 wire-effects=4 " +
                 "catalog-version=unverified");
     }
 
@@ -72,7 +72,8 @@ public sealed class ItemEffectDofusDbCatalogStudyTest
                  new(1003, 1, 10), new(1004, 1, 5)]));
 
         study.Observe("iqx", Iqx((99, 1001), (20, 1002)))
-            .Should().Contain("f10-vs-dofusdb-effectId=all value-ranges=partial");
+            .Should().Contain("f10-vs-dofusdb-effectId=all characteristicId=unknown " +
+                "elementId=unknown value-ranges=partial");
     }
 
     [Fact]
@@ -133,5 +134,26 @@ public sealed class ItemEffectDofusDbCatalogStudyTest
         Action bad = () => new CharacterCaptureFlowTracker(
             effectCatalogStudy: study);
         bad.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void AlternativeCatalogIdentifiersAreComparedIndependently()
+    {
+        ItemEffectDofusDbCatalogStudy study = new(
+            new ItemCatalogCandidateReference("A", [99, 20],
+                [new(1001, 1, 100, 5001, 7001),
+                 new(1002, 1, 30, 5002, 7002)]),
+            new ItemCatalogCandidateReference("B", [24, 26, 5, 3],
+                [new(1001, 1, 100, 5001, 7001),
+                 new(1002, 1, 30, 5002, 7002),
+                 new(1003, 1, 10, 5003, 7003),
+                 new(1004, 1, 10, 5004, 7004)]));
+
+        study.Observe("iqx", Iqx((99, 5001), (20, 5002)))
+            .Should().Contain("f10-vs-dofusdb-effectId=none " +
+                "characteristicId=all elementId=none");
+        study.Observe("iqx", Iqx((99, 7001), (20, 7002)))
+            .Should().Contain("f10-vs-dofusdb-effectId=none " +
+                "characteristicId=none elementId=all");
     }
 }
