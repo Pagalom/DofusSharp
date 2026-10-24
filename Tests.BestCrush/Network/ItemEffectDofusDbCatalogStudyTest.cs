@@ -43,11 +43,13 @@ public sealed class ItemEffectDofusDbCatalogStudyTest
         study.Observe("iqx", Iqx((99, 1001), (20, 1002)))
             .Should().Be("item=A f10-vs-dofusdb-effectId=all " +
                 "characteristicId=unknown elementId=unknown value-ranges=all catalog-effects=3 wire-effects=2 " +
+                "unlisted-on-item=0 unlisted-known-on-other=0 catalog-codes-unobserved=1 " +
                 "catalog-version=unverified");
         study.Observe("iqz", Iqz(
             (5, 1003), (26, 1002), (3, 1004), (24, 1001)))
             .Should().Be("item=B f10-vs-dofusdb-effectId=all " +
                 "characteristicId=unknown elementId=unknown value-ranges=all catalog-effects=4 wire-effects=4 " +
+                "unlisted-on-item=0 unlisted-known-on-other=0 catalog-codes-unobserved=0 " +
                 "catalog-version=unverified");
     }
 
@@ -155,5 +157,61 @@ public sealed class ItemEffectDofusDbCatalogStudyTest
         study.Observe("iqx", Iqx((99, 7001), (20, 7002)))
             .Should().Contain("f10-vs-dofusdb-effectId=none " +
                 "characteristicId=none elementId=all");
+    }
+
+    [Fact]
+    public void ForgemagedVitalityIsKnownGloballyDespiteBeingAbsentFromRingCatalog()
+    {
+        // Public ring catalog: Intelligence and fire resistance.
+        // Observed ring: 99 Vitality (added), 20 Intelligence,
+        // fire resistance at zero (not present as a wire effect).
+        // Public belt catalog: all four native characteristic types.
+        ItemEffectDofusDbCatalogStudy study = new(
+            new ItemCatalogCandidateReference("A", [99, 20],
+            [
+                new(1002, 16, 20), // Intelligence
+                new(1003, 4, 5)   // Fire resistance
+            ]),
+            new ItemCatalogCandidateReference("B", [24, 26, 5, 3],
+            [
+                new(1001, 21, 30), // Vitality
+                new(1002, 21, 30), // Intelligence
+                new(1003, 5, 5),   // Fire resistance
+                new(1004, 2, 3)    // Dodge
+            ]));
+
+        string? ring = study.Observe("iqz",
+            Iqz((99, 1001), (20, 1002)));
+        ring.Should().Contain("f10-vs-dofusdb-effectId=partial");
+        ring.Should().Contain("value-ranges=incomplete-id-match");
+        ring.Should().Contain("unlisted-on-item=1 unlisted-known-on-other=1");
+        ring.Should().Contain("catalog-codes-unobserved=1");
+
+        string? belt = study.Observe("iqx",
+            Iqx((24, 1001), (26, 1002),
+                (5, 1003), (3, 1004)));
+        belt.Should().Contain("f10-vs-dofusdb-effectId=all");
+        belt.Should().Contain("unlisted-on-item=0 unlisted-known-on-other=0");
+        belt.Should().Contain("catalog-codes-unobserved=0");
+        foreach (string secret in new[] { "1001", "1002", "1003", "1004" })
+        {
+            ring.Should().NotContain(secret);
+            belt.Should().NotContain(secret);
+        }
+    }
+
+    [Fact]
+    public void UnknownExtraEffectIsNotMislabeledAsKnownInOtherCatalog()
+    {
+        ItemEffectDofusDbCatalogStudy study = new(
+            new ItemCatalogCandidateReference("A", [99, 20],
+                [new(1002, 16, 20), new(1003, 4, 5)]),
+            new ItemCatalogCandidateReference("B", [24, 26, 5, 3],
+                [new(1001, 21, 30), new(1002, 21, 30),
+                 new(1003, 5, 5), new(1004, 2, 3)]));
+
+        study.Observe("iqx", Iqx((99, 9999), (20, 1002)))
+            .Should().Contain(
+                "unlisted-on-item=1 unlisted-known-on-other=0");
     }
 }
