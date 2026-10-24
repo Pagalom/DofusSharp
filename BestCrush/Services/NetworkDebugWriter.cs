@@ -141,7 +141,9 @@ internal sealed class NetworkDebugWriter(
                     $"CreatedLocal: {DateTime.Now:O}",
                     $"ClientBuild: {protocolMap?.ClientBuild ?? "unknown"}",
                     $"TCP port: {dofusPort}",
-                    $"Server: {currentServerState.ServerName ?? "(not selected)"}",
+                    currentServerState.AutomaticRoutingEnabled
+                        ? "Server: automatic per verified Game TCP window (SQL view filter ignored)"
+                        : $"Server: {currentServerState.ServerName ?? "(not selected)"}",
                     "",
                     "wire.jsonl = exact decoded Ankama Any bodies (Base64), one message per line.",
                     "events.log = human-readable semantic events decoded by BestCrush."
