@@ -157,6 +157,7 @@
     protected override Task OnInitializedAsync()
     {
         MarketDataChangeNotifier.Changed += OnMarketDataChanged;
+        ServerViewFilter.Changed += OnBrowseModeChanged;
         return Task.CompletedTask;
     }
 
@@ -301,8 +302,12 @@
         }
     }
 
+    private void OnBrowseModeChanged() =>
+        _ = InvokeAsync(StateHasChanged);
+
     public void Dispose()
     {
+        ServerViewFilter.Changed -= OnBrowseModeChanged;
         MarketDataChangeNotifier.Changed -=
             OnMarketDataChanged;
         _refreshLock.Dispose();
