@@ -489,3 +489,6 @@ fabric.properties
 BestCrush-v*-win-*.zip
 
 # End of https://www.toptal.com/developers/gitignore/api/csharp,rider
+# DOFUS artwork fetched once by scripts/install_dofus_artwork.ps1.
+# Copyright Ankama: keep these binary game resources local, not in Git.
+BestCrush/wwwroot/img/dofus/
