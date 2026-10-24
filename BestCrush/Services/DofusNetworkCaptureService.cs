@@ -38,6 +38,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly EphemeralCandidateRosterWireObserver? _rosterWireObserver;
     private readonly CurrentCandidateWindowCardsState? _candidateCardsState;
     private readonly WindowServerAttributionState? _windowServerAttributionState;
+    private readonly CurrentWindowProfessionsState? _windowProfessionsState;
     private readonly ProfessionGameLinkStudy? _professionGameLinkStudy;
     private readonly TcpHandshakeWindowEvidence _handshakeWindowEvidence = new();
     private readonly bool _liveRosterDiagnostics;
@@ -153,6 +154,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 .GetService<CurrentCandidateWindowCardsState>();
             _windowServerAttributionState = scope.ServiceProvider
                 .GetService<WindowServerAttributionState>();
+            _windowProfessionsState = scope.ServiceProvider
+                .GetService<CurrentWindowProfessionsState>();
         }
 #if DEBUG
         // Opt-in only. The existing exact Game TCP/window attribution is
@@ -1036,6 +1039,12 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                 _map,
                                 routed,
                                 cancellationToken);
+
+                        // Live Game evidence and the public twenty-job mapping
+                        // supply a provisional, per-window professions view.
+                        // No account identity or SQLite write is inferred.
+                        if (routed.Key == "ipz")
+                            _windowProfessionsState?.Observe(routed);
 
                         // Read-only profession research: ipz is attributed
                         // only when this exact Game TCP connection holds a
