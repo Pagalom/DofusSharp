@@ -42,7 +42,8 @@ internal sealed class CharacterMetadataProbe(
     ConcurrentRosterWindowEvidenceStudy? windowEvidenceStudy = null,
     bool itemEffectsShape = false,
     IReadOnlyList<long>? expectedEffectValues = null,
-    ItemEffectTypeStabilityStudy? effectTypeStudy = null) : IDisposable
+    ItemEffectTypeStabilityStudy? effectTypeStudy = null,
+    ItemEffectDofusDbCatalogStudy? effectCatalogStudy = null) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
@@ -86,7 +87,8 @@ internal sealed class CharacterMetadataProbe(
         concurrentRosterStudy: concurrentRosterStudy,
         itemEffectsShape: itemEffectsShape,
         expectedEffectValues: expectedEffectValues,
-        effectTypeStudy: effectTypeStudy);
+        effectTypeStudy: effectTypeStudy,
+        effectCatalogStudy: effectCatalogStudy);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _itemEffectsShapeMode = itemEffectsShape;
     private readonly Dictionary<int, int> _reportedEffectLines = new();
