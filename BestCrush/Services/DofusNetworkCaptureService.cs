@@ -678,9 +678,13 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     ip.DestinationAddress, tcp.DestinationPort,
                     captureEpoch, handshakeToken, forceRefresh: true);
                 if (handshakeOwner is { } verifiedOwner)
+                {
                     _handshakeWindowEvidence.Remember(
                         captureEpoch, handshakeToken, connection,
                         verifiedOwner, DateTime.UtcNow);
+                    _windowServerAttributionState?.RecordSynOwner(
+                        captureEpoch, reused: false);
+                }
             }
 
             if (tcp.PayloadData.Length == 0)
@@ -779,21 +783,28 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                         DofusClientWindowKey? selectedWindow =
                                             ResolveSelectionWindow(
                                                 candidateWindow,
-                                                () => _handshakeWindowEvidence.Resolve(
-                                                    captureEpoch, connectionId, connection,
-                                                    DateTime.UtcNow,
-                                                    () => _dofusWindowService?
-                                                        .ListVisibleDofusWindows()
-                                                        .Where(w => w.ProcessId > 0 &&
-                                                                    w.Handle != IntPtr.Zero)
-                                                        .Select(w => new DofusClientWindowKey(
-                                                            w.Handle.ToInt64(), w.ProcessId))
-                                                        .Distinct().ToArray() ?? [])
-                                                    ?? ObserveLiveDofusClient(
+                                                () =>
+                                                {
+                                                    DofusClientWindowKey? early =
+                                                        _handshakeWindowEvidence.Resolve(
+                                                            captureEpoch, connectionId,
+                                                            connection, DateTime.UtcNow,
+                                                            () => _dofusWindowService?
+                                                                .ListVisibleDofusWindows()
+                                                                .Where(w => w.ProcessId > 0 &&
+                                                                            w.Handle != IntPtr.Zero)
+                                                                .Select(w => new DofusClientWindowKey(
+                                                                    w.Handle.ToInt64(), w.ProcessId))
+                                                                .Distinct().ToArray() ?? []);
+                                                    if (early is not null)
+                                                        _windowServerAttributionState.RecordSynOwner(
+                                                            captureEpoch, reused: true);
+                                                    return early ?? ObserveLiveDofusClient(
                                                         ip.SourceAddress, tcp.SourcePort,
                                                         ip.DestinationAddress, tcp.DestinationPort,
                                                         captureEpoch, connectionId,
-                                                        forceRefresh: true));
+                                                        forceRefresh: true);
+                                                });
 
                                         _windowServerAttributionState.RecordSelectionFrame(
                                             captureEpoch, selectedWindow is not null);
