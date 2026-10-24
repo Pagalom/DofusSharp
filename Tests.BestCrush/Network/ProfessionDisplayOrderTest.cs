@@ -21,8 +21,7 @@ public sealed class ProfessionDisplayOrderTest
             .Should().Equal("Alchimiste", "Bûcheron", "Bijoutier", "Chasseur");
 
         source.Select(job => job.Name)
-            .Should().Equal("Bijoutier", "Alchimiste", "Bûcheron", "Chasseur",
-                "the source snapshot must never be reordered by the UI");
+            .Should().Equal("Bijoutier", "Alchimiste", "Bûcheron", "Chasseur");
     }
 
     [Fact]
