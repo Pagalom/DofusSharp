@@ -227,4 +227,46 @@ public sealed class ItemEffectsWireShapeStudyTest
         report.Should().NotContain("118");
         report.Should().NotContain("119");
     }
+
+    [Fact]
+    public void CurrentCandidateF5MatchesNonzeroDisplayedValuesInBothDirections()
+    {
+        // Synthetic fixture reproducing the field SHAPE and anonymized
+        // comparison result observed on the Kwakanneau de Flammes.
+        // The f10 constants are illustrative: their semantics are unknown.
+        byte[] vitality = Message(Unsigned(5, 99), Unsigned(10, 1001));
+        byte[] intelligence = Message(Unsigned(5, 20), Unsigned(10, 1002));
+
+        ItemEffectsWireShapeStudy.Describe("iqx",
+            Iqx(vitality, intelligence), [99, 20])
+            .Should().Contain("effects=2")
+            .And.Contain("match=[f5:yes f10:no]");
+
+        ItemEffectsWireShapeStudy.Describe("iqz",
+            Iqz(intelligence, vitality), [20, 99])
+            .Should().Contain("effects=2")
+            .And.Contain("match=[f5:yes f10:no]");
+
+        // An empty/zero-valued UI line does not imply an extra wire effect.
+        ItemEffectsWireShapeStudy.Describe("iqx",
+            Iqx(vitality, intelligence), [99, 20, 0])
+            .Should().Contain("match=[f5:incomplete f10:incomplete]");
+    }
+
+    [Fact]
+    public void PercentageEffectsAreComparableWithoutAssumingScaling()
+    {
+        // Percent values are hypothetical here. A real-game capture must
+        // establish whether "+7 %" is serialized as 7 or another unit.
+        byte[] percent = Message(Unsigned(5, 7), Unsigned(10, 2101));
+        byte[] vitality = Message(Unsigned(5, 99), Unsigned(10, 2102));
+        ItemEffectsWireShapeStudy.Describe("iqx",
+            Iqx(percent, vitality), [7, 99])
+            .Should().Contain("match=[f5:yes f10:no]");
+
+        // A mismatching reference must fail rather than be rescaled silently.
+        ItemEffectsWireShapeStudy.Describe("iqx",
+            Iqx(percent, vitality), [700, 99])
+            .Should().Contain("match=[f5:no f10:no]");
+    }
 }
