@@ -23,6 +23,21 @@
         </p>
     </div>
 
+    @if (WindowServerAttributionState.DiagnosticsEnabled)
+    {
+        var diagnosis = WindowServerAttributionState.ReadDiagnostics();
+        <p class="profile-research-note" role="status">
+            Diagnostic serveur (session) :
+            sélections reçues @diagnosis.SelectionFrames,
+            propriétaire TCP identifié @diagnosis.SelectionWithOwner,
+            propriétaire introuvable @diagnosis.SelectionWithoutOwner,
+            chargements avec sélection @diagnosis.GameWithSelection,
+            chargements sans sélection @diagnosis.GameWithoutSelection,
+            associations confirmées @diagnosis.Confirmed.
+            Aucun identifiant privé n'est affiché.
+        </p>
+    }
+
     @if (visibleCandidateSheets.Count > 0 ||
          serverLinkedWithoutRoster.Count > 0)
     {
