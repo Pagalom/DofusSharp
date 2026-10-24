@@ -86,6 +86,13 @@
                                 aria-pressed="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
                                 @onclick="() => SelectDofusClient(client.Key)">
                             <span class="character-avatar-face" aria-hidden="true">👤</span>
+                            @if (DofusLocalArtwork.ClassPortrait(client.ClassName) is { } portrait &&
+                                 !_missingAvatarArtwork.Contains(portrait))
+                            {
+                                <img class="character-avatar-local" src="@portrait" alt=""
+                                     width="36" height="36"
+                                     @onerror="() => MarkAvatarArtworkMissing(portrait)" />
+                            }
                             <span class="character-avatar-initial" aria-hidden="true">
                                 @(client.HasCharacterTitle ? client.DisplayName[..1].ToUpperInvariant() : "?")
                             </span>
@@ -104,6 +111,13 @@
                                 disabled="@(!CurrentCharacterState.IsCharacterConnected(character.Key))"
                                 @onclick="() => SelectCharacter(character.Key)">
                             <span class="character-avatar-face" aria-hidden="true">👤</span>
+                            @if (DofusLocalArtwork.ClassPortrait(DofusClassDisplayNames.ForId(character.ClassId)) is { } portrait &&
+                                 !_missingAvatarArtwork.Contains(portrait))
+                            {
+                                <img class="character-avatar-local" src="@portrait" alt=""
+                                     width="36" height="36"
+                                     @onerror="() => MarkAvatarArtworkMissing(portrait)" />
+                            }
                             <span class="character-avatar-initial" aria-hidden="true">
                                 @(string.IsNullOrWhiteSpace(character.Name) ? "?" : character.Name[..1].ToUpperInvariant())
                             </span>
@@ -161,6 +175,9 @@
 </div>
 
 @code {
+    private readonly HashSet<string> _missingAvatarArtwork = new(StringComparer.Ordinal);
+    private void MarkAvatarArtworkMissing(string path) => _missingAvatarArtwork.Add(path);
+
     private readonly string _theme =
         Application.Current?.RequestedTheme is AppTheme.Dark ? "dark" : "light";
 
