@@ -50,6 +50,33 @@ internal static class WorkspaceModules
          string.Equals(fromUrl, selectedServer, StringComparison.OrdinalIgnoreCase));
 
     /// <summary>
+    /// Change only the SQL-backed server scope in a legacy page URL while
+    /// preserving the current page (prices/history/coefficients) and query.
+    /// No routing decision ever changes the server of a Dofus game flow.
+    /// </summary>
+    internal static string? ReplaceServerInRoute(
+        string? relativePath, string? serverName)
+    {
+        if (ServerFromRoute(relativePath) is null)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(serverName))
+            return KnownRoutes.Module("concassage");
+
+        string path = relativePath!.TrimStart('/');
+        int queryStart = path.IndexOfAny(['?', '#']);
+        string suffix = queryStart < 0 ? string.Empty : path[queryStart..];
+        string core = queryStart < 0 ? path : path[..queryStart];
+        string[] segments = core.Split('/');
+
+        if (segments.Length < 2 || segments[0] != "servers")
+            return null;
+
+        segments[1] = Uri.EscapeDataString(serverName);
+        return "/" + string.Join("/", segments) + suffix;
+    }
+
+    /// <summary>
     /// Only actual workspace modules count as tabs. The existing
     /// /servers/{name}/... subpages still belong to Concassage.
     /// </summary>
