@@ -40,9 +40,18 @@ le PNG original `{iconId}-64.png` : le métier Forgeron (`id=11`) utilise
 notamment `iconId=10`. Les images installées sont renommées selon
 l'ID du métier, pour conserver les chemins internes de BestCrush.
 
-Si une icône ou un portrait n'est pas présent dans l'archive, le script
-installe les autres et affiche un avertissement. L'interface conserve
-alors son visuel provisoire pour cet élément.
+Les portraits sont nommés `Head_{classe*10}-64.png` dans l'archive
+(`Head_60-64.png` pour Écaflip, `Head_70-64.png` pour Éniripsa).
+L'importeur installe cette variante par défaut sous
+`classes/6.png` ou `classes/7.png`. Une autre variante
+(`Head_61-64.png`, `Head_71-64.png`, etc.) existe, mais
+le sexe/l'apparence du personnage n'est pas déterminé par la fenêtre.
+
+Si une icône ou un portrait précis n'est pas présent dans l'archive,
+le script installe les autres et affiche un avertissement. S'il ne
+retrouve aucun portrait, il échoue explicitement au lieu d'annoncer une
+installation réussie. L'interface conserve son visuel provisoire pour
+les éléments manquants.
 
 Les images sont enregistrées sous :
 - `BestCrush/wwwroot/img/dofus/jobs/{publicJobId}.png`
