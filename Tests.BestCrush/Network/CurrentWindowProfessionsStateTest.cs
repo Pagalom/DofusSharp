@@ -168,4 +168,86 @@ public sealed class CurrentWindowProfessionsStateTest
         view.Observe(Wire("ipz", Single(999, 1, 1000), A, 21, lease))
             .Should().BeFalse("unknown professions are not invented");
     }
+    private static byte[] RosterWithOneJob(
+        ulong targetJobId, int level, ulong totalXp) =>
+        Message(ProfessionPublicJobIdReference.ReferenceTwenty
+            .Select(id => Bytes(1, Message(
+                Unsigned(1, (ulong)(id == targetJobId ? level : 1)),
+                Unsigned(2, id == targetJobId ? totalXp : 0UL),
+                Unsigned(5, id))))
+            .ToArray());
+
+    [Fact]
+    public void WindowSpecificProfessionProgressUpdatesWithoutCrossAccountLeak()
+    {
+        var (view, attribution, server) = Start();
+        var leaseA = Load(attribution, server, A, 293, 21);
+        var leaseB = Load(attribution, server, B, 355, 31, characterId: 202);
+
+        view.Observe(Wire("ipz", RosterWithOneJob(16, 8, 708),
+            A, 21, leaseA)).Should().BeTrue();
+        view.Observe(Wire("ipz", RosterWithOneJob(16, 3, 76),
+            B, 31, leaseB)).Should().BeTrue();
+
+        var firstA = view.ForWindow(A)!.Single(job => job.Name == "Bijoutier");
+        firstA.LevelStartCumulativeExperience.Should().Be(560);
+        firstA.NextLevelCumulativeExperience.Should().Be(720);
+        ProfessionProgressPresentation.For(firstA)!.Value.Percent.Should().Be(92.5m);
+
+        var firstB = view.ForWindow(B)!.Single(job => job.Name == "Bijoutier");
+        firstB.LevelStartCumulativeExperience.Should().Be(60);
+        firstB.NextLevelCumulativeExperience.Should().Be(120);
+        ProfessionProgressPresentation.For(firstB)!.Value.Percent.Should().Be(26.67m);
+
+        view.Observe(Wire("ipz", Single(16, 8, 715),
+            A, 21, leaseA)).Should().BeTrue();
+        var updatedA = view.ForWindow(A)!.Single(job => job.Name == "Bijoutier");
+        ProfessionProgressPresentation.For(updatedA)!.Value.EarnedInLevel
+            .Should().Be(155);
+        ProfessionProgressPresentation.For(updatedA)!.Value.RequiredInLevel
+            .Should().Be(160);
+
+        view.Observe(Wire("ipz", Single(16, 9, 725),
+            A, 21, leaseA)).Should().BeTrue();
+        var levelUpA = view.ForWindow(A)!.Single(job => job.Name == "Bijoutier");
+        levelUpA.LevelStartCumulativeExperience.Should().Be(720);
+        levelUpA.NextLevelCumulativeExperience.Should().Be(900);
+        ProfessionProgressPresentation.For(levelUpA)!.Value.EarnedInLevel
+            .Should().Be(5);
+
+        var unchangedB = view.ForWindow(B)!.Single(job => job.Name == "Bijoutier");
+        unchangedB.CumulativeExperience.Should().Be(76);
+        unchangedB.Level.Should().Be(3);
+        ProfessionProgressPresentation.For(unchangedB)!.Value.Percent
+            .Should().Be(26.67m);
+    }
+
+    [Fact]
+    public void ContradictoryXpCannotCreateAFalseProgressBar()
+    {
+        var (view, attribution, server) = Start();
+        var lease = Load(attribution, server, A, 293, 21);
+
+        view.Observe(Wire("ipz", RosterWithOneJob(16, 8, 800),
+            A, 21, lease)).Should().BeTrue();
+
+        var invalid = view.ForWindow(A)!.Single(job => job.Name == "Bijoutier");
+        invalid.Level.Should().Be(8);
+        invalid.CumulativeExperience.Should().Be(800);
+        invalid.LevelStartCumulativeExperience.Should().BeNull();
+        invalid.NextLevelCumulativeExperience.Should().BeNull();
+        ProfessionProgressPresentation.For(invalid).Should().BeNull();
+
+        // A later authoritative update with a consistent level repairs
+        // the view. Nothing was written into account-level state.
+        view.Observe(Wire("ipz", Single(16, 9, 825),
+            A, 21, lease)).Should().BeTrue();
+        var repaired = view.ForWindow(A)!.Single(job => job.Name == "Bijoutier");
+        repaired.LevelStartCumulativeExperience.Should().Be(720);
+        repaired.NextLevelCumulativeExperience.Should().Be(900);
+        ProfessionProgressPresentation.For(repaired)!.Value.EarnedInLevel
+            .Should().Be(105);
+        new CurrentAccountProfessionsState().ActiveSnapshot.Should().BeNull();
+    }
+
 }
