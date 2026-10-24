@@ -32,6 +32,7 @@ Deux fenêtres, Pagalom et Nahala, restent « Serveur : identification en cours 
 - Au décodage du `ServerId`, le propriétaire validé directement dans ce callback est prioritaire. Sinon, une preuve SYN du **même tuple et de la même connexion** peut être récupérée après vérification de l'unicité et de la présence du même HWND/PID. En absence de preuve, l'OS est interrogé une dernière fois. Pas de focus, titre, IP distante, rapprochement temporel approximatif ou « dernier serveur ».
 - **Correction essentielle :** un paquet SYN-ACK entrant sur la même connexion ne réinitialise plus son `ConnectionId` ! Seuls le SYN sortant et RST réinitialisent le contexte. Sans cela, le cache SYN deviendrait inutilisable avant la sélection du serveur.
 - Une fenêtre fermée, un HWND/PID recyclé, un tuple/connexion incompatible, une session de capture redémarrée et un cache expiré **ne peuvent pas réutiliser** l'ancienne preuve.
+- Si un propriétaire obtenu au moment du SYN est **contradictoire** avec un propriétaire retrouvé au décodage du message de sélection, la sélection est rejetée plutôt que déplacée sur une autre fenêtre.
 - L'association serveur finale et la possibilité d'écrire SQLite exigent toujours le `ServerId` du protocole + `ksc/ksb` cohérents sur le Game de la même fenêtre. Les protections multiserveurs P3m.17 restent intactes.
 
 ### Diagnostic Debug étendu
@@ -52,7 +53,7 @@ Lire la table TCP au SYN peut encore manquer une connexion trop brève ou un pro
 
 ## Contrôle Windows à effectuer
 
-Les tests étaient à **1149 attendus** à l'issue du correctif P3m.18, mais le résultat n'a pas encore été transmis. P3m.19 ajoute **14 cas nouveaux** (8 faits + 6 théories). **1163 tests attendus**, à confirmer sur Windows ; aucun build ni essai Dofus ne sont déclarés réussis par anticipation.
+Les tests étaient à **1149 attendus** à l'issue du correctif P3m.18, mais le résultat n'a pas encore été transmis. P3m.19 ajoute **15 cas nouveaux** (9 faits + 6 théories). **1164 tests attendus**, à confirmer sur Windows ; aucun build ni essai Dofus ne sont déclarés réussis par anticipation.
 
 ```powershell
 git fetch origin feature/modular-workspace
