@@ -179,8 +179,8 @@ public sealed class CurrentDofusClientsState
             changed = previousSelected != _selected || !_clients.SequenceEqual(next);
             _clients = next.ToArray();
         }
-        if (activated is { } window)
-            GameActivated?.Invoke(window);
+        if (activated is { } activatedWindow)
+            GameActivated?.Invoke(activatedWindow);
         if (changed)
             Changed?.Invoke();
     }
