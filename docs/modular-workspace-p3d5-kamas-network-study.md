@@ -997,3 +997,125 @@ Les ateliers de craft/forgemagie et les offres HDV restent
 des consommateurs futurs de l'instance normalisée si
 leur message comporte réellement un objet complet,
 et non une simple référence/annonce/offre.
+
+## P3d.5.11 — Préparation du diagnostic d'effets f7 (24/10/2026)
+
+**Nouvel outil de recherche non activé en production :**
+
+`BestCrush.Network/Protocol/ItemEffectsWireShapeStudy.cs`
+propose `Describe(opcode, body)` sur **trois** messages
+S→C courants : `iqx`, `iqz` et `kch`.
+Le nouveau commutateur `--item-effects-shape`
+est branché dans `BestCrush.NetworkProbe` et le
+`CharacterCaptureFlowTracker` avec option explicite,
+et affiche par ligne les métadonnées habituelles puis
+`ITEM_EFFECTS=[effects=N wire-shapes=[...]]`.
+
+Chemins examinés **sans exporter les valeurs** :
+
+- `iqx.root.f2.f1.f7[]`
+- `iqz.root.f1.f1.f7[]`
+- `kch.root.f3.f1.f7[]`
+
+Les enveloppes ne sont prises en compte que si
+l'objet interne possède les champs numériques positifs
+`f3,f4,f5` ; leur **valeur n'est jamais affichée**.
+Le résumé n'imprime que des **numéros et types de champs**
+(`v`, `len`, `32`, `64`) ainsi que
+la cardinalité/forme des éventuels enregistrements f7.
+
+Limites : message maximal **4 Kio**, entrée f7
+maximale **1 Kio**, maximum **64 entrées f7**
+par instance, **4 formes distinctes** affichées,
+**24 lignes** affichées par session. Un
+résultat `effects=too-large` ou `over-limit`
+**n'est pas** une estimation d'effets : diagnostic borné,
+ne jamais interpréter une sortie absente comme un
+objet sans effets. Aucun dump brut, sauvegarde ou
+modification de SQLite.
+
+**Tests C# synthétiques ajoutés** :
+`Tests.BestCrush/Network/ItemEffectsWireShapeStudyTest.cs`.
+Ils vérifient la forme dans les trois enveloppes,
+le cas zéro, les limites, les messages malformés,
+le masquage des noms, UID, ID et valeurs privées,
+le filtre S→C et l'absence de diagnostic par défaut.
+
+### Checkpoint Windows obligatoire
+
+Se positionner sur `feature/modular-workspace`
+**sans réinitialiser ses modifications locales**.
+Examiner `git status --short --branch` ; si
+l'arbre est propre, récupérer les commits par
+`git fetch origin feature/modular-workspace` puis
+`git merge --ff-only FETCH_HEAD`.
+
+```powershell
+dotnet build .\BestCrush.Network\BestCrush.Network.csproj
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+**Aucun de ces tests Windows n'a été exécuté par
+l'assistant ; ne pas déclarer de réussite avant
+constat sur l'ordinateur de l'opérateur.**
+Si une erreur de compilation apparaît, corriger
+uniquement les nouvelles modifications de P3d.5.11
+avant de reprendre les captures.
+
+### Expérience suivante (un seul client)
+
+Après build et tests réellement réussis :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --item-effects-shape
+```
+
+1. Fermer toutes les fenêtres Dofus et BestCrush ;
+   lancer le probe, puis **un** client Dofus.
+2. Ouvrir la banque. Choisir le **Kwakanneau de Flammes**
+   déjà testé : visible +99 Vitalité, +20 Intelligence,
+   0 % Résistance Feu grisée.
+3. Transférer une fois banque→inventaire, attendre 5 s,
+   puis transférer inventaire→banque et noter les secondes.
+4. Refaire avec un deuxième équipement connu,
+   idéalement **3 effets non nuls**, sinon un objet
+   connu sans caractéristique.
+5. Transmettre seulement les lignes
+   `ITEM_EFFECTS=[...]` et les heures des actions ;
+   ne pas partager de PCAP, payload brut ou UID.
+   Le mode n'affiche pas les valeurs des effets.
+
+**Critères d'analyse :**
+
+- Si 2 occurrences `f7` de l'anneau apparaissent
+  sous une structure homogène et 3 pour l'autre
+  équipement, l'hypothèse `f7 = effets d'instance`
+  est renforcée.
+- Une forme protobuf interne répétée dans `f7`
+  peut suggérer les **champs** à comparer localement
+  aux IDs/valeurs d'effets, mais ne les prouve pas.
+- Si l'outil renvoie `unrecognized` ou `null`,
+  pas de conclusion ; il faudra inspecter seulement
+  un autre schéma borné avec fixtures.
+- Une fois les champs confirmés par références
+  saisies **localement**, construire le normaliseur
+  et les décodeurs de snapshots/deltas ; ateliers
+  et HDV restent des consommateurs séparés.
+
+### Exigence d'architecture rappelée
+
+Le parseur commun d'objets doit fonctionner pour
+inventaire, coffre de banque, artisanat, ateliers de
+forgemagie, concassage et les **messages HDV qui
+portent réellement les instances et leurs jets**.
+
+Ne pas confondre l'**UID d'une instance** et
+l'**UID d'une annonce HDV** ; `jzs` prix/
+lots doit continuer d'utiliser son moteur de
+prix existant. Ne pas modifier les routes
+historiques tant que la correspondance du
+client actuel n'est pas contrôlée.
+
+**Aucune implémentation de stock ou d'effets
+activée en production dans P3d.5.11.**
