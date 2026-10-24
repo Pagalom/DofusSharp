@@ -93,6 +93,33 @@ public sealed class DofusClientWindowSelectionTest
     }
 
     [Fact]
+    public void TargetingAlreadySelectedCardRestoresItsOwnServerAfterSqlBrowse()
+    {
+        CurrentDofusClientsState clients = new();
+        DofusClientWindowKey tyleziaWindow = Key(101, 1001);
+        clients.Update([Window(101, 1001,
+            "Pagalom - Eniripsa - 3.7.12.12 - Release")], tyleziaWindow);
+
+        ServerViewFilterState view = new();
+        view.FollowWindow(tyleziaWindow, "Tylezia");
+        clients.TargetRequested += target => view.FollowWindow(
+            target, target == tyleziaWindow ? "Tylezia" : null);
+
+        view.BrowseServer("Kourial");
+        clients.SelectedClient!.Key.Should().Be(tyleziaWindow);
+        view.IsBrowsingManually.Should().BeTrue();
+        view.ServerName.Should().Be("Kourial");
+
+        // The same previously selected card must remain clickable: its
+        // TargetRequested event returns to the verified window's server.
+        clients.SelectWindow(tyleziaWindow).Should().BeTrue();
+        clients.SelectedClient!.Key.Should().Be(tyleziaWindow);
+        view.ServerName.Should().Be("Tylezia");
+        view.IsBrowsingManually.Should().BeFalse();
+        view.TargetWindow.Should().Be(tyleziaWindow);
+    }
+
+    [Fact]
     public void ReturningToSameDofusWindowRaisesRealActivationOnlyOnce()
     {
         CurrentDofusClientsState state = new();
