@@ -1,8 +1,10 @@
 namespace BestCrush.Services;
 
 /// <summary>
-/// Snapshot of the server chosen by the user when a network message arrived.
-/// The protocol itself does not verify this server name.
+/// Revocable capture scope. In the production multi-server mode this
+/// credential comes ONLY from verified network Connection+Game evidence,
+/// never from the server selected for SQL browsing. Legacy replay/test
+/// instances retain the older manually selected lease contract.
 /// </summary>
 public readonly record struct NetworkCaptureLease(
     string ServerName,
@@ -48,8 +50,10 @@ public sealed class CurrentServerState
         !string.IsNullOrWhiteSpace(ServerName);
 
     /// <summary>
-    /// Choosing a server immediately enables capture for that server.
-    /// Re-selecting the same name leaves the current generation intact.
+    /// In production automatic mode this selects only the displayed SQL
+    /// server/calculation context, never a source for new network writes.
+    /// In legacy test mode it still provides a generation-scoped lease.
+    /// Re-selecting the same name leaves the generation intact.
     /// </summary>
     public void SelectServer(string serverName)
     {
@@ -101,8 +105,9 @@ public sealed class CurrentServerState
             : GetCaptureLease();
 
     /// <summary>
-    /// Ignore old queued messages when the selected server changes.
-    /// This does not verify the Dofus server; selection is user-authoritative.
+    /// The target window's independently verified Game capture lease.
+    /// In automatic mode, neither the manual SQL filter nor the current
+    /// visible page authorizes incoming market observations.
     /// </summary>
     public NetworkCaptureLease? GetWindowCaptureLease(
         DofusClientWindowKey window) =>
