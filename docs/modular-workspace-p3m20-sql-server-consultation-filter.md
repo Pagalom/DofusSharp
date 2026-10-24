@@ -54,6 +54,10 @@ et deux serveurs différents restent isolés.
   réel au premier plan** d'une fenêtre Dofus, pas à chaque tick du polling.
   Si ce client est de nouveau celui actif, son serveur est restauré
   automatiquement.
+- `ExpectGameActivationAfterBrowsing` arme explicitement le retour au jeu
+  après un choix temporaire, même si le délai de polling (1 seconde)
+  n'a pas détecté le passage très bref par BestCrush. Un seul événement
+  d'activation est alors consommé ; le filtre ne revient pas en boucle.
 - Pour une fiche d'identité confirmée, le `CharacterKey` et, s'il existe,
   le vrai lien OS fenêtre/PID sont exploités pour rétablir le serveur.
   Aucune attribution par nom (deux « Pagalom » sur des serveurs différents
@@ -98,7 +102,7 @@ Ajouts de tests à la suite des 1164 tests attendus à P3m.19 :
 - `WorkspaceModules.ReplaceServerInRoute` : conservation des URL de
   consultation et de leurs paramètres, maintien de la fiche Personnages.
 
-**1187 tests attendus si les 1164 de P3m.19 sont présents et réussissent**.
+**1188 tests attendus si les 1164 de P3m.19 sont présents et réussissent**.
 La compilation / exécution Windows de ces nouveaux changements reste à
 confirmer par l'utilisateur. Aucun résultat automatisé ne doit être
 annoncé comme acquis.
