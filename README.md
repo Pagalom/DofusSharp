@@ -6,6 +6,8 @@
 
 Cette version de BestCrush ajoute une gestion locale du marché, une capture réseau passive des données Dofus, des overlays Windows et un suivi réel des résultats de concassage. L'OCR est désormais réservé à la lecture explicite d'une infobulle d'équipement avec `F8`.
 
+> **Ressources graphiques DOFUS (développement)** : les icônes et portraits officiels appartiennent à Ankama. Leur autorisation d'utilisation et de redistribution reste à confirmer ; ils ne sont pas intégrés au dépôt Git et ne doivent pas être inclus dans les distributions publiques sans accord. Voir la [notice relative aux ressources d'Ankama](NOTICE-RESSOURCES-ANKAMA.md).
+
 ---
 
 ## Télécharger BestCrush
