@@ -180,16 +180,39 @@
     private readonly System.Threading.SemaphoreSlim
         _refreshLock = new(1, 1);
 
-    protected override async Task OnInitializedAsync()
-    {
-        MarketDataChangeNotifier.Changed +=
-            OnMarketDataChanged;
+    private string? _loadedServerName;
 
-        await LoadRowsAsync();
+    protected override Task OnInitializedAsync()
+    {
+        MarketDataChangeNotifier.Changed += OnMarketDataChanged;
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.Equals(_loadedServerName, ServerName,
+                StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _loadedServerName = ServerName;
+        _rows = null;
+        _lastSavedMessage = null;
+        // Serialise with background market refreshes; never display
+        // the old server's rows under the new route/SQL filter.
+        await _refreshLock.WaitAsync();
+        try
+        {
+            await LoadRowsAsync();
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
     }
 
     private async Task LoadRowsAsync()
     {
+        string loadedFromServer = ServerName;
         IReadOnlyCollection<Resource> resources =
             await ItemsService.GetResourcesAsync();
 
@@ -200,7 +223,7 @@
                 await MarketPriceService
                     .GetLatestObservationsForServerAsync(
                         MarketObjectType.Resource,
-                        ServerName
+                        loadedFromServer
                     );
 
         IReadOnlyDictionary<
@@ -214,8 +237,12 @@
                 await MarketPriceService
                     .GetLatestLocalSourceObservationsForServerAsync(
                         MarketObjectType.Resource,
-                        ServerName
+                        loadedFromServer
                     );
+
+        if (!string.Equals(loadedFromServer, ServerName,
+                StringComparison.OrdinalIgnoreCase))
+            return;
 
         _rows = resources
             .OrderBy(resource => resource.Name)
