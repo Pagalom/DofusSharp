@@ -25,6 +25,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine();
     Console.WriteLine("Pour étudier les personnages sans payload :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --character-scan");
+    Console.WriteLine("Pour etudier les effets f7 des objets sur les messages courants iqx/iqz/kch (sans valeurs) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-shape");
     Console.WriteLine("Pour voir les structures de champs des messages de connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --character-shape");
     Console.WriteLine("  (option) --shape-keys irl,ico,jei,isr");
@@ -202,9 +204,13 @@ else if (options.CharacterScan)
             ? "Mode P1c : corrélation locale métier/niveau/XP, aucune valeur affichée ou sauvegardée."
         : options.CharacterShape
             ? "Mode P1b : formes protobuf uniquement pour les opcodes ciblés ; aucune valeur enregistrée."
+        : options.ItemEffectsShape
+            ? "Mode P3d.5 : structures internes f7 sur iqx/iqz/kch uniquement, valeurs et UID masqués."
             : "Mode P1a : métadonnées uniquement, flux TCP isolés, aucun payload enregistré.");
     if (options.CharacterShape)
         Console.WriteLine("Op codes ciblés : " + string.Join(", ", options.ShapeKeys.OrderBy(x => x)));
+    if (options.ItemEffectsShape)
+        Console.WriteLine("P3d.5 : capture un seul client ; affiche seulement le nombre f7 et les types de champs imbriqués sur les deltas. Aucun contenu enregistré.");
     if (options.ProfessionFlow)
         Console.WriteLine("Étude P3a en RAM seulement ; aucune référence privée, compte/serveur et mapping NON vérifiés.");
     if (options.ProfessionContinuity)
@@ -775,7 +781,8 @@ else if (options.CharacterScan)
         xpWireStudy,
         options.ProfessionJobStudy,
         identityPairStudy,
-        crossOpcodeStudy);
+        crossOpcodeStudy,
+        itemEffectsShape: options.ItemEffectsShape);
 
     probe.Start();
     if (options.IdentityPair)
@@ -943,7 +950,8 @@ internal sealed record ProbeOptions(
     bool AccountWireStudy,
     bool AccountRosterStudy,
     bool ConcurrentRosterStudy,
-    bool ConcurrentRosterWindowStudy)
+    bool ConcurrentRosterWindowStudy,
+    bool ItemEffectsShape)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -966,6 +974,7 @@ internal sealed record ProbeOptions(
         bool list = false;
         bool characterScan = false;
         bool characterShape = false;
+        bool itemEffectsShape = false;
         bool professionMatch = false;
         bool professionDecode = false;
         bool professionStudy = false;
@@ -1017,6 +1026,9 @@ internal sealed record ProbeOptions(
                     break;
                 case "--character-shape":
                     characterShape = true;
+                    break;
+                case "--item-effects-shape":
+                    itemEffectsShape = true;
                     break;
                 case "--profession-match":
                     professionMatch = true;
@@ -1135,7 +1147,8 @@ internal sealed record ProbeOptions(
             (professionContinuity ? 1 : 0) +
             (professionXpStudy ? 1 : 0) +
             (professionJobStudy ? 1 : 0) +
-            (characterShape ? 1 : 0) + (identityName ? 1 : 0) +
+            (characterShape ? 1 : 0) + (itemEffectsShape ? 1 : 0) +
+            (identityName ? 1 : 0) +
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
             (windowServerLink ? 1 : 0) +
@@ -1166,7 +1179,7 @@ internal sealed record ProbeOptions(
         // P1b/P1c both imply the isolated, passive capture path of P1a.
         return new ProbeOptions(
             device, port, all, list,
-            characterScan || characterShape || professionMatch ||
+            characterScan || characterShape || itemEffectsShape || professionMatch ||
                 professionDecode || professionStudy || professionIdentify ||
                 professionFlow || professionContinuity || professionXpStudy ||
                 professionJobStudy || identityName || identityFields ||
@@ -1181,6 +1194,6 @@ internal sealed record ProbeOptions(
             ktaF1Control, ktaCharacterCompare, serverNameStudy,
             connectionSelectionStudy, expectedClassId, accountWireStudy,
             accountRosterStudy, concurrentRosterStudy,
-            concurrentRosterWindowStudy);
+            concurrentRosterWindowStudy, itemEffectsShape);
     }
 }
