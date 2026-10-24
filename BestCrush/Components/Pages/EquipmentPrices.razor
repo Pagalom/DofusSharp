@@ -9,6 +9,8 @@
 @inject MarketPriceService MarketPriceService
 @inject MarketDataChangeNotifier MarketDataChangeNotifier
 
+@inject ServerViewFilterState ServerViewFilter
+
 <div class="container-fluid py-4 px-5">
 
     <div class="d-flex justify-content-between align-items-center mb-3">
@@ -43,6 +45,11 @@
                @bind="_searchText"
                @bind:event="oninput" />
     </div>
+
+    @if (ServerViewFilter.IsBrowsingManually)
+    {
+        <p class="small text-secondary">Consultation des prix enregistrés : lecture seule. Revenir à un personnage pour modifier les valeurs.</p>
+    }
 
     @if (!string.IsNullOrWhiteSpace(_lastSavedMessage))
     {
@@ -87,7 +94,7 @@
                             </td>
 
                             <td>
-                                <SourceValueInput
+                                <SourceValueInput ReadOnly="@ServerViewFilter.IsBrowsingManually"
                                     Value="@row.Price"
                                     Min="1"
                                     SourceLetter="@GetSourceLetter(row.Source)"
@@ -278,6 +285,10 @@
         EquipmentPriceRow row,
         ChangeEventArgs args)
     {
+        // A server picked for SQL browsing must never be a write target.
+        if (ServerViewFilter.IsBrowsingManually)
+            return;
+
         string? value = args.Value?.ToString();
 
         if (string.IsNullOrWhiteSpace(value))
