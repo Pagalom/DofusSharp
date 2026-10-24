@@ -28,6 +28,12 @@ de **chaque archive**, n'accepte que les PNG dont la signature est valide
 et récupère exactement les 20 métiers du référentiel P3g.1 et 19 classes
 (la classe Forgelance utilise l'identifiant d'illustration 20).
 
+L'importeur recherche les noms de fichiers originaux avec leur suffixe
+de résolution : `2-64.png` pour le métier Bûcheron et `70-64.png`
+pour le portrait de classe Éniripsa. C'est le format produit par la
+chaîne de préparation `doduda` ; les images installées sont ensuite
+renommées en `2.png` / `7.png` pour les chemins internes BestCrush.
+
 Les images sont enregistrées sous :
 - `BestCrush/wwwroot/img/dofus/jobs/{publicJobId}.png`
 - `BestCrush/wwwroot/img/dofus/classes/{classArtworkId}.png`
