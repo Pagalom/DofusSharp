@@ -28,11 +28,16 @@ de **chaque archive**, n'accepte que les PNG dont la signature est valide
 et récupère exactement les 20 métiers du référentiel P3g.1 et 19 classes
 (la classe Forgelance utilise l'identifiant d'illustration 20).
 
-L'importeur recherche les noms de fichiers originaux avec leur suffixe
-de résolution : `2-64.png` pour le métier Bûcheron et `70-64.png`
-pour le portrait de classe Éniripsa. C'est le format produit par la
-chaîne de préparation `doduda` ; les images installées sont ensuite
-renommées en `2.png` / `7.png` pour les chemins internes BestCrush.
+L'importeur lit désormais le fichier `jobs.json` de la même version
+(empreinte SHA-256 contrôlée : `7340c83f7f0cd75aecaccf4bc6113e9519d507acd007488d4ee7a873bbaab0e6`).
+Il utilise `id` pour identifier le métier et `iconId` pour retrouver
+le PNG original `{iconId}-64.png` : le métier Forgeron (`id=11`) utilise
+notamment `iconId=10`. Les images installées sont renommées selon
+l'ID du métier, pour conserver les chemins internes de BestCrush.
+
+Si une icône ou un portrait n'est pas présent dans l'archive, le script
+installe les autres et affiche un avertissement. L'interface conserve
+alors son visuel provisoire pour cet élément.
 
 Les images sont enregistrées sous :
 - `BestCrush/wwwroot/img/dofus/jobs/{publicJobId}.png`
