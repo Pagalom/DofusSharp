@@ -792,3 +792,160 @@ La caractérisation réelle **précède** les
 modifications de `BestCrush` : aucun mapping,
 solde, inventaire ni affichage n'est activé
 sur cette seule corrélation.
+
+## P3d.5.9 — Capture équipement (03:39–03:40 UTC) et mutualisation atelier/HDV
+
+### Observation expérimentale
+
+Nouvelle capture d'un équipement avec caractéristiques,
+avec **deux essais effectués par l'opérateur** :
+l'un conserve la banque ouverte entre les transferts,
+l'autre la ferme entre les transferts. Les
+`--character-shape` ont été **dédupliqués par
+opcode + forme + session**, de sorte que les sorties
+ne séparent pas toutes les manipulations.
+
+| Heure UTC | Opcode | Taille | Champs racine et sous-champs pertinents |
+|---|---|---:|---|
+| 03:39:57.897 | `irl` | 12 541 | `f2:lenx502`, `f4:v` ; lignes `f2[].f1.f3/f4/f5:v`, parfois `f7:len` |
+| 03:40:03.753 | `irp` | 11 659 | `f2:lenx559`, `f1:v` ; échantillons de lignes sans `f7` (pas preuve d'absence) |
+| 03:40:07.786 | `iqx` | 27 | `root.f2.f1` : `f3:v f4:v f5:v f7:lenx2` |
+| 03:40:13.832 | `iqz` | 28 | `root.f1.f1` : `f3:v f4:v f5:v f7:lenx2` |
+| 03:40:13.833 | `iqm` | 4 | `root.f1:v` |
+| 03:40:22.919 | `irp` | 11 632 | `f2:lenx558`, `f1:v` |
+
+**Indice fort nouveau :** lors du transfert d'un équipement
+avec caractéristiques, `iqx` et `iqz` contiennent
+**tous les deux deux occurrences** de `f7:len`.
+Cette répétition est cohérente avec des effets d'équipement,
+mais il ne faut **pas** assimiler deux occurrences à deux
+statistiques avant comparaison avec l'affichage en jeu et
+examen des sous-messages.
+
+Le `irp` final à 558 après l'initial à 559 ne permet
+**pas**, sans un chronogramme action par action, d'affirmer
+une restitution finale de l'équipement ni un état attendu
+du coffre. Aucun `irl` après le premier chargement dans
+cette trace : on ne peut pas déduire son effectif final.
+Les comportements banque ouverte vs fermée ne
+peuvent pas encore être distingués avec des formes
+dédupliquées.
+
+### Comparaison du code déjà existant
+
+- `SemanticDecoders.TryDecodeItemObject` est déjà
+  **un parseur privé mutualisé** entre
+  `TryDecodeItemDetail`, `TryDecodeInventoryAdd`,
+  `TryDecodeCraftOutput`, `TryDecodeSmithmagicStack`
+  et `TryDecodeSmithmagicResult`. Son objet canonique
+  est `ItemDetailObservation(ItemUid,ItemId,Quantity,Stats)`.
+  Il lit les effets canoniques depuis `item.f3[]`
+  avec `effect.f1` et `effect.f10`.
+- `TryDecodeWorkshopSlot` existe aussi, mais ne
+  renvoie actuellement que **UID + delta** :
+  un atelier peut référencer un objet déjà connu
+  sans contenir ses données complètes.
+- `TryDecodeMarketListingRequest` traite
+  **UID d'instance + quantité + prix** sur
+  l'ancien schéma ; `TryDecodeMarketListingCreated`
+  traite **UID d'annonce, ItemId, quantité, prix et
+  effets**. **UID d'annonce ≠ UID d'instance**.
+- Les `jzs` actuels sont **validés pour le prix
+  des équipements x1 et les lots de ressources/runes**,
+  ainsi que pour l'item sélectionné ; ils
+  ne constituent **pas** un flux validé d'instances
+  ou de caractéristiques des offres.
+- Les routes historiques `kec` (atelier),
+  `iuq` (craft), `kbu` (forgemagie),
+  `kcr/kda` (annonce HDV) sont couvertes
+  par des tests **synthétiques**, mais ne
+  sont pas validées avec les opcodes du jeu
+  actuel. Ne pas leur attribuer le statut
+  `observed` sans preuves.
+
+### Proposition d'architecture transversale (future, pas encore implémentée)
+
+```text
+Protocole actuel / ancien / futur (opcodes et champs versionnés)
+    |
+    v
+Décodeurs d'enveloppe par message et famille
+    |
+    v
+Parseur commun d'INSTANCE physique d'objet
+  ItemId, UID?, quantité?, effets?, complétude / fiabilité
+    |
+    +--> Snapshots inventaire personnel (personnage / fenêtre / connexion)
+    +--> Snapshots banque (identité compte+serveur si vérifiée)
+    +--> Places/slots d'atelier et opérations de craft/forgemagie
+    +--> Corrélation concassage (UID -> ItemId, aucune régression)
+    +--> Annonces HDV qui contiennent réellement les données d'instance
+```
+
+En parallèle, une **branche distincte** pour les
+`jzs/jzn` (prix, offres, lots, références de marché)
+doit rester indépendante : toutes les offres HDV
+ne portent pas un UID réel ni des effets d'objet.
+Un `MarketListingUid` ne doit **jamais** être
+stocké comme `ItemUid`.
+
+Distinctions indispensables :
+
+1. **Instance vs type** : `ItemId` = type/catégorie
+   de bien, `ItemUid` = identité de l'exemplaire
+   ou de la pile. Deux équipements d'un même `ItemId`
+   peuvent avoir des jets et UID distincts.
+2. **Données complètes vs delta vs référence** :
+   ne pas inventer une quantité 1 ou des effets vides
+   si le message ne donne qu'un UID ou un prix.
+   Les effets non observés (`null`) diffèrent
+   des effets observés vides (`[]`).
+3. **Lieu vs contenu** : même parseur d'instance,
+   mais les mouvements, slots, stocks et offres
+   relèvent d'observateurs métier différents.
+   Une annonce publique n'est pas un stock du personnage.
+4. **Ateliers** : différents types de métiers
+   peuvent partager le modèle d'objet tout en
+   ayant des événements, identifiants de
+   recette, positions et résultats différents.
+   Ne pas considérer le `kec` historique
+   comme un événement du client courant.
+5. **Craft et coûts** : `CraftCostService`
+   calcule actuellement les coûts d'achat à partir
+   des recettes et prix de marché ; tenir compte
+   plus tard du stock personnel et, de façon
+   **optionnelle**, du stock en banque. Ne jamais
+   soustraire un inventaire inconnu comme s'il
+   était vide.
+6. **Comptes/sessions** : aucun inventaire
+   inter-fenêtres par simple nom. Les données
+   restent en RAM ; elles sont effacées ou rendues
+   inconnues à l'expiration du bail, à la
+   déconnexion ou en cas d'attribution ambiguë.
+   Aucun affichage des objets sur la fiche personnage.
+
+### Travail minimal avant développement
+
+- Contrôle humain sur le nombre de lignes
+  d'effets de l'équipement testé ; confronter
+  au nombre de `f7:len` **sans déduire les
+  valeurs**.
+- Ajouter au probe un mode **opt-in borné
+  d'exploration structurale intérieure de f7**
+  pour **une ligne de delta `iqx` / `iqz`** ;
+  0 valeur scalaire, 0 texte, 0 UID, 0
+  payload brut enregistré ; tests de
+  confidentialité et de limites.
+- Comparer ensuite localement 2 équipements
+  de jets différents, et une ressource
+  sans effets. Ne modifier le mapping versionné
+  qu'après validation.
+- Tester les adaptateurs pour stocks et
+  inventaires, ateliers, HDV en modules séparés,
+  avec `kch/kag` inchangés ; protéger le
+  routing des prix et l'absence de persistance
+  du profil.
+
+**Statut : documenté, aucune modification de
+production ou du probe ; compilation/tests
+Windows non exécutés dans ce lot.**
