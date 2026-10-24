@@ -668,3 +668,127 @@ avant toute intégration métier.
 **Statut : détection de deux listes de stock confirmée
 expérimentalement ; champs numériques et statistiques
 non décodés ; pas de migration, SQLite ni UI.**
+
+## P3d.5.8 — Corrélation approfondie avec les tests historiques (24/10/2026)
+
+Cette section compare les **formes réseau réelles**
+des captures P3d.5.1 à P3d.5.7 avec
+les tests et décodeurs existants. Les champs ci-dessous
+restent des **hypothèses P3d.5** tant qu'une
+valeur connue en jeu n'a pas été comparée
+localement à un champ identifié.
+
+### Hypothèse de structure commune (très forte)
+
+Le protocole `kch` actuel a déjà été caractérisé en P3.0,
+testé dans `Tests.BestCrush/Network/CurrentCrushProtocolTest.cs` :
+
+```
+kch.root.f3.f1:
+  f3 = Quantity       [prouvé pour kch]
+  f4 = ItemId         [prouvé pour kch]
+  f5 = ItemUid        [prouvé pour kch]
+  f7 = ?              [non caractérisé]
+```
+
+Nos nouveaux **enregistrements anonymisés** ont exactement
+les champs `f3:v, f4:v, f5:v` dans une sous-structure
+`f1:len` :
+
+```
+irl.root.f2[] .f1: { f3:v, f4:v, f5:v, f7?:len }
+irp.root.f2[] .f1: { f3:v, f4:v, f5:v, f7?:len }
+iqx.root.f2  .f1: { f3:v, f4:v, f5:v, f7?:len }
+iqz.root.f1  .f1: { f3:v, f4:v, f5:v, f7?:len }
+```
+
+Les `f7` viennent de l'échantillonnage P1b de
+`irl` (`??2.1.7:lenx35`) et des premiers deltas
+`iqx`/`iqz` (présence variable selon objet) :
+**présence et répétition compatibles avec des effets
+d'équipement**, mais les valeurs et sous-champs
+d'effets restent **inconnus**. En particulier,
+`ProtoShapeSummarizer.MaximumDepth = 2` et
+`MaxSamplesPerPath = 3` : les diagnostics existants
+**ne décodent pas l'intérieur de f7** et les trois
+premières lignes de banque peuvent n'avoir aucun effet.
+Les tests d'un équipement avec stats sont indispensables.
+
+### Réutilisation des décodeurs d'objets et deltas
+
+| Nouveau opcode | Ancien test / méthode | Correspondance à vérifier |
+|---|---|---|
+| `iqx` | `ItemDecoderTest` / `TryDecodeItemDetail` | Enveloppe actuelle root f2.f1 → canonique root f2.f5 ; objet f3→quantité, f4→ItemId, f5→UID |
+| `iqz` | idem | Enveloppe actuelle root f1.f1 → canonique root f2.f5 ; mêmes champs internes |
+| `irx` | `ItemDecoderTest.InventoryQuantityAllowsZeroAndRemovalOnlyNeedsUid` / `TryDecodeInventoryQuantity` | Actuel root f3.len avec inner f1 et f3 ; ancien root f3.len avec inner f2=quantité, f3=UID ; vérifier la permutation f1→f2 |
+| `iqm` | idem / `TryDecodeInventoryRemove` | Actuel root f1 varint ; ancien root f1=UID ; **aucune preuve par forme seule** |
+| `irl` | `CurrentCrushProtocolTest` + `ItemDecoderTest` | Itérer les lignes root f2[] et réutiliser un parseur d'instance commun |
+| `irp` | mêmes tests | Idem, dans un conteneur **bancaire distinct** |
+
+Le vieux `ItemDecoderTest` vérifie les effets
+`ItemStatObservation(EffectId, signed Value)` sur
+le **format canonique historique** : effets sous f3
+avec `f1=EffectId` et `f10=Value`. Ce schéma
+n'est **pas** confirmé pour l'actuel `f7`.
+Ne pas ajouter de `f7 → f3` dans
+`protocol-map.json` sans expérimentation.
+
+`ProtocolWireNormalizerTest.ConfigOnlyCanRemapDeepItemAndStatFields`
+prouve déjà que le normaliseur sait adapter des numéros
+de champs et des enveloppes **profondément imbriquées**.
+La solution visée réutilise cet outil et un seul décodeur
+d'objets, sans coder quatre lectures divergentes.
+
+### Contraintes d'intégration / raccourcis sûrs
+
+1. Le profil actuel conserve les routes historiques
+   `inventory_add=isa`, `inventory_quantity=isf`,
+   `inventory_remove=irz`, dont le statut est
+   `legacy-3.6.11.15`. Ne **pas remplacer ces clés**
+   en prétendant qu'elles sont validées actuellement.
+   Créer des routes actuelles distinctes une fois
+   confirmées, sans régression des anciennes.
+2. `Tests.BestCrush/Network/ProtocolWireNormalizerTest.cs`
+   impose un mapping et un statut par route ;
+   à adapter avec le fichier de mapping commun et la
+   copie utilisée par les tests.
+3. `CurrentCharacterState.CharacterInventoryItem`
+   ne comprend actuellement que `ItemId`,
+   `InstanceUid` et `Quantity`, **pas les effets** :
+   le modèle RAM devra accueillir les caractéristiques
+   par instance sans les confondre avec les
+   caractéristiques **théoriques** de recette ou du
+   catalogue `DofusDbItemEffect`.
+4. Le cache `RecentItemDetailsCache` est un
+   cache LRU de **corrélation de concassage**,
+   pas un inventaire ni une source de vérité du stock.
+5. Les champs scalaires `irl.root.f4`,
+   `irp.root.f1` et `iqq.f1/f2`
+   ne sont **pas** des Kamas validés.
+6. Tous les futurs snapshots et deltas seront
+   liés strictement au bon flux Game/fenêtre
+   et à sa génération de capture, sans
+   mélange entre personnages ni rémanence après
+   reconnexion.
+
+### Tests synthétiques recommandés ensuite
+
+- `irl` et `irp` à zéro / une / plusieurs lignes
+  avec mêmes `ItemId` et `ItemUid`, mais
+  containers séparés ;
+- ajout `iqx/iqz`, ajustement `irx`,
+  suppression `iqm`, répétitions idempotentes,
+  corruption ou trames coupées ;
+- équipement portant plusieurs effets, des
+  effets identiques répétés, valeurs négatives,
+  et deux copies de même `ItemId` de jets différents ;
+- changements A/B simultanés, même nom, UID
+  réutilisé, bail expiré, flux non lié ;
+- inventaire non observé `null` distinct
+  de snapshot valide vide ; banque non ouverte
+  et deltas arrivant avant un snapshot complet.
+
+La caractérisation réelle **précède** les
+modifications de `BestCrush` : aucun mapping,
+solde, inventaire ni affichage n'est activé
+sur cette seule corrélation.
