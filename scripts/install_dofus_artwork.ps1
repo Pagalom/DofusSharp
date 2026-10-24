@@ -91,16 +91,21 @@ function Read-JobIconRecords {
 
 try {
     foreach ($entry in $archives) {
-        $archive = Join-Path $temp $entry.File
+        $download = Join-Path $temp $entry.File
         $uri = "$downloadBase/$($entry.File)"
         Write-Host "Telechargement : $($entry.File) ($version)"
-        Invoke-WebRequest -Uri $uri -OutFile $archive -UseBasicParsing
-        $actual = (Get-FileHash -Path $archive -Algorithm SHA256).Hash.ToLowerInvariant()
+        Invoke-WebRequest -Uri $uri -OutFile $download -UseBasicParsing
+        $actual = (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant()
         if ($actual -ne $entry.Sha256) {
             throw "SHA-256 incorrect pour $($entry.File). Aucun visuel ne sera installe."
         }
+
         if ($entry.File.EndsWith('.tar.gz', [StringComparison]::Ordinal)) {
-            $extractTo = Join-Path $temp ($entry.File -replace '\.tar\.gz
+            $extractTo = Join-Path $temp ($entry.File -replace '\.tar\.gz$', '')
+            New-Item -ItemType Directory -Path $extractTo -Force | Out-Null
+            & tar.exe -xzf $download -C $extractTo
+            if ($LASTEXITCODE -ne 0) { throw "Extraction echouee : $($entry.File)" }
+        }
     }
 
     $jobSource = Join-Path $temp 'job_images_64'
@@ -108,8 +113,8 @@ try {
     $jobFiles = @(Get-ChildItem -LiteralPath $jobSource -Filter '*.png' -File -Recurse)
     $headFiles = @(Get-ChildItem -LiteralPath $headSource -Filter '*.png' -File -Recurse)
 
-    # Load the ID -> iconId relation from this exact Dofus release.
-    # Job 11 (Forgeron) for example refers to image 10, not image 11.
+    # A job's numeric ID is NOT its iconId. Read the exact same release's
+    # jobs.json to resolve the icon number before touching disk.
     $jobsMetadata = Get-Content -LiteralPath (Join-Path $temp 'jobs.json') -Raw -Encoding UTF8 |
         ConvertFrom-Json
     $records = @(Read-JobIconRecords -Node $jobsMetadata)
@@ -124,12 +129,14 @@ try {
 
     $jobIcons = @{}
     foreach ($record in $records) {
-        if ($jobIcons.ContainsKey([int]$record.JobId)) {
-            if ($jobIcons[[int]$record.JobId] -ne [int]$record.IconId) {
-                throw "jobs.json : icones contradictoires pour le metier ID $($record.JobId)."
+        $jobId = [int]$record.JobId
+        $iconId = [int]$record.IconId
+        if ($jobIcons.ContainsKey($jobId)) {
+            if ($jobIcons[$jobId] -ne $iconId) {
+                throw "jobs.json : icones contradictoires pour le metier ID $jobId."
             }
         } else {
-            $jobIcons[[int]$record.JobId] = [int]$record.IconId
+            $jobIcons[$jobId] = $iconId
         }
     }
 
@@ -153,8 +160,8 @@ try {
     $foundHeads = @{}
     $missingHeads = @()
     foreach ($id in $classIds) {
-        # Candidate class-head IDs used by this art pack (breed x 10).
-        # Never substitute another breed's face when an image is absent.
+        # Candidate class-head ID uses breed ID x 10. Missing files have
+        # a generic fallback; never show another class's portrait.
         $headId = $id * 10
         $wanted = "$($headId)-64.png"
         $matches = @($headFiles | Where-Object { $_.Name -eq $wanted })
@@ -170,7 +177,7 @@ try {
         throw "Aucune icone de metier resolue. Fichiers disponibles : $examples"
     }
 
-    # Stage and verify all selected images before touching the destination.
+    # Stage every verified PNG. Until staging succeeds, leave existing files alone.
     $stagedJobs = Join-Path $temp 'install-jobs'
     $stagedHeads = Join-Path $temp 'install-heads'
     New-Item -ItemType Directory -Path $stagedJobs, $stagedHeads -Force | Out-Null
@@ -199,65 +206,11 @@ try {
     }
     if ($missingHeads.Count -gt 0) {
         Write-Warning ("Portraits indisponibles (avatars generiques conserves) : " + ($missingHeads -join ', '))
-    }
-    Write-Host "Chemin local : $webRoot"
-    Write-Host "Relancer/recompiler BestCrush pour incorporer les nouveaux fichiers dans le package."
-}
-finally {
-    Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
-}
-, '')
-            New-Item -ItemType Directory -Path $extractTo -Force | Out-Null
-            & tar.exe -xzf $archive -C $extractTo
-            if ($LASTEXITCODE -ne 0) { throw "Extraction echouee : $($entry.File)" }
+        if ($foundHeads.Count -eq 0) {
+            Write-Host ("Exemples portraits dans l'archive : " +
+                (($headFiles | Select-Object -First 20 -ExpandProperty Name) -join ', '))
         }
     }
-
-    $jobSource = Join-Path $temp 'job_images_64'
-    $headSource = Join-Path $temp 'class_head_images_64'
-    $jobFiles = @(Get-ChildItem -LiteralPath $jobSource -Filter '*.png' -File -Recurse)
-    $headFiles = @(Get-ChildItem -LiteralPath $headSource -Filter '*.png' -File -Recurse)
-
-    # doduda exports 2x image names with their resolution suffix:
-    # e.g. job 2 -> 2-64.png; class head 70 -> 70-64.png.
-    # This is the upstream naming convention, not a guessed ID.
-    # Never silently choose a similarly named but different image.
-    $foundJobs = @{}
-    foreach ($id in $jobIds) {
-        $wanted = "$($id)-64.png"
-        $matches = @($jobFiles | Where-Object { $_.Name -eq $wanted })
-        if ($matches.Count -ne 1) {
-            $examples = ($jobFiles | Select-Object -First 12 -ExpandProperty Name) -join ', '
-            throw "Icone de metier absente ou ambigue pour ID $id, fichier attendu $wanted ($($matches.Count)). Exemples archives : $examples"
-        }
-        $foundJobs[$id] = $matches[0].FullName
-    }
-
-    $foundHeads = @{}
-    foreach ($id in $classIds) {
-        # DOFUS class-head picture IDs are breed ID x 10 (default male).
-        $headId = $id * 10
-        $wanted = "$($headId)-64.png"
-        $matches = @($headFiles | Where-Object { $_.Name -eq $wanted })
-        if ($matches.Count -ne 1) {
-            $examples = ($headFiles | Select-Object -First 12 -ExpandProperty Name) -join ', '
-            throw "Portrait de classe absent ou ambigu pour ID $id, fichier attendu $wanted ($($matches.Count)). Exemples archives : $examples"
-        }
-        $foundHeads[$id] = $matches[0].FullName
-    }
-
-    $jobsDest = Join-Path $webRoot 'jobs'
-    $headsDest = Join-Path $webRoot 'classes'
-    New-Item -ItemType Directory -Path $jobsDest, $headsDest -Force | Out-Null
-
-    foreach ($id in $jobIds) {
-        Copy-VerifiedPng -Source $foundJobs[$id] -Destination (Join-Path $jobsDest "$id.png")
-    }
-    foreach ($id in $classIds) {
-        Copy-VerifiedPng -Source $foundHeads[$id] -Destination (Join-Path $headsDest "$id.png")
-    }
-
-    Write-Host "Installation locale terminee : $($jobIds.Count) icones metiers et $($classIds.Count) portraits de classes." -ForegroundColor Green
     Write-Host "Chemin local : $webRoot"
     Write-Host "Relancer/recompiler BestCrush pour incorporer les nouveaux fichiers dans le package."
 }
