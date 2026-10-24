@@ -49,78 +49,73 @@ public partial class History
         _runesById = _runes.ToDictionary(rune => rune.DofusDbId);
     }
 
+    private int _loadVersion;
+
     private async Task LoadCurrentAsync()
     {
+        int request = ++_loadVersion;
+        string serverName = ServerName;
         _loading = true;
         _errorMessage = null;
 
         try
         {
+            // Commit SQL results only if their originating server still
+            // matches this page. Out-of-order async queries must never
+            // display another server's prices under the current heading.
+            HistoryPage<MarketHistoryRow>? marketResult = null;
+            HistoryPage<ItemHistoryRow>? itemResult = null;
+            HistoryPage<CrushHistorySession>? crushResult = null;
+
             switch (_tab)
             {
                 case HistoryTab.Resources:
-                    _marketHistory = await HistoryService.GetMarketHistoryAsync(
-                        MarketObjectType.Resource,
-                        ServerName,
-                        _searchText,
-                        _levelMin,
-                        _levelMax,
-                        _sortColumn,
-                        _sortDirection,
-                        _take
-                    );
+                    marketResult = await HistoryService.GetMarketHistoryAsync(
+                        MarketObjectType.Resource, serverName, _searchText,
+                        _levelMin, _levelMax, _sortColumn, _sortDirection, _take);
                     break;
-
                 case HistoryTab.Runes:
-                    _marketHistory = await HistoryService.GetMarketHistoryAsync(
-                        MarketObjectType.Rune,
-                        ServerName,
-                        _searchText,
-                        _levelMin,
-                        _levelMax,
-                        _sortColumn,
-                        _sortDirection,
-                        _take
-                    );
+                    marketResult = await HistoryService.GetMarketHistoryAsync(
+                        MarketObjectType.Rune, serverName, _searchText,
+                        _levelMin, _levelMax, _sortColumn, _sortDirection, _take);
                     break;
-
                 case HistoryTab.Items:
-                    _itemHistory = await HistoryService.GetItemHistoryAsync(
-                        ServerName,
-                        _searchText,
-                        _levelMin,
-                        _levelMax,
-                        _equipmentType,
-                        _itemRuneFilterId,
-                        _sortColumn,
-                        _sortDirection,
-                        _take
-                    );
+                    itemResult = await HistoryService.GetItemHistoryAsync(
+                        serverName, _searchText, _levelMin, _levelMax,
+                        _equipmentType, _itemRuneFilterId, _sortColumn,
+                        _sortDirection, _take);
                     break;
-
                 case HistoryTab.Crushes:
-                    _crushHistory = await HistoryService.GetCrushHistoryAsync(
-                        ServerName,
-                        _searchText,
-                        _crushRuneFilterId,
-                        _sortColumn,
-                        _sortDirection,
-                        _take
-                    );
+                    crushResult = await HistoryService.GetCrushHistoryAsync(
+                        serverName, _searchText, _crushRuneFilterId, _sortColumn,
+                        _sortDirection, _take);
                     break;
-
                 case HistoryTab.Analytics:
                     await BuildAnalyticsResultsAsync();
                     break;
             }
+
+            if (request != _loadVersion ||
+                !string.Equals(serverName, ServerName,
+                    StringComparison.OrdinalIgnoreCase))
+                return;
+
+            if (_tab == HistoryTab.Resources || _tab == HistoryTab.Runes)
+                _marketHistory = marketResult;
+            else if (_tab == HistoryTab.Items)
+                _itemHistory = itemResult;
+            else if (_tab == HistoryTab.Crushes)
+                _crushHistory = crushResult;
         }
         catch (Exception ex)
         {
-            _errorMessage = ex.Message;
+            if (request == _loadVersion)
+                _errorMessage = ex.Message;
         }
         finally
         {
-            _loading = false;
+            if (request == _loadVersion)
+                _loading = false;
         }
     }
 
