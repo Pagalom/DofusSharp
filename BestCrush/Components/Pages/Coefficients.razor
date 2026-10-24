@@ -145,14 +145,29 @@
         }
     }
 
-    protected override async Task OnInitializedAsync()
+    private string? _loadedServerName;
+
+    protected override async Task OnParametersSetAsync()
     {
+        if (string.Equals(_loadedServerName, ServerName,
+                StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _loadedServerName = ServerName;
+        _rows = null;
+        _lastSavedMessage = null;
+        await LoadRowsAsync();
+    }
+
+    private async Task LoadRowsAsync()
+    {
+        string loadedFromServer = ServerName;
         IReadOnlyCollection<Equipment> equipments =
             await ItemsService.GetEquipmentsAsync();
 
         IReadOnlyDictionary<long, CoefficientObservation> coefficients =
             await CoefficientService.GetLatestObservationsForServerAsync(
-                ServerName
+                loadedFromServer
             );
         
         IReadOnlyDictionary<
@@ -161,8 +176,12 @@
             sourceObservations =
                 await CoefficientService
                     .GetLatestLocalSourceObservationsForServerAsync(
-                        ServerName
+                        loadedFromServer
                     );
+
+        if (!string.Equals(loadedFromServer, ServerName,
+                StringComparison.OrdinalIgnoreCase))
+            return;
 
         _rows = equipments
             .OrderBy(e => e.Name)
