@@ -420,3 +420,83 @@ Ensuite comparer **localement**, sans export des valeurs,
 les candidats structuraux avec les opérations réellement faites.
 Ne modifier le fichier `BestCrush.Network/protocol-map.json`
 et les décodeurs qu'après preuve sur version courante.
+
+## P3d.5.5 — Formes des messages de transfert réels (24/10/2026)
+
+Nouvelle capture `--character-shape --shape-keys jys,iqx,irx,iqz,iqm,iqq,irp,ilt,ilx,ilf,kbr` réalisée avec une unique session TCP **#1** ; heures de l'opérateur
+en Europe/Paris UTC+2, à la seconde près mais légèrement
+approximatives.
+
+| Étape | Heure signalée | Message observé UTC | Forme protobuf |
+|---|---|---|---|
+| Banque ouverte | 05:27:22 | 03:27:19.884 `ilt` C→S | `root=[1:v 2:v 3:v]` |
+| Banque ouverte | 05:27:22 | 03:27:19.911 `ilx` S→C | `root=[3:v 5:v]` |
+| Banque ouverte | 05:27:22 | 03:27:19.912 `ilf` S→C | `root=[1:lenx2 2:len 3:v]` |
+| Banque ouverte | 05:27:22 | **03:27:21.923 `irp` S→C, 11 677 o** | `root=[1:v 2:lenx559]` ; sur trois lignes échantillonnées `?2.1:len ?2.4:v ??2.1.3:v ??2.1.4:v ??2.1.5:v` |
+| Retrait 1 | ~05:27:39 | 03:27:41.095 `jys` C→S, 16 o | `root=[1:v 3:v]` |
+| Retrait 1 | ~05:27:39 | 03:27:41.096 `iqx` S→C, 28 o | `root=[2:len]` ; `?2.1:len ?2.4:v ??2.1.3:v ??2.1.4:v ??2.1.5:v ??2.1.7:len` |
+| Retrait 1 | ~05:27:39 | 03:27:41.096 `iqz` S→C, 28 o | `root=[1:len]` ; `?1.1:len ?1.4:v ??1.1.3:v ??1.1.4:v ??1.1.5:v ??1.1.7:len` |
+| Retrait 1 | ~05:27:39 | 03:27:41.097 `iqq` S→C, 6 o | `root=[1:v 2:v]` |
+| Retrait 2 | ~05:27:51 | 03:27:52.184 `irx` S→C, 9 o | `root=[3:len]` ; `?3.1:v ?3.3:v` |
+| Dépôt 3 | ~05:28:04 | 03:28:05.290 `iqm` S→C, 5 o | `root=[1:v]` |
+| Fermeture heure perdue | inconnue | 03:28:16.363 `kbr` S→C, 2 o | `root=[1:v]` |
+
+Les `jys`, `iqz` et `iqq` associés aux étapes 2/3
+ne sont **pas tous visibles** : le mode forme déduplique les
+structures identiques d'un opcode **sur une même session**.
+Le premier relevé `--character-scan` confirmait néanmoins
+trois `jys`, trois `iqz`, trois `iqq`.
+
+### Comparaison structurale la plus prometteuse
+
+- Le chargement personnage contenait `irl` avec
+  `root=[2:lenx503 4:v]` et un objet échantillon
+  `?2.1:len, ?2.4:v, ??2.1.3:v, ??2.1.4:v, ??2.1.5:v`.
+- L'ouverture bancaire contient `irp` avec
+  `root=[1:v 2:lenx559]` **et les mêmes chemins
+  d'enregistrements pour ses éléments racine f2**.
+- `iqx` (racine f2) et `iqz` (racine f1) ont
+  des sous-messages encore similaires, avec en plus
+  un champ opaque `...7:len`.
+
+**Hypothèse de travail :** `irl` = liste initiale
+de l'inventaire, `irp` = liste du coffre,
+`iqx/iqz` = lignes de modification liées aux
+transferts, `irx/iqm` = messages courts d'ajustement
+ou de retrait. **Aucun de ces sens n'est prouvé.**
+En particulier, `559` et `503` sont des **nombres
+de champs protobuf répétés**, pas des quantités
+confirmées d'objets possédés.
+
+### Prochain test : contrôle différentiel d'une pile entière
+
+Sans écrire de décodeur sur un champ supposé, vérifier
+si `irp` reflète bien un stock bancaire :
+
+1. Dans la banque, choisir une **pile entière de ressource
+   sans valeur**, présente comme une ligne distincte,
+   qu'il est sûr de retirer et de remettre.
+2. Avec `--character-shape --shape-keys irp,irl,iqx,iqz,irx,iqm`
+   démarré **avant le client**, ouvrir la banque, noter
+   le nombre `2:lenxN` du premier `irp`.
+3. Transférer **la pile entière** dans l'inventaire.
+   Fermer/réouvrir la banque. Si un second `irp` est
+   reçu, comparer `N` et `N-1`. L'absence d'un
+   second `irp` peut simplement signifier un cache UI.
+4. Retransférer toute la pile dans la banque, puis
+   rouvrir et chercher un nouvel `irp` avec
+   le nombre initial `N`.
+5. Noter les **secondes exactes** des manipulations ;
+   ne transmettre que les formes et counts anonymes.
+
+Ne pas présumer que la banque possède un snapshot
+réémis à chaque ouverture : si rien ne revient,
+effectuer une nouvelle session distincte **après**
+la fermeture/reconnexion complète du jeu pour voir
+si le compteur du chargement varie comme prévu.
+À défaut de contrôle positif et négatif, conserver
+la sémantique `bank=unverified`, ne jamais exposer
+des calculs de craft fondés sur `irp`.
+
+Aucune modification de production, aucun nouvel
+enregistrement d'objets, aucun solde de Kamas prouvé.
