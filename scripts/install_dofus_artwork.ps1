@@ -28,10 +28,21 @@ New-Item -ItemType Directory -Path $temp -Force | Out-Null
 
 function Copy-VerifiedPng {
     param([string]$Source, [string]$Destination)
-    $header = [byte[]](Get-Content -LiteralPath $Source -Encoding Byte -TotalCount 8)
+    $header = New-Object byte[] 8
     $pngSignature = [byte[]]@(137,80,78,71,13,10,26,10)
-    if ($header.Length -ne 8 -or ((Compare-Object $header $pngSignature).Length -gt 0)) {
-        throw "Fichier PNG invalide : $Source"
+    $stream = [IO.File]::OpenRead($Source)
+    try {
+        if ($stream.Read($header, 0, 8) -ne 8) {
+            throw "Fichier PNG incomplet : $Source"
+        }
+    }
+    finally {
+        $stream.Dispose()
+    }
+    for ($i = 0; $i -lt 8; $i++) {
+        if ($header[$i] -ne $pngSignature[$i]) {
+            throw "Fichier PNG invalide : $Source"
+        }
     }
     Copy-Item -LiteralPath $Source -Destination $Destination -Force
 }
