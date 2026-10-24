@@ -1886,3 +1886,55 @@ Ne pas activer de règle de décodage produit
 tant que le cas de FM et l'identification
 numérique des effets n'ont pas été
 explicitement confirmés.
+
+## P3d.5.19 — Confirmation utilisateur : Kwakture forgemagée
+
+L'utilisateur confirme explicitement : **« La kwakture a été fm en effet »**.
+Il s'agit d'une confirmation de **forgemagie de la Kwakture
+de Flammes** (B), et non d'une preuve supplémentaire sur
+l'historique du Kwakanneau (A). Le type exact de
+modification, les valeurs avant forgemagie et
+l'éventuel effet de la forgemagie sur chaque jet
+ne sont **pas connus**.
+
+**Correction de l'interprétation P3d.5.17–18 :**
+Le résultat B `f10-vs-dofusdb-effectId=all`,
+`value-ranges=all` et `catalog-effects=4 wire-effects=4`
+n'a **jamais** signifié « non forgemagé ». Il démontre
+uniquement que les quatre types d'effets observés sont
+répertoriés comme effets naturels de ce type d'objet,
+avec des valeurs comprises dans les bornes du catalogue
+consulté à ce moment-là. Une forgemagie peut changer
+les valeurs d'un effet sans en changer l'identifiant ni
+nécessairement sortir des intervalles théoriques.
+
+Le Kwakanneau observé (+99 Vitalité,
++20 Intelligence, 0 % Résistance Feu) **semble**
+comporter une Vitalité ajoutée hors des caractéristiques
+naturelles et une Résistance Feu absente du flux.
+Cela reste une **inférence**, sans preuve directe
+de son historique de forgemagie.
+
+**Invariants d'implémentation :**
+
+- `f7[].f5` : valeur **observée** de chaque effet
+  d'instance, compatible avec les objets forgemagés.
+- `f7[].f10` : code de type d'effet, correspondant
+  aux `EffectId` du catalogue sur la Kwakture
+  (4/4), et stable pour les deux types communs entre
+  Kwakture et Kwakanneau.
+- Les `DofusDbItem.Effects` et `From/To`
+  décrivent le modèle **théorique** de l'objet,
+  jamais le jet d'une instance possédée.
+- `unlisted-on-item` et
+  `catalog-codes-unobserved` sont des diagnostics
+  de **différence au catalogue**, pas des indicateurs
+  fiables « FM oui/non ». Une modification des valeurs
+  sans apparition ni disparition d'effet peut laisser
+  ces compteurs à zéro.
+
+**Pas de nouveau test ou changement de code métier**
+requis par cette seule confirmation. Poursuivre la
+caractérisation du décodeur commun et garder les
+caractéristiques **réelles** distinctes des
+références théoriques du catalogue.
