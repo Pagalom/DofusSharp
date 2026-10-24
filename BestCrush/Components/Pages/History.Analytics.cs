@@ -19,6 +19,7 @@ public partial class History
 
     private async Task BuildAnalyticsResultsAsync()
     {
+        string queriedServer = ServerName;
         List<MarketAnalyticsSeriesResult> results = [];
 
         foreach (
@@ -34,14 +35,16 @@ public partial class History
                 await MarketAnalyticsService
                     .BuildSeriesAsync(
                         series,
-                        ServerName,
+                        queriedServer,
                         _analyticsPeriod
                     );
 
             results.Add(result);
         }
 
-        _analyticsResults = results;
+        if (string.Equals(queriedServer, ServerName,
+                StringComparison.OrdinalIgnoreCase))
+            _analyticsResults = results;
     }
 
     private async Task RefreshAnalyticsAsync()
