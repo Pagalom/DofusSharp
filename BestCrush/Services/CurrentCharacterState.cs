@@ -221,6 +221,19 @@ public sealed class CurrentCharacterState
     /// A manual click may select only an already discovered character.
     /// New character records cannot be created from a typed name.
     /// </summary>
+    /// <summary>
+    /// Exact window proven alongside a connected, verified character.
+    /// Never recover an owner from the character's name or the SQL filter.
+    /// </summary>
+    public DofusClientWindowKey? WindowForCharacter(CharacterKey key)
+    {
+        lock (_sync)
+            return _scopes.ContainsKey(key) &&
+                _verifiedWindows.TryGetValue(key, out DofusClientWindowKey window)
+                ? window
+                : null;
+    }
+
     public bool IsCharacterConnected(CharacterKey key)
     {
         lock (_sync)
