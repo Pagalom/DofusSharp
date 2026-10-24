@@ -63,6 +63,9 @@ public sealed class CurrentCharacterState
     private CharacterKey? _active;
 
     public event Action? Changed;
+    /// <summary>Explicit click on a verified character profile, including a
+    /// repeated click. It only restores the SQL view for its known server.</summary>
+    public event Action<CharacterKey>? TargetRequested;
 
     public string? ServerName
     {
@@ -209,6 +212,7 @@ public sealed class CurrentCharacterState
                 _active = key;
         }
 
+        TargetRequested?.Invoke(key);
         Changed?.Invoke();
         return true;
     }
