@@ -949,3 +949,51 @@ Distinctions indispensables :
 **Statut : documenté, aucune modification de
 production ou du probe ; compilation/tests
 Windows non exécutés dans ce lot.**
+
+## P3d.5.10 — Contrôle visuel de l'équipement aux deux f7 (24/10/2026)
+
+L'opérateur a communiqué la capture d'écran de l'équipement utilisé
+dans le test P3d.5.9 : **Kwakanneau de Flammes**, anneau **niveau 42**.
+La section « EFFETS » affichait :
+- **+99 Vitalité** ;
+- **+20 Intelligence** ;
+- **0 % Résistance Feu**, en grisé.
+
+La capture réseau P3d.5.9 de ses deux transferts montrait
+`iqx ... ??.1.7:lenx2` et `iqz ... ??.1.7:lenx2`
+(les chemins complets dépendent des enveloppes `iqx.f2.f1`
+et `iqz.f1.f1`).
+
+**Corrélation expérimentale : deux effets affichés non nuls,
+deux occurrences f7**, contre une troisième ligne affichée
+à zéro. Hypothèse de travail : `item.f7[]` serait la collection
+des effets effectivement portés sur l'instance ; la ligne à
+0 % pourrait n'être qu'une présentation de l'interface, sans
+entrée réseau. **Ce n'est pas encore un décodage confirmé** :
+les deux `f7` pourraient être d'autres informations, et aucune
+valeur numérique, ID d'effet, ni signe n'a été observé à ce
+stade. Le nombre de champs `f7` sur un seul équipement ne
+suffit pas à prouver un mapping sémantique.
+
+### Test décisif conseillé
+
+Comparer anonymement un **second équipement**
+affichant **trois caractéristiques non nulles** à sa liste
+`item.f7[]`, ou un objet sans caractéristique.
+La même corrélation de cardinalité sur un autre objet
+indépendant renforcerait le modèle. Pour aller au-delà,
+ajouter dans `BestCrush.NetworkProbe` un mode de
+diagnostic spécifique **borné**, explorant uniquement
+les schémas internes de `f7[]` sur un delta d'objet
+et **aucune valeur** brute, nom, UID, effet ou prix ;
+inclure tests de confidentialité, bornes taille/profondeur,
+et cas erronés. Puis comparer les valeurs et effets
+localement avec des références saisies par l'opérateur,
+sans afficher ni exporter ces valeurs.
+
+Ne pas encore mapper `item.f7` vers l'ancien
+`DecodeStats(item,3)`, ni persister les caractéristiques.
+Les ateliers de craft/forgemagie et les offres HDV restent
+des consommateurs futurs de l'instance normalisée si
+leur message comporte réellement un objet complet,
+et non une simple référence/annonce/offre.
