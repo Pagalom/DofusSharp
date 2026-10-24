@@ -1782,9 +1782,8 @@ fournis par l'opérateur peuvent la valider.
 
 `--item-effects-dofusdb-study` a obtenu
 `DOFUSDB=[catalogue-charge]` et **six** deltas
-S→C dans **la même session TCP** (21:10 UTC,
-horloge de la capture datée du 24/10/2026 dans
-l'historique du projet ; sortie horodatée 22:10 UTC) :
+S→C dans **la même session TCP**, horodatés
+**22:10 UTC** :
 
 ```text
 22:10:44.775 iqz B f10-vs-dofusdb-effectId=all characteristicId=none elementId=none value-ranges=all catalog-effects=4 wire-effects=4
