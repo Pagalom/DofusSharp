@@ -66,6 +66,7 @@ public static class MauiProgram
 #endif
             builder.Services.AddSingleton<LiveDofusClientNetworkBindings>();
             builder.Services.AddSingleton<CurrentAccountProfessionsState>();
+            builder.Services.AddSingleton<CurrentWindowProfessionsState>();
             builder.Services.AddSingleton<ServersService>();
             builder.Services.AddSingleton<RunesService>();
             builder.Services.AddSingleton<CrushService>();
