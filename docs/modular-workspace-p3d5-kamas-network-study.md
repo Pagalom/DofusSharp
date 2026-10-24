@@ -1340,3 +1340,80 @@ décodeur canonique métier, la base SQLite,
 les observations d'atelier, le calcul de craft
 et les HDV sont inchangés. Aucune exécution
 Windows du nouveau code n'est déclarée validée.
+
+## P3d.5.14 — Résistances en pourcentage non nulles : succès contrôlé
+
+### Observation réelle, 24/10/2026 à 21:45 UTC
+
+L'utilisateur a testé un **deuxième équipement indépendant**
+portant notamment **+5 % de résistance Feu**.
+Références saisies localement dans
+`--item-effects-compare` : `24,26,5,3`.
+
+```text
+[21:45:50.660 UTC] Session #1 S→C OPENED
+[21:45:53.716 UTC] Session #1 S→C iqx 42 octets ITEM_EFFECTS=[effects=4 wire-shapes=[root=[10:v 5:v]x4] match=[f5:yes f10:no]]
+[21:45:54.738 UTC] Session #1 S→C iqz 42 octets ITEM_EFFECTS=[effects=4 wire-shapes=[root=[10:v 5:v]x4] match=[f5:yes f10:no]]
+```
+
+Cette capture reproduit la correspondance exacte des valeurs
+d'effets via `item.f7[].f5` dans **les deux sens**,
+sur **quatre** occurrences `f7`, avec au moins
+un effet de résistance en **pourcentage non nul**.
+
+Comparaison des deux équipements réels étudiés :
+
+| Équipement | Valeurs non nulles visibles | `f7[]` | Match f5 (iqx/iqz) | Match f10 |
+|---|---|---:|---|---|
+| Kwakanneau de Flammes | 99 Vitalité, 20 Intelligence | 2 | yes / yes | no / no |
+| Deuxième équipement (dont 5 % rés. Feu) | 24, 26, 5, 3 | 4 | yes / yes | no / no |
+
+**Conclusion :** hypothèse `f7[].f5 = valeur numérique
+d'effet` **fortement validée sur deux équipements,
+deux tailles de liste et deux sens de transfert**.
+Le comparateur est un **multiensemble** : il
+n'associe pas individuellement `5` à l'effet
+« Résistance Feu » et ne prouve pas les unités de
+tous les effets. Dans l'ensemble de référence, la
+valeur `5` correspond à l'effet de résistance Feu
+rapporté par l'utilisateur ; le comportement est
+compatible avec un encodage entier directement en
+points de pourcentage.
+
+Le champ `f7[].f10` existe comme varint dans
+toutes les lignes analysées mais **ne correspond pas**
+au multiensemble des valeurs. Il constitue un
+**candidat ID d'effet**, pas une preuve de
+sémantique. La présence ponctuelle d'un delta
+`iqz` sans effets dans l'expérience antérieure
+reste inexpliquée : ne pas fusionner aveuglément
+l'ensemble des messages `iqz` avec les snapshots
+de stock.
+
+### Travail suivant (une seule question expérimentale)
+
+Confirmer `f10 = type/identifiant d'effet`.
+Piste non intrusive : comparer deux instances du
+**même type d'équipement**, avec les **mêmes
+caractéristiques présentes mais des jets différents**,
+et vérifier localement que le multiensemble des
+`f10` est identique tandis que les `f5`
+diffèrent. Cette égalité ne suffira pas à elle
+seule à assigner les noms des effets ; elle
+permettra de distinguer « identifiant stable par
+type d'effet » de « valeur de l'effet ». Autre
+piste : comparer de vrais IDs d'effet publics,
+issus du catalogue versionné du jeu, aux
+`f10` en RAM via un mode de référence local.
+Ne pas afficher les `f10` bruts ni les
+empreintes d'UID de personnage.
+
+Maintenir séparation entre modèle d'instance commun
+(UID, ItemId, quantité, liste d'effets),
+adaptateurs d'enveloppe propres à chaque opcode
+et contexte métier (inventaire, banque, atelier,
+forgemagie, concassage et HDV lorsque le message
+porte réellement des données d'instance).
+
+**Aucun code de production, mapping d'effets,
+SQLite ou UI modifié lors de ce checkpoint de capture.**
