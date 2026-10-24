@@ -46,6 +46,38 @@ public sealed class ServerViewFilterStateTest
     }
 
     [Fact]
+    public void BrowsingOtherSqlServerPreservesVerifiedCharacterCardAndActiveFocus()
+    {
+        CurrentCharacterState characters = new();
+        characters.SelectServer("Tylezia");
+        CharacterConnectionScope scope = new(
+            "Tylezia", "verified-flow", 1, 1, 11);
+        CharacterIdentityAssessment confirmed = new(
+            CharacterIdentityStatus.Confirmed, scope,
+            new ConfirmedCharacterIdentity(101, "Pagalom", 4, 38));
+        characters.ObserveConfirmedCharacter(
+            confirmed, isVerifiedTargetWindow: true,
+            verifiedWindow: TyleziaWindow).Should().BeTrue();
+        CharacterKey key = new("Tylezia", 101);
+
+        ServerViewFilterState view = new();
+        view.FollowWindow(TyleziaWindow, "Tylezia");
+        view.BrowseServer("Kourial");
+        // The layout explicitly does NOT call
+        // characters.SelectServer("Kourial") while browsing.
+        CurrentServerState displayed = new(
+            new WindowServerAttributionState(), automaticRoutingEnabled: true);
+        displayed.SelectServer(view.ServerName!);
+
+        characters.ActiveCharacterKey.Should().Be(key);
+        characters.Characters.Should().ContainSingle()
+            .Which.Name.Should().Be("Pagalom");
+        characters.WindowForCharacter(key).Should().Be(TyleziaWindow);
+        displayed.ServerName.Should().Be("Kourial");
+        displayed.GetCaptureLease().Should().BeNull();
+    }
+
+    [Fact]
     public void RoutineNetworkUpdatesCannotOverwriteManualBrowsingFilter()
     {
         ServerViewFilterState view = new();
