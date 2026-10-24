@@ -22,6 +22,23 @@ public sealed class CurrentWindowProfessionsState(CurrentServerState serverState
         ProfessionPublicJobIdReference.ByName.ToDictionary(
             entry => entry.Value, entry => entry.Key);
 
+    /// <summary>
+    /// The Game lease establishes which window owns this observation.
+    /// XP thresholds are computed separately from the public DOFUS 3
+    /// profession reference and attached only for consistent level/XP
+    /// pairs. Conflicting captures remain visible, without a false bar.
+    /// </summary>
+    private static AccountProfessionProgress WithExperienceBoundaries(
+        string name, int level, ulong cumulativeExperience)
+    {
+        if (ProfessionLevelExperienceReference.TryGetBoundaries(
+            level, cumulativeExperience, out ulong start, out ulong next))
+            return new AccountProfessionProgress(
+                name, level, cumulativeExperience, start, next);
+
+        return new AccountProfessionProgress(name, level, cumulativeExperience);
+    }
+
     public event Action? Changed;
 
     /// <summary>
@@ -57,7 +74,7 @@ public sealed class CurrentWindowProfessionsState(CurrentServerState serverState
                 if (!row.UnidentifiedVarints.TryGetValue(5, out ulong id) ||
                     !expected.Contains(id) ||
                     !NamesByPublicId.TryGetValue(id, out string? name) ||
-                    !mapped.TryAdd(id, new AccountProfessionProgress(
+                    !mapped.TryAdd(id, WithExperienceBoundaries(
                         name, row.Level, row.ExperienceCounter)))
                     return false;
             }
@@ -103,11 +120,11 @@ public sealed class CurrentWindowProfessionsState(CurrentServerState serverState
             {
                 Dictionary<ulong, AccountProfessionProgress> updated =
                     old.Professions.ToDictionary(entry => entry.Key, entry => entry.Value);
-                updated[id] = prior with
-                {
-                    Level = single.Level,
-                    CumulativeExperience = single.ExperienceCounter
-                };
+                // Recalculate thresholds on every mono-ipz update: an XP
+                // gain can cross into a new level. Never retain the previous
+                // level's thresholds after a new observation.
+                updated[id] = WithExperienceBoundaries(
+                    prior.Name, single.Level, single.ExperienceCounter);
                 _snapshots[window] = new WindowSnapshot(lease, updated);
                 changed = true;
             }
