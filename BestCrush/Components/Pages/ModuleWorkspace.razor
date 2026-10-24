@@ -1,5 +1,7 @@
 @page "/modules/{Slug}"
 @using BestCrush.Components
+@using BestCrush.Services
+@inject ServerViewFilterState ServerViewFilter
 
 <div class="container py-4">
     @if (_module is null)
@@ -10,15 +12,27 @@
     else if (_module.Slug == "concassage")
     {
         <h1>Concassage</h1>
-        <div class="alert alert-info mt-4" role="status">
-            Le serveur du personnage ciblé est en cours d'identification automatique.
-            Le Concassage sera disponible dès que BestCrush aura établi le lien
-            entre sa fenêtre Dofus et son serveur.
-            Les données économiques d'une connexion non identifiée ne sont pas enregistrées.
-        </div>
-        <p>
+        @if (ServerViewFilter.ServerName is { } viewServer)
+        {
+            <div class="alert alert-info mt-4" role="status">
+                Le serveur <strong>@viewServer</strong> est sélectionné pour
+                consulter les prix et les historiques déjà enregistrés.
+                Ce filtre ne change pas le serveur des personnages ni celui
+                des nouvelles observations réseau.
+            </div>
+            <a href="@KnownRoutes.Server(viewServer)">Voir les données du serveur</a>
+        }
+        else
+        {
+            <div class="alert alert-info mt-4" role="status">
+                Aucun serveur de consultation défini. Choisissez un serveur
+                dans le filtre en haut à droite pour consulter son historique,
+                ou ciblez un personnage dont le serveur a été identifié.
+                Les captures réseau restent associées automatiquement au
+                serveur réel de chaque connexion Dofus.
+            </div>
             <a href="@KnownRoutes.Profile()">Consulter les fiches des personnages</a>
-        </p>
+        }
     }
     else
     {
