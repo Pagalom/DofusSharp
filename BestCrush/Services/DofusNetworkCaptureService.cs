@@ -409,7 +409,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 _windowEquipmentState?.Clear();
                 _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
                 _windowServerAttributionState?.Reset(stoppedEpoch);
-            _handshakeWindowEvidence.Reset(stoppedEpoch);
+                _handshakeWindowEvidence.Reset(stoppedEpoch);
                 _candidateCardsState?.NotifyChanged();
 
                 logger.LogWarning(
@@ -500,7 +500,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
         _windowEquipmentState?.Clear();
         _rosterWireObserver?.OnCaptureEpochChanged(replayEpoch);
         _windowServerAttributionState?.Reset(replayEpoch);
-            _handshakeWindowEvidence.Reset(replayEpoch);
+        _handshakeWindowEvidence.Reset(replayEpoch);
         _candidateCardsState?.NotifyChanged();
         _started = true;
     }
@@ -585,6 +585,10 @@ public sealed class DofusNetworkCaptureService : IDisposable
             .ConfigureAwait(false);
     }
 
+    internal static bool ShouldResetLogicalTcpSession(
+        bool synchronize, bool reset, bool outbound) =>
+        reset || (synchronize && outbound);
+
     private void OnPacketArrival(
         object sender,
         PacketCapture capture)
@@ -625,7 +629,12 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     ? captureDevice.Name
                     : "unknown";
 
-            if (tcp.Synchronize || tcp.Reset)
+            // An incoming SYN+ACK acknowledges the *same* client TCP
+            // connection. Resetting its logical ID here would destroy the
+            // exact SYN-time owner evidence before Connection sends ServerId.
+            if (ShouldResetLogicalTcpSession(
+                tcp.Synchronize, tcp.Reset,
+                tcp.DestinationPort == DofusPort))
             {
                 lock (_streamLock)
                 {
