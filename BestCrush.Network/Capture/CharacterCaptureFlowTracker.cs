@@ -78,6 +78,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly HashSet<string> _shapeKeys;
     private readonly bool _itemEffectsShape;
     private readonly IReadOnlyList<long>? _expectedEffectValues;
+    private readonly ItemEffectTypeStabilityStudy? _effectTypeStudy;
     private readonly IReadOnlyList<ProfessionReference>? _professionReferences;
     private readonly bool _decodeIpz;
     private readonly IReadOnlyList<ProfessionStudyReference>? _studyReferences;
@@ -135,7 +136,8 @@ public sealed class CharacterCaptureFlowTracker
         CharacterRosterContinuityStudy? rosterStudy = null,
         ConcurrentCharacterRosterStudy? concurrentRosterStudy = null,
         bool itemEffectsShape = false,
-        IReadOnlyList<long>? expectedEffectValues = null)
+        IReadOnlyList<long>? expectedEffectValues = null,
+        ItemEffectTypeStabilityStudy? effectTypeStudy = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -155,6 +157,12 @@ public sealed class CharacterCaptureFlowTracker
             throw new ArgumentException(
                 "Effect references require the explicit shape probe and 1-16 values.",
                 nameof(expectedEffectValues));
+        if (effectTypeStudy is not null &&
+            (!itemEffectsShape || expectedEffectValues is not null))
+            throw new ArgumentException(
+                "The cross-item study must be the sole active effect diagnostic.",
+                nameof(effectTypeStudy));
+        _effectTypeStudy = effectTypeStudy;
         _expectedEffectValues = expectedEffectValues?.ToArray();
 
         if (_shapeKeys.Any(key => !IsSafeOpcode(key)))
@@ -615,8 +623,11 @@ public sealed class CharacterCaptureFlowTracker
                                         flow.Number, direction, any.Key, any.Body),
                                     _itemEffectsShape &&
                                     direction == CharacterCaptureDirection.ServerToClient
-                                        ? ItemEffectsWireShapeStudy.Describe(
-                                            any.Key, any.Body, _expectedEffectValues)
+                                        ? _effectTypeStudy is not null
+                                            ? _effectTypeStudy.Observe(
+                                                flow.Number, any.Key, any.Body)
+                                            : ItemEffectsWireShapeStudy.Describe(
+                                                any.Key, any.Body, _expectedEffectValues)
                                         : null));
                             }
                         }
