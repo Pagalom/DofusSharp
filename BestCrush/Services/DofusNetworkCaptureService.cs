@@ -806,6 +806,16 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                                         forceRefresh: true);
                                                 });
 
+                                        // A live owner contradicting the
+                                        // verified SYN-time owner is a
+                                        // conflict, not a replacement. Fail
+                                        // closed to protect server markets.
+                                        if (selectedWindow is { } proposed &&
+                                            _handshakeWindowEvidence.ConflictsWith(
+                                                captureEpoch, connectionId, connection,
+                                                proposed, DateTime.UtcNow))
+                                            selectedWindow = null;
+
                                         _windowServerAttributionState.RecordSelectionFrame(
                                             captureEpoch, selectedWindow is not null);
                                         if (selectedWindow is { } owner)
