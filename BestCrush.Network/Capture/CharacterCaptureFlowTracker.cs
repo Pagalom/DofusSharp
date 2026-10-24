@@ -43,7 +43,8 @@ public sealed record CharacterCaptureEvent(
     string? ProfessionXpStudySummary = null,
     string? AccountWireFieldSummary = null,
     string? RosterContinuitySummary = null,
-    string? ConcurrentRosterSummary = null);
+    string? ConcurrentRosterSummary = null,
+    string? ItemEffectsShape = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -75,6 +76,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly int _maxFlows;
     private readonly TimeSpan _idleTimeout;
     private readonly HashSet<string> _shapeKeys;
+    private readonly bool _itemEffectsShape;
     private readonly IReadOnlyList<ProfessionReference>? _professionReferences;
     private readonly bool _decodeIpz;
     private readonly IReadOnlyList<ProfessionStudyReference>? _studyReferences;
@@ -130,7 +132,8 @@ public sealed class CharacterCaptureFlowTracker
         ConnectionServerSelectionStudy? connectionSelectionStudy = null,
         AccountWireFieldComparisonStudy? accountWireStudy = null,
         CharacterRosterContinuityStudy? rosterStudy = null,
-        ConcurrentCharacterRosterStudy? concurrentRosterStudy = null)
+        ConcurrentCharacterRosterStudy? concurrentRosterStudy = null,
+        bool itemEffectsShape = false)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -143,6 +146,8 @@ public sealed class CharacterCaptureFlowTracker
         _shapeKeys = shapeKeys is null
             ? new HashSet<string>(StringComparer.Ordinal)
             : new HashSet<string>(shapeKeys, StringComparer.Ordinal);
+
+        _itemEffectsShape = itemEffectsShape;
 
         if (_shapeKeys.Any(key => !IsSafeOpcode(key)))
             throw new ArgumentException(
@@ -599,7 +604,11 @@ public sealed class CharacterCaptureFlowTracker
                                     _rosterStudy?.Observe(
                                         flow.Number, direction, any.Key, any.Body),
                                     _concurrentRosterStudy?.Observe(
-                                        flow.Number, direction, any.Key, any.Body)));
+                                        flow.Number, direction, any.Key, any.Body),
+                                    _itemEffectsShape &&
+                                    direction == CharacterCaptureDirection.ServerToClient
+                                        ? ItemEffectsWireShapeStudy.Describe(any.Key, any.Body)
+                                        : null));
                             }
                         }
                     }
