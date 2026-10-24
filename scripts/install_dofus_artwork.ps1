@@ -160,10 +160,12 @@ try {
     $foundHeads = @{}
     $missingHeads = @()
     foreach ($id in $classIds) {
-        # Candidate class-head ID uses breed ID x 10. Missing files have
-        # a generic fallback; never show another class's portrait.
+        # The verified class_head_images_64 archive uses Head_<breed*10>-64.png
+        # for the first portrait variant, and Head_<breed*10+1>-64.png for
+        # the other variant. Until character appearance is known, use the
+        # first variant consistently, never another class's portrait.
         $headId = $id * 10
-        $wanted = "$($headId)-64.png"
+        $wanted = "Head_$($headId)-64.png"
         $matches = @($headFiles | Where-Object { $_.Name -eq $wanted })
         if ($matches.Count -ne 1) {
             $missingHeads += "$id (image $wanted : $($matches.Count) fichier(s))"
@@ -175,6 +177,11 @@ try {
     if ($foundJobs.Count -eq 0) {
         $examples = ($jobFiles | Select-Object -First 20 -ExpandProperty Name) -join ', '
         throw "Aucune icone de metier resolue. Fichiers disponibles : $examples"
+    }
+
+    if ($foundHeads.Count -eq 0) {
+        $examples = ($headFiles | Select-Object -First 20 -ExpandProperty Name) -join ', '
+        throw "Aucun portrait de classe resolu. Fichiers disponibles : $examples"
     }
 
     # Stage every verified PNG. Until staging succeeds, leave existing files alone.
