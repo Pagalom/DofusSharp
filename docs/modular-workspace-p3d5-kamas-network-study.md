@@ -500,3 +500,83 @@ des calculs de craft fondés sur `irp`.
 
 Aucune modification de production, aucun nouvel
 enregistrement d'objets, aucun solde de Kamas prouvé.
+
+## P3d.5.6 — Retrait complet confirmé par diminution du roster bancaire (24/10/2026)
+
+Nouvelle capture `--character-shape --shape-keys irp,irl,iqx,iqz,irx,iqm`
+avec une seule session TCP #1 ; expérience contrôlée annoncée par
+l'opérateur : ouvrir banque, **retirer une pile entière**, rouvrir
+banque, remettre la pile, rouvrir banque.
+
+| Heure UTC | Opcode | Taille | Forme/résultat |
+|---|---|---:|---|
+| 03:32:42.758 | `irp` | **11 698** octets | `root=[1:v 2:lenx559]` |
+| 03:32:45.789 | `iqx` | **16** octets | `root=[2:len]` avec sous-champs objet `?2.1:len ?2.4:v ??2.1.3:v ??2.1.4:v ??2.1.5:v` |
+| 03:32:49.831 | `irp` | **11 682** octets | `root=[1:v 2:lenx558]` |
+| 03:32:51.844 | `iqz` | **15** octets | `root=[1:len]` avec sous-champs analogues |
+| 03:32:51.844 | `iqm` | **5** octets | `root=[1:v]` |
+
+**Preuve expérimentale forte du roster du coffre :**
+retirer une pile complète d'une banque supposée produire
+559 lignes entraîne exactement la diminution attendue
+`559 → 558` des champs répétés `irp.f2`. La longueur
+diminue également de 16 octets. Une autre observation
+indépendante avait déjà établi la forte corrélation
+de `irp` avec l'ouverture du coffre bancaire.
+
+Ce résultat **étaye fortement** que `irp.f2[]` est la
+collection des lignes de banque. Il ne prouve toujours
+pas la signification exacte de chaque sous-champ : UID,
+ItemId, quantité et stats sont **non vérifiés**.
+
+La restauration de la pile a déclenché `iqz` puis
+`iqm`, mais aucun troisième `irp` n'apparaît dans
+la sortie de forme. Le mode `--character-shape`
+**déduplique les formes identiques** dans une session ;
+un `irp` final à 559 lignes identique à l'initial
+serait masqué. Cela ne démontre ni absence de
+transmission ni restauration confirmée par le réseau.
+
+### Suite P3d.5.7 : corroborer le snapshot de l'inventaire
+
+L'ancien chargement Dofus a montré
+`irl root=[2:lenx503 4:v]`. Son sous-message répété
+`?2.1:len ...` a la même forme structurelle
+que `irp.f2[]`, `iqx` et `iqz`.
+
+Pour tester si `irl.f2[]` représente les lignes
+d'inventaire, choisir une pile entière initialement
+**absente de l'inventaire**, puis comparer deux
+connexions complètes du même personnage :
+
+1. Capture **A**, avant transfert :
+   `--device 3 --character-shape --shape-keys irl,irp`
+   démarrée avant connexion ; noter le compte `irl.f2[]`.
+2. Transférer l'intégralité d'une pile de banque vers
+   l'inventaire et la laisser **dans l'inventaire**.
+   Quitter complètement le client Dofus.
+3. Capture **B** avec la **même** commande,
+   et une nouvelle ouverture du client : noter le
+   compte `irl.f2[]`. S'il s'agit d'une nouvelle
+   ligne, attendre une variation de **+1**.
+4. Replacer la pile en banque à la fin de l'essai.
+   Ne pas supposer que le nombre total d'objets
+   reste invariant si des actions du jeu ont modifié
+   le stock entre les captures.
+
+**Ne pas** envoyer les identifiants de la ressource,
+les quantités, valeurs scalaires ou payloads ; seuls
+les comptes `irl`/`irp`, heures et conditions
+suffisent à cette étape. Une stabilité de `irl.f2[]`
+peut être compatible avec une pile déjà existante
+dans l'inventaire ou un autre mécanisme de snapshot ;
+il faut alors changer le contrôle.
+
+**Pour interpréter les champs numériques eux-mêmes**,
+il faudra ensuite un diagnostic local explicite et
+testé, qui confronte les valeurs à des références
+opérateur en RAM et ne renvoie que les chemins
+correspondants, jamais les valeurs privées.
+
+Aucune modification du routeur métier, de
+`CharacterSessionProfile`, du craft ou de SQLite.
