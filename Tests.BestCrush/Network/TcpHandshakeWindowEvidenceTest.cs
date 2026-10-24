@@ -26,6 +26,20 @@ public sealed class TcpHandshakeWindowEvidenceTest
         return state;
     }
 
+    [Theory]
+    [InlineData(true, false, true, true)]   // Outgoing SYN opens a new session
+    [InlineData(true, false, false, false)] // Server SYN-ACK keeps that token
+    [InlineData(false, false, true, false)] // Client ACK/payload
+    [InlineData(false, false, false, false)]// Server payload
+    [InlineData(false, true, true, true)]   // Client reset
+    [InlineData(false, true, false, true)]  // Server reset
+    public void IncomingSynAckNeverDiscardsSynTimeOwnerToken(
+        bool synchronize, bool reset, bool outbound, bool expected)
+    {
+        DofusNetworkCaptureService.ShouldResetLogicalTcpSession(
+            synchronize, reset, outbound).Should().Be(expected);
+    }
+
     [Fact]
     public void ExactValidatedSynOwnerSurvivesSocketClosureUntilFrameDecoded()
     {
