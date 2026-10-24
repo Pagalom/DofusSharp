@@ -16,6 +16,7 @@
 @inject BestCrush.Services.CurrentDofusClientsState CurrentDofusClientsState
 @inject BestCrush.Services.CurrentCandidateWindowCardsState CurrentCandidateWindowCardsState
 @inject BestCrush.Services.WindowServerAttributionState WindowServerAttributionState
+@inject BestCrush.Services.CurrentWindowProfessionsState CurrentWindowProfessionsState
 @inject BestCrush.Services.LiveDofusClientNetworkBindings LiveClientNetworkBindings
 @inject BestCrush.Services.WindowScopedNetworkEquipmentState WindowEquipmentState
 @inject BestCrush.Services.DofusWindowService DofusWindowService
@@ -449,6 +450,7 @@
                     // character card disappears even with NO TCP traffic.
                     CurrentCandidateWindowCardsState.RemoveMissingWindows(liveClientKeys);
                     WindowServerAttributionState.RemoveMissingWindows(liveClientKeys);
+                    CurrentWindowProfessionsState.RemoveMissingWindows(liveClientKeys);
                     WindowServerAttributionState.ReconcileCharacterTitles(
                         CurrentDofusClientsState.Clients);
                     // Remove ephemeral per-window equipment even when the
