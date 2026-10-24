@@ -30,6 +30,8 @@ Dans l'attente d'une réponse écrite précisant le périmètre autorisé :
 
 Toute utilisation des ressources Ankama en distribution publique sera réexaminée à réception d'un accord applicable, notamment en fonction de son objet, de sa durée, de ses éventuelles conditions d'attribution et de la possibilité de les embarquer dans l'installateur.
 
+**Protection technique :** tant qu'aucune autorisation de redistribution des visuels n'est documentée, le projet `BestCrush.csproj` interrompt une compilation `Release` si des PNG d'Ankama sont présents sous `BestCrush/wwwroot/img/dofus/`. Le workflow de publication GitHub Actions effectue également un contrôle des fichiers de l'archive compilée. Les compilations `Debug` restent possibles avec les images installées localement. Cette protection doit être réévaluée à réception de l'accord écrit.
+
 ## 4. Indépendance du projet
 
 BestCrush est un projet logiciel compagnon indépendant. **Cette notice ne prétend ni à un partenariat, ni à un parrainage, ni à une approbation d'Ankama concernant les ressources graphiques.**
