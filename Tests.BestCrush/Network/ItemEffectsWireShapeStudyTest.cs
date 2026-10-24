@@ -139,4 +139,92 @@ public sealed class ItemEffectsWireShapeStudyTest
 
         message.ItemEffectsShape.Should().BeNull();
     }
+
+    [Fact]
+    public void LocalReferencesSelectF10WithoutExposingEffectValues()
+    {
+        byte[] first = Message(Unsigned(5, 118), Unsigned(10, 99));
+        byte[] second = Message(Unsigned(5, 119), Unsigned(10, 20));
+
+        string? iqx = ItemEffectsWireShapeStudy.Describe(
+            "iqx", Iqx(first, second), [20, 99]);
+        string? iqz = ItemEffectsWireShapeStudy.Describe(
+            "iqz", Iqz(second, first), [99, 20]);
+
+        iqx.Should().Be(iqz);
+        iqx.Should().Contain("effects=2");
+        iqx.Should().Contain("match=[f5:no f10:yes]");
+        foreach (string sensitive in new[] { "118", "119", "9022491", "6924" })
+            iqx.Should().NotContain(sensitive);
+        iqx.Should().NotContain("99");
+        iqx.Should().NotContain("20");
+    }
+
+    [Fact]
+    public void LocalComparisonPreservesDuplicateAndNegativeValues()
+    {
+        byte[] first = Message(Unsigned(5, 118),
+            Unsigned(10, unchecked((ulong)-2L)));
+        byte[] second = Message(Unsigned(5, 119),
+            Unsigned(10, unchecked((ulong)-2L)));
+        ItemEffectsWireShapeStudy.Describe("iqx",
+            Iqx(first, second), [-2, -2])
+            .Should().Contain("match=[f5:no f10:yes]");
+
+        ItemEffectsWireShapeStudy.Describe("iqx",
+            Iqx(first, second), [-2, -1])
+            .Should().Contain("match=[f5:no f10:no]");
+    }
+
+    [Fact]
+    public void LocalComparisonDoesNotReportSuccessWhenEffectMissingOrMalformed()
+    {
+        byte[] effect = Message(Unsigned(5, 118), Unsigned(10, 99));
+        ItemEffectsWireShapeStudy.Describe("iqx",
+            Iqx(effect), [99, 20])
+            .Should().Contain("match=[f5:incomplete f10:incomplete]");
+
+        ItemEffectsWireShapeStudy.Describe("iqx",
+            Iqx(Message(Unsigned(5, 118))), [99])
+            .Should().Contain("match=[f5:no f10:unrecognized]");
+
+        ItemEffectsWireShapeStudy.Describe("iqx",
+            Iqx(Message(Bytes(5, [1, 2, 3]))), [99])
+            .Should().Contain("match=[f5:unrecognized f10:unrecognized]");
+    }
+
+    [Fact]
+    public void ExpectedReferencesCannotActivateStudyWithoutOptIn()
+    {
+        Action create = () => new CharacterCaptureFlowTracker(
+            expectedEffectValues: [99, 20]);
+        create.Should().Throw<ArgumentException>();
+
+        Action empty = () => new CharacterCaptureFlowTracker(
+            itemEffectsShape: true, expectedEffectValues: []);
+        empty.Should().Throw<ArgumentException>();
+    }
+
+    [Fact]
+    public void ComparisonModeDoesNotPrintReferencesThroughTrackerEvent()
+    {
+        CharacterCaptureFlowTracker tracker = new(
+            itemEffectsShape: true, expectedEffectValues: [99, 20]);
+        CharacterCaptureFlowKey flow = new(
+            "127.0.0.1", 40001, "10.0.0.10", 5555);
+        CharacterCaptureEvent message = tracker.Observe(
+            flow, CharacterCaptureDirection.ServerToClient, 100,
+            Frame(Any("iqx", Iqx(
+                Message(Unsigned(5, 118), Unsigned(10, 99)),
+                Message(Unsigned(5, 119), Unsigned(10, 20))))),
+            new DateTime(2026, 10, 24, 22, 0, 0, DateTimeKind.Utc))
+            .Single(x => x.Kind == CharacterCaptureEventKind.Message);
+
+        message.ItemEffectsShape.Should().Contain("match=[f5:no f10:yes]");
+        string report = System.Text.Json.JsonSerializer.Serialize(message);
+        report.Should().NotContain("9022491");
+        report.Should().NotContain("6924");
+        report.Should().NotContain("118");
+        report.Should().NotContain("119");
+    }
 }
