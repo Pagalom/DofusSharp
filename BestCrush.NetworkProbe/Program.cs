@@ -29,6 +29,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-shape");
     Console.WriteLine("Pour comparer localement f5/f10 à des valeurs visibles en jeu, sans afficher les valeurs réseau :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-compare");
+    Console.WriteLine("Pour verifier si f10 est stable sur deux objets aux jets differents :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-type-study");
     Console.WriteLine("Pour voir les structures de champs des messages de connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --character-shape");
     Console.WriteLine("  (option) --shape-keys irl,ico,jei,isr");
@@ -206,12 +208,14 @@ else if (options.CharacterScan)
             ? "Mode P1c : corrélation locale métier/niveau/XP, aucune valeur affichée ou sauvegardée."
         : options.CharacterShape
             ? "Mode P1b : formes protobuf uniquement pour les opcodes ciblés ; aucune valeur enregistrée."
-        : options.ItemEffectsShape || options.ItemEffectsCompare
+        : options.ItemEffectsShape || options.ItemEffectsCompare ||
+          options.ItemEffectsTypeStudy
             ? "Mode P3d.5 : structures internes f7 sur iqx/iqz/kch uniquement, valeurs et UID masqués."
             : "Mode P1a : métadonnées uniquement, flux TCP isolés, aucun payload enregistré.");
     if (options.CharacterShape)
         Console.WriteLine("Op codes ciblés : " + string.Join(", ", options.ShapeKeys.OrderBy(x => x)));
-    if (options.ItemEffectsShape || options.ItemEffectsCompare)
+    if (options.ItemEffectsShape || options.ItemEffectsCompare ||
+        options.ItemEffectsTypeStudy)
         Console.WriteLine("P3d.5 : capture un seul client ; affiche seulement les formes f7 et, si demandé, les champs correspondants, jamais les valeurs. Aucun contenu enregistré.");
     if (options.ProfessionFlow)
         Console.WriteLine("Étude P3a en RAM seulement ; aucune référence privée, compte/serveur et mapping NON vérifiés.");
@@ -404,6 +408,51 @@ if (options.ItemEffectsCompare)
     expectedEffectValues = parsedEffects;
     inputEffects = null;
     Console.WriteLine("Références chargées uniquement en RAM ; ouvrir Dofus après le début de capture.");
+}
+
+ItemEffectTypeStabilityStudy? effectTypeStudy = null;
+if (options.ItemEffectsTypeStudy)
+{
+    Console.WriteLine("P3d.5 : comparer deux objets partageant les memes caracteristiques, mais avec des valeurs differentes.");
+    Console.WriteLine("Objet A : entrer TOUTES ses valeurs non nulles dans l'ordre des caracteristiques communes (ex : 99,20).");
+    Console.Write("Objet A : ");
+    string? inputA = Console.ReadLine();
+    Console.WriteLine("Objet B : commencer par les memes caracteristiques dans le MEME ordre, puis ajouter ses autres valeurs non nulles (ex : 24,26,5,3).");
+    Console.Write("Objet B : ");
+    string? inputB = Console.ReadLine();
+    static long[]? ParseEffectTypeValues(string? input)
+    {
+        string[] parts = input?.Split(',', StringSplitOptions.TrimEntries |
+            StringSplitOptions.RemoveEmptyEntries) ?? [];
+        if (parts.Length is < 1 or > 16)
+            return null;
+        long[] result = new long[parts.Length];
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (!long.TryParse(parts[i], out result[i]) || result[i] == 0)
+                return null;
+        }
+        return result;
+    }
+    long[]? first = ParseEffectTypeValues(inputA);
+    long[]? second = ParseEffectTypeValues(inputB);
+    inputA = null;
+    inputB = null;
+    if (first is null || second is null)
+    {
+        Console.Error.WriteLine("Format invalide : valeurs entieres non nulles separees par des virgules.");
+        return;
+    }
+    try
+    {
+        effectTypeStudy = new ItemEffectTypeStabilityStudy(first, second);
+    }
+    catch (ArgumentException)
+    {
+        Console.Error.WriteLine("References invalides : A doit avoir 1-8 valeurs distinctes, B davantage (maximum 16). Les valeurs communes doivent etre alignees.");
+        return;
+    }
+    Console.WriteLine("References en RAM uniquement. Capturer les deux objets dans UNE meme session TCP, dans l'ordre de votre choix.");
 }
 
 using ManualResetEventSlim stop = new(false);
@@ -805,8 +854,10 @@ else if (options.CharacterScan)
         options.ProfessionJobStudy,
         identityPairStudy,
         crossOpcodeStudy,
-        itemEffectsShape: options.ItemEffectsShape || options.ItemEffectsCompare,
-        expectedEffectValues: expectedEffectValues);
+        itemEffectsShape: options.ItemEffectsShape || options.ItemEffectsCompare ||
+            options.ItemEffectsTypeStudy,
+        expectedEffectValues: expectedEffectValues,
+        effectTypeStudy: effectTypeStudy);
 
     probe.Start();
     if (options.IdentityPair)
@@ -976,7 +1027,8 @@ internal sealed record ProbeOptions(
     bool ConcurrentRosterStudy,
     bool ConcurrentRosterWindowStudy,
     bool ItemEffectsShape,
-    bool ItemEffectsCompare)
+    bool ItemEffectsCompare,
+    bool ItemEffectsTypeStudy)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -1001,6 +1053,7 @@ internal sealed record ProbeOptions(
         bool characterShape = false;
         bool itemEffectsShape = false;
         bool itemEffectsCompare = false;
+        bool itemEffectsTypeStudy = false;
         bool professionMatch = false;
         bool professionDecode = false;
         bool professionStudy = false;
@@ -1058,6 +1111,9 @@ internal sealed record ProbeOptions(
                     break;
                 case "--item-effects-compare":
                     itemEffectsCompare = true;
+                    break;
+                case "--item-effects-type-study":
+                    itemEffectsTypeStudy = true;
                     break;
                 case "--profession-match":
                     professionMatch = true;
@@ -1178,6 +1234,7 @@ internal sealed record ProbeOptions(
             (professionJobStudy ? 1 : 0) +
             (characterShape ? 1 : 0) + (itemEffectsShape ? 1 : 0) +
             (itemEffectsCompare ? 1 : 0) +
+            (itemEffectsTypeStudy ? 1 : 0) +
             (identityName ? 1 : 0) +
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
@@ -1210,7 +1267,7 @@ internal sealed record ProbeOptions(
         return new ProbeOptions(
             device, port, all, list,
             characterScan || characterShape || itemEffectsShape ||
-                itemEffectsCompare || professionMatch ||
+                itemEffectsCompare || itemEffectsTypeStudy || professionMatch ||
                 professionDecode || professionStudy || professionIdentify ||
                 professionFlow || professionContinuity || professionXpStudy ||
                 professionJobStudy || identityName || identityFields ||
@@ -1225,6 +1282,7 @@ internal sealed record ProbeOptions(
             ktaF1Control, ktaCharacterCompare, serverNameStudy,
             connectionSelectionStudy, expectedClassId, accountWireStudy,
             accountRosterStudy, concurrentRosterStudy,
-            concurrentRosterWindowStudy, itemEffectsShape, itemEffectsCompare);
+            concurrentRosterWindowStudy, itemEffectsShape,
+            itemEffectsCompare, itemEffectsTypeStudy);
     }
 }
