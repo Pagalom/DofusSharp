@@ -99,6 +99,71 @@ public static class ItemEffectsWireShapeStudy
         }
     }
 
+    /// <summary>
+    /// Diagnostic-only: extracts candidate (effect value, effect code) pairs
+    /// without exposing object identity. Caller must keep the result private.
+    /// Uses the same strictly bounded opcode/envelope assumptions as Describe.
+    /// </summary>
+    public static IReadOnlyList<(long Value, ulong Code)>? ReadCandidatePairs(
+        string opcode, ReadOnlySpan<byte> body)
+    {
+        int rootField = opcode switch
+        {
+            "iqx" => 2,
+            "iqz" => 1,
+            "kch" => 3,
+            _ => 0
+        };
+        if (rootField == 0 || body.IsEmpty || body.Length > MaximumMessageBytes)
+            return null;
+
+        List<ProtoField>? root = ProtoWire.ReadFields(body);
+        ProtoField? envelope = root?.FirstOrDefault(f =>
+            f.Number == rootField &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is { Length: > 0 and <= MaximumMessageBytes });
+        if (envelope?.Bytes is null)
+            return null;
+
+        List<ProtoField>? wrapper = ProtoWire.ReadFields(envelope.Bytes);
+        ProtoField? itemField = wrapper?.FirstOrDefault(f =>
+            f.Number == 1 &&
+            f.WireType == ProtoWireType.LengthDelimited &&
+            f.Bytes is { Length: > 0 and <= MaximumMessageBytes });
+        if (itemField?.Bytes is null)
+            return null;
+
+        List<ProtoField>? item = ProtoWire.ReadFields(itemField.Bytes);
+        if (item is null ||
+            !HasPositiveVarint(item, 3) ||
+            !HasPositiveVarint(item, 4) ||
+            !HasPositiveVarint(item, 5))
+            return null;
+
+        List<(long Value, ulong Code)> pairs = [];
+        foreach (ProtoField effect in item.Where(f =>
+                     f.Number == 7 && f.WireType == ProtoWireType.LengthDelimited))
+        {
+            if (effect.Bytes is null || effect.Bytes.Length > MaximumEffectBytes ||
+                pairs.Count >= MaximumEffects)
+                return null;
+
+            List<ProtoField>? fields = ProtoWire.ReadFields(effect.Bytes);
+            if (fields is null)
+                return null;
+
+            ProtoField[] values = fields.Where(f =>
+                f.Number == 5 && f.WireType == ProtoWireType.Varint).ToArray();
+            ProtoField[] codes = fields.Where(f =>
+                f.Number == 10 && f.WireType == ProtoWireType.Varint).ToArray();
+            if (values.Length != 1 || codes.Length != 1)
+                return null;
+
+            pairs.Add((unchecked((long)values[0].Varint), codes[0].Varint));
+        }
+        return pairs;
+    }
+
     private static string MatchField(
         IReadOnlyList<ProtoField> effects,
         int fieldNumber,
