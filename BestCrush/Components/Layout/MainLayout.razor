@@ -289,6 +289,9 @@
     {
         // A browsing filter is NOT a Dofus server selection. It never
         // changes network owners, capture leases or character profiles.
+        // Arm a foreground transition even if the 1-second Win32 polling
+        // loop missed the brief visit to BestCrush before returning to Dofus.
+        CurrentDofusClientsState.ExpectGameActivationAfterBrowsing();
         ViewFilter.BrowseServer(server.Name);
         ApplyDisplayedServer(updateCharacterContext: false);
 
