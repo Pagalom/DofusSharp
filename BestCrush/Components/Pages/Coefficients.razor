@@ -9,6 +9,7 @@
 @inject MarketDataChangeNotifier MarketDataChangeNotifier
 
 @inject ServerViewFilterState ServerViewFilter
+@implements IDisposable
 
 <div class="container-fluid py-4 px-5">
 
@@ -146,6 +147,15 @@
     }
 
     private string? _loadedServerName;
+
+    protected override void OnInitialized() =>
+        ServerViewFilter.Changed += OnBrowseModeChanged;
+
+    private void OnBrowseModeChanged() =>
+        _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() =>
+        ServerViewFilter.Changed -= OnBrowseModeChanged;
 
     protected override async Task OnParametersSetAsync()
     {
