@@ -39,7 +39,8 @@ internal sealed class CharacterMetadataProbe(
     AccountWireFieldComparisonStudy? accountWireStudy = null,
     CharacterRosterContinuityStudy? rosterStudy = null,
     ConcurrentCharacterRosterStudy? concurrentRosterStudy = null,
-    ConcurrentRosterWindowEvidenceStudy? windowEvidenceStudy = null) : IDisposable
+    ConcurrentRosterWindowEvidenceStudy? windowEvidenceStudy = null,
+    bool itemEffectsShape = false) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
@@ -80,8 +81,12 @@ internal sealed class CharacterMetadataProbe(
         connectionSelectionStudy: connectionSelectionStudy,
         accountWireStudy: accountWireStudy,
         rosterStudy: rosterStudy,
-        concurrentRosterStudy: concurrentRosterStudy);
+        concurrentRosterStudy: concurrentRosterStudy,
+        itemEffectsShape: itemEffectsShape);
     private readonly bool _shapeMode = shapeKeys is not null;
+    private readonly bool _itemEffectsShapeMode = itemEffectsShape;
+    private readonly Dictionary<int, int> _reportedEffectLines = new();
+    private const int MaximumEffectReportsPerSession = 24;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
     private readonly bool _decodeIpz = decodeIpz;
     private readonly bool _studyIpz = studyReferences is not null;
@@ -283,6 +288,16 @@ internal sealed class CharacterMetadataProbe(
                     entry.ProfessionXpStudySummary is null)
                     continue;
 
+                if (_itemEffectsShapeMode && entry.Kind == CharacterCaptureEventKind.Message)
+                {
+                    if (entry.ItemEffectsShape is null)
+                        continue;
+                    _reportedEffectLines.TryGetValue(entry.SessionNumber, out int count);
+                    if (count >= MaximumEffectReportsPerSession)
+                        continue;
+                    _reportedEffectLines[entry.SessionNumber] = count + 1;
+                }
+
                 if (_characterNameProbe && entry.Kind == CharacterCaptureEventKind.Message &&
                     entry.CharacterNameProbeSummary is null)
                     continue;
@@ -324,6 +339,7 @@ internal sealed class CharacterMetadataProbe(
                 string detail = entry.Kind == CharacterCaptureEventKind.Message
                     ? $"{entry.Opcode} {entry.BodyLength} octets" +
                       (_shapeMode ? $" shape=[{entry.Shape}]" : "") +
+                      (_itemEffectsShapeMode ? $" ITEM_EFFECTS=[{entry.ItemEffectsShape}]" : "") +
                       (_professionMode ? $" CANDIDAT=[{entry.ProfessionCandidates}]" : "") +
                       (_decodeIpz ? $" IPZ=[{entry.ProfessionIpzSummary}]" : "") +
                       (_studyIpz ? $" IPZ_STUDY=[{entry.ProfessionStudySummary}]" : "") +
@@ -350,6 +366,7 @@ internal sealed class CharacterMetadataProbe(
                 if (entry.Kind is CharacterCaptureEventKind.Closed or
                     CharacterCaptureEventKind.Evicted)
                 {
+                    _reportedEffectLines.Remove(entry.SessionNumber);
                     foreach (var group in _reportedShapes.Keys
                         .Where(group => group.Session == entry.SessionNumber).ToArray())
                         _reportedShapes.Remove(group);
