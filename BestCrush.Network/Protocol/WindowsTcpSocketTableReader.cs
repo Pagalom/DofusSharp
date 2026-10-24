@@ -13,10 +13,23 @@ public static class WindowsTcpSocketTableReader
     private const int AfInet = 2;
     private const int TcpTableOwnerPidAll = 5;
     private const int TcpEstablished = 5;
+    private const int TcpSynSent = 3;
     private const int RowBytes = 24;
     private const int MaxTableBytes = 16 * 1024 * 1024;
 
-    public static IReadOnlyList<TcpSocketOwner> ReadEstablishedIPv4(int remotePort)
+    public static IReadOnlyList<TcpSocketOwner> ReadEstablishedIPv4(int remotePort) =>
+        ReadOwners(remotePort, includeConnecting: false);
+
+    /// <summary>
+    /// Also inspect SYN_SENT sockets at handshake time. The TCP table still
+    /// provides a native, exact IPv4 socket tuple and owner PID; neither
+    /// endpoint nor PID is logged or persisted.
+    /// </summary>
+    public static IReadOnlyList<TcpSocketOwner> ReadConnectingOrEstablishedIPv4(
+        int remotePort) => ReadOwners(remotePort, includeConnecting: true);
+
+    private static IReadOnlyList<TcpSocketOwner> ReadOwners(
+        int remotePort, bool includeConnecting)
     {
         if (!OperatingSystem.IsWindows() || remotePort is < 1 or > 65535)
             return [];
@@ -43,7 +56,9 @@ public static class WindowsTcpSocketTableReader
             for (int i = 0; i < count; i++)
             {
                 int row = 4 + i * RowBytes;
-                if (Marshal.ReadInt32(buffer, row) != TcpEstablished)
+                int state = Marshal.ReadInt32(buffer, row);
+                if (state != TcpEstablished &&
+                    (!includeConnecting || state != TcpSynSent))
                     continue;
 
                 ushort localPort = ReadPort(buffer, row + 8);
