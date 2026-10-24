@@ -6,7 +6,8 @@ namespace BestCrush.Network.Protocol;
 /// namespaces; matching is a research hypothesis, never a business rule.
 /// </summary>
 public sealed record ItemCatalogEffectReference(
-    ulong EffectId, int? From, int? To);
+    ulong EffectId, int? From, int? To,
+    long? CharacteristicId = null, int? ElementId = null);
 
 public sealed record ItemCatalogCandidateReference(
     string Label,
@@ -52,11 +53,22 @@ public sealed class ItemEffectDofusDbCatalogStudy
             return null;
 
         int matched = 0;
+        int matchedCharacteristics = 0;
+        int matchedElements = 0;
+        bool hasCharacteristics = item.Effects.Any(e => e.CharacteristicId is > 0);
+        bool hasElements = item.Effects.Any(e => e.ElementId is > 0);
         int rangeKnown = 0;
         int rangeValid = 0;
 
         foreach ((long value, ulong code) in pairs)
         {
+            if (item.Effects.Any(e => e.CharacteristicId is > 0 &&
+                (ulong)e.CharacteristicId.Value == code))
+                matchedCharacteristics++;
+            if (item.Effects.Any(e => e.ElementId is > 0 &&
+                (ulong)e.ElementId.Value == code))
+                matchedElements++;
+
             ItemCatalogEffectReference[] hits = item.Effects
                 .Where(e => e.EffectId == code).ToArray();
             if (hits.Length == 0)
@@ -79,6 +91,10 @@ public sealed class ItemEffectDofusDbCatalogStudy
             ? "all"
             : matched == 0 ? "none" : "partial";
 
+        static string Status(int count, int total, bool hasData) =>
+            !hasData ? "unknown" : count == total ? "all" :
+                count == 0 ? "none" : "partial";
+
         string ranges = rangeKnown == 0
             ? "unknown"
             : rangeValid == rangeKnown ? "all" :
@@ -86,6 +102,10 @@ public sealed class ItemEffectDofusDbCatalogStudy
 
         return "item=" + item.Label +
             " f10-vs-dofusdb-effectId=" + ids +
+            " characteristicId=" + Status(matchedCharacteristics,
+                pairs.Count, hasCharacteristics) +
+            " elementId=" + Status(matchedElements,
+                pairs.Count, hasElements) +
             " value-ranges=" + ranges +
             " catalog-effects=" + item.Effects.Count +
             " wire-effects=" + pairs.Count +
