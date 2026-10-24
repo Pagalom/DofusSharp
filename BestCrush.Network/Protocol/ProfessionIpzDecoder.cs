@@ -173,6 +173,60 @@ public static class ProfessionIpzDecoder
     }
 
     /// <summary>
+    /// Strict single-row update seen after a craft. Unlike the full roster,
+    /// it cannot establish which professions exist on an account by itself.
+    /// A caller must already possess a valid 20-row roster from the same
+    /// verified Game lease and match its candidate job ID.
+    /// </summary>
+    public static bool TryDecodeSingleRow(
+        ReadOnlySpan<byte> body, out ProfessionIpzRow? row)
+    {
+        row = null;
+        if (body.IsEmpty || body.Length > MaxRowBytes + 8)
+            return false;
+
+        try
+        {
+            List<ProtoField>? root = ProtoWire.ReadFields(body);
+            if (root is not { Count: 1 } ||
+                root[0].Number != 1 ||
+                root[0].WireType != ProtoWireType.LengthDelimited ||
+                root[0].Bytes is not { Length: > 0 and <= MaxRowBytes } bytes)
+                return false;
+
+            List<ProtoField>? fields = ProtoWire.ReadFields(bytes);
+            if (fields is null || fields.Count is < 2 or > 24)
+                return false;
+
+            ProtoField[] levels = fields.Where(f => f.Number == 1).ToArray();
+            ProtoField[] xp = fields.Where(f => f.Number == 2).ToArray();
+            ProtoField[] ids = fields.Where(f => f.Number == 5).ToArray();
+            if (levels.Length != 1 || levels[0].WireType != ProtoWireType.Varint ||
+                levels[0].Varint is < 1 or > 200 ||
+                xp.Length > 1 ||
+                (xp.Length == 1 && xp[0].WireType != ProtoWireType.Varint) ||
+                ids.Length != 1 || ids[0].WireType != ProtoWireType.Varint ||
+                ids[0].Varint == 0)
+                return false;
+
+            ulong experience = xp.Length == 1 ? xp[0].Varint : 0;
+            row = new ProfessionIpzRow(
+                (int)levels[0].Varint,
+                experience,
+                new Dictionary<int, ulong> { [5] = ids[0].Varint });
+            return true;
+        }
+        catch (OverflowException)
+        {
+            return false;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
     /// Only structural facts and a count of matching local reference pairs
     /// are emitted. The field statistics are clues, not mappings to jobs.
     /// </summary>
