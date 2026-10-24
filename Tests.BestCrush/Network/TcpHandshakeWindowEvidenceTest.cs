@@ -117,6 +117,22 @@ public sealed class TcpHandshakeWindowEvidenceTest
     }
 
     [Fact]
+    public void DirectOwnerDisagreeingWithEarlierSynOwnerFailsClosed()
+    {
+        TcpHandshakeWindowEvidence state = Start();
+        state.Remember(1, 11, Socket, First, At);
+
+        state.ConflictsWith(1, 11, Socket, First, At.AddSeconds(1))
+            .Should().BeFalse();
+        state.ConflictsWith(1, 11, Socket, Second, At.AddSeconds(1))
+            .Should().BeTrue();
+        state.ConflictsWith(1, 11, OtherSocket, First, At.AddSeconds(1))
+            .Should().BeTrue();
+        state.ConflictsWith(2, 11, Socket, Second, At.AddSeconds(1))
+            .Should().BeFalse();
+    }
+
+    [Fact]
     public void ConflictingOwnershipQuarantinesLogicalSocket()
     {
         TcpHandshakeWindowEvidence state = Start();
