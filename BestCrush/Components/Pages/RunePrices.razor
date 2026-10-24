@@ -178,16 +178,39 @@
     private readonly System.Threading.SemaphoreSlim
         _refreshLock = new(1, 1);
 
-    protected override async Task OnInitializedAsync()
-    {
-        MarketDataChangeNotifier.Changed +=
-            OnMarketDataChanged;
+    private string? _loadedServerName;
 
-        await LoadRowsAsync();
+    protected override Task OnInitializedAsync()
+    {
+        MarketDataChangeNotifier.Changed += OnMarketDataChanged;
+        return Task.CompletedTask;
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (string.Equals(_loadedServerName, ServerName,
+                StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _loadedServerName = ServerName;
+        _rows = null;
+        _lastSavedMessage = null;
+        // Serialise with background market refreshes; never display
+        // the old server's rows under the new route/SQL filter.
+        await _refreshLock.WaitAsync();
+        try
+        {
+            await LoadRowsAsync();
+        }
+        finally
+        {
+            _refreshLock.Release();
+        }
     }
 
     private async Task LoadRowsAsync()
     {
+        string loadedFromServer = ServerName;
         IReadOnlyCollection<Rune> runes =
             await RunesService.GetLocalRunesAsync();
 
@@ -195,7 +218,7 @@
             observations =
                 await MarketPriceService.GetLatestObservationsForServerAsync(
                     MarketObjectType.Rune,
-                    ServerName
+                    loadedFromServer
                 );
         IReadOnlyDictionary<
         (
@@ -208,8 +231,12 @@
             await MarketPriceService
                 .GetLatestLocalSourceObservationsForServerAsync(
                     MarketObjectType.Rune,
-                    ServerName
+                    loadedFromServer
                 );
+
+        if (!string.Equals(loadedFromServer, ServerName,
+                StringComparison.OrdinalIgnoreCase))
+            return;
 
         _rows = runes
             .OrderBy(r => r.Name)
