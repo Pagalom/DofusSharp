@@ -112,6 +112,28 @@ public sealed class DofusClientWindowSelectionTest
     }
 
     [Fact]
+    public void FastReturnToGameAfterBrowsingRestoresServerEvenIfPollingMissedAppFocus()
+    {
+        CurrentDofusClientsState state = new();
+        DofusClientWindowKey key = Key(101, 1001);
+        DofusWindowInfo window = Window(101, 1001,
+            "Alice - Ecaflip - 3.7.12.12 - Release");
+        int activations = 0;
+        state.GameActivated += _ => activations++;
+
+        state.Update([window], key);
+        activations.Should().Be(1);
+
+        // No background/null-foreground poll occurs between browsing
+        // an SQL server in BestCrush and the user returning to Dofus.
+        state.ExpectGameActivationAfterBrowsing();
+        state.Update([window], key);
+        activations.Should().Be(2);
+        state.Update([window], key);
+        activations.Should().Be(2, "only one restore is needed per browsing click");
+    }
+
+    [Fact]
     public void GameActivationOverridesPreviouslyTargetedOtherWindow()
     {
         CurrentDofusClientsState state = new();
