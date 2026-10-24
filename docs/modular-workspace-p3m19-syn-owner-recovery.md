@@ -1,0 +1,69 @@
+# P3m.19 — Récupération du propriétaire TCP à l'ouverture (SYN)
+
+## Retour utilisateur réel — 24 octobre 2026
+
+Le diagnostic Debug de BestCrush indique :
+
+```text
+sélections reçues : 2
+propriétaire TCP identifié : 0
+propriétaire introuvable : 2
+chargements avec sélection : 0
+chargements sans sélection : 1
+associations confirmées : 0
+```
+
+Deux fenêtres, Pagalom et Nahala, restent « Serveur : identification en cours » après retour à la sélection des serveurs. Le module Concassage affiche encore un message obsolète demandant à choisir manuellement un serveur.
+
+**Conclusion précise :** le décodeur `root.f1.f4.f1` a vu deux sélections, mais aucune n'avait de propriétaire Windows exact (tuple TCP→PID→unique HWND) au moment de l'attribution. Un seul Game `ksc` sans sélection a été compté ; cela ne permet pas de conclure sur le second chargement Game. Ni `ServerId` ni Game à lui seul ne prouvent le serveur d'une fenêtre.
+
+## Corrections livrées sur feature/modular-workspace
+
+### Texte UI
+
+- `Components/Pages/ModuleWorkspace.razor` : le Concassage annonce une identification automatique du serveur du personnage ciblé et propose un lien vers sa fiche.
+- `Overlay/MarketCaptureOverlayPage.cs` : l'ancienne alerte F8 demandant de sélectionner un serveur devient « Serveur en cours d'identification ». Aucun menu manuel de serveur ne revient.
+
+### Technique
+
+- `WindowsTcpSocketTableReader.ReadConnectingOrEstablishedIPv4` accepte **SYN_SENT (état 3)** et ESTABLISHED (état 5), selon le comportement déjà utilisé dans la sonde P3m.13. La méthode ancienne `ReadEstablishedIPv4` reste inchangée.
+- Sur un **SYN TCP client→port 5555**, la capture alloue l'identifiant logique de la connexion avant tout payload, inspecte le propriétaire OS par quadruplet TCP exact et l'unique fenêtre visible du même PID.
+- `TcpHandshakeWindowEvidence` conserve uniquement, en RAM et au maximum 10 secondes, cette preuve `CaptureEpoch + ConnectionId + TCP tuple + PID/HWND`, bornée à 96 connexions. Le cache ne contient ni `ServerId` ni prix et ne peut jamais autoriser l'écriture SQLite tout seul.
+- Au décodage du `ServerId`, le propriétaire validé directement dans ce callback est prioritaire. Sinon, une preuve SYN du **même tuple et de la même connexion** peut être récupérée après vérification de l'unicité et de la présence du même HWND/PID. En absence de preuve, l'OS est interrogé une dernière fois. Pas de focus, titre, IP distante, rapprochement temporel approximatif ou « dernier serveur ».
+- **Correction essentielle :** un paquet SYN-ACK entrant sur la même connexion ne réinitialise plus son `ConnectionId` ! Seuls le SYN sortant et RST réinitialisent le contexte. Sans cela, le cache SYN deviendrait inutilisable avant la sélection du serveur.
+- Une fenêtre fermée, un HWND/PID recyclé, un tuple/connexion incompatible, une session de capture redémarrée et un cache expiré **ne peuvent pas réutiliser** l'ancienne preuve.
+- L'association serveur finale et la possibilité d'écrire SQLite exigent toujours le `ServerId` du protocole + `ksc/ksb` cohérents sur le Game de la même fenêtre. Les protections multiserveurs P3m.17 restent intactes.
+
+### Diagnostic Debug étendu
+
+Sous `BESTCRUSH_SERVER_LINK_DIAGNOSTICS=1` la page Personnages indique désormais :
+
+- `preuves TCP à l'ouverture` : propriétaire HWND/PID trouvé sur un SYN, **Connection ou Game** ;
+- `preuves réutilisées` : preuve SYN effectivement réutilisée pour une sélection de serveur après perte d'accès au socket ;
+- compteurs antérieurs pour sélection reçue/propriétaire manquant/chargements/confirmation.
+
+Tous les chiffres sont agrégés, sans identifiant sensible.
+
+## Limitations
+
+Ce jalon n'intègre pas ETW à l'application. Notre sonde P3m.14 ETW avait déjà démontré des captures correctes, mais exigeait un processus réellement administrateur pour activer le fournisseur noyau (sinon `0x80070005`). Il serait inapproprié d'imposer l'élévation à l'application BestCrush pour ce correctif sans décision explicite.
+
+Lire la table TCP au SYN peut encore manquer une connexion trop brève ou un propriétaire non encore visible. Si les compteurs indiquent toujours `sélections > 0` et `propriétaires = 0`, il faudra revoir l'intégration d'une source de propriétaire indépendante de l'état courant de la table, par exemple ETW, avec gestion des privilèges, conflits, expirations et opt-in.
+
+## Contrôle Windows à effectuer
+
+Les tests étaient à **1149 attendus** à l'issue du correctif P3m.18, mais le résultat n'a pas encore été transmis. P3m.19 ajoute **14 cas nouveaux** (8 faits + 6 théories). **1163 tests attendus**, à confirmer sur Windows ; aucun build ni essai Dofus ne sont déclarés réussis par anticipation.
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush\BestCrush.csproj -c Debug -f net10.0-windows10.0.19041.0 -m:1 -nr:false -p:UseSharedCompilation=false
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj -m:1 -nr:false
+$env:BESTCRUSH_SERVER_LINK_DIAGNOSTICS = "1"
+$env:BESTCRUSH_P3C10_ROSTER_STUDY = "1"
+dotnet run --project .\BestCrush\BestCrush.csproj -c Debug -f net10.0-windows10.0.19041.0
+```
+
+Fermer BestCrush et les deux Dofus avant démarrage, lancer BestCrush **avant** Dofus. Charger chaque personnage une fois puis noter les compteurs. Éviter toute capture économique tant que les deux serveurs ne sont pas correctement attribués.
+
+**Prochaine décision:** si le SYN ne produit pas de propriétaire fiable en test réel, diagnostiquer ETW avant tout contournement ; ne jamais écrire sous le mauvais serveur ni rétablir un choix de serveur manuel.
