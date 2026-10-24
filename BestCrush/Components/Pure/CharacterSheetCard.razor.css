@@ -302,3 +302,23 @@
     font-size: .68rem;
 }
 .sheet-server--pending { color: #b4c2c1; }
+
+
+/* Local DOFUS artwork layered above built-in placeholders. Missing files
+   are hidden by Blazor onerror and never fetched from a remote origin. */
+.sheet-portrait img.sheet-portrait-local {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.sheet-job-icon { position: relative; overflow: hidden; }
+.sheet-job-icon img.sheet-job-art {
+    position: absolute;
+    inset: 2px;
+    width: calc(100% - 4px);
+    height: calc(100% - 4px);
+    object-fit: contain;
+}
