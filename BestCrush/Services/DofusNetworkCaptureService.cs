@@ -38,6 +38,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly EphemeralCandidateRosterWireObserver? _rosterWireObserver;
     private readonly CurrentCandidateWindowCardsState? _candidateCardsState;
     private readonly WindowServerAttributionState? _windowServerAttributionState;
+    private readonly TcpHandshakeWindowEvidence _handshakeWindowEvidence = new();
     private readonly bool _liveRosterDiagnostics;
     private int _liveRosterReportCount;
     private const int MaximumLiveRosterReports = 128;
@@ -340,6 +341,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(epoch);
             _windowServerAttributionState?.Reset(epoch);
+            _handshakeWindowEvidence.Reset(epoch);
             _candidateCardsState?.NotifyChanged();
             if (_liveRosterDiagnostics)
                 Interlocked.Exchange(ref _liveRosterReportCount, 0);
@@ -407,6 +409,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 _windowEquipmentState?.Clear();
                 _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
                 _windowServerAttributionState?.Reset(stoppedEpoch);
+            _handshakeWindowEvidence.Reset(stoppedEpoch);
                 _candidateCardsState?.NotifyChanged();
 
                 logger.LogWarning(
@@ -430,6 +433,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
             _windowServerAttributionState?.Reset(stoppedEpoch);
+            _handshakeWindowEvidence.Reset(stoppedEpoch);
             _candidateCardsState?.NotifyChanged();
 
             // Do not complete the shared channel or cancel the worker here:
@@ -496,6 +500,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
         _windowEquipmentState?.Clear();
         _rosterWireObserver?.OnCaptureEpochChanged(replayEpoch);
         _windowServerAttributionState?.Reset(replayEpoch);
+            _handshakeWindowEvidence.Reset(replayEpoch);
         _candidateCardsState?.NotifyChanged();
         _started = true;
     }
@@ -515,6 +520,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(replayEpoch);
             _windowServerAttributionState?.Reset(replayEpoch);
+            _handshakeWindowEvidence.Reset(replayEpoch);
             _candidateCardsState?.NotifyChanged();
             _started = true;
         }
@@ -637,6 +643,37 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 }
             }
 
+            // P3m.19: read the Windows TCP owner at the outgoing SYN, while
+            // the short-lived Connection socket can still be SYN_SENT.
+            // Only an exact OS owner and a unique HWND are eligible.
+            // The resulting hint is scoped to this logical TCP token and
+            // capture epoch and is NEVER a server authorization by itself.
+            if (tcp.Synchronize && !tcp.Reset &&
+                tcp.DestinationPort == DofusPort &&
+                _currentServerState.AutomaticRoutingEnabled &&
+                _clientBindings is not null && _dofusWindowService is not null)
+            {
+                NetworkCaptureLease discoveryLease =
+                    _currentServerState.GetCaptureLease() ??
+                    new NetworkCaptureLease("__server-discovery-only__", 1);
+                long handshakeToken;
+                lock (_streamLock)
+                {
+                    handshakeToken = _connectionScopes.GetOrCreate(
+                        connection, discoveryLease, DateTime.UtcNow,
+                        () => ++_nextConnectionId);
+                }
+
+                DofusClientWindowKey? handshakeOwner = ObserveLiveDofusClient(
+                    ip.SourceAddress, tcp.SourcePort,
+                    ip.DestinationAddress, tcp.DestinationPort,
+                    captureEpoch, handshakeToken, forceRefresh: true);
+                if (handshakeOwner is { } verifiedOwner)
+                    _handshakeWindowEvidence.Remember(
+                        captureEpoch, handshakeToken, connection,
+                        verifiedOwner, DateTime.UtcNow);
+            }
+
             if (tcp.PayloadData.Length == 0)
                 return;
 
@@ -733,11 +770,21 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                         DofusClientWindowKey? selectedWindow =
                                             ResolveSelectionWindow(
                                                 candidateWindow,
-                                                () => ObserveLiveDofusClient(
-                                                    ip.SourceAddress, tcp.SourcePort,
-                                                    ip.DestinationAddress, tcp.DestinationPort,
-                                                    captureEpoch, connectionId,
-                                                    forceRefresh: true));
+                                                () => _handshakeWindowEvidence.Resolve(
+                                                    captureEpoch, connectionId, connection,
+                                                    DateTime.UtcNow,
+                                                    () => _dofusWindowService?
+                                                        .ListVisibleDofusWindows()
+                                                        .Where(w => w.ProcessId > 0 &&
+                                                                    w.Handle != IntPtr.Zero)
+                                                        .Select(w => new DofusClientWindowKey(
+                                                            w.Handle.ToInt64(), w.ProcessId))
+                                                        .Distinct().ToArray() ?? [])
+                                                    ?? ObserveLiveDofusClient(
+                                                        ip.SourceAddress, tcp.SourcePort,
+                                                        ip.DestinationAddress, tcp.DestinationPort,
+                                                        captureEpoch, connectionId,
+                                                        forceRefresh: true));
 
                                         _windowServerAttributionState.RecordSelectionFrame(
                                             captureEpoch, selectedWindow is not null);
@@ -835,7 +882,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                     // OS snapshots are inspected locally, never written to
                     // logs or persisted. A missing snapshot fails closed.
                     _clientBindingsLastRefreshUtc = now;
-                    _clientSockets = WindowsTcpSocketTableReader.ReadEstablishedIPv4(DofusPort);
+                    _clientSockets = WindowsTcpSocketTableReader.ReadConnectingOrEstablishedIPv4(DofusPort);
                     _clientWindows = _dofusWindowService.ListVisibleDofusWindows()
                         .Where(window => window.ProcessId > 0 && window.Handle != IntPtr.Zero)
                         .Select(window => new DofusClientWindowKey(
