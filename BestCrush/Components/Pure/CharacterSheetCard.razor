@@ -115,13 +115,14 @@
                                         @progress.EarnedInLevel.ToString("N0", CultureInfo.CurrentCulture)
                                         /
                                         @progress.RequiredInLevel.ToString("N0", CultureInfo.CurrentCulture) XP
+                                        · @progress.Percent.ToString("0.#", CultureInfo.CurrentCulture) %
                                     </div>
                                 }
                                 else
                                 {
                                     <div class="sheet-job-track sheet-job-track--unknown" aria-hidden="true"></div>
                                     <div class="sheet-job-xp">
-                                        Progression non observée
+                                        Progression non déterminée
                                         @if (job.CumulativeExperience > 0)
                                         {
                                             <span> · XP cumulée : @job.CumulativeExperience.ToString("N0", CultureInfo.CurrentCulture)</span>
