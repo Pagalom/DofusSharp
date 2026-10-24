@@ -519,13 +519,13 @@ public sealed class MarketCaptureOverlayPage : ContentPage
     public void ShowServerSelectionRequired()
     {
         SetState(
-            "⚠ Sélectionnez d'abord un serveur",
-            Colors.Red,
-            "Serveur non sélectionné",
-            "La lecture clic molette est désactivée tant qu'un " +
-            "serveur BestCrush n'a pas été sélectionné.",
-            "Aucune capture effectuée",
-            Colors.Red
+            "⚠ Serveur en cours d'identification",
+            Colors.Orange,
+            "Serveur du personnage inconnu",
+            "BestCrush n'a pas encore relié cette fenêtre Dofus " +
+            "à son serveur. Le calcul de rentabilité attend cette liaison.",
+            "Aucune lecture effectuée",
+            Colors.Orange
         );
     }
 
