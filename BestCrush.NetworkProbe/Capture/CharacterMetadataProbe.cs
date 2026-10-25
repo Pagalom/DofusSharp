@@ -44,7 +44,8 @@ internal sealed class CharacterMetadataProbe(
     IReadOnlyList<long>? expectedEffectValues = null,
     ItemEffectTypeStabilityStudy? effectTypeStudy = null,
     ItemEffectDofusDbCatalogStudy? effectCatalogStudy = null,
-    bool stockSnapshotStudy = false) : IDisposable
+    bool stockSnapshotStudy = false,
+    bool stockIdentifyBlockers = false) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
@@ -90,7 +91,8 @@ internal sealed class CharacterMetadataProbe(
         expectedEffectValues: expectedEffectValues,
         effectTypeStudy: effectTypeStudy,
         effectCatalogStudy: effectCatalogStudy,
-        stockSnapshotStudy: stockSnapshotStudy);
+        stockSnapshotStudy: stockSnapshotStudy,
+        stockIdentifyBlockers: stockIdentifyBlockers);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _itemEffectsShapeMode = itemEffectsShape;
     private readonly bool _stockSnapshotMode = stockSnapshotStudy;
