@@ -95,10 +95,22 @@ public sealed class StockSnapshotDeltaStudy
                 row.EffectFields == delta.EffectFields);
             // Candidate counts are only descriptive. Two copies of the
             // same item can have different rolls, quantities or instances.
+            int exactEffectsRows = reference.Values.Count(row =>
+                row.Field4ItemIdCandidate == delta.Field4ItemIdCandidate &&
+                HasComparableEffects(row, delta) &&
+                EffectsEqual(row, delta));
+            int exactEffectsAndQuantityRows = reference.Values.Count(row =>
+                row.Field4ItemIdCandidate == delta.Field4ItemIdCandidate &&
+                row.Field3QuantityCandidate == delta.Field3QuantityCandidate &&
+                HasComparableEffects(row, delta) &&
+                EffectsEqual(row, delta));
             return "uid-candidate-not-found" +
                 " same-type-rows=" + sameType +
                 " same-type-quantity-rows=" + sameTypeQuantity +
-                " same-type-effects-count-rows=" + sameTypeEffectsCount;
+                " same-type-effects-count-rows=" + sameTypeEffectsCount +
+                " exact-effects-status=" + EffectsStatus(delta) +
+                " same-type-exact-effects-rows=" + exactEffectsRows +
+                " same-type-quantity-exact-effects-rows=" + exactEffectsAndQuantityRows;
         }
 
         return "uid-candidate-found itemId-candidate=" +
@@ -106,7 +118,34 @@ public sealed class StockSnapshotDeltaStudy
                 ? "same" : "different") +
             " quantity-candidate=" +
             (existing.Field3QuantityCandidate == delta.Field3QuantityCandidate
-                ? "same" : "different");
+                ? "same" : "different") +
+            " exact-effects=" + CompareEffects(existing, delta);
+    }
+
+    private static string EffectsStatus(StockItemWireCandidate item) =>
+        item.Effects is null ? "unrecognized" :
+            item.Effects.Count == 0 ? "no-effects" : "decoded";
+
+    private static bool HasComparableEffects(
+        StockItemWireCandidate first, StockItemWireCandidate second) =>
+        first.Effects is { Count: > 0 } &&
+        second.Effects is { Count: > 0 };
+
+    private static bool EffectsEqual(
+        StockItemWireCandidate first, StockItemWireCandidate second) =>
+        first.Effects!.OrderBy(x => x.EffectCode)
+            .ThenBy(x => x.Value)
+            .SequenceEqual(second.Effects!.OrderBy(x => x.EffectCode)
+                .ThenBy(x => x.Value));
+
+    private static string CompareEffects(
+        StockItemWireCandidate first, StockItemWireCandidate second)
+    {
+        if (first.Effects is null || second.Effects is null)
+            return "unrecognized";
+        if (first.Effects.Count == 0 || second.Effects.Count == 0)
+            return "not-applicable";
+        return EffectsEqual(first, second) ? "same" : "different";
     }
 
     private static string ComparePreviousDelta(
@@ -126,7 +165,8 @@ public sealed class StockSnapshotDeltaStudy
             " f5=" + (previous.Field5InstanceUidCandidate ==
                 current.Field5InstanceUidCandidate ? "same" : "different") +
             " effects-count=" + (previous.EffectFields ==
-                current.EffectFields ? "same" : "different");
+                current.EffectFields ? "same" : "different") +
+            " exact-effects=" + CompareEffects(previous, current);
     }
 
     private static StockItemWireCandidate? DecodeDelta(
@@ -176,7 +216,8 @@ public sealed class StockSnapshotDeltaStudy
 
             return new StockItemWireCandidate(quantity, itemId, uid,
                 fields.Count(x => x.Number == 7 &&
-                    x.WireType == ProtoWireType.LengthDelimited));
+                    x.WireType == ProtoWireType.LengthDelimited),
+                StockEffectWireCandidateParser.Read(fields));
         }
         catch (OverflowException)
         {
