@@ -23,7 +23,8 @@ public sealed class StockSnapshotDeltaStudy
 
     public string? Observe(int sessionNumber, string opcode, ReadOnlySpan<byte> body)
     {
-        if (sessionNumber <= 0 || opcode is not ("irl" or "irp" or "iqx" or "iqz"))
+        if (sessionNumber <= 0 || opcode is not
+            ("irl" or "irp" or "iqx" or "iqz" or "irx" or "iqm" or "iqq"))
             return null;
 
         if (!_sessions.TryGetValue(sessionNumber, out SessionStocks? state))
@@ -32,6 +33,14 @@ public sealed class StockSnapshotDeltaStudy
                 _sessions.Clear();
             state = new SessionStocks();
             _sessions.Add(sessionNumber, state);
+        }
+
+        if (opcode is "irx" or "iqm" or "iqq")
+        {
+            // Short adjustment messages are not yet understood as
+            // stock changes. Compare values only, never mutate baselines.
+            return StockShortMovementStudy.Describe(
+                opcode, body, state.LastDelta);
         }
 
         if (opcode is "irl" or "irp")
