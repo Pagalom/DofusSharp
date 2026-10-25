@@ -81,4 +81,45 @@ public sealed class StockOpaqueWireSnapshotStudyTest
         study.Observe(1, "irp", valid)
             .Should().Contain("wire-snapshot-change=no-prior-snapshot");
     }
+
+    [Fact]
+    public void DifferentUidsAndReorderedOuterFieldsDoNotCreateFalseChanges()
+    {
+        byte[] firstEffect = Nested(8, 112, [8, 16]);
+        byte[] reordered = Message(Unsigned(10, 112), Bytes(8, [8, 16]));
+        StockSnapshotDeltaStudy study = new();
+        string initial = study.Observe(1, "irp", Snapshot("irp",
+            Row(2, 2415, 111, Numeric(222, 24), firstEffect),
+            Row(3, 2415, 112, reordered, Numeric(222, 24))))!;
+        initial.Should().Contain("wire-grouping=candidate groups=1");
+
+        string later = study.Observe(1, "irp", Snapshot("irp",
+            Row(5, 2415, 998, firstEffect, Numeric(222, 24))))!;
+        later.Should().Contain(
+            "wire-snapshot-change=compared increased-groups=0 decreased-groups=0 " +
+            "new-groups=0 removed-groups=0 unchanged-groups=1");
+    }
+
+    [Fact]
+    public void DifferentSessionsAndContainersDoNotShareStructuralBaselines()
+    {
+        byte[] bank = Snapshot("irp", Row(2, 2415, 1234,
+            Nested(8, 112, [8, 16])));
+        byte[] inventory = Snapshot("irl", Row(2, 2415, 1234,
+            Nested(8, 112, [8, 16])));
+        StockSnapshotDeltaStudy study = new();
+        study.Observe(1, "irp", bank)
+            .Should().Contain("wire-snapshot-change=no-prior-snapshot");
+        study.Observe(1, "irl", inventory)
+            .Should().Contain("wire-snapshot-change=no-prior-snapshot");
+        study.Observe(2, "irp", bank)
+            .Should().Contain("wire-snapshot-change=no-prior-snapshot");
+
+        study.DropSession(1);
+        study.Observe(1, "irp", bank)
+            .Should().Contain("wire-snapshot-change=no-prior-snapshot");
+        study.Observe(2, "irp", bank)
+            .Should().Contain("wire-snapshot-change=compared");
+    }
+
 }
