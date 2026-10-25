@@ -18,11 +18,57 @@ public enum StockSnapshotCandidateStatus
 /// f3/f4/f5 meanings are validated for kch, not yet for irl/irp.
 /// Effects are counted but not needed for inventory identification.
 /// </summary>
+public sealed record StockEffectWireCandidate(ulong EffectCode, long Value);
+
 public sealed record StockItemWireCandidate(
     ulong? Field3QuantityCandidate,
     ulong? Field4ItemIdCandidate,
     ulong? Field5InstanceUidCandidate,
-    int EffectFields);
+    int EffectFields,
+    // Optional: null means effect wire shape is not understood; [] means
+    // no effect fields are present. Neither is an item identity.
+    IReadOnlyList<StockEffectWireCandidate>? Effects = null);
+
+/// <summary>
+/// Research-only decoding of observed f7[] effect entries: f5=value,
+/// f10=effect code. Does not assume all possible effects use this shape.
+/// No values are emitted; in-RAM comparison is bounded and order-independent.
+/// </summary>
+internal static class StockEffectWireCandidateParser
+{
+    private const int MaximumEffectEntries = 64;
+    private const int MaximumEffectBytes = 1024;
+
+    internal static IReadOnlyList<StockEffectWireCandidate>? Read(
+        IReadOnlyList<ProtoField> itemFields)
+    {
+        ProtoField[] entries = itemFields.Where(f => f.Number == 7).ToArray();
+        if (entries.Length > MaximumEffectEntries)
+            return null;
+
+        List<StockEffectWireCandidate> result = new(entries.Length);
+        foreach (ProtoField entry in entries)
+        {
+            if (entry.WireType != ProtoWireType.LengthDelimited ||
+                entry.Bytes is not { Length: > 0 and <= MaximumEffectBytes })
+                return null;
+
+            List<ProtoField>? effect = ProtoWire.ReadFields(entry.Bytes);
+            if (effect is null)
+                return null;
+            ProtoField[] values = effect.Where(f => f.Number == 5).ToArray();
+            ProtoField[] codes = effect.Where(f => f.Number == 10).ToArray();
+            if (values.Length != 1 || codes.Length != 1 ||
+                values[0].WireType != ProtoWireType.Varint ||
+                codes[0].WireType != ProtoWireType.Varint ||
+                codes[0].Varint == 0)
+                return null;
+            result.Add(new StockEffectWireCandidate(
+                codes[0].Varint, unchecked((long)values[0].Varint)));
+        }
+        return result;
+    }
+}
 
 public sealed record StockSnapshotWireCandidate(
     string Container,
@@ -157,7 +203,8 @@ public static class InventoryBankSnapshotDecoder
                 // independent of the identity/stock decoding.
                 int effects = fields.Count(f =>
                     f.Number == 7 && f.WireType == ProtoWireType.LengthDelimited);
-                items.Add(new(f3, f4, f5, effects));
+                items.Add(new(f3, f4, f5, effects,
+                    StockEffectWireCandidateParser.Read(fields)));
             }
 
             // An UID collision means that this is not yet a trustworthy
