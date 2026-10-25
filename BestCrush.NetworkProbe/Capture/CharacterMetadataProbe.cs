@@ -43,7 +43,8 @@ internal sealed class CharacterMetadataProbe(
     bool itemEffectsShape = false,
     IReadOnlyList<long>? expectedEffectValues = null,
     ItemEffectTypeStabilityStudy? effectTypeStudy = null,
-    ItemEffectDofusDbCatalogStudy? effectCatalogStudy = null) : IDisposable
+    ItemEffectDofusDbCatalogStudy? effectCatalogStudy = null,
+    bool stockSnapshotStudy = false) : IDisposable
 {
     private const int MaximumVariantsPerOpcode = 3;
     private readonly CharacterProbeTrafficDiagnostics _traffic = new();
@@ -88,9 +89,13 @@ internal sealed class CharacterMetadataProbe(
         itemEffectsShape: itemEffectsShape,
         expectedEffectValues: expectedEffectValues,
         effectTypeStudy: effectTypeStudy,
-        effectCatalogStudy: effectCatalogStudy);
+        effectCatalogStudy: effectCatalogStudy,
+        stockSnapshotStudy: stockSnapshotStudy);
     private readonly bool _shapeMode = shapeKeys is not null;
     private readonly bool _itemEffectsShapeMode = itemEffectsShape;
+    private readonly bool _stockSnapshotMode = stockSnapshotStudy;
+    private readonly Dictionary<int, int> _reportedStockLines = new();
+    private const int MaximumStockReportsPerSession = 12;
     private readonly Dictionary<int, int> _reportedEffectLines = new();
     private const int MaximumEffectReportsPerSession = 24;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
@@ -294,6 +299,16 @@ internal sealed class CharacterMetadataProbe(
                     entry.ProfessionXpStudySummary is null)
                     continue;
 
+                if (_stockSnapshotMode && entry.Kind == CharacterCaptureEventKind.Message)
+                {
+                    if (entry.StockSnapshotSummary is null)
+                        continue;
+                    _reportedStockLines.TryGetValue(entry.SessionNumber, out int count);
+                    if (count >= MaximumStockReportsPerSession)
+                        continue;
+                    _reportedStockLines[entry.SessionNumber] = count + 1;
+                }
+
                 if (_itemEffectsShapeMode && entry.Kind == CharacterCaptureEventKind.Message)
                 {
                     if (entry.ItemEffectsShape is null)
@@ -346,6 +361,7 @@ internal sealed class CharacterMetadataProbe(
                     ? $"{entry.Opcode} {entry.BodyLength} octets" +
                       (_shapeMode ? $" shape=[{entry.Shape}]" : "") +
                       (_itemEffectsShapeMode ? $" ITEM_EFFECTS=[{entry.ItemEffectsShape}]" : "") +
+                       (_stockSnapshotMode ? $" STOCK_SNAPSHOT=[{entry.StockSnapshotSummary}]" : "") +
                       (_professionMode ? $" CANDIDAT=[{entry.ProfessionCandidates}]" : "") +
                       (_decodeIpz ? $" IPZ=[{entry.ProfessionIpzSummary}]" : "") +
                       (_studyIpz ? $" IPZ_STUDY=[{entry.ProfessionStudySummary}]" : "") +
