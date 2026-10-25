@@ -100,6 +100,40 @@ public static class StockCandidateGrouping
         _ => "other"
     };
 
+    /// <summary>
+    /// Explicitly identifying diagnostic. Reports ONLY item-type candidates
+    /// (f4), never item instance UIDs, effect identifiers/values, quantities,
+    /// ownership or raw wire payloads. Must only be called with an explicit
+    /// user opt-in in a local research-only probe.
+    /// </summary>
+    public static string DescribeBlockedItemTypes(
+        StockSnapshotWireCandidate? snapshot)
+    {
+        if (snapshot?.Status != StockSnapshotCandidateStatus.CompleteCandidate)
+            return "blocked-item-types=unavailable";
+
+        const int MaximumTypes = 16;
+        var items = snapshot.Rows
+            .Where(x => x.EffectDecodeIssue == "missing-value" &&
+                x.Field4ItemIdCandidate is > 0)
+            .GroupBy(x => x.Field4ItemIdCandidate!.Value)
+            .OrderByDescending(x => x.Count())
+            .ThenBy(x => x.Key)
+            .ToArray();
+
+        if (items.Length == 0)
+            return "blocked-item-types=none";
+
+        string top = string.Join("|", items.Take(MaximumTypes)
+            .Select(x => "item-id-candidate:" +
+                x.Key.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                ",affected-rows:" + x.Count()));
+        return "blocked-item-types=[" + top + "]" +
+            " distinct-types=" + items.Length +
+            (items.Length > MaximumTypes ? " additional-types-hidden=" +
+                (items.Length - MaximumTypes) : "");
+    }
+
     public static StockGroupingCandidate? TryGroup(
         StockSnapshotWireCandidate? snapshot)
     {
