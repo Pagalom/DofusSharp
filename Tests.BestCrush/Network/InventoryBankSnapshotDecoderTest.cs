@@ -72,9 +72,8 @@ public sealed class InventoryBankSnapshotDecoderTest
     {
         InventoryBankSnapshotDecoder.Decode("iqz", Snapshot("irl"))
             .Should().BeNull();
-        InventoryBankSnapshotDecoder.Decode("irl", []).Should()
-            .Match<StockSnapshotWireCandidate>(x =>
-                x.Status == StockSnapshotCandidateStatus.Malformed);
+        InventoryBankSnapshotDecoder.Decode("irl", [])!
+            .Status.Should().Be(StockSnapshotCandidateStatus.Malformed);
 
         InventoryBankSnapshotDecoder.Decode("irl", Snapshot("irl"))!
             .Status.Should().Be(StockSnapshotCandidateStatus.EmptyCandidate);
