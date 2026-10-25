@@ -2146,3 +2146,130 @@ validées** : confronter `f3/f4/f5` aux variations
 réelles de stock et aux deltas `iqx/iqz/irx/iqm`,
 sans tester à nouveau la pérennité du UID HDV
 ni alimenter les profils par supposition.
+
+## P3d.6.2 — Banque : validation réelle et corrélation aux deltas
+
+### Checkpoint Windows reçu le 25/10/2026
+
+Le précédent développement P3d.6.1 a passé **1276 tests,
+0 échec, 0 ignoré, en 10,0 secondes** (rapport utilisateur).
+
+Capture `--stock-snapshot-study` réelle :
+
+```text
+[01:46:38.429 UTC] Session #1 S→C OPENED
+[01:46:39.461 UTC] Session #1 S→C irp 11682 octets STOCK_SNAPSHOT=[container=bank status=complete-candidate rows=560 fields345=560 incomplete-rows=0 effects-present=157 duplicate-f5=0]
+```
+
+**Constats exacts** :
+
+- `irp` porte **560 lignes**, toutes avec les
+  trois champs protobuf candidats `f3/f4/f5`,
+  **aucune collision de valeur candidate `f5`** ;
+- **157 lignes** contiennent au moins un champ
+  `f7` de caractéristiques, sans preuve que les
+  valeurs aient été systématiquement lues ;
+- `complete-candidate` décrit uniquement la
+  **cohérence structurelle** du décodeur,
+  **pas** une validation sémantique des champs ;
+- aucun `irl` observé pendant cette capture :
+  l'absence d'un message **n'est pas un
+  inventaire vide**. Un snapshot d'inventaire
+  peut avoir été reçu lors de la connexion
+  du personnage, avant le début de la capture.
+
+### Suite implémentée : comparaison passive banque / transferts
+
+`BestCrush.Network/Protocol/StockSnapshotDeltaStudy.cs`
+maintient un instantané **candidat** de
+chaque conteneur `irl` / `irp`,
+indépendamment **par session TCP**.
+
+Les formes `iqx.root.f2.f1` et
+`iqz.root.f1.f1` sont interprétées comme
+des triplets **candidats** `f3/f4/f5`
+sans attribuer pour l'instant une
+signification définitive. Elles sont
+comparées au snapshot précédent de
+**la même session** en calculant en RAM :
+
+- `uid-candidate-found` / `uid-candidate-not-found`
+  pour l'existence du `f5` du delta ;
+- `itemId-candidate=same/different`
+  pour la comparaison des `f4` ;
+- `quantity-candidate=same/different`
+  pour la comparaison des `f3`.
+
+Les lignes de retour ne contiennent **jamais**
+les quantités, ItemId, UID, caractéristiques,
+payloads ou identifiants de compte. Si aucun
+snapshot n'a été observé dans cette session,
+`baseline-unobserved` est affiché plutôt
+que de conjecturer un stock nul. Les snapshots
+incomplets **invalident** les anciennes
+références du conteneur. Les sessions sont
+vidées à la fermeture/expiration et la mémoire
+de la sonde est bornée à 16 sessions stockées.
+
+Le mode CLI **ne change pas** :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --stock-snapshot-study
+```
+
+Les tests synthétiques couvrent les
+correspondances positives et négatives,
+l'isolation inventaire/banque et entre
+sessions, l'invalidation après corruption,
+les deltas malformés et les effets
+modifiés sans changement de type/UID.
+
+### Test réel minimal — sans relancer Dofus
+
+**Après** validation Windows de la nouvelle
+compilation et suite de tests :
+
+1. Garder **un seul personnage** pour ce test ;
+   fermer la banque si elle est ouverte.
+2. Lancer le probe avant de **rouvrir** la
+   banque, de manière à observer `irp`.
+   Si le jeu ne renvoie pas de `irp`,
+   noter `baseline-unobserved` et ne
+   pas interpréter cela comme un échec.
+3. Déplacer une **pile ou un équipement
+   identifiable** de banque vers inventaire,
+   puis le replacer en banque ; éviter
+   toute autre manipulation entre-temps.
+4. Arrêter `Ctrl+C` et fournir les seules
+   sorties `STOCK_SNAPSHOT`, avec les
+   opcodes et horaires utiles.
+
+`iqx/iqz` peuvent apparaître dans les
+**deux sens** ; le seul fait de reconnaître
+le même triplet ne prouve **pas** quel
+conteneur a perdu ou gagné l'objet.
+Les opcodes courts `irx/iqm` n'ont
+pas encore de décodage sémantique dans
+ce nouveau mode. Il ne faut **pas**
+attribuer l'objet à une fiche personnage,
+alimenter le craft ou muter le stock
+avant validation indépendante.
+
+Ne **pas** répéter les tests précédents
+de stabilité d'ItemId/UID après HDV.
+
+### Checkpoint Windows de P3d.6.2
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Ces nouveaux tests **ne sont pas encore
+exécutés sous Windows**. Ne pas effacer
+les modifications locales, baselines,
+ou fichiers non suivis. Aucun changement
+de SQLite, des flux réseau métier ou
+des stocks applicatifs n'a été activé.
