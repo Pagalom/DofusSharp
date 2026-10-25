@@ -2501,3 +2501,45 @@ lignes `STOCK_SNAPSHOT`.
 Ne pas relancer les anciens tests HDV ni attribuer
 les stocks à un personnage avant d'avoir validé
 les champs `f3/f4/f5` et l'identité de sa session.
+
+## P3d.6.5 — Capture confirmée : effet exact malgré f5 différent
+
+### Référence réelle validée (25/10/2026, 02:09 UTC)
+
+La capture d'un transfert banque → inventaire → banque d'un équipement
+dont les caractéristiques ont été déterminées donne :
+
+```text
+[02:08:54.687 UTC] Session #1 C→S OPENED
+[02:09:29.052 UTC] Session #1 S→C irp 11684 octets STOCK_SNAPSHOT=[container=bank status=complete-candidate rows=560 fields345=560 incomplete-rows=0 effects-present=157 duplicate-f5=0 baseline=stored]
+[02:09:37.147 UTC] Session #1 S→C iqx 49 octets STOCK_SNAPSHOT=[delta=fields345-candidate bank=[uid-candidate-not-found same-type-rows=1 same-type-quantity-rows=1 same-type-effects-count-rows=1 exact-effects-status=decoded same-type-exact-effects-rows=1 same-type-quantity-exact-effects-rows=1] inventory=[baseline-unobserved] previous-delta=[none]]
+[02:09:46.265 UTC] Session #1 S→C iqz 49 octets STOCK_SNAPSHOT=[delta=fields345-candidate bank=[uid-candidate-not-found same-type-rows=1 same-type-quantity-rows=1 same-type-effects-count-rows=1 exact-effects-status=decoded same-type-exact-effects-rows=1 same-type-quantity-exact-effects-rows=1] inventory=[baseline-unobserved] previous-delta=[opcode=iqx f3=same f4=same f5=different effects-count=same exact-effects=same]]
+```
+
+**Nouveauté démontrée** : parmi les 560 lignes de la banque,
+une **seule** ligne possède le même `f4` que les deux deltas
+et son `f3` et ses **paires exactes d'effets f7 (f10 code/f5 valeur)**
+correspondent. Les deux deltas ont eux-mêmes les mêmes effets réels,
+malgré des `f5` objets différents. Le `f5` d'aucun des deux
+deltas ne figurait dans les 560 lignes bancaires au moment du snapshot.
+
+**Évaluation prudente** : forte preuve de **continuité logique de
+l'équipement** à travers le transfert, mais pas une preuve d'UID
+d'instance réellement renouvelé : l'interprétation de `f5` en
+`irl/irp/iqx/iqz` reste une hypothèse issue de son sens déjà
+établi dans `kch` ; deux objets peuvent en théorie partager
+un même type et des jets strictement identiques.
+
+**Ne pas** prétendre que `ItemId` est un identifiant d'exemplaire :
+il désigne le type. Les tests historiques HDV établissaient déjà
+un renouvellement d'UID après retrait/rachat, mais pas nécessairement
+pour ce mouvement de conteneurs. Aucun `irl` reçu pendant cette
+capture (la non-observation n'est pas une liste vide).
+
+La caractérisation des **effets identiques** est désormais suffisante
+pour cet équipement : **ne plus demander une nouvelle répétition
+de ce test sans hypothèse distincte**. Priorité suivante :
+messages courts `irx`, `iqm`, `iqq` et rattachement des
+mouvements au conteneur et à la session, ou capture `irl`
+indépendante pour confirmer l'inventaire. Toujours en mode
+lecture seule, sans présumer la direction ou appliquer de mutations.
