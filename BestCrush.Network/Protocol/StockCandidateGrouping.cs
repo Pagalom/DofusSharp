@@ -74,7 +74,7 @@ public static class StockCandidateGrouping
             .ToArray();
         string missingValueShapes = string.Join("|", missingShapes
             .Take(MaxShapeVariants)
-            .Select(x => x.Key + "x" + x.Count()));
+            .Select(x => "(" + x.Key + ")x" + x.Count()));
         if (missingShapes.Length > MaxShapeVariants)
             missingValueShapes += "|more-variants";
 
