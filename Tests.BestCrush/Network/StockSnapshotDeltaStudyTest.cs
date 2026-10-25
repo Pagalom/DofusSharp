@@ -37,13 +37,13 @@ public sealed class StockSnapshotDeltaStudyTest
         string? delta = study.Observe(1, "iqx",
             Delta("iqx", 1, 2418, 818181));
         delta.Should().Be("delta=fields345-candidate " +
-            "bank=[uid-candidate-found itemId-candidate=same quantity-candidate=same] " +
+            "bank=[uid-candidate-found itemId-candidate=same quantity-candidate=same exact-effects=not-applicable] " +
             "inventory=[baseline-unobserved] previous-delta=[none]");
 
         string? quantityChanged = study.Observe(1, "iqz",
             Delta("iqz", 49, 1523, 919191));
         quantityChanged.Should().Contain(
-            "bank=[uid-candidate-found itemId-candidate=same quantity-candidate=different]");
+            "bank=[uid-candidate-found itemId-candidate=same quantity-candidate=different exact-effects=not-applicable]");
 
         foreach (string report in new[] { start!, delta!, quantityChanged! })
         foreach (string sensitive in new[] { "2418", "1523", "818181", "919191" })
@@ -57,7 +57,7 @@ public sealed class StockSnapshotDeltaStudyTest
         study.Observe(1, "irp", Snapshot("irp", StockRow(1, 2418, 818181)));
         study.Observe(1, "iqx", Delta("iqx", 1, 2427, 818181))
             .Should().Contain(
-                "bank=[uid-candidate-found itemId-candidate=different quantity-candidate=same]");
+                "bank=[uid-candidate-found itemId-candidate=different quantity-candidate=same exact-effects=not-applicable]");
     }
 
     [Fact]
@@ -71,17 +71,17 @@ public sealed class StockSnapshotDeltaStudyTest
             Delta("iqz", 2, 2418, 111));
         fromInventory.Should().Contain(
             "bank=[uid-candidate-not-found same-type-rows=0 " +
-            "same-type-quantity-rows=0 same-type-effects-count-rows=0]");
+            "same-type-quantity-rows=0 same-type-effects-count-rows=0");
         fromInventory.Should().Contain(
-            "inventory=[uid-candidate-found itemId-candidate=same quantity-candidate=same]");
+            "inventory=[uid-candidate-found itemId-candidate=same quantity-candidate=same exact-effects=not-applicable]");
 
         string? fromBank = study.Observe(1, "iqx",
             Delta("iqx", 3, 2427, 222));
         fromBank.Should().Contain(
-            "bank=[uid-candidate-found itemId-candidate=same quantity-candidate=same]");
+            "bank=[uid-candidate-found itemId-candidate=same quantity-candidate=same exact-effects=not-applicable]");
         fromBank.Should().Contain(
             "inventory=[uid-candidate-not-found same-type-rows=0 " +
-            "same-type-quantity-rows=0 same-type-effects-count-rows=0]");
+            "same-type-quantity-rows=0 same-type-effects-count-rows=0");
         fromBank.Should().Contain("previous-delta=[opcode=iqz");
     }
 
@@ -133,7 +133,7 @@ public sealed class StockSnapshotDeltaStudyTest
         study.Observe(1, "iqx", Delta("iqx", 1, 2427, 777,
             changedEffect))
             .Should().Contain(
-                "bank=[uid-candidate-found itemId-candidate=same quantity-candidate=same]");
+                "bank=[uid-candidate-found itemId-candidate=same quantity-candidate=same exact-effects=not-applicable]");
     }
 
     [Fact]
@@ -178,7 +178,7 @@ public sealed class StockSnapshotDeltaStudyTest
             Delta("iqx", 1, 2427, 10005, oneEffect));
         report.Should().Contain(
             "bank=[uid-candidate-not-found same-type-rows=3 " +
-            "same-type-quantity-rows=2 same-type-effects-count-rows=2]");
+            "same-type-quantity-rows=2 same-type-effects-count-rows=2");
         report.Should().Contain("previous-delta=[none]");
         foreach (string sensitive in new[] { "2427", "2418", "10001", "10005" })
             report.Should().NotContain(sensitive);
@@ -197,13 +197,13 @@ public sealed class StockSnapshotDeltaStudyTest
         study.Observe(1, "iqz", Delta("iqz", 1, 2427, 10002))
             .Should().Contain(
                 "previous-delta=[opcode=iqx f3=same f4=same f5=same " +
-                "effects-count=same]");
+                "effects-count=same exact-effects=not-applicable]");
 
         study.Observe(1, "iqx", Delta("iqx", 2, 2427, 10003,
                 Message(Unsigned(5, 20), Unsigned(10, 119))))
             .Should().Contain(
                 "previous-delta=[opcode=iqz f3=different f4=same " +
-                "f5=different effects-count=different]");
+                "f5=different effects-count=different exact-effects=not-applicable]");
     }
 
     [Fact]
