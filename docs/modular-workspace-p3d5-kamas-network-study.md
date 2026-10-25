@@ -2888,3 +2888,101 @@ d'appartenance à une session/compte/serveur
 au modèle métier, en refusant toute
 attribution fondée sur le nom, le focus
 ou la présence d'un `f5` candidat.
+
+## P3d.9 — Vue de stocks restreinte aux connexions et comptes vérifiés
+
+### Point de contrôle P3d.8 validé le 25/10/2026
+
+La sortie Windows communiquée par l'utilisateur :
+
+```text
+Récapitulatif du test : total : 1310; échec : 0; réussi : 1310; ignoré : 0; durée : 8,5s
+```
+
+Confirme le succès des **1 310 tests** après le
+modèle de regroupement métier P3d.8.
+Il n'y a aucune capture Dofus complémentaire requise
+à ce checkpoint.
+
+### Changement P3d.9 : projection en lecture seule
+
+`CurrentCharacterState.GetScopedStockGroups(CharacterKey)`
+et le modèle `CharacterScopedStockGroups` permettent
+désormais de consulter des groupes fonctionnels
+**déjà observés et acceptés par l'état de session**.
+Aucun accès réseau, aucun calcul de craft et aucune
+écriture SQLite ne sont ajoutés.
+
+Règles de sécurité :
+
+- Le caractère doit exister, posséder une identité
+  confirmée, une session `CharacterConnectionScope`
+  active et non révoquée ; le serveur actif doit
+  être celui de la clé demandée.
+- Les personnages de **même nom** restent séparés
+  par `CharacterKey(ServerName, CharacterId)` ;
+  le focus ou le nom affiché ne déterminent
+  jamais implicitement le propriétaire.
+- `Inventory = null` signifie non observé,
+  `Inventory = []` signifie observé vide.
+  Effets non lus ⇒ regroupement inconnu,
+  pas regroupement forcé.
+- Le stock **banque** de la vue est `null`
+  tant que `VerifiedAccountServerKey` manque,
+  est incomplet ou diverge du serveur de
+  `CharacterKey`. Le simple fait d'ouvrir
+  une banque sur une connexion ne prouve
+  pas le titulaire du compte.
+- Une fiche conservée après déconnexion
+  ne doit **pas** exposer ses stocks comme
+  courants ; une reconnexion doit vider
+  les anciennes observations avant toute
+  nouvelle application.
+- `CharacterStockViewProjection.FromVerifiedProfile`
+  est une fonction pure pour appliquer
+  cette vérification aux données de
+  session confirmées ; elle **ne peut
+  pas** confirmer à elle seule le caractère,
+  le compte ou la sémantique des champs
+  réseau.
+
+Tests nouveaux dans
+`Tests.BestCrush/Network/CharacterScopedStockGroupsTest.cs` :
+cohabitation de deux comptes/personnages de
+même nom, données cloisonnées, preuve de
+compte+serveur pour la banque, profil
+déconnecté, changement de serveur et
+reconnexion, absence d'effets et
+distinction vide vs non observé.
+
+### Restrictions restantes importantes
+
+**Ne pas brancher `irl/irp` au
+`CurrentCharacterState` en production
+sur la seule base de `CompleteCandidate`.**
+Les messages réseau ont été décrits par
+équivalences anonymes et corrélations :
+`f3/f4/f5` du snapshot sont encore
+candidats, et la preuve d'identité
+du compte/serveur (P3c) manque.
+
+Le modèle est prêt pour ingestion **lorsque**
+une source indépendante valide à la fois
+le propriétaire et les champs sémantiques.
+Ce checkpoint ne débloque ni
+`VerifiedAccountServerKey` ni
+une copie du stock bancaire à un
+personnage au hasard.
+
+### Checkpoint Windows
+
+```powershell
+git status --short --branch
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush\BestCrush.csproj -f net10.0-windows10.0.19041.0
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Ne pas détruire les modifications locales.
+La suite P3d.9 reste à valider sous Windows.
