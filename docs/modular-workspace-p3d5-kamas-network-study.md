@@ -2641,3 +2641,164 @@ dans `CurrentCharacterState` reste
 **désactivé** jusqu'à validation des
 quantités et association fiable à la
 session personnage/serveur/compte.
+
+## P3d.6.5c — Capture de retrait fractionné, P3d.7 — regroupement logique des stocks
+
+### Capture réelle du 25/10/2026, 02:20–02:21 UTC
+
+Le test opérateur a consisté à retirer une
+partie d'une pile de ressources banque →
+inventaire, à retirer le reste, puis à
+retransférer la pile vers la banque :
+
+```text
+02:20:50 irp rows=560 fields345=560 effects-present=157 duplicate-f5=0 baseline=stored
+02:21:01 iqx bank=[uid-candidate-not-found same-type-rows=1 same-type-quantity-rows=0 ...] inventory=[baseline-unobserved]
+02:21:01 iqz bank=[uid-candidate-found itemId-candidate=same quantity-candidate=different] previous-delta=[opcode=iqx f3=different f4=same f5=different]
+02:21:01 iqq short=scalar-candidates f1/f2 different du dernier delta
+02:21:10 irx short=f3.f1+f3.f3 valeurs differentes du dernier delta
+02:21:10 iqz bank=[uid-candidate-found itemId-candidate=same quantity-candidate=different] previous-delta=[opcode=iqz f3=different f4=same f5=same]
+02:21:10 iqq short=scalar-candidates f1/f2 different du dernier delta
+02:21:19 iqz bank=[uid-candidate-found itemId-candidate=same quantity-candidate=same] previous-delta=[opcode=iqz f3=different f4=same f5=same]
+02:21:19 iqm short=f1 different du dernier delta
+02:21:19 iqq short=scalar-candidates f1/f2 different du dernier delta
+```
+
+**Observé** :
+
+- Les **trois** `iqz` S→C après mouvements
+  trouvent un `f5` déjà présent dans le snapshot
+  bancaire `irp` ; `f4` est égal, `f3` varie
+  lors des deux premières transitions puis
+  retrouve sa valeur initiale après le retour.
+- `iqx` lors du premier retrait ne retrouve
+  pas son `f5` dans la banque ; `f4` reconnaît
+  un unique type bancaire, et le `f3` diffère
+  de la quantité bancarisée initiale.
+- `irx`, `iqm`, `iqq` sont effectivement
+  émis pendant des mouvements de piles.
+  Leur comparaison au **dernier `iqz`**
+  n'a détecté aucune égalité : cela ne
+  valide ni n'invalide leur sens. Ils
+  pourraient viser la pile côté inventaire
+  (`iqx`) ou employer d'autres champs.
+- **Aucun `irl` initial** observé ; les
+  quantités de l'inventaire restent inconnues
+  pour ce probe.
+- On ne connaît pas les **valeurs numériques
+  exactes** dans la capture, uniquement les
+  égalités/différences, donc ne pas attribuer
+  artificiellement des nombres aux champs.
+
+**Interprétation forte, non encore normative** :
+`iqz` semble représenter une mise à jour
+de la pile bancaire existante (UID candidat
+persistant ; quantité candidate ajustée
+puis rétablie). `iqx` semble porter une
+autre incarnation de l'objet lors de son
+transfert. **Ne pas conclure à un UID
+renouvelé sur tout transfert** ; la notion
+d'identité permanente est d'ailleurs non
+nécessaire au métier.
+
+### Décision de conception utilisateur : identité fonctionnelle
+
+L'utilisateur préfère traiter comme **fongibles**
+les objets ayant le **même type d'objet** et
+**exactement les mêmes caractéristiques** :
+il n'est pas nécessaire de tracer l'UID
+d'instance à travers tous les conteneurs
+ni de ré-identifier `A` vs `B`.
+
+Distinguer :
+1. L'UID réseau local, utile temporairement
+   pour choisir la pile à incrémenter ou
+   retirer au sein d'une session ;
+2. La clé de regroupement métier
+   `ItemId + multiensemble exact des effets réels`,
+   avec **somme des quantités** ; la clé n'inclut
+   ni UID ni identifiant d'annonce HDV ;
+3. Les stocks restent séparés par **conteneur,
+   serveur, personnage et compte vérifié**.
+   Ne jamais fusionner les stocks intercomptes
+   ni considérer une banque comme appartenant
+   à un personnage sur la seule présence d'une
+   fenêtre ou sur un nom visible ;
+4. Un équipement peut changer de jets via FM,
+   un familier via nourrissage : il change
+   alors de **groupe fonctionnel** après
+   une observation réellement validée.
+   Conserver séparément toute information
+   particulière non capturée dans `f7`
+   pouvant rendre deux biens non fongibles
+   (ex. liens ou contraintes d'échange).
+
+### P3d.7 : code ajouté, purement candidat
+
+Nouvelle classe
+`BestCrush.Network/Protocol/StockCandidateGrouping.cs` :
+prend un snapshot `irl/irp` de statut
+`CompleteCandidate` et le regroupe en RAM
+par `f4` candidat et les effets `f7`
+entièrement décodés (`f10` code,
+`f5` valeur signée). Les effets répétés
+et leur ordre sont correctement gérés.
+
+Les quantités `f3` **candidates** sont
+additionnées sous contrôle de débordement.
+Aucun UID n'entre dans la clé regroupée ;
+une pile de type identique mais de jets
+différents n'est jamais écrasée.
+
+Le regroupement refuse de produire un
+stock pour les snapshots malformés,
+incomplets, vides candidats, valeurs
+hors limites ou effets non décodables.
+Il distingue par construction la banque
+de l'inventaire ; les propriétaires restent
+hors champ. Il n'écrit ni dans
+`CurrentCharacterState` ni dans SQLite
+et n'alimente aucun calcul de craft tant
+que les champs et l'identité ne sont pas
+correctement vérifiés.
+
+Le probe `--stock-snapshot-study` montre
+désormais uniquement :
+`grouping=candidate groups=N source-rows=M
+groups-with-effects=K` ou
+`grouping=not-ready`. Aucun ID, UID,
+quantité, jet, personnage ou prix ne
+figure dans ce rapport.
+
+Nouveaux tests synthétiques : objets
+identiques fusionnés sans UID permanent ;
+jets distincts restant séparés ;
+négatifs, ordre des effets et doublons ;
+effets non décodables => fail-closed ;
+quantités hors limites/débordement ;
+absence de mélange inventaire/banque ;
+confidentialité des lignes de probe.
+
+### Prochaine validation
+
+Un seul checkpoint Windows : 
+
+```powershell
+git status --short --branch
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+**Tests Windows du nouveau code à recevoir** :
+ne pas les présenter comme déjà passés.
+Aucune nouvelle capture ni nouveau test HDV
+ne sont nécessaires pour caractériser à nouveau
+l'identité/fongibilité des objets.
+
+L'étape d'intégration production future doit
+d'abord fournir une preuve d'identité de la
+session/du compte/du serveur et une distinction
+des snapshots réellement complets ; un regroupement
+`CompleteCandidate` ne suffit pas à lui seul.
