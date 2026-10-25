@@ -94,7 +94,10 @@ public sealed class StockSnapshotDeltaStudy
                 (grouping is null ? " " +
                     StockCandidateGrouping.DescribeBlockers(snapshot) +
                     (_identifyBlockedItemTypes ? " " +
-                        StockCandidateGrouping.DescribeBlockedItemTypes(snapshot) : "") : "");
+                        StockCandidateGrouping.DescribeBlockedItemTypes(snapshot) +
+                        " " +
+                        StockCandidateGrouping.DescribeBlockedItemTypeShapes(snapshot)
+                        : "") : "");
         }
 
         StockItemWireCandidate? delta = DecodeDelta(opcode, body);
