@@ -29,6 +29,47 @@ public sealed record StockGroupingCandidate(
 /// </summary>
 public static class StockCandidateGrouping
 {
+    /// <summary>
+    /// Anonymous reason counts for a rejected candidate. Never expose item
+    /// identifiers, effect codes/values, quantities or row positions.
+    /// </summary>
+    public static string DescribeBlockers(StockSnapshotWireCandidate? snapshot)
+    {
+        if (snapshot?.Status != StockSnapshotCandidateStatus.CompleteCandidate)
+            return "grouping-blockers=snapshot-not-complete";
+
+        int badScalars = snapshot.Rows.Count(x =>
+            x.Field3QuantityCandidate is not > 0 ||
+            x.Field4ItemIdCandidate is not > 0 ||
+            x.Field5InstanceUidCandidate is not > 0);
+        int quantityOverflow = snapshot.Rows.Count(x =>
+            x.Field3QuantityCandidate is > long.MaxValue);
+        int effectUndecodable = snapshot.Rows.Count(x => x.Effects is null);
+        int effectCountMismatch = snapshot.Rows.Count(x =>
+            x.Effects is not null && x.Effects.Count != x.EffectFields);
+        int effectLimit = snapshot.Rows.Count(x =>
+            x.Effects is { Count: > 64 });
+        int invalidCode = snapshot.Rows.Count(x =>
+            x.Effects?.Any(e => e.EffectCode == 0) == true);
+
+        // Each category is hardcoded in the decoder; no packet bytes are used
+        // to create report text. Group by issue, never by item or effect ID.
+        string shapes = string.Join(";", snapshot.Rows
+            .Where(x => x.EffectDecodeIssue is not null)
+            .GroupBy(x => x.EffectDecodeIssue!)
+            .OrderBy(x => x.Key, StringComparer.Ordinal)
+            .Select(x => x.Key + ":" + x.Count()));
+
+        return "grouping-blockers=" +
+            "bad-scalars:" + badScalars +
+            ",quantity-overflow:" + quantityOverflow +
+            ",undecodable-effects:" + effectUndecodable +
+            ",effect-count-mismatch:" + effectCountMismatch +
+            ",effect-limit:" + effectLimit +
+            ",invalid-effect-code:" + invalidCode +
+            ",effect-shapes:[" + shapes + "]";
+    }
+
     public static StockGroupingCandidate? TryGroup(
         StockSnapshotWireCandidate? snapshot)
     {
