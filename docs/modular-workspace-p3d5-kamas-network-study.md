@@ -2543,3 +2543,101 @@ messages courts `irx`, `iqm`, `iqq` et rattachement des
 mouvements au conteneur et à la session, ou capture `irl`
 indépendante pour confirmer l'inventaire. Toujours en mode
 lecture seule, sans présumer la direction ou appliquer de mutations.
+
+## P3d.6.5b — Signaux courts irx/iqm/iqq en lecture seule
+
+La sortie précédente `irp/iqx/iqz` a démontré une
+**correspondance unique des effets réels** entre
+la banque et les deux messages de transfert,
+tout en montrant des `f5` candidats différents.
+Cette analyse de jet est **terminée** pour
+l'équipement utilisé. Ne pas la refaire.
+
+### Nouveau code (même option CLI)
+
+`BestCrush.Network/Protocol/StockShortMovementStudy.cs`
+est activé uniquement avec
+`--stock-snapshot-study` en réception **S→C**.
+
+Objectif : caractériser des signaux courts
+potentiellement liés à un mouvement, sans
+leur attribuer prématurément la sémantique
+d'ajout, de retrait, de quantité ou d'UID :
+
+- `irx` : enveloppe candidate `root.f3`,
+  avec `inner.f1` et `inner.f3` numériques ;
+- `iqm` : `root.f1` candidat ;
+- `iqq` : `root.f1/f2` candidats si présents.
+
+Le diagnostic compare chaque scalaire au
+triplet f3/f4/f5 du **dernier** `iqx/iqz`
+de la **même session TCP**, et imprime
+uniquement `same/different` ou
+`no-delta-baseline`. Aucun scalaire réel,
+identifiant, quantité, jeu de caractéristiques,
+nom, adresse IP ou payload n'est imprimé
+ou sauvegardé. Tout reste en RAM et le
+mode ne modifie ni inventaire, ni banque,
+ni le cache de concassage, ni SQLite.
+Un message `irx/iqm/iqq` n'est
+**jamais** considéré à lui seul comme une
+preuve de changement de stock.
+
+Tests synthétiques :
+formes valides et malformées, références
+absentes, séparation sessions, comparaison
+sans données privées, sonde inactive par
+défaut et uniquement S→C. L'ancien test
+qui ignorait `irx` a été adapté au
+diagnostic opt-in. Pas de résultat de
+validation Windows pour ces ajouts à ce jour.
+
+### Validation Windows
+
+```powershell
+git status --short --branch
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Ne pas résoudre une divergence de Git
+en effaçant les modifications locales.
+
+### Essai réel différent du précédent
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --stock-snapshot-study
+```
+
+Sur **un seul** client Dofus :
+
+1. Garder Dofus connecté et la banque **fermée**
+   avant le démarrage du probe. Ouvrir ensuite
+   la banque pour recevoir une référence `irp`.
+2. Prendre une **pile de ressources** (plusieurs
+   unités, idéalement au moins 5) en banque.
+   Déplacer **une partie seulement** vers
+   l'inventaire et noter ce mouvement.
+3. Déplacer le reste (ou une seconde fraction)
+   puis retransférer une partie vers la banque
+   si la manipulation est simple.
+4. Finir avec `Ctrl+C` et transmettre les
+   lignes `STOCK_SNAPSHOT`, y compris celles
+   qui mentionnent `short=irx/iqm/iqq`.
+
+Si aucun message court n'apparaît,
+ne pas interpréter cela comme une erreur :
+le protocole peut émettre d'autres opcodes
+selon la fusion/scission des piles et
+l'état des conteneurs. Le but est de
+discriminer la **sémantique des ajustements**,
+pas de redémontrer l'identité des jets
+ou le comportement des UID en HDV.
+
+Le décodage métier de l'inventaire/banque
+dans `CurrentCharacterState` reste
+**désactivé** jusqu'à validation des
+quantités et association fiable à la
+session personnage/serveur/compte.
