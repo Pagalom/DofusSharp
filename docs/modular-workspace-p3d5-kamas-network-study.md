@@ -3168,3 +3168,100 @@ n'est nécessaire.
 
 Ne pas affirmer que les tests du nouveau patch
 sont validés avant retour Windows.
+
+## P3d.13 — Identification des types d'objets aux effets manquants
+
+### Décision utilisateur et motivation
+
+Après la capture à 11:06 UTC montrant **60 lignes**
+`missing-value` parmi 560 lignes bancaires,
+l'utilisateur propose d'**identifier directement
+les objets concernés** pour comprendre la
+signification métier de leurs structures f7.
+
+C'est plus discriminant qu'un histogramme
+sans référence au type d'objet. Les 60
+lignes n'impliquent pas nécessairement
+60 types différents : le diagnostic
+agrège par `f4`, **ItemId candidat**.
+Il ne doit pas affirmer que ce mapping
+est définitivement vérifié pour `irp`.
+
+### Diagnostic P3d.13 ajouté (opt-in explicite)
+
+Nouvelle option combinée :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --stock-snapshot-study --stock-identify-blockers
+```
+
+`--stock-identify-blockers` seul est refusé ;
+sans l'option, la sortie
+`--stock-snapshot-study` reste anonyme.
+
+`StockCandidateGrouping.DescribeBlockedItemTypes`
+regroupe **uniquement** les lignes présentant
+`missing-value` par `f4` candidat
+et affiche un maximum de **16 ItemId**,
+triés par fréquence, ainsi que le nombre
+de lignes touchées par type et le total
+de types distincts :
+
+```text
+blocked-item-types=[item-id-candidate:842612,affected-rows:2|item-id-candidate:842613,affected-rows:1] distinct-types=2
+```
+
+Cet exemple est **synthétique**, pas une
+capture réelle. Aucun UID (`f5` d'objet),
+quantité, effet code/valeur, nom de compte,
+identifiant de personnage ou payload
+n'est publié ni sauvegardé.
+
+Le réseau `BestCrush.NetworkProbe` ne
+possède pas actuellement de résolveur
+de nom d'objet dans cette chaîne de
+capture : les noms/catégories pourront
+être retrouvés via le catalogue local
+ou le référentiel DofusDb séparément,
+une fois les **ItemId candidats** observés.
+Ne pas inventer de nom de jeu.
+
+Cinq tests synthétiques :
+activation explicite, sortie anonyme
+par défaut, confidentialité des UID/effets,
+limite d'affichage à 16 types,
+intégration du tracker S→C.
+
+Aucune interprétation forcée de `f7`
+n'est ajoutée. Les effets sans valeur
+candidate restent **non décodables**,
+le regroupement `grouping=not-ready`
+demeure et aucun inventaire, banque,
+profil, calcul de craft ou SQLite
+n'est modifié.
+
+### Checkpoint Windows P3d.13
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Après validation, lancer le mode
+`--stock-snapshot-study --stock-identify-blockers`,
+ouvrir **une seule fois** la banque et
+partager la ligne `STOCK_SNAPSHOT`
+contenant `blocked-item-types`.
+Aucun transfert ni essai UID/HDV à
+rejouer. Avant observation, le nom et la
+catégorie des types en cause restent
+inconnus.
+
+La présence de `missing-value-wire-shapes`
+(P3d.12) dans la même ligne aidera à
+croiser type d'objet et variante de
+protocole ; une corrélation par type
+ne prouve pas encore la sémantique
+du champ manquant.
