@@ -61,6 +61,23 @@ public static class StockCandidateGrouping
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .Select(x => x.Key + ":" + x.Count()));
 
+        // Inspect only the first offending effect in each rejected row.
+        // Shapes contain field numbers/wire types only; cap the variants to
+        // keep output concise and avoid dumping arbitrary schema contents.
+        const int MaxShapeVariants = 8;
+        var missingShapes = snapshot.Rows
+            .Where(x => x.EffectDecodeIssue == "missing-value" &&
+                x.EffectDecodeShape is not null)
+            .GroupBy(x => x.EffectDecodeShape!, StringComparer.Ordinal)
+            .OrderByDescending(x => x.Count())
+            .ThenBy(x => x.Key, StringComparer.Ordinal)
+            .ToArray();
+        string missingValueShapes = string.Join("|", missingShapes
+            .Take(MaxShapeVariants)
+            .Select(x => x.Key + "x" + x.Count()));
+        if (missingShapes.Length > MaxShapeVariants)
+            missingValueShapes += "|more-variants";
+
         return "grouping-blockers=" +
             "bad-scalars:" + badScalars +
             ",quantity-overflow:" + quantityOverflow +
@@ -68,7 +85,10 @@ public static class StockCandidateGrouping
             ",effect-count-mismatch:" + effectCountMismatch +
             ",effect-limit:" + effectLimit +
             ",invalid-effect-code:" + invalidCode +
-            ",effect-shapes:[" + shapes + "]";
+            ",effect-shapes:[" + shapes + "]" +
+            (missingValueShapes.Length > 0
+                ? ",missing-value-wire-shapes:[" + missingValueShapes + "]"
+                : "");
     }
 
     private static string FixedEffectIssue(string? issue) => issue switch
