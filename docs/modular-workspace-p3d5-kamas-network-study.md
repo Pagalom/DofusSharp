@@ -3353,3 +3353,128 @@ forme. Aucun transfert, reconnexion ni test HDV
 requis. Ne pas activer les stocks métier avant
 d'avoir compris les variantes d'effets et
 vérifié le propriétaire compte/serveur.
+
+## P3d.14 — Regrouper les formes d'effets complètes sans inventer leurs valeurs
+
+### Références visuelles de jeu et capture 25/10/2026, 11:31 UTC
+
+L'utilisateur a fourni quatre infobulles **réelles** et
+un `irp` de 560 lignes, 60 ItemId problématiques.
+On peut désormais croiser les premiers effets non
+décodables à des types d'objet observés :
+
+- **2415, Kwaklame de Flammes** : `f8:len;f10:v`.
+  L'infobulle montre des dommages Feu **16–25**
+  et des statistiques Vitalité/Intelligence/
+  Critique/Résistance Feu.
+- **6752, Kwaklame du Vent** : `f8:len;f10:v`.
+  Dommages Air **16–25** et autres statistiques.
+- **7711, Pioute rouge** : `f9:len;f10:v`.
+  Familier niveau 46 sur la capture, Intelligence
+  et Dommages Critiques, expérience visible.
+- **7113, Dofawa** : `f7:len;f10:v`.
+  Vitalité et date/heure de fin de restriction
+  d'échange sur l'infobulle.
+
+Les deux Kwaklames constituent un **indice**
+que f8 peut représenter un effet à intervalle.
+Mais l'outil affiche la forme du **premier effet
+manquant en f5**, qui ne correspond pas
+nécessairement dans l'ordre à une ligne
+d'effet de l'infobulle. Aucune valeur f8/f9/f7
+n'est sémantiquement validée ici.
+
+Histogramme confirmé :
+36 effets `f9:len;f10:v`, 9 `f7:len;f10:v`,
+7 `f10:v`, 6 `f8:len;f10:v`,
+2 `f6:len;f10:v`.
+Les 60 lignes problématiques sont 60 ItemId
+candidats distincts (chacun une ligne).
+
+### Décision technique P3d.14 : preuve structurelle distincte du jet décodé
+
+Objectif : étudier **les variations de quantités**
+malgré des effets f6/f7/f8/f9 non encore compris,
+sans perdre d'information sur l'objet ni
+fusionner des jets réellement distincts.
+
+- `StockItemWireCandidate.ExactEffectWireEntries`
+  conserve **en RAM uniquement** le contenu complet
+  des entrées protobuf `f7[]` d'un snapshot,
+  avec limites 64 effets / 1024 octets par
+  effet. Aucun contenu ou signature n'est
+  affiché, enregistré, persisté, ni transféré
+  à l'UI.
+- Nouveau `StockOpaqueWireSnapshotStudy` :
+  pour une ligne f3/f4/f5 candidate complète,
+  compare `f4 candidat + multiensemble exact
+  des entrées f7` en normalisant l'ordre des
+  champs protobuf externes et des effets.
+  Les champs `len` internes restent **opaques** :
+  leur contenu est comparé octet pour octet.
+  L'UID f5 de l'objet ne fait jamais partie
+  de la clé. Des contenus différents ne
+  peuvent pas être fusionnés par approximation.
+- Cette équivalence est **structurelle et
+  conservatrice**, pas une preuve que deux
+  équipements ont le même jet métier :
+  une différence bénigne d'encodage interne
+  peut laisser deux groupes séparés.
+  Les champs f3/f4/f5 dans irp restent
+  des **candidats** et non des invariants
+  de la version Dofus.
+- Le mode `--stock-snapshot-study` ajoute
+  `wire-grouping=candidate groups=N
+  source-rows=M rows-with-structured-effects=K`
+  puis `wire-snapshot-change=no-prior-snapshot`
+  ou `wire-snapshot-change=compared` avec
+  seulement les **nombres de groupes**
+  augmentés, diminués, nouveaux, supprimés
+  ou inchangés.
+- `grouping=not-ready` et
+  `snapshot-change=not-comparable` du
+  décodeur **numérique** sont volontairement
+  inchangés si ses effets f5 ne sont
+  toujours pas décodés. Aucun fallback
+  métier ne convertit les effets inconnus
+  en jet vide ou valeur nulle.
+- Les conteneurs et connexions TCP sont
+  isolés. Un snapshot malformé révoque
+  la référence précédente ; fermeture de
+  session supprime l'historique. Aucun
+  stock de personnage/compte, craft ou
+  SQLite n'est mis à jour.
+
+Six tests synthétiques : les cinq formes
+f5/f6/f7/f8/f9 + f10 seul,
+UID différents, réordonnancement des
+champs/effets externes, différence
+réelle des octets f8, retrait de
+quantité, corruption d'effet, isolation
+entre sessions/containers.
+
+### Validation Windows requise avant interprétation réelle
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Ne pas revendiquer la réussite des nouveaux
+tests avant retour Windows. Puis, uniquement
+si validation OK, obtenir **deux snapshots
+irp dans une même connexion TCP**, en
+déplaçant un petit nombre connu d'unités
+d'une pile de ressources. La ligne de
+diagnostic `wire-snapshot-change=compared`
+permettra d'examiner si un groupe de
+ressources a diminué, même en présence
+des 60 objets à effets spéciaux.
+
+Aucun ID de compte, UID, jet, état
+de banque ou payload ne doit apparaître
+dans les logs partagés. La preuve
+d'appartenance compte+serveur reste
+distincte et non validée.
