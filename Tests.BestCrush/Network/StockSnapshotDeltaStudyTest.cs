@@ -315,6 +315,16 @@ public sealed class StockSnapshotDeltaStudyTest
     }
 
     [Fact]
+    public void MalformedInterveningDeltaRevokesPreviousDeltaComparison()
+    {
+        StockSnapshotDeltaStudy study = new();
+        study.Observe(1, "iqx", Delta("iqx", 1, 2418, 111));
+        study.Observe(1, "iqz", [0x00]).Should().Be("delta=unrecognized");
+        study.Observe(1, "iqz", Delta("iqz", 1, 2418, 111))
+            .Should().Contain("previous-delta=[none]");
+    }
+
+    [Fact]
     public void SameUidAndDifferentRealEffectsAreReportedSeparately()
     {
         StockSnapshotDeltaStudy study = new();
