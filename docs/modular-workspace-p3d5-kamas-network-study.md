@@ -2273,3 +2273,119 @@ les modifications locales, baselines,
 ou fichiers non suivis. Aucun changement
 de SQLite, des flux réseau métier ou
 des stocks applicatifs n'a été activé.
+
+## P3d.6.3 — UID candidat absent : comparaison f4/f3 sans divulgation
+
+### Trace réelle du 25/10/2026 — P3d.6.2
+
+Nouvelle exécution de `--stock-snapshot-study`
+par l'utilisateur, avec une banque puis deux
+transferts d'un équipement :
+
+```text
+[01:53:04.184 UTC] Session #1 S→C OPENED
+[01:53:15.309 UTC] Session #1 S→C irp 11682 octets STOCK_SNAPSHOT=[container=bank status=complete-candidate rows=560 fields345=560 incomplete-rows=0 effects-present=157 duplicate-f5=0 baseline=stored]
+[01:53:17.351 UTC] Session #1 S→C iqx 84 octets STOCK_SNAPSHOT=[delta=fields345-candidate bank=[uid-candidate-not-found] inventory=[baseline-unobserved]]
+[01:53:22.403 UTC] Session #1 S→C iqz 84 octets STOCK_SNAPSHOT=[delta=fields345-candidate bank=[uid-candidate-not-found] inventory=[baseline-unobserved]]
+```
+
+**Conclusion strictement autorisée par les données :**
+
+1. `irp.root.f2[]` est de nouveau lisible
+   intégralement (560 lignes / 560 triplets candidats).
+2. `iqx` et `iqz` contiennent chacun un
+   triplet f3/f4/f5 admissible structurellement.
+3. Pour ces **deux** deltas, le `f5` n'appartient
+   pas à l'ensemble des 560 `f5` de la banque
+   avant transfert.
+4. Le `irl` n'a pas été observé pendant cette
+   session ; il est **interdit** d'en inférer
+   un inventaire vide.
+5. **Ne pas conclure** que l'UID d'un équipement
+   change lors du transfert ! Il reste possible
+   qu'il y ait une particularité du protocole,
+   une mauvaise hypothèse de champ, un décalage
+   entre les snapshots ou un objet absent du
+   conteneur de départ.
+
+### Implémentation P3d.6.3
+
+Le même mode `--stock-snapshot-study` établit
+dorénavant deux séries supplémentaires de
+comparaisons **locales en RAM uniquement** :
+
+- En cas de `uid-candidate-not-found`,
+  comparer `f4` du delta aux 560 `f4`
+  candidats de la banque : rapporter les
+  comptes `same-type-rows` et
+  `same-type-quantity-rows` (intersection
+  `f4`/`f3`), ainsi que
+  `same-type-effects-count-rows` (égalité
+  du nombre d'effets `f7`, pas des valeurs).
+  Plusieurs copies du même type peuvent
+  exister : ces comptes n'établissent
+  **pas une identité d'instance**.
+- Comparer chaque delta au **delta
+  immédiatement précédent dans la même
+  session TCP**, sans présumer qu'il s'agit
+  de la même transaction. Les indicateurs
+  `previous-delta` exposent seulement
+  `f3=same/different`, `f4=same/different`,
+  `f5=same/different` et
+  `effects-count=same/different`,
+  avec l'opcode précédent `iqx`/`iqz`.
+  Une nouvelle liste `irl/irp` remet
+  cette comparaison à zéro.
+
+La sonde n'affiche **jamais** les valeurs
+brutes de `f3/f4/f5`, les IDs d'objets,
+UID, détails `f7`, endpoints ou
+identités de personnages. Les baselines
+sont cloisonnées par session TCP,
+révoquées à la fermeture ou sur snapshot
+invalide. Pas d'activation métier.
+
+Des tests synthétiques couvrent :
+`same-type-rows` de cardinalité variable,
+les collisions d'UID de type inconnu,
+les deux directions `iqx/iqz` identiques
+ou différentes, le réarmement sur nouveau
+snapshot ou fermeture de session, et la
+confidentialité de toutes les sorties.
+
+### Contrôle Windows requis, une seule manipulation ciblée
+
+```powershell
+git status --short --branch
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+**Ne pas effacer les fichiers locaux** ; toute
+collision avec un changement local doit être
+résolue explicitement sans `reset` ou
+`clean`.
+
+Une fois les tests passés :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --stock-snapshot-study
+```
+
+Laisser Dofus ouvert. Avec **un seul client**,
+lancer le probe **avant d'ouvrir** la banque,
+observer `irp`, puis déplacer **un seul
+équipement de banque vers inventaire et
+inversement**. `Ctrl+C` et fournir uniquement
+les lignes `STOCK_SNAPSHOT`.
+
+Le comportement des champs `f3/f4/f5`
+sur les snapshots de `irl/irp` demeure
+**candidat**, même si celui de `kch` a été
+établi. Aucun changement d'ItemId/UID
+lors du passage par HDV n'est à tester
+de nouveau : les travaux historiques
+distinguent déjà UID d'instance, ItemId
+et UID d'annonce.
