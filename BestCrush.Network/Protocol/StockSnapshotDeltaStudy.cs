@@ -15,6 +15,8 @@ public sealed class StockSnapshotDeltaStudy
     {
         internal Dictionary<ulong, StockItemWireCandidate>? Inventory;
         internal Dictionary<ulong, StockItemWireCandidate>? Bank;
+        internal StockItemWireCandidate? LastDelta;
+        internal string? LastDeltaOpcode;
     }
 
     public void DropSession(int sessionNumber) => _sessions.Remove(sessionNumber);
@@ -50,6 +52,10 @@ public sealed class StockSnapshotDeltaStudy
             else
                 state.Bank = rows;
 
+            // Never compare an unrelated delta against an older transaction
+            // after another authoritative snapshot has arrived.
+            state.LastDelta = null;
+            state.LastDeltaOpcode = null;
             return snapshot.Describe() + " baseline=" +
                 (rows is null ? "not-stored" : "stored");
         }
@@ -58,9 +64,15 @@ public sealed class StockSnapshotDeltaStudy
         if (delta is null)
             return "delta=unrecognized";
 
+        string previous = ComparePreviousDelta(
+            state.LastDeltaOpcode, state.LastDelta, delta);
+        state.LastDelta = delta;
+        state.LastDeltaOpcode = opcode;
+
         return "delta=fields345-candidate" +
             " bank=[" + Compare(state.Bank, delta) + "]" +
-            " inventory=[" + Compare(state.Inventory, delta) + "]";
+            " inventory=[" + Compare(state.Inventory, delta) + "]" +
+            " previous-delta=[" + previous + "]";
     }
 
     private static string Compare(
@@ -72,7 +84,22 @@ public sealed class StockSnapshotDeltaStudy
 
         if (!reference.TryGetValue(delta.Field5InstanceUidCandidate!.Value,
             out StockItemWireCandidate? existing))
-            return "uid-candidate-not-found";
+        {
+            int sameType = reference.Values.Count(row =>
+                row.Field4ItemIdCandidate == delta.Field4ItemIdCandidate);
+            int sameTypeQuantity = reference.Values.Count(row =>
+                row.Field4ItemIdCandidate == delta.Field4ItemIdCandidate &&
+                row.Field3QuantityCandidate == delta.Field3QuantityCandidate);
+            int sameTypeEffectsCount = reference.Values.Count(row =>
+                row.Field4ItemIdCandidate == delta.Field4ItemIdCandidate &&
+                row.EffectFields == delta.EffectFields);
+            // Candidate counts are only descriptive. Two copies of the
+            // same item can have different rolls, quantities or instances.
+            return "uid-candidate-not-found" +
+                " same-type-rows=" + sameType +
+                " same-type-quantity-rows=" + sameTypeQuantity +
+                " same-type-effects-count-rows=" + sameTypeEffectsCount;
+        }
 
         return "uid-candidate-found itemId-candidate=" +
             (existing.Field4ItemIdCandidate == delta.Field4ItemIdCandidate
@@ -80,6 +107,26 @@ public sealed class StockSnapshotDeltaStudy
             " quantity-candidate=" +
             (existing.Field3QuantityCandidate == delta.Field3QuantityCandidate
                 ? "same" : "different");
+    }
+
+    private static string ComparePreviousDelta(
+        string? opcode, StockItemWireCandidate? previous,
+        StockItemWireCandidate current)
+    {
+        if (previous is null || opcode is not ("iqx" or "iqz"))
+            return "none";
+
+        // This is merely the preceding delta in the same TCP session.
+        // It does not prove that both frames describe the same operation.
+        return "opcode=" + opcode +
+            " f3=" + (previous.Field3QuantityCandidate ==
+                current.Field3QuantityCandidate ? "same" : "different") +
+            " f4=" + (previous.Field4ItemIdCandidate ==
+                current.Field4ItemIdCandidate ? "same" : "different") +
+            " f5=" + (previous.Field5InstanceUidCandidate ==
+                current.Field5InstanceUidCandidate ? "same" : "different") +
+            " effects-count=" + (previous.EffectFields ==
+                current.EffectFields ? "same" : "different");
     }
 
     private static StockItemWireCandidate? DecodeDelta(
