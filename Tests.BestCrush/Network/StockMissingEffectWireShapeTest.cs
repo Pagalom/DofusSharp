@@ -32,7 +32,7 @@ public sealed class StockMissingEffectWireShapeTest
         report.Should().Contain(
             "undecodable-effects:3");
         report.Should().Contain(
-            "missing-value-wire-shapes:[f2:v;f10:vx2|f4:len;f10:vx1]");
+            "missing-value-wire-shapes:[(f2:v;f10:v)x2|(f4:len;f10:v)x1]");
         foreach (string value in new[] { "842612", "842613",
             "842614", "881199", "881200", "881201", "5812",
             "5813", "991777", "foo" })
