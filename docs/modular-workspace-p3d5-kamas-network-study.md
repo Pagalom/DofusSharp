@@ -2470,13 +2470,15 @@ cloisonnées par session TCP.
 
 ### Tests synthétiques et étape suivante
 
-Cinq tests supplémentaires couvrent :
+Des tests supplémentaires couvrent :
 un exemplaire correspondant par ses jets
 parmi deux du même type, ordre f7 modifié,
 paires d'effets répétées ou négatives,
 effets modifiés ou non décodables, comparaison
-iqx↔iqz avec f5 différents, et absence de
-divulgation des codes/valeurs.
+iqx↔iqz avec f5 différents, absence de
+divulgation des codes/valeurs, et invalidation
+de la comparaison précédente si un delta
+malformé intervient entre deux messages.
 
 **Pas encore de validation Windows pour ce patch.**
 Le mode CLI reste identique :
