@@ -3127,7 +3127,7 @@ Lorsque `grouping=not-ready` et que `missing-value`
 existe, un seul champ supplémentaire apparaît :
 
 ```text
-missing-value-wire-shapes:[f2:v;f10:vx42|f4:len;f10:vx18]
+missing-value-wire-shapes:[(f2:v;f10:v)x42|(f4:len;f10:v)x18]
 ```
 
 Cette chaîne est une **illustration synthétique**, pas
