@@ -7,6 +7,13 @@ namespace BestCrush.Network.Protocol;
 /// </summary>
 public sealed class StockSnapshotDeltaStudy
 {
+    private readonly bool _identifyBlockedItemTypes;
+
+    public StockSnapshotDeltaStudy(bool identifyBlockedItemTypes = false)
+    {
+        _identifyBlockedItemTypes = identifyBlockedItemTypes;
+    }
+
     private const int MaxSessions = 16;
     private const int MaxDeltaBytes = 4096;
     private readonly Dictionary<int, SessionStocks> _sessions = [];
@@ -85,7 +92,9 @@ public sealed class StockSnapshotDeltaStudy
                 (grouping?.Describe() ?? "grouping=not-ready") + " " +
                 comparison +
                 (grouping is null ? " " +
-                    StockCandidateGrouping.DescribeBlockers(snapshot) : "");
+                    StockCandidateGrouping.DescribeBlockers(snapshot) +
+                    (_identifyBlockedItemTypes ? " " +
+                        StockCandidateGrouping.DescribeBlockedItemTypes(snapshot) : "") : "");
         }
 
         StockItemWireCandidate? delta = DecodeDelta(opcode, body);
