@@ -27,7 +27,11 @@ public sealed record StockItemWireCandidate(
     int EffectFields,
     // Optional: null means effect wire shape is not understood; [] means
     // no effect fields are present. Neither is an item identity.
-    IReadOnlyList<StockEffectWireCandidate>? Effects = null);
+    IReadOnlyList<StockEffectWireCandidate>? Effects = null)
+{
+    // Fixed diagnostic category, never raw network content.
+    public string? EffectDecodeIssue { get; init; }
+}
 
 /// <summary>
 /// Research-only decoding of observed f7[] effect entries: f5=value,
@@ -40,33 +44,53 @@ internal static class StockEffectWireCandidateParser
     private const int MaximumEffectBytes = 1024;
 
     internal static IReadOnlyList<StockEffectWireCandidate>? Read(
-        IReadOnlyList<ProtoField> itemFields)
+        IReadOnlyList<ProtoField> itemFields) =>
+        ReadWithIssue(itemFields).Effects;
+
+    /// <summary>
+    /// A fixed reason code is emitted only for diagnostics. No actual effect
+    /// values, codes, item IDs, quantities or payload are ever returned as text.
+    /// </summary>
+    internal static (IReadOnlyList<StockEffectWireCandidate>? Effects,
+        string? Issue) ReadWithIssue(IReadOnlyList<ProtoField> itemFields)
     {
         ProtoField[] entries = itemFields.Where(f => f.Number == 7).ToArray();
         if (entries.Length > MaximumEffectEntries)
-            return null;
+            return (null, "too-many-effects");
 
         List<StockEffectWireCandidate> result = new(entries.Length);
         foreach (ProtoField entry in entries)
         {
-            if (entry.WireType != ProtoWireType.LengthDelimited ||
-                entry.Bytes is not { Length: > 0 and <= MaximumEffectBytes })
-                return null;
+            if (entry.WireType != ProtoWireType.LengthDelimited)
+                return (null, "effect-encoding");
+            if (entry.Bytes is not { Length: > 0 and <= MaximumEffectBytes })
+                return (null, "effect-size");
 
             List<ProtoField>? effect = ProtoWire.ReadFields(entry.Bytes);
             if (effect is null)
-                return null;
+                return (null, "effect-malformed");
+
             ProtoField[] values = effect.Where(f => f.Number == 5).ToArray();
             ProtoField[] codes = effect.Where(f => f.Number == 10).ToArray();
-            if (values.Length != 1 || codes.Length != 1 ||
-                values[0].WireType != ProtoWireType.Varint ||
-                codes[0].WireType != ProtoWireType.Varint ||
-                codes[0].Varint == 0)
-                return null;
+            if (values.Length == 0)
+                return (null, "missing-value");
+            if (codes.Length == 0)
+                return (null, "missing-code");
+            if (values.Length != 1)
+                return (null, "multiple-values");
+            if (codes.Length != 1)
+                return (null, "multiple-codes");
+            if (values[0].WireType != ProtoWireType.Varint)
+                return (null, "value-encoding");
+            if (codes[0].WireType != ProtoWireType.Varint)
+                return (null, "code-encoding");
+            if (codes[0].Varint == 0)
+                return (null, "zero-code");
+
             result.Add(new StockEffectWireCandidate(
                 codes[0].Varint, unchecked((long)values[0].Varint)));
         }
-        return result;
+        return (result, null);
     }
 }
 
@@ -203,8 +227,13 @@ public static class InventoryBankSnapshotDecoder
                 // independent of the identity/stock decoding.
                 int effects = fields.Count(f =>
                     f.Number == 7 && f.WireType == ProtoWireType.LengthDelimited);
-                items.Add(new(f3, f4, f5, effects,
-                    StockEffectWireCandidateParser.Read(fields)));
+                var parsedEffects =
+                    StockEffectWireCandidateParser.ReadWithIssue(fields);
+                items.Add(new StockItemWireCandidate(
+                    f3, f4, f5, effects, parsedEffects.Effects)
+                {
+                    EffectDecodeIssue = parsedEffects.Issue
+                });
             }
 
             // An UID collision means that this is not yet a trustworthy
