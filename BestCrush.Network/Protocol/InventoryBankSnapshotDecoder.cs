@@ -32,7 +32,7 @@ public sealed record StockItemWireCandidate(
     // Fixed diagnostic category, never raw network content.
     public string? EffectDecodeIssue { get; init; }
     // Schema only (field numbers/wire types), not contents; diagnostic only.
-    public string? EffectDecodeShape { get; init; }
+    public string? EffectDecodeShape { get; internal init; }
 }
 
 /// <summary>
