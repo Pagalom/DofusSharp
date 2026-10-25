@@ -3093,3 +3093,78 @@ même mode probe permettra de récupérer
 `grouping-blockers=...`. Il n'est pas
 nécessaire de refaire un transfert partiel
 de ressources ni les essais HDV ou UID.
+
+## P3d.12 — Effets sans f5 : caractérisation des variantes wire
+
+### Capture du 25/10/2026, 11:06 UTC
+
+Une ouverture de banque dans `--stock-snapshot-study` a donné
+un seul `irp` de 11700 octets avec **560 lignes**, dont
+**157 contiennent des champs f7**. Les 560 triplets candidats
+f3/f4/f5 sont complets, sans doublon f5 ni quantité
+hors limites. Le regroupement reste refusé avec :
+
+```text
+grouping=not-ready snapshot-change=not-comparable
+grouping-blockers=bad-scalars:0,quantity-overflow:0,undecodable-effects:60,effect-count-mismatch:0,effect-limit:0,invalid-effect-code:0,effect-shapes:[missing-value:60]
+```
+
+**Interprétation exacte** : 60 lignes comportent au moins
+un effet f7 qui ne contient pas de champ f5 (valeur candidate)
+à l'endroit attendu. Cela ne démontre ni des effets invalides
+ni des valeurs nulles. On ne sait pas encore si le jeu
+emploie une autre structure ou un effet sans valeur numérique.
+
+### Changement de sonde P3d.12
+
+Le parseur ajoute, pour le premier effet problématique
+par ligne, une **forme protobuf anonyme** listant
+uniquement les numéros de champs (1 à 32), types wire
+(v, len, 32, 64) et répétitions. Aucune valeur,
+code d'effet, ID d'objet, UID ou payload n'est publié.
+
+Lorsque `grouping=not-ready` et que `missing-value`
+existe, un seul champ supplémentaire apparaît :
+
+```text
+missing-value-wire-shapes:[f2:v;f10:vx42|f4:len;f10:vx18]
+```
+
+Cette chaîne est une **illustration synthétique**, pas
+un résultat du jeu. Le diagnostic réel peut présenter
+d'autres formes. Les variantes sont triées par fréquence,
+limitées à 8 ; champs atypiques et variantes excédentaires
+sont indiqués sans exposer les contenus.
+
+La lecture métier demeure volontairement stricte :
+un effet f7 non compris ne devient pas un effet sans
+caractéristiques, ni une valeur 0. Le regroupement
+et la comparaison inter-snapshots restent désactivés
+pour ce conteneur tant qu'un seul effet est inconnu.
+Aucune mutation des profils, inventaires, SQLite
+ou calculs de craft.
+
+Cinq tests synthétiques supplémentaires couvrent
+les histogrammes, la confidentialité, les bornes,
+les effets valides et le maintien du refus en
+présence d'une forme inconnue.
+
+### Validation Windows
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Après réussite, relancer le probe avec
+`--device 3 --stock-snapshot-study`, ouvrir
+**une seule fois** la banque, arrêter avec Ctrl+C
+et partager la ligne `STOCK_SNAPSHOT` contenant
+`missing-value-wire-shapes`. Aucun transfert
+de ressources ni répétition des tests UID/HDV
+n'est nécessaire.
+
+Ne pas affirmer que les tests du nouveau patch
+sont validés avant retour Windows.
