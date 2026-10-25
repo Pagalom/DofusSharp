@@ -3265,3 +3265,91 @@ croiser type d'objet et variante de
 protocole ; une corrélation par type
 ne prouve pas encore la sémantique
 du champ manquant.
+
+## P3d.13b — Identifier l'objet ET sa variante d'effet
+
+### Capture réelle du 25/10/2026, 11:23 UTC
+
+`irp` 11700 octets, 560 lignes candidates,
+157 lignes à effets, 60 lignes non regroupables,
+**60 ItemId distincts** avec un échec de type
+`missing-value`, donc un seul enregistrement par
+ItemId dans les 60 lignes bloquées.
+
+Histogramme des premiers effets f7 non reconnus :
+
+```text
+(f9:len;f10:v) x36
+(f7:len;f10:v) x9
+(f10:v) x7
+(f8:len;f10:v) x6
+(f6:len;f10:v) x2
+```
+
+Il n'y a ni quantité impossible ni collision UID
+candidate. `f10` est commun aux cinq catégories,
+`f5` en est absent. Ne **pas** interpréter le
+contenu des champs length-delimited sans preuve ;
+ne pas leur attribuer arbitrairement la valeur zéro.
+
+Premiers ItemId affichés (16 / 60) :
+2415, 6752, 6821, 7113, 7423, 7708, 7711,
+7941, 7943, 7950, 7951, 7965, 7966, 7967,
+8145, 8618. Les 44 autres sont restés masqués
+en raison de la limite de confidentialité.
+
+### Vérification par encyclopédies publiques
+
+- 2415 : Kwaklame de Flammes, arme Dofus 3.
+- 6752 : Kwaklame du Vent, arme.
+- 6821 : Lame du Chef Crocodaille, arme.
+- 7711 : Pioute rouge, familier.
+- 7113 : Dofawa, identification historique (à
+  confirmer avec le catalogue de la version en jeu).
+
+L'ensemble montre que les effets sans `f5`
+ne sont pas l'apanage des armes : objets spéciaux
+et familiers apparaissent également. Ne pas en
+déduire sans preuve que chaque catégorie correspond
+à un type protobuf particulier. Les noms ne sont
+pas encore résolus par le probe ; ils doivent venir
+du catalogue local ou d'une source publique vérifiée,
+jamais être déduits d'un UID.
+
+### Amélioration P3d.13b : corrélation directe par type
+
+Le mode `--stock-snapshot-study --stock-identify-blockers`
+ajoute un nouveau champ :
+
+```text
+blocked-type-shapes=[item-id-candidate:2415,first-missing-effect-shape:f9:len;f10:v|...]
+```
+
+**Exemple de syntaxe fictif**, la forme de l'ItemId
+2415 n'a pas été déterminée dans la capture publiée.
+Le diagnostic rapporte la forme du **premier effet**
+problématique par objet, pas tous les effets. Il
+conserve le plafond de 16 types affichés,
+aucune instance UID, quantité d'objet, jet chiffré,
+nom de personnage ou charge utile.
+
+Le champ `blocked-item-types` de P3d.13 est
+conservé. De nouveaux tests protègent le lien
+ID/type-forme, la séparation des modes et le
+plafond de la sortie opt-in.
+
+### Prochaine validation Windows
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Une ouverture de banque en mode identification
+suffira pour obtenir la correspondance ItemId/
+forme. Aucun transfert, reconnexion ni test HDV
+requis. Ne pas activer les stocks métier avant
+d'avoir compris les variantes d'effets et
+vérifié le propriétaire compte/serveur.
