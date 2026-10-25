@@ -83,7 +83,9 @@ public sealed class StockSnapshotDeltaStudy
             return snapshot.Describe() + " baseline=" +
                 (rows is null ? "not-stored" : "stored") + " " +
                 (grouping?.Describe() ?? "grouping=not-ready") + " " +
-                comparison;
+                comparison +
+                (grouping is null ? " " +
+                    StockCandidateGrouping.DescribeBlockers(snapshot) : "");
         }
 
         StockItemWireCandidate? delta = DecodeDelta(opcode, body);
