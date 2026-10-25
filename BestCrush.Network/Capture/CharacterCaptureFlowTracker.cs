@@ -143,7 +143,8 @@ public sealed class CharacterCaptureFlowTracker
         IReadOnlyList<long>? expectedEffectValues = null,
         ItemEffectTypeStabilityStudy? effectTypeStudy = null,
         ItemEffectDofusDbCatalogStudy? effectCatalogStudy = null,
-        bool stockSnapshotStudy = false)
+        bool stockSnapshotStudy = false,
+        bool stockIdentifyBlockers = false)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -162,8 +163,13 @@ public sealed class CharacterCaptureFlowTracker
             throw new ArgumentException(
                 "Stock snapshot and effects diagnostics are exclusive.",
                 nameof(stockSnapshotStudy));
+        if (stockIdentifyBlockers && !stockSnapshotStudy)
+            throw new ArgumentException(
+                "Identifying blocked item types requires the stock snapshot study.",
+                nameof(stockIdentifyBlockers));
         _stockSnapshotStudy = stockSnapshotStudy;
-        _stockDeltaStudy = stockSnapshotStudy ? new StockSnapshotDeltaStudy() : null;
+        _stockDeltaStudy = stockSnapshotStudy
+            ? new StockSnapshotDeltaStudy(stockIdentifyBlockers) : null;
         _itemEffectsShape = itemEffectsShape;
         if (expectedEffectValues is not null &&
             (!itemEffectsShape || expectedEffectValues.Count is < 1 or > 16))
