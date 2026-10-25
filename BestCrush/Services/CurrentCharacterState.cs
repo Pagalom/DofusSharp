@@ -10,10 +10,21 @@ public readonly record struct CharacterKey(string ServerName, ulong CharacterId)
 /// Item identifiers describe game data; InstanceUid distinguishes equipment
 /// instances when the verified protocol exposes it.
 /// </summary>
+public sealed record CharacterInventoryEffect(ulong EffectId, long Value);
+
+/// <summary>
+/// Effects=null means not observed. Effects=[] means confirmed to have no
+/// effects. Do not use InstanceUid as a durable, cross-container business key.
+/// </summary>
 public sealed record CharacterInventoryItem(
     ulong ItemId,
     ulong? InstanceUid,
-    long Quantity);
+    long Quantity)
+{
+    // Extra init-only property preserves the existing 3-value constructor
+    // and Deconstruct signature for all current call sites.
+    public IReadOnlyList<CharacterInventoryEffect>? Effects { get; init; }
+}
 
 /// <summary>
 /// Entirely in-process. Null means "not observed", not zero or empty.
