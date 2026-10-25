@@ -2389,3 +2389,113 @@ lors du passage par HDV n'est à tester
 de nouveau : les travaux historiques
 distinguent déjà UID d'instance, ItemId
 et UID d'annonce.
+
+## P3d.6.4 — Corrélation des effets réels sans exposer les jets
+
+### Capture réelle : 25/10/2026, 01:57 UTC
+
+La banque a fourni 560 lignes structurellement complètes,
+dont 157 avec champs `f7` ; aucun doublon de
+`f5` candidat détecté.
+
+```text
+01:57:48 irp rows=560 fields345=560 effects-present=157 duplicate-f5=0 baseline=stored
+01:57:53 iqx bank=[uid-candidate-not-found same-type-rows=1 same-type-quantity-rows=1 same-type-effects-count-rows=1] inventory=[baseline-unobserved] previous-delta=[none]
+01:57:59 iqz bank=[uid-candidate-not-found same-type-rows=1 same-type-quantity-rows=1 same-type-effects-count-rows=1] inventory=[baseline-unobserved] previous-delta=[opcode=iqx f3=same f4=same f5=different effects-count=same]
+```
+
+**Interprétation strictement étayée** :
+
+- Un **unique** enregistrement de banque possède le
+  même `f4` que chacun des deltas, et son `f3`
+  et le **nombre** d'effets sont identiques.
+- Le `f5` des deux deltas ne correspond à aucun
+  `f5` du snapshot bancaire ; les `f5` des
+  deux deltas sont eux-mêmes différents.
+- `f4`, `f3` et nombre d'effets des deux deltas
+  sont identiques.
+- Cela **ne prouve pas** une réattribution d'UID,
+  la continuité d'une instance, ni la direction
+  du transfert ; l'inventaire initial `irl` n'a
+  pas été observé.
+- Les tests antérieurs de renouvellement d'UID
+  lors du passage par HDV ne doivent **pas** être
+  extrapolés automatiquement à un transfert
+  interne banque ↔ inventaire.
+
+### Extension du même mode, sans IDs imprimés
+
+Le décodage candidat `StockItemWireCandidate`
+conserve en RAM (borné à 64 entrées de 1024 octets)
+les **paires exactes** `(f10 code type, f5 valeur)`
+pour chaque `f7[]` interprétable. L'ordre des
+effets est neutralisé par une comparaison
+de **multiensembles** préservant les doublons.
+
+Un effet non décodable produit un état
+`unrecognized` ; une liste sans effets
+est `no-effects`. Aucun de ces cas ne doit
+être assimilé à un match exact de jets.
+
+Quand le `f5` candidat n'est pas retrouvé
+dans la banque, la sonde ajoute :
+
+- `exact-effects-status=decoded/no-effects/unrecognized`
+- `same-type-exact-effects-rows=N`
+- `same-type-quantity-exact-effects-rows=N`
+
+Pour deux messages de transfert consécutifs,
+`previous-delta` inclut maintenant
+`exact-effects=same/different/unrecognized/not-applicable`.
+En cas de `f5` candidat trouvé,
+`exact-effects` complète aussi la comparaison
+avec la ligne de référence.
+
+L'égalité des jets **renforce** la corrélation
+entre les messages mais ne prouve pas à elle
+seule une identité d'instance (deux copies du
+même équipement peuvent posséder les mêmes jets).
+Une modification légitime des caractéristiques
+d'un objet équipable par FM ou d'un familier
+par nourrissage peut également conduire à
+`exact-effects=different` sans changement
+de type d'objet.
+
+Les valeurs, identifiants d'effets, UID,
+ItemId, noms, comptes et charges utiles
+restent absents de la sortie texte et de
+SQLite. Les paires sont gardées uniquement
+dans les références éphémères du probe,
+cloisonnées par session TCP.
+
+### Tests synthétiques et étape suivante
+
+Cinq tests supplémentaires couvrent :
+un exemplaire correspondant par ses jets
+parmi deux du même type, ordre f7 modifié,
+paires d'effets répétées ou négatives,
+effets modifiés ou non décodables, comparaison
+iqx↔iqz avec f5 différents, et absence de
+divulgation des codes/valeurs.
+
+**Pas encore de validation Windows pour ce patch.**
+Le mode CLI reste identique :
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --stock-snapshot-study
+```
+
+La validation du code précède le lancement du probe ;
+préserver les modifications locales. Pour le test réel,
+un seul client, démarrer la sonde avant l'ouverture
+de banque, faire **un aller-retour** de l'équipement
+déjà utilisé, puis `Ctrl+C`. Partager uniquement les
+lignes `STOCK_SNAPSHOT`.
+
+Ne pas relancer les anciens tests HDV ni attribuer
+les stocks à un personnage avant d'avoir validé
+les champs `f3/f4/f5` et l'identité de sa session.
