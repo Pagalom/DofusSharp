@@ -40,6 +40,11 @@ public sealed class StockBlockedItemIdentificationTest
         identified.Should().Contain(
             "blocked-item-types=[item-id-candidate:842612,affected-rows:2|" +
             "item-id-candidate:842613,affected-rows:1] distinct-types=2");
+        identified.Should().Contain(
+            "blocked-type-shapes=[item-id-candidate:842612," +
+            "first-missing-effect-shape:f2:v;f10:v|" +
+            "item-id-candidate:842613," +
+            "first-missing-effect-shape:f2:v;f10:v]");
         foreach (string sensitive in new[]
         {
             "881199", "881200", "881201", "981122", "229999"
@@ -61,6 +66,7 @@ public sealed class StockBlockedItemIdentificationTest
         report.Should().Contain("item-id-candidate:842612");
         report.Should().Contain("item-id-candidate:842615");
         report.Should().NotContain("item-id-candidate:842614");
+        report.Should().Contain("blocked-type-shapes=");
         report.Should().Contain("distinct-types=2");
     }
 
@@ -79,7 +85,8 @@ public sealed class StockBlockedItemIdentificationTest
         report.Should().Contain("item-id-candidate:842612");
         report.Should().NotContain("item-id-candidate:842628");
         report.Should().NotContain("881199");
-        report.Length.Should().BeLessThan(1600);
+        report.Length.Should().BeLessThan(3600,
+            "the opt-in report is bounded to 16 item types and wire shapes");
     }
 
     [Fact]
