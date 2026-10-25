@@ -31,6 +31,8 @@ public sealed record StockItemWireCandidate(
 {
     // Fixed diagnostic category, never raw network content.
     public string? EffectDecodeIssue { get; init; }
+    // Schema only (field numbers/wire types), not contents; diagnostic only.
+    public string? EffectDecodeShape { get; init; }
 }
 
 /// <summary>
@@ -52,46 +54,86 @@ internal static class StockEffectWireCandidateParser
     /// values, codes, item IDs, quantities or payload are ever returned as text.
     /// </summary>
     internal static (IReadOnlyList<StockEffectWireCandidate>? Effects,
-        string? Issue) ReadWithIssue(IReadOnlyList<ProtoField> itemFields)
+        string? Issue, string? Shape) ReadWithIssue(
+        IReadOnlyList<ProtoField> itemFields)
     {
         ProtoField[] entries = itemFields.Where(f => f.Number == 7).ToArray();
         if (entries.Length > MaximumEffectEntries)
-            return (null, "too-many-effects");
+            return (null, "too-many-effects", null);
 
         List<StockEffectWireCandidate> result = new(entries.Length);
         foreach (ProtoField entry in entries)
         {
             if (entry.WireType != ProtoWireType.LengthDelimited)
-                return (null, "effect-encoding");
+                return (null, "effect-encoding", null);
             if (entry.Bytes is not { Length: > 0 and <= MaximumEffectBytes })
-                return (null, "effect-size");
+                return (null, "effect-size", null);
 
             List<ProtoField>? effect = ProtoWire.ReadFields(entry.Bytes);
             if (effect is null)
-                return (null, "effect-malformed");
-
+                return (null, "effect-malformed", null);
             ProtoField[] values = effect.Where(f => f.Number == 5).ToArray();
             ProtoField[] codes = effect.Where(f => f.Number == 10).ToArray();
+
+            // Observe the wire schema of the missing-value cases before
+            // deciding whether another numeric field has that meaning.
+            // This is NOT an alternative decoder or a default zero jet.
             if (values.Length == 0)
-                return (null, "missing-value");
+                return (null, "missing-value", MissingValueShape(effect));
             if (codes.Length == 0)
-                return (null, "missing-code");
+                return (null, "missing-code", null);
             if (values.Length != 1)
-                return (null, "multiple-values");
+                return (null, "multiple-values", null);
             if (codes.Length != 1)
-                return (null, "multiple-codes");
+                return (null, "multiple-codes", null);
             if (values[0].WireType != ProtoWireType.Varint)
-                return (null, "value-encoding");
+                return (null, "value-encoding", null);
             if (codes[0].WireType != ProtoWireType.Varint)
-                return (null, "code-encoding");
+                return (null, "code-encoding", null);
             if (codes[0].Varint == 0)
-                return (null, "zero-code");
+                return (null, "zero-code", null);
 
             result.Add(new StockEffectWireCandidate(
                 codes[0].Varint, unchecked((long)values[0].Varint)));
         }
-        return (result, null);
+        return (result, null, null);
     }
+
+    /// <summary>
+    /// The **protobuf schema only**: bounded field numbers (1..32),
+    /// wire kinds and repeat counts. High/unknown field numbers are folded
+    /// into an opaque count. No values, raw bytes or effect identifiers.
+    /// </summary>
+    private static string MissingValueShape(IReadOnlyList<ProtoField> fields)
+    {
+        const int MaxFields = 12;
+        var grouped = fields
+            .Where(x => x.Number is >= 1 and <= 32)
+            .GroupBy(x => (x.Number, x.WireType))
+            .OrderBy(x => x.Key.Number)
+            .ThenBy(x => (int)x.Key.WireType)
+            .ToArray();
+        string shape = string.Join(";", grouped
+            .Take(MaxFields)
+            .Select(x => "f" + x.Key.Number + ":" +
+                WireTypeLabel(x.Key.WireType) +
+                (x.Count() > 1 ? "x" + x.Count() : "")));
+        int other = fields.Count(x => x.Number is < 1 or > 32);
+        if (other != 0)
+            shape += (shape.Length > 0 ? ";" : "") + "other-fields";
+        if (grouped.Length > MaxFields)
+            shape += (shape.Length > 0 ? ";" : "") + "more-fields";
+        return shape.Length > 0 ? shape : "unknown-shape";
+    }
+
+    private static string WireTypeLabel(ProtoWireType type) => type switch
+    {
+        ProtoWireType.Varint => "v",
+        ProtoWireType.LengthDelimited => "len",
+        ProtoWireType.Fixed32 => "32",
+        ProtoWireType.Fixed64 => "64",
+        _ => "other"
+    };
 }
 
 public sealed record StockSnapshotWireCandidate(
@@ -232,7 +274,8 @@ public static class InventoryBankSnapshotDecoder
                 items.Add(new StockItemWireCandidate(
                     f3, f4, f5, effects, parsedEffects.Effects)
                 {
-                    EffectDecodeIssue = parsedEffects.Issue
+                    EffectDecodeIssue = parsedEffects.Issue,
+                    EffectDecodeShape = parsedEffects.Shape
                 });
             }
 
