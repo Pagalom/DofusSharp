@@ -2014,3 +2014,135 @@ modification d'effets reçue doit rester séparée des
 valeurs théoriques DofusDb et rattachée à la bonne instance.
 Ne pas supposer l'immuabilité des valeurs d'effet en
 fonction d'une reconnaissance d'ItemId.
+
+## P3d.6.1 — Décodage candidat irl/irp en lecture seule
+
+### Implémentation
+
+Ajout de `BestCrush.Network/Protocol/InventoryBankSnapshotDecoder.cs` :
+décodeur **pur** et borné des deux formes déjà observées
+`irl.root.f2[].f1` et `irp.root.f2[].f1`.
+Il renvoie les lignes candidates séparées en RAM :
+`f3` (quantité **candidate**), `f4` (ItemId
+**candidat**), `f5` (UID d'instance **candidat**),
+ainsi que le **nombre** de champs `f7[]`
+sans en décoder le contenu.
+
+Pour `kch`, le sens de `f3/f4/f5` est validé ;
+pour `irl/irp`, leur numérotation est identique
+mais la correspondance **reste à vérifier par
+références ou par opérations réseau ciblées**.
+
+États du décodeur :
+
+- `Malformed` : structure invalide, trame excessive,
+  plafond dépassé (256 Kio, 4096 lignes, 8192 octets
+  par ligne), ou Protobuf non valide ;
+- `Incomplete` : métadonnée attendue manquante,
+  ligne candidate incomplète, champs ambigus ou
+  UID candidat répété ;
+- `EmptyCandidate` : zéro ligne **avec** le champ de
+  métadonnées constaté auparavant (`irl.root.f4`,
+  `irp.root.f1`) ; **pas** une preuve suffisante
+  d'inventaire véritablement vide ;
+- `CompleteCandidate` : toutes les lignes ont une
+  structure complète et des scalaires uniques
+  compatibles avec le schéma **candidat**. Cela ne
+  signifie **pas** que les quantités, l'identité du
+  personnage et le conteneur sont prouvés sémantiquement.
+
+`Decode` renvoie `null` pour tout autre opcode
+(non-observation), distinction fondamentale avec
+une liste vide. Aucun état n'est publié dans
+`CurrentCharacterState`, `RecentItemDetailsCache`,
+les calculs de craft, les dossiers de banque ou SQLite.
+
+### Probe opt-in anonymisé
+
+Nouveau mode exclusif :
+
+```powershell
+dotnet run --project .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj -- --device 3 --stock-snapshot-study
+```
+
+La sortie ne présente que les **comptages** de
+lignes, de triplets f3/f4/f5 présents, de lignes
+ayant au moins un f7 et d'UID candidats dupliqués
+au sein d'un même snapshot.
+
+Exemple **synthétique** non issu du jeu :
+
+```text
+S→C irl ... STOCK_SNAPSHOT=[container=inventory status=complete-candidate rows=2 fields345=2 incomplete-rows=0 effects-present=1 duplicate-f5=0]
+S→C irp ... STOCK_SNAPSHOT=[container=bank status=complete-candidate rows=1 fields345=1 incomplete-rows=0 effects-present=0 duplicate-f5=0]
+```
+
+Aucun ItemId, UID, quantité, effet, nom de personnage
+ou contenu protobuf n'est imprimé. Le traitement est
+limité au sens S→C et à 12 rapports maximum par session
+TCP. L'option est mutuellement exclusive avec
+les autres modes de diagnostic. Ce mode fonctionne
+avec le même contrôleur de sessions TCP ; ne pas
+mélanger les captures de plusieurs personnages.
+
+### Tests synthétiques
+
+Ajout de `Tests.BestCrush/Network/InventoryBankSnapshotDecoderTest.cs` :
+conteneurs séparés, interprétation structurale,
+liste vide candidate vs non-observation, corruption,
+tailles plafonnées, champs absents ou répétés,
+collision UID, ajout/évolution d'effets sans changer
+l'identité candidate, confidentialité du rapport et
+activation expresse S→C de la sonde.
+
+Règle métier : **équipements équipables** susceptibles
+de modification de jets via forgemagie et
+**familiers** via nourrissage. Ces modifications
+ne sont pas requises pour connaître le type d'objet
+ou la quantité en stock. Les caractéristiques
+réelles des instances doivent toutefois rester
+distinctes des bornes DofusDb et être préservées
+dans un futur enrichissement optionnel.
+
+### Test réel minimal proposé APRÈS build/test Windows
+
+1. Démarrer `--stock-snapshot-study` puis se connecter
+   à **un seul** personnage pour recevoir `irl`.
+2. Ouvrir la banque afin de déclencher `irp`.
+3. Ne pas déplacer d'objet lors de ce **premier**
+   essai : il valide seulement la structure
+   des deux collections, leur caractère complet
+   ou incomplet, et la disponibilité de `f3/f4/f5`.
+4. `Ctrl+C` et partager seulement les lignes
+   `STOCK_SNAPSHOT`, et le résumé de build/tests.
+
+**Ne pas demander un nouveau test HDV.**
+L'historique déjà caractérisé distingue ItemId
+stable, UID d'instance éventuellement renouvelé,
+et `MarketListingUid` indépendant.
+
+### Checkpoint Windows
+
+```powershell
+git status --short --branch
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.Network\BestCrush.Network.csproj
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Préserver les fichiers de travail locaux, y
+compris les modifications de solution et les
+baselines. Ne jamais effectuer de `git reset`,
+`git clean` ou écrasement des changements locaux.
+La validation Windows n'est **pas encore reçue**
+pour ce checkpoint. En cas d'échec au build ou
+aux tests, arrêter l'essai réseau et examiner
+l'erreur avant de continuer.
+
+**Étape suivante si les lignes sont structurellement
+validées** : confronter `f3/f4/f5` aux variations
+réelles de stock et aux deltas `iqx/iqz/irx/iqm`,
+sans tester à nouveau la pérennité du UID HDV
+ni alimenter les profils par supposition.
