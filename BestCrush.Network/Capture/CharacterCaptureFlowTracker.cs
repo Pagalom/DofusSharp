@@ -79,6 +79,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly HashSet<string> _shapeKeys;
     private readonly bool _itemEffectsShape;
     private readonly bool _stockSnapshotStudy;
+    private readonly StockSnapshotDeltaStudy? _stockDeltaStudy;
     private readonly IReadOnlyList<long>? _expectedEffectValues;
     private readonly ItemEffectTypeStabilityStudy? _effectTypeStudy;
     private readonly ItemEffectDofusDbCatalogStudy? _effectCatalogStudy;
@@ -162,6 +163,7 @@ public sealed class CharacterCaptureFlowTracker
                 "Stock snapshot and effects diagnostics are exclusive.",
                 nameof(stockSnapshotStudy));
         _stockSnapshotStudy = stockSnapshotStudy;
+        _stockDeltaStudy = stockSnapshotStudy ? new StockSnapshotDeltaStudy() : null;
         _itemEffectsShape = itemEffectsShape;
         if (expectedEffectValues is not null &&
             (!itemEffectsShape || expectedEffectValues.Count is < 1 or > 16))
@@ -476,6 +478,7 @@ public sealed class CharacterCaptureFlowTracker
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, previous.Number, direction,
                     CharacterCaptureEventKind.Evicted));
+                _stockDeltaStudy?.DropSession(previous.Number);
                 _flows.Remove(expired);
             }
 
@@ -493,6 +496,7 @@ public sealed class CharacterCaptureFlowTracker
                     events.Add(new CharacterCaptureEvent(
                         observedAtUtc, oldest.Value.Number, direction,
                         CharacterCaptureEventKind.Evicted));
+                    _stockDeltaStudy?.DropSession(oldest.Value.Number);
                     _flows.Remove(oldest.Key);
                 }
 
@@ -513,6 +517,7 @@ public sealed class CharacterCaptureFlowTracker
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
                     CharacterCaptureEventKind.Closed));
+                _stockDeltaStudy?.DropSession(flow.Number);
                 flow = new Session(++_nextNumber, observedAtUtc);
                 _flows[key] = flow;
                 _accountWireStudy?.ObserveOpenedSession(flow.Number);
@@ -651,7 +656,8 @@ public sealed class CharacterCaptureFlowTracker
                                         : null,
                                     _stockSnapshotStudy &&
                                     direction == CharacterCaptureDirection.ServerToClient
-                                        ? InventoryBankSnapshotDecoder.Describe(any.Key, any.Body)
+                                        ? _stockDeltaStudy!.Observe(
+                                            flow.Number, any.Key, any.Body)
                                         : null));
                             }
                         }
@@ -665,6 +671,7 @@ public sealed class CharacterCaptureFlowTracker
                     flow.KscDecodedCandidates = null;
                     flow.ProfessionFlow = null;
                     flow.Closed = true;
+                    _stockDeltaStudy?.DropSession(flow.Number);
                     _concurrentRosterStudy?.ObserveClosedSession(flow.Number);
                     events.Add(new CharacterCaptureEvent(
                         observedAtUtc, flow.Number, direction,
@@ -682,6 +689,7 @@ public sealed class CharacterCaptureFlowTracker
                 flow.KscDecodedCandidates = null;
                 flow.ProfessionFlow = null;
                 flow.Closed = true;
+                _stockDeltaStudy?.DropSession(flow.Number);
                 _concurrentRosterStudy?.ObserveClosedSession(flow.Number);
                 events.Add(new CharacterCaptureEvent(
                     observedAtUtc, flow.Number, direction,
