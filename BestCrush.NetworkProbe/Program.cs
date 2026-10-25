@@ -33,6 +33,8 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-type-study");
     Console.WriteLine("Pour comparer f10 aux EffectId du catalogue DofusDb sur deux Kwaks (connexion API) :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-dofusdb-study");
+    Console.WriteLine("Pour analyser les snapshots irl/irp d'inventaire/banque (champs candidats, sans valeurs) :");
+    Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --stock-snapshot-study");
     Console.WriteLine("Pour voir les structures de champs des messages de connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --character-shape");
     Console.WriteLine("  (option) --shape-keys irl,ico,jei,isr");
@@ -210,10 +212,14 @@ else if (options.CharacterScan)
             ? "Mode P1c : corrélation locale métier/niveau/XP, aucune valeur affichée ou sauvegardée."
         : options.CharacterShape
             ? "Mode P1b : formes protobuf uniquement pour les opcodes ciblés ; aucune valeur enregistrée."
+        : options.StockSnapshotStudy
+            ? "Mode P3d.6 : snapshots irl/irp seulement, champs f3/f4/f5 candidats, aucune valeur affichee."
         : options.ItemEffectsShape || options.ItemEffectsCompare ||
           options.ItemEffectsTypeStudy || options.ItemEffectsDofusDbStudy
             ? "Mode P3d.5 : structures internes f7 sur iqx/iqz/kch uniquement, valeurs et UID masqués."
             : "Mode P1a : métadonnées uniquement, flux TCP isolés, aucun payload enregistré.");
+    if (options.StockSnapshotStudy)
+        Console.WriteLine("P3d.6 : capture un seul client avant connexion / ouverture de banque. Rapports anonymises en lecture seule ; aucun stock BestCrush modifie.");
     if (options.CharacterShape)
         Console.WriteLine("Op codes ciblés : " + string.Join(", ", options.ShapeKeys.OrderBy(x => x)));
     if (options.ItemEffectsShape || options.ItemEffectsCompare ||
@@ -873,7 +879,8 @@ else if (options.CharacterScan)
             options.ItemEffectsTypeStudy || options.ItemEffectsDofusDbStudy,
         expectedEffectValues: expectedEffectValues,
         effectTypeStudy: effectTypeStudy,
-        effectCatalogStudy: effectCatalogStudy);
+        effectCatalogStudy: effectCatalogStudy,
+        stockSnapshotStudy: options.StockSnapshotStudy);
 
     probe.Start();
     if (options.IdentityPair)
@@ -1045,7 +1052,8 @@ internal sealed record ProbeOptions(
     bool ItemEffectsShape,
     bool ItemEffectsCompare,
     bool ItemEffectsTypeStudy,
-    bool ItemEffectsDofusDbStudy)
+    bool ItemEffectsDofusDbStudy,
+    bool StockSnapshotStudy)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -1072,6 +1080,7 @@ internal sealed record ProbeOptions(
         bool itemEffectsCompare = false;
         bool itemEffectsTypeStudy = false;
         bool itemEffectsDofusDbStudy = false;
+        bool stockSnapshotStudy = false;
         bool professionMatch = false;
         bool professionDecode = false;
         bool professionStudy = false;
@@ -1135,6 +1144,9 @@ internal sealed record ProbeOptions(
                     break;
                 case "--item-effects-dofusdb-study":
                     itemEffectsDofusDbStudy = true;
+                    break;
+                case "--stock-snapshot-study":
+                    stockSnapshotStudy = true;
                     break;
                 case "--profession-match":
                     professionMatch = true;
@@ -1257,6 +1269,7 @@ internal sealed record ProbeOptions(
             (itemEffectsCompare ? 1 : 0) +
             (itemEffectsTypeStudy ? 1 : 0) +
             (itemEffectsDofusDbStudy ? 1 : 0) +
+            (stockSnapshotStudy ? 1 : 0) +
             (identityName ? 1 : 0) +
             (identityFields ? 1 : 0) + (identityPair ? 1 : 0) +
             (identityCrossOpcodes ? 1 : 0) + (windowFlowLink ? 1 : 0) +
@@ -1290,7 +1303,7 @@ internal sealed record ProbeOptions(
             device, port, all, list,
             characterScan || characterShape || itemEffectsShape ||
                 itemEffectsCompare || itemEffectsTypeStudy ||
-                itemEffectsDofusDbStudy || professionMatch ||
+                itemEffectsDofusDbStudy || stockSnapshotStudy || professionMatch ||
                 professionDecode || professionStudy || professionIdentify ||
                 professionFlow || professionContinuity || professionXpStudy ||
                 professionJobStudy || identityName || identityFields ||
@@ -1307,6 +1320,6 @@ internal sealed record ProbeOptions(
             accountRosterStudy, concurrentRosterStudy,
             concurrentRosterWindowStudy, itemEffectsShape,
             itemEffectsCompare, itemEffectsTypeStudy,
-            itemEffectsDofusDbStudy);
+            itemEffectsDofusDbStudy, stockSnapshotStudy);
     }
 }
