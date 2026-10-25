@@ -2986,3 +2986,24 @@ dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
 
 Ne pas détruire les modifications locales.
 La suite P3d.9 reste à valider sous Windows.
+
+## P3d.10 — Différences entre snapshots de stocks fongibles
+
+Checkpoint précédent : 1315 tests réussis, 0 échec, 0 ignoré (8,6 s), communiqué le 25/10/2026.
+
+Nouveau code : `StockSnapshotGroupChangeStudy` compare deux snapshots candidats successifs du même conteneur et de la même session TCP. Il utilise ItemId candidat et les effets exacts pour déterminer les groupes fonctionnels, jamais un UID permanent. Les quantités sont comparées en RAM, mais ne sont pas affichées.
+
+Sortie ajoutée : `snapshot-change=no-prior-snapshot`, `snapshot-change=not-comparable` ou `snapshot-change=compared` avec seulement les nombres de groupes augmentés, diminués, nouveaux, supprimés et inchangés. Le résultat est candidat, non autoritatif. Un snapshot invalide révoque la référence précédente. Les conteneurs et sessions sont isolés. Aucune écriture dans le profil du personnage, SQLite ou le moteur de craft.
+
+Tests ajoutés : groupes fonctionnels avec plusieurs UID, évolution des quantités, jets différents, isolation entre sessions et conteneurs, invalidation des données malformées, confidentialité.
+
+À valider sous Windows :
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Un test longitudinal ultérieur pourra comparer deux messages `irp` de la même connexion après modification d'une pile de ressources. La sémantique de `f3/f4/f5` et l'identité du compte/serveur restent à établir avant activation du stock métier.
