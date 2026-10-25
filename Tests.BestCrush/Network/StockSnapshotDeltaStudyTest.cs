@@ -113,8 +113,10 @@ public sealed class StockSnapshotDeltaStudyTest
     public void UnknownAndMalformedDeltasCannotBeMisreadAsTransfers()
     {
         StockSnapshotDeltaStudy study = new();
+        // irx is now a separate, strictly research-only short-message
+        // diagnostic. An iqx-shaped payload is not a valid irx message.
         study.Observe(1, "irx", Delta("iqx", 1, 2418, 123))
-            .Should().BeNull();
+            .Should().Be("short=irx shape=unrecognized");
         study.Observe(1, "iqz", [0x00])
             .Should().Be("delta=unrecognized");
         study.Observe(1, "iqx", Delta("iqx", 0, 2418, 123))
