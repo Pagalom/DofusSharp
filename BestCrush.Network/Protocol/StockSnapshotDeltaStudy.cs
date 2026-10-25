@@ -15,6 +15,8 @@ public sealed class StockSnapshotDeltaStudy
     {
         internal Dictionary<ulong, StockItemWireCandidate>? Inventory;
         internal Dictionary<ulong, StockItemWireCandidate>? Bank;
+        internal StockGroupingCandidate? InventoryGroups;
+        internal StockGroupingCandidate? BankGroups;
         internal StockItemWireCandidate? LastDelta;
         internal string? LastDeltaOpcode;
     }
@@ -65,13 +67,23 @@ public sealed class StockSnapshotDeltaStudy
             // after another authoritative snapshot has arrived.
             state.LastDelta = null;
             state.LastDeltaOpcode = null;
-            // A candidate grouping has NO durable instance identity.
-            // It remains research-only until f3/f4 and scope are verified.
+            // Different TCP sessions or containers never share a candidate
+            // reference. A corrupted snapshot revokes the prior reference.
             StockGroupingCandidate? grouping =
                 StockCandidateGrouping.TryGroup(snapshot);
+            StockGroupingCandidate? previousGrouping =
+                opcode == "irl" ? state.InventoryGroups : state.BankGroups;
+            string comparison = StockSnapshotGroupChangeStudy.Describe(
+                previousGrouping, grouping);
+            if (opcode == "irl")
+                state.InventoryGroups = grouping;
+            else
+                state.BankGroups = grouping;
+
             return snapshot.Describe() + " baseline=" +
                 (rows is null ? "not-stored" : "stored") + " " +
-                (grouping?.Describe() ?? "grouping=not-ready");
+                (grouping?.Describe() ?? "grouping=not-ready") + " " +
+                comparison;
         }
 
         StockItemWireCandidate? delta = DecodeDelta(opcode, body);
