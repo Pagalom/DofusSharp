@@ -8,6 +8,7 @@ namespace BestCrush.Network.Protocol;
 public sealed class StockSnapshotDeltaStudy
 {
     private readonly bool _identifyBlockedItemTypes;
+    private readonly StockOpaqueWireSnapshotStudy _wireSnapshotStudy = new();
 
     public StockSnapshotDeltaStudy(bool identifyBlockedItemTypes = false)
     {
@@ -28,7 +29,11 @@ public sealed class StockSnapshotDeltaStudy
         internal string? LastDeltaOpcode;
     }
 
-    public void DropSession(int sessionNumber) => _sessions.Remove(sessionNumber);
+    public void DropSession(int sessionNumber)
+    {
+        _sessions.Remove(sessionNumber);
+        _wireSnapshotStudy.DropSession(sessionNumber);
+    }
 
     public string? Observe(int sessionNumber, string opcode, ReadOnlySpan<byte> body)
     {
@@ -39,7 +44,11 @@ public sealed class StockSnapshotDeltaStudy
         if (!_sessions.TryGetValue(sessionNumber, out SessionStocks? state))
         {
             if (_sessions.Count >= MaxSessions)
+            {
+                foreach (int existing in _sessions.Keys.ToArray())
+                    _wireSnapshotStudy.DropSession(existing);
                 _sessions.Clear();
+            }
             state = new SessionStocks();
             _sessions.Add(sessionNumber, state);
         }
@@ -82,6 +91,11 @@ public sealed class StockSnapshotDeltaStudy
                 opcode == "irl" ? state.InventoryGroups : state.BankGroups;
             string comparison = StockSnapshotGroupChangeStudy.Describe(
                 previousGrouping, grouping);
+            // Separate comparison using the complete effect wire structure.
+            // This never asserts semantic equality and cannot substitute for
+            // decoded jets in the production inventory or crafting engine.
+            string wireComparison =
+                _wireSnapshotStudy.Observe(sessionNumber, snapshot);
             if (opcode == "irl")
                 state.InventoryGroups = grouping;
             else
@@ -90,7 +104,7 @@ public sealed class StockSnapshotDeltaStudy
             return snapshot.Describe() + " baseline=" +
                 (rows is null ? "not-stored" : "stored") + " " +
                 (grouping?.Describe() ?? "grouping=not-ready") + " " +
-                comparison +
+                comparison + " " + wireComparison +
                 (grouping is null ? " " +
                     StockCandidateGrouping.DescribeBlockers(snapshot) +
                     (_identifyBlockedItemTypes ? " " +
