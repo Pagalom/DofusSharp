@@ -1938,3 +1938,79 @@ requis par cette seule confirmation. Poursuivre la
 caractérisation du décodeur commun et garder les
 caractéristiques **réelles** distinctes des
 références théoriques du catalogue.
+
+## P3d.6.0 — Ne pas reproduire les anciens tests ItemId/UID/HDV
+
+### Preuve historique retrouvée — test de septembre 2026
+
+L'utilisateur a rappelé qu'un autre agent avait déjà caractérisé
+la continuité des identifiants d'objets pendant une mise en vente
+et un rachat HDV. **Ne pas recommencer cette campagne de tests.**
+Les observations antérieures les plus précises établissent :
+
+- Sur un objet `ItemId=8533`, UID d'inventaire initial
+  `841526881`, annonce HDV `MarketListingUid=9126175`,
+  retrait manuel, puis UID d'inventaire `841687195`.
+  Le **type ItemId** et les effets sont conservés,
+  mais l'**UID d'instance est remplacé**, même sans vente.
+- Un essai d'achat de son propre équipement a également
+  maintenu les ItemId des objets testés et généré un
+  nouvel UID à réception en inventaire. Les traces
+  documentaient des ItemId `8533` et `8534`.
+- Ces tests **ne** constituent **pas** une preuve
+  de crédit des kamas après vente à un tiers ;
+  ne pas généraliser au règlement financier d'une
+  vente réellement exécutée.
+
+**Niveaux d'identité à conserver distincts :**
+
+1. `ItemId` = identifiant public du **type** d'objet
+   et clé pour le catalogue DofusDb ; stable pour ce type.
+2. `ItemUid` = identifiant de l'**incarnation d'instance
+   côté client/serveur** ; utile pour les transitions et
+   la corrélation, mais peut **changer après HDV**.
+3. `MarketListingUid` = identifiant propre à l'annonce ;
+   ne jamais l'utiliser comme `ItemUid`.
+4. Identité **logique suivie par BestCrush** : ne pas
+   l'inférer du seul ItemId (plusieurs copies peuvent
+   coexister) ; pour relier deux incarnations, exiger
+   des observations de transaction/transfert et une
+   chaîne de provenance suffisamment vérifiée.
+
+### Priorité P3d.6.1 rectifiée
+
+**Ne pas tester à nouveau « l'ID survit-il au HDV ? »**
+ou « l'UID d'instance est-il éternel ? ».
+
+Étudier exclusivement l'**appartenance et la quantité
+des stocks** :
+
+- décoder, en lecture seule dans la sonde, les collections
+  `irl.root.f2[]` (inventaire) et `irp.root.f2[]`
+  (banque), déjà corroborées par les comptes
+  `502→503` / `559→558` ;
+- déterminer, sur ces deux enveloppes précises,
+  comment `f3` (quantité candidate), `f4`
+  (`ItemId` candidat) et `f5`
+  (`ItemUid` candidat) correspondent au schéma
+  de `kch`. Le fait que leurs **types** protobuf
+  coïncident ne prouve pas encore leur **sémantique
+  dans `irl/irp`** ;
+- caractériser la variation lors des transferts
+  `iqx/iqz`, de l'ajustement `irx` et de la
+  suppression `iqm`, en se concentrant sur
+  quantités, fusion/scission de piles et direction ;
+- respecter le contexte multicomptes et distinguer
+  un snapshot `null` non reçu d'un snapshot vide
+  effectivement complet ; ne pas connecter un
+  inventaire non vérifié au calcul de craft.
+
+**Règle métier de l'utilisateur** : un objet **équipable**
+peut voir ses caractéristiques réelles évoluer via la
+forgemagie ; un **familier** peut voir ses caractéristiques
+évoluer lorsqu'il est nourri. L'identification des types et
+des stocks ne dépend pas des caractéristiques, mais toute
+modification d'effets reçue doit rester séparée des
+valeurs théoriques DofusDb et rattachée à la bonne instance.
+Ne pas supposer l'immuabilité des valeurs d'effet en
+fonction d'une reconnaissance d'ItemId.
