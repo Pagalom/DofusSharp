@@ -43,7 +43,8 @@ public static class StockCandidateGrouping
             x.Field4ItemIdCandidate is not > 0 ||
             x.Field5InstanceUidCandidate is not > 0);
         int quantityOverflow = snapshot.Rows.Count(x =>
-            x.Field3QuantityCandidate is > long.MaxValue);
+            x.Field3QuantityCandidate is ulong quantity &&
+            quantity > (ulong)long.MaxValue);
         int effectUndecodable = snapshot.Rows.Count(x => x.Effects is null);
         int effectCountMismatch = snapshot.Rows.Count(x =>
             x.Effects is not null && x.Effects.Count != x.EffectFields);
@@ -56,7 +57,7 @@ public static class StockCandidateGrouping
         // to create report text. Group by issue, never by item or effect ID.
         string shapes = string.Join(";", snapshot.Rows
             .Where(x => x.EffectDecodeIssue is not null)
-            .GroupBy(x => x.EffectDecodeIssue!)
+            .GroupBy(x => FixedEffectIssue(x.EffectDecodeIssue))
             .OrderBy(x => x.Key, StringComparer.Ordinal)
             .Select(x => x.Key + ":" + x.Count()));
 
@@ -69,6 +70,15 @@ public static class StockCandidateGrouping
             ",invalid-effect-code:" + invalidCode +
             ",effect-shapes:[" + shapes + "]";
     }
+
+    private static string FixedEffectIssue(string? issue) => issue switch
+    {
+        "too-many-effects" or "effect-encoding" or "effect-size" or
+        "effect-malformed" or "missing-value" or "missing-code" or
+        "multiple-values" or "multiple-codes" or "value-encoding" or
+        "code-encoding" or "zero-code" => issue,
+        _ => "other"
+    };
 
     public static StockGroupingCandidate? TryGroup(
         StockSnapshotWireCandidate? snapshot)
