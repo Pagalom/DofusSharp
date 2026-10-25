@@ -220,4 +220,111 @@ public sealed class StockSnapshotDeltaStudyTest
         study.Observe(1, "iqx", Delta("iqx", 1, 2418, 10001))
             .Should().Contain("previous-delta=[none]");
     }
+
+    [Fact]
+    public void ExactEffectsLinkOneOfSameTypeCandidatesWithoutMatchingUid()
+    {
+        StockSnapshotDeltaStudy study = new();
+        byte[] vitality = Message(Unsigned(5, 99), Unsigned(10, 1001));
+        byte[] intelligence = Message(Unsigned(5, 20), Unsigned(10, 1002));
+        byte[] anotherVitality = Message(Unsigned(5, 95), Unsigned(10, 1001));
+
+        study.Observe(1, "irp", Snapshot("irp",
+            StockRow(1, 2418, 10001, vitality, intelligence),
+            StockRow(1, 2418, 10002, anotherVitality, intelligence)));
+
+        // An instance can have an f5 that differs between container and delta;
+        // full effect equality is only corroboration, never an identity proof.
+        string? report = study.Observe(1, "iqx",
+            Delta("iqx", 1, 2418, 99999, intelligence, vitality));
+        report.Should().Contain("uid-candidate-not-found same-type-rows=2");
+        report.Should().Contain("same-type-quantity-rows=2");
+        report.Should().Contain("same-type-effects-count-rows=2");
+        report.Should().Contain("exact-effects-status=decoded " +
+            "same-type-exact-effects-rows=1 " +
+            "same-type-quantity-exact-effects-rows=1");
+        foreach (string sensitive in new[] { "2418", "10001", "99999",
+            "1001", "1002", "95", "99" })
+            report.Should().NotContain(sensitive);
+    }
+
+    [Fact]
+    public void ConsecutiveDeltasCanHaveDifferentUidButIdenticalExactEffects()
+    {
+        StockSnapshotDeltaStudy study = new();
+        byte[] firstEffect = Message(Unsigned(5, 26), Unsigned(10, 1002));
+        byte[] secondEffect = Message(Unsigned(5, 24), Unsigned(10, 1001));
+
+        study.Observe(1, "iqx", Delta("iqx", 1, 2427, 111,
+            firstEffect, secondEffect));
+        study.Observe(1, "iqz", Delta("iqz", 1, 2427, 222,
+            secondEffect, firstEffect))
+            .Should().Contain("f3=same f4=same f5=different " +
+                "effects-count=same exact-effects=same");
+
+        byte[] changed = Message(Unsigned(5, 25), Unsigned(10, 1001));
+        study.Observe(1, "iqx", Delta("iqx", 1, 2427, 333,
+            firstEffect, changed))
+            .Should().Contain("f3=same f4=same f5=different " +
+                "effects-count=same exact-effects=different");
+    }
+
+    [Fact]
+    public void NegativeEffectsAndDuplicateTypesAreComparedAsMultisets()
+    {
+        StockSnapshotDeltaStudy study = new();
+        byte[] negative = Message(
+            Unsigned(5, unchecked((ulong)(long)-2)), Unsigned(10, 1900));
+        byte[] positive = Message(Unsigned(5, 5), Unsigned(10, 1900));
+        study.Observe(1, "irp", Snapshot("irp",
+            StockRow(1, 2418, 111, negative, positive)));
+        study.Observe(1, "iqx", Delta("iqx", 1, 2418, 222,
+            positive, negative))
+            .Should().Contain("same-type-exact-effects-rows=1");
+        study.Observe(1, "iqz", Delta("iqz", 1, 2418, 333,
+            positive, negative, positive))
+            .Should().Contain("previous-delta=[opcode=iqx " +
+                "f3=same f4=same f5=different " +
+                "effects-count=different exact-effects=different]");
+    }
+
+    [Fact]
+    public void AbsentAndUnrecognizedEffectsNeverCountAsExactMatches()
+    {
+        StockSnapshotDeltaStudy study = new();
+        byte[] legitimate = Message(Unsigned(5, 24), Unsigned(10, 1001));
+        byte[] malformed = Message(Unsigned(5, 24)); // no effect-type code
+        study.Observe(1, "irp", Snapshot("irp",
+            StockRow(1, 2418, 123, legitimate)));
+
+        study.Observe(1, "iqx", Delta("iqx", 1, 2418, 456))
+            .Should().Contain(
+                "exact-effects-status=no-effects same-type-exact-effects-rows=0");
+
+        study.Observe(1, "iqz", Delta("iqz", 1, 2418, 789, malformed))
+            .Should().Contain(
+                "exact-effects-status=unrecognized same-type-exact-effects-rows=0");
+
+        study.Observe(1, "iqx", Delta("iqx", 1, 2418, 987, legitimate))
+            .Should().Contain(
+                "exact-effects-status=decoded same-type-exact-effects-rows=1");
+
+        // An unreadable effect line can never be treated as equal.
+        study.Observe(1, "iqz", Delta("iqz", 1, 2418, 1000, malformed))
+            .Should().Contain("effects-count=same exact-effects=unrecognized");
+    }
+
+    [Fact]
+    public void SameUidAndDifferentRealEffectsAreReportedSeparately()
+    {
+        StockSnapshotDeltaStudy study = new();
+        byte[] before = Message(Unsigned(5, 24), Unsigned(10, 1001));
+        byte[] after = Message(Unsigned(5, 25), Unsigned(10, 1001));
+        study.Observe(1, "irp", Snapshot("irp",
+            StockRow(1, 2427, 777, before)));
+        study.Observe(1, "iqx", Delta("iqx", 1, 2427, 777, after))
+            .Should().Contain(
+                "uid-candidate-found itemId-candidate=same " +
+                "quantity-candidate=same exact-effects=different");
+    }
 }
