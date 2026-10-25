@@ -134,6 +134,48 @@ public static class StockCandidateGrouping
                 (items.Length - MaximumTypes) : "");
     }
 
+    /// <summary>
+    /// Diagnostic association between the item-type candidate and the
+    /// **first** missing-value effect wire schema on that item.
+    /// No numeric effect values, raw payloads or UIDs are retained in output.
+    /// This is deliberately NOT a complete effect decoder.
+    /// </summary>
+    public static string DescribeBlockedItemTypeShapes(
+        StockSnapshotWireCandidate? snapshot)
+    {
+        if (snapshot?.Status != StockSnapshotCandidateStatus.CompleteCandidate)
+            return "blocked-type-shapes=unavailable";
+
+        const int MaximumTypes = 16;
+        var items = snapshot.Rows
+            .Where(x => x.EffectDecodeIssue == "missing-value" &&
+                x.Field4ItemIdCandidate is > 0)
+            .GroupBy(x => x.Field4ItemIdCandidate!.Value)
+            .OrderByDescending(x => x.Count())
+            .ThenBy(x => x.Key)
+            .Take(MaximumTypes)
+            .ToArray();
+
+        if (items.Length == 0)
+            return "blocked-type-shapes=none";
+
+        string details = string.Join("|", items.Select(type =>
+        {
+            string shape = type.First().EffectDecodeShape ?? "unknown-shape";
+            // Fail closed if a shape was not produced by the known bounded
+            // wire parser. Never copy an untrusted diagnostic string into logs.
+            if (shape.Length > 160 || shape.Any(c =>
+                !char.IsAsciiLetterOrDigit(c) && c is not
+                    (';' or ':' or '-' or 'x')))
+                shape = "unrecognized-shape";
+
+            return "item-id-candidate:" +
+                type.Key.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                ",first-missing-effect-shape:" + shape;
+        }));
+        return "blocked-type-shapes=[" + details + "]";
+    }
+
     public static StockGroupingCandidate? TryGroup(
         StockSnapshotWireCandidate? snapshot)
     {
