@@ -44,7 +44,8 @@ public sealed record CharacterCaptureEvent(
     string? AccountWireFieldSummary = null,
     string? RosterContinuitySummary = null,
     string? ConcurrentRosterSummary = null,
-    string? ItemEffectsShape = null);
+    string? ItemEffectsShape = null,
+    string? StockSnapshotSummary = null);
 
 /// <summary>
 /// P1 research-only diagnostic. One bidirectional TCP assembler per distinct
@@ -77,6 +78,7 @@ public sealed class CharacterCaptureFlowTracker
     private readonly TimeSpan _idleTimeout;
     private readonly HashSet<string> _shapeKeys;
     private readonly bool _itemEffectsShape;
+    private readonly bool _stockSnapshotStudy;
     private readonly IReadOnlyList<long>? _expectedEffectValues;
     private readonly ItemEffectTypeStabilityStudy? _effectTypeStudy;
     private readonly ItemEffectDofusDbCatalogStudy? _effectCatalogStudy;
@@ -139,7 +141,8 @@ public sealed class CharacterCaptureFlowTracker
         bool itemEffectsShape = false,
         IReadOnlyList<long>? expectedEffectValues = null,
         ItemEffectTypeStabilityStudy? effectTypeStudy = null,
-        ItemEffectDofusDbCatalogStudy? effectCatalogStudy = null)
+        ItemEffectDofusDbCatalogStudy? effectCatalogStudy = null,
+        bool stockSnapshotStudy = false)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -153,6 +156,12 @@ public sealed class CharacterCaptureFlowTracker
             ? new HashSet<string>(StringComparer.Ordinal)
             : new HashSet<string>(shapeKeys, StringComparer.Ordinal);
 
+        if (stockSnapshotStudy && (itemEffectsShape || effectCatalogStudy is not null ||
+            effectTypeStudy is not null || expectedEffectValues is not null))
+            throw new ArgumentException(
+                "Stock snapshot and effects diagnostics are exclusive.",
+                nameof(stockSnapshotStudy));
+        _stockSnapshotStudy = stockSnapshotStudy;
         _itemEffectsShape = itemEffectsShape;
         if (expectedEffectValues is not null &&
             (!itemEffectsShape || expectedEffectValues.Count is < 1 or > 16))
@@ -639,6 +648,10 @@ public sealed class CharacterCaptureFlowTracker
                                                 ? _effectCatalogStudy.Observe(any.Key, any.Body)
                                                 : ItemEffectsWireShapeStudy.Describe(
                                                     any.Key, any.Body, _expectedEffectValues)
+                                        : null,
+                                    _stockSnapshotStudy &&
+                                    direction == CharacterCaptureDirection.ServerToClient
+                                        ? InventoryBankSnapshotDecoder.Describe(any.Key, any.Body)
                                         : null));
                             }
                         }
