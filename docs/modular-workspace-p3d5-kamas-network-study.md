@@ -2802,3 +2802,89 @@ d'abord fournir une preuve d'identité de la
 session/du compte/du serveur et une distinction
 des snapshots réellement complets ; un regroupement
 `CompleteCandidate` ne suffit pas à lui seul.
+
+## P3d.8 — Modèle métier des stocks fongibles : checkpoint 1304 tests
+
+### Point de validation Windows — 25/10/2026
+
+L'utilisateur confirme la suite complète **1304 tests réussis,
+0 échec, 0 ignoré**, durée **9,2 s**, après l'ajout de
+`StockCandidateGrouping` (P3d.7).
+
+La compilation des projets n'a pas été jointe en tant
+que résultat séparé ; le résultat de `dotnet test`
+est cependant positif. Ne pas gonfler ce checkpoint
+en prétendant que P3d.8 a déjà été testé.
+
+### P3d.8 — Préparation sans réseau du modèle métier
+
+Objectif : porter la règle métier validée
+`ItemId + liste **exacte** des caractéristiques réelles
+→ somme des quantités` vers les modèles de
+session caractère, sans créer de clé permanente
+fondée sur `ItemUid`.
+
+- `CharacterInventoryItem` conserve sa signature
+  constructeur existante `(ItemId, InstanceUid,
+  Quantity)`; une propriété `Effects` init-only,
+  de type `IReadOnlyList<CharacterInventoryEffect>?`,
+  est ajoutée. `Effects=null` = effets **non observés**,
+  `Effects=[]` = effets **observés absents**.
+- `BestCrush/Services/CharacterStockGrouping.cs`
+  expose un regroupement **pur** avec la clé
+  `ItemId + multiensemble de (EffectId, Value)`
+  et calcule la somme des quantités. Il n'inclut
+  pas l'UID dans cette clé et n'essaie pas de
+  raccorder les UID après HDV/transfert.
+- Le regroupement refuse les données inconnues,
+  les quantités négatives/nulles, les types
+  malformés et les débordements. Une liste
+  vide connue reste une liste vide.
+- Il faut l'appeler **par conteneur et par propriétaire
+  déjà vérifié** : le service ne peut pas
+  prouver un rattachement de compte/personnage
+  en inspectant seul une liste d'objets.
+- Les objets aux jets différents ne sont pas
+  fusionnés ; la FM d'un équipement ou le
+  nourrissage d'un familier crée un autre
+  groupe métier dès lors qu'un nouveau jet
+  est **observé et validé**.
+
+Nouveaux tests synthétiques : jet identique
+et UID différents, ordre et répétition d'effets,
+valeurs négatives, ressources sans effets,
+évolution des jets, null vs vide,
+quantités invalides/débordement, et
+conteneurs gardés séparés.
+
+**Pas encore de raccordement au réseau de production**,
+à `CurrentCharacterState.ApplyObservedData`
+ni à l'UI. En particulier, les champs numériques
+`f3/f4/f5` de `irl/irp` restent des
+**candidats sémantiques**, et l'attribution de
+la banque au compte/serveur doit avoir
+une preuve indépendante. Cela ne constitue
+pas une lecture fiable des stocks actuels
+en production.
+
+### Prochain checkpoint Windows
+
+```powershell
+git status --short --branch
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+
+dotnet build .\BestCrush\BestCrush.csproj -f net10.0-windows10.0.19041.0
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Si échec, fournir les erreurs de build/test
+sans nettoyer ni réinitialiser le dépôt.
+
+**Étape suivante après tests** :
+raccorder uniquement des **snapshots
+sémantiquement validés** et des preuves
+d'appartenance à une session/compte/serveur
+au modèle métier, en refusant toute
+attribution fondée sur le nom, le focus
+ou la présence d'un `f5` candidat.
