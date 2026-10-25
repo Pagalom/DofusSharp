@@ -3007,3 +3007,89 @@ dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
 ```
 
 Un test longitudinal ultérieur pourra comparer deux messages `irp` de la même connexion après modification d'une pile de ressources. La sémantique de `f3/f4/f5` et l'identité du compte/serveur restent à établir avant activation du stock métier.
+
+## P3d.11 — Deux snapshots irp complets mais regroupement non prêt
+
+### Test réel : 25/10/2026, 10:57 UTC
+
+Le test demandé par P3d.10 a été réalisé
+avec une pile de ressources, trois unités
+retirées de la banque, puis fermeture et
+réouverture sur la même connexion.
+
+```text
+10:57:36 irp 11700 octets rows=560 fields345=560 effects-present=157 duplicate-f5=0 baseline=stored grouping=not-ready snapshot-change=not-comparable
+10:57:43 iqx 15 octets delta=fields345-candidate bank=[uid-candidate-not-found same-type-rows=1 same-type-quantity-rows=0 ...]
+10:57:43 iqz 16 octets delta=fields345-candidate bank=[uid-candidate-found itemId-candidate=same quantity-candidate=different ...]
+10:57:43 iqq 6 octets short=scalar-candidates ...
+10:57:50 irp 11700 octets rows=560 fields345=560 effects-present=157 duplicate-f5=0 baseline=stored grouping=not-ready snapshot-change=not-comparable
+```
+
+**Résultat positif** : un second `irp` est
+effectivement émis à la réouverture, sans
+déconnexion ni changement de session. Le test
+d'ouverture de banque est donc terminé : ne
+pas le répéter avant d'avoir instrumenté la
+raison précise du rejet.
+
+**Limite observée** : `CompleteCandidate`
+atteste les triplets structurels f3/f4/f5
+des 560 lignes mais **pas** le décodage complet
+des effets `f7` ni la validité de toute la
+quantité candidate. Dans P3d.10, si une seule
+ligne du snapshot n'est pas regroupable,
+`StockCandidateGrouping.TryGroup` retourne
+`null` et aucune comparaison n'est réalisée.
+Le nombre d'octets identique entre les deux
+`irp` ne prouve ni égalité de contenu
+ni variation de quantité.
+
+### P3d.11 — Diagnostic anonyme de rejet
+
+Nouveaux changements en lecture seule :
+
+- `StockEffectWireCandidateParser.ReadWithIssue`
+  conserve dans chaque ligne candidate
+  une **catégorie fixe** expliquant si
+  la forme d'un effet n'est pas comprise :
+  absence de code/valeur, mauvais wire type,
+  effet trop grand, multiplicité ambiguë,
+  ou nombre d'effets excessif.
+- `StockCandidateGrouping.DescribeBlockers`
+  dénombre les lignes bloquées par données
+  structurelles invalides, quantité hors
+  capacité `long`, effets non décodables
+  et incohérences entre compteur et effet.
+- Le probe `--stock-snapshot-study`
+  ajoute `grouping-blockers=...` **uniquement
+  quand `grouping=not-ready`**. Il ne
+  divulgue ni identité d'objet, ni UID,
+  ni code/valeur de jet, ni quantité, ni
+  position des lignes.
+- Aucun effet inconnu n'est considéré
+  comme un effet absent. La sécurité
+  `null => non observé`, aucune écriture
+  SQLite/stock/personnage et aucun fallback
+  heuristique sont conservés.
+
+Quatre tests synthétiques couvrent le
+cas réel `CompleteCandidate` avec effets
+incompatibles, les catégories anonymes,
+la confidentialité, le regroupement sain
+et les quantités impossibles.
+
+### Vérification Windows avant nouvelle manipulation
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
+
+Après validation du build/tests, une
+**simple ouverture de banque** sous le
+même mode probe permettra de récupérer
+`grouping-blockers=...`. Il n'est pas
+nécessaire de refaire un transfert partiel
+de ressources ni les essais HDV ou UID.
