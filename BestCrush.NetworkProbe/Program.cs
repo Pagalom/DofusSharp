@@ -35,6 +35,7 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-dofusdb-study");
     Console.WriteLine("Pour analyser les snapshots irl/irp d'inventaire/banque (champs candidats, sans valeurs) :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --stock-snapshot-study");
+    Console.WriteLine("  (option explicite) --stock-identify-blockers : affiche seulement les ItemId candidats des types bloquants");
     Console.WriteLine("Pour voir les structures de champs des messages de connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --character-shape");
     Console.WriteLine("  (option) --shape-keys irl,ico,jei,isr");
@@ -220,6 +221,8 @@ else if (options.CharacterScan)
             : "Mode P1a : métadonnées uniquement, flux TCP isolés, aucun payload enregistré.");
     if (options.StockSnapshotStudy)
         Console.WriteLine("P3d.6 : capture un seul client avant connexion / ouverture de banque. Rapports anonymises en lecture seule ; aucun stock BestCrush modifie.");
+    if (options.StockIdentifyBlockers)
+        Console.WriteLine("Identification locale active : ItemId candidats f4 des effets manquants, sans UID, jet ni quantite. Ne pas partager une liste d'inventaire complete.");
     if (options.CharacterShape)
         Console.WriteLine("Op codes ciblés : " + string.Join(", ", options.ShapeKeys.OrderBy(x => x)));
     if (options.ItemEffectsShape || options.ItemEffectsCompare ||
@@ -880,7 +883,8 @@ else if (options.CharacterScan)
         expectedEffectValues: expectedEffectValues,
         effectTypeStudy: effectTypeStudy,
         effectCatalogStudy: effectCatalogStudy,
-        stockSnapshotStudy: options.StockSnapshotStudy);
+        stockSnapshotStudy: options.StockSnapshotStudy,
+        stockIdentifyBlockers: options.StockIdentifyBlockers);
 
     probe.Start();
     if (options.IdentityPair)
@@ -1053,7 +1057,8 @@ internal sealed record ProbeOptions(
     bool ItemEffectsCompare,
     bool ItemEffectsTypeStudy,
     bool ItemEffectsDofusDbStudy,
-    bool StockSnapshotStudy)
+    bool StockSnapshotStudy,
+    bool StockIdentifyBlockers)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -1081,6 +1086,7 @@ internal sealed record ProbeOptions(
         bool itemEffectsTypeStudy = false;
         bool itemEffectsDofusDbStudy = false;
         bool stockSnapshotStudy = false;
+        bool stockIdentifyBlockers = false;
         bool professionMatch = false;
         bool professionDecode = false;
         bool professionStudy = false;
@@ -1147,6 +1153,9 @@ internal sealed record ProbeOptions(
                     break;
                 case "--stock-snapshot-study":
                     stockSnapshotStudy = true;
+                    break;
+                case "--stock-identify-blockers":
+                    stockIdentifyBlockers = true;
                     break;
                 case "--profession-match":
                     professionMatch = true;
@@ -1287,6 +1296,10 @@ internal sealed record ProbeOptions(
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
 
+        if (stockIdentifyBlockers && !stockSnapshotStudy)
+            throw new ArgumentException(
+                "--stock-identify-blockers requires --stock-snapshot-study.");
+
         if (checkPublicJobIds && !professionJobStudy)
             throw new ArgumentException("--check-public-job-ids requires --profession-job-study.");
 
@@ -1320,6 +1333,6 @@ internal sealed record ProbeOptions(
             accountRosterStudy, concurrentRosterStudy,
             concurrentRosterWindowStudy, itemEffectsShape,
             itemEffectsCompare, itemEffectsTypeStudy,
-            itemEffectsDofusDbStudy, stockSnapshotStudy);
+            itemEffectsDofusDbStudy, stockSnapshotStudy, stockIdentifyBlockers);
     }
 }
