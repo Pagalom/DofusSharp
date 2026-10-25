@@ -95,7 +95,7 @@ internal sealed class CharacterMetadataProbe(
     private readonly bool _itemEffectsShapeMode = itemEffectsShape;
     private readonly bool _stockSnapshotMode = stockSnapshotStudy;
     private readonly Dictionary<int, int> _reportedStockLines = new();
-    private const int MaximumStockReportsPerSession = 12;
+    private const int MaximumStockReportsPerSession = 24;
     private readonly Dictionary<int, int> _reportedEffectLines = new();
     private const int MaximumEffectReportsPerSession = 24;
     private readonly bool _professionMode = professionReferences is not null && !decodeIpz;
