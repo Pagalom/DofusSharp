@@ -57,6 +57,40 @@ internal sealed record CharacterDataObservation(
     IReadOnlyList<CharacterInventoryItem>? BankInventory = null);
 
 /// <summary>
+/// In-memory projection of stock already associated with a confirmed
+/// character connection. Null inventory or bank means unobserved/unverified;
+/// empty means an explicitly observed empty list. No UID history is exposed.
+/// </summary>
+public sealed record CharacterScopedStockGroups(
+    CharacterKey Key,
+    IReadOnlyList<CharacterStockGroup>? Inventory,
+    IReadOnlyList<CharacterStockGroup>? Bank);
+
+/// <summary>
+/// Pure ownership boundary: a bank view requires an independently verified
+/// account+server link. A character ID or server name alone is insufficient.
+/// </summary>
+public static class CharacterStockViewProjection
+{
+    public static CharacterScopedStockGroups FromVerifiedProfile(
+        CharacterSessionProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        AccountServerKey? account = profile.VerifiedAccountServerKey;
+        bool bankVerified = account is { } key &&
+            !string.IsNullOrWhiteSpace(key.AccountIdentity) &&
+            !string.IsNullOrWhiteSpace(key.ServerName) &&
+            string.Equals(key.ServerName, profile.Key.ServerName,
+                StringComparison.OrdinalIgnoreCase);
+
+        return new CharacterScopedStockGroups(
+            profile.Key,
+            CharacterStockGrouping.TryGroup(profile.Inventory),
+            bankVerified ? CharacterStockGrouping.TryGroup(profile.BankInventory) : null);
+    }
+}
+
+/// <summary>
 /// In-memory character workspace for the lifetime of the MAUI process only.
 /// The profile list is created from confirmed identities and disappears on
 /// application exit. The active character is NEVER restored on startup.
@@ -101,6 +135,26 @@ public sealed class CurrentCharacterState
     }
 
     public string CharacterName => ActiveProfile?.Name ?? string.Empty;
+
+    /// <summary>
+    /// Read-only, connection-scoped stock grouping for a verified character.
+    /// Never resolve ownership from the selected name, focus, or a stale
+    /// disconnected card. Does not write any inventory or bank data.
+    /// </summary>
+    public CharacterScopedStockGroups? GetScopedStockGroups(CharacterKey key)
+    {
+        lock (_sync)
+        {
+            if (!string.Equals(_serverName, key.ServerName,
+                    StringComparison.OrdinalIgnoreCase) ||
+                !_profiles.TryGetValue(key, out CharacterSessionProfile? profile) ||
+                !_scopes.TryGetValue(key, out CharacterConnectionScope scope) ||
+                _revokedScopes.Contains(scope))
+                return null;
+
+            return CharacterStockViewProjection.FromVerifiedProfile(profile);
+        }
+    }
 
     public IReadOnlyList<CharacterSessionProfile> Characters
     {
