@@ -65,8 +65,13 @@ public sealed class StockSnapshotDeltaStudy
             // after another authoritative snapshot has arrived.
             state.LastDelta = null;
             state.LastDeltaOpcode = null;
+            // A candidate grouping has NO durable instance identity.
+            // It remains research-only until f3/f4 and scope are verified.
+            StockGroupingCandidate? grouping =
+                StockCandidateGrouping.TryGroup(snapshot);
             return snapshot.Describe() + " baseline=" +
-                (rows is null ? "not-stored" : "stored");
+                (rows is null ? "not-stored" : "stored") + " " +
+                (grouping?.Describe() ?? "grouping=not-ready");
         }
 
         StockItemWireCandidate? delta = DecodeDelta(opcode, body);
