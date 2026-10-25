@@ -62,7 +62,13 @@ public sealed class StockSnapshotDeltaStudy
 
         StockItemWireCandidate? delta = DecodeDelta(opcode, body);
         if (delta is null)
+        {
+            // A malformed/unrecognized intervening delta breaks adjacency.
+            // Do not compare a later delta to a stale earlier one.
+            state.LastDelta = null;
+            state.LastDeltaOpcode = null;
             return "delta=unrecognized";
+        }
 
         string previous = ComparePreviousDelta(
             state.LastDeltaOpcode, state.LastDelta, delta);
