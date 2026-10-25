@@ -33,6 +33,10 @@ public sealed record StockItemWireCandidate(
     public string? EffectDecodeIssue { get; init; }
     // Schema only (field numbers/wire types), not contents; diagnostic only.
     public string? EffectDecodeShape { get; internal init; }
+
+    // RAM-only, exact protobuf effect entries (including unrecognized
+    // f6/f7/f8/f9 variants). Never emitted to logs, UI or persistent state.
+    internal IReadOnlyList<byte[]>? ExactEffectWireEntries { get; init; }
 }
 
 /// <summary>
@@ -271,11 +275,25 @@ public static class InventoryBankSnapshotDecoder
                     f.Number == 7 && f.WireType == ProtoWireType.LengthDelimited);
                 var parsedEffects =
                     StockEffectWireCandidateParser.ReadWithIssue(fields);
+                ProtoField[] allEffectFields = fields
+                    .Where(field => field.Number == 7).ToArray();
+                // Preserve complete wire variants in RAM even when the
+                // numeric-only f5 parser cannot read them. Never guess a
+                // number, truncate a list or silently drop an effect.
+                IReadOnlyList<byte[]>? wireEntries =
+                    allEffectFields.Length <= 64 &&
+                    allEffectFields.All(field =>
+                        field.WireType == ProtoWireType.LengthDelimited &&
+                        field.Bytes is { Length: > 0 and <= 1024 })
+                        ? allEffectFields.Select(field =>
+                            field.Bytes!.ToArray()).ToArray()
+                        : null;
                 items.Add(new StockItemWireCandidate(
                     f3, f4, f5, effects, parsedEffects.Effects)
                 {
                     EffectDecodeIssue = parsedEffects.Issue,
-                    EffectDecodeShape = parsedEffects.Shape
+                    EffectDecodeShape = parsedEffects.Shape,
+                    ExactEffectWireEntries = wireEntries
                 });
             }
 
