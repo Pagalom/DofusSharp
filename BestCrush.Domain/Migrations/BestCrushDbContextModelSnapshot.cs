@@ -62,6 +62,9 @@ namespace BestCrush.Domain.Migrations
                     b.Property<int>("CoefficientSource")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ComparisonJson")
+                        .HasColumnType("TEXT");
+
                     b.Property<long?>("DofusDbIconId")
                         .HasColumnType("INTEGER");
 

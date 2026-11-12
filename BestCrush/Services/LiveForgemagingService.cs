@@ -161,11 +161,13 @@ public sealed class LiveForgemagingService : IDisposable
         lock (_sync) { if (generation != _generation || !Valid(message)) return; }
         await ForgemagingWireDiagnostics.WriteIfEnabledAsync(message, token);
         ForgemagingWireItem? load = null;
+        bool save;
         lock (_sync)
         {
             if (generation != _generation || !Valid(message)) return;
             if (_epoch != message.CaptureEpoch || _connection != message.ConnectionId)
             { ResetFlow(); _epoch = message.CaptureEpoch; _connection = message.ConnectionId; _flowLease = message.CaptureLease; _syntheticReplay = message.SyntheticWindowForReplay; }
+            int attempts = _session?.Attempts.Count ?? 0;
             if (message.Direction == "C→S")
             {
                 if (message.Key == "jys")
@@ -195,6 +197,7 @@ public sealed class LiveForgemagingService : IDisposable
                 }
                 else ApplyTrackingUpdate(_tracker?.Observe(message.Direction, message.Key, message.Body, message.ObservedAtUtc));
             }
+            save = (_session?.Attempts.Count ?? 0) > attempts;
         }
         Changed?.Invoke();
         if (load is not null)
@@ -209,16 +212,21 @@ public sealed class LiveForgemagingService : IDisposable
                 if (Map(load) is not { } values) { InvalidateJet(); _status = "Jet partiellement reconnu. Le suivi attend un relevé complet."; }
                 else
                 {
-                    _session ??= data.Session; _session.GameRecordingId ??= Guid.NewGuid().ToString("N");
+                    string key = ForgemagedEquipmentStock.InstanceKey(_server, load.ItemId, load.Uid);
+                    if (_session?.GameRecordingId != key)
+                        _session = _store.GetObserved(_server, load.ItemId, key) ?? data.Session;
+                    _session.GameRecordingId = key;
                     ApplyValues(_session, values);
+                    _session.LastObservedRollAtUtc = message.ObservedAtUtc;
                     _session.Sink = LiveForgemagingProtocol.WorkshopItem(message.Body)!.Value.Sink;
                     _tracker = new(_session, load, _runes, Map); _isLoading = false; _activation++;
+                    save = true;
                     _status = "Suivi actif : passez vos runes dans Dofus, les résultats sont enregistrés automatiquement.";
                 }
             }
             Changed?.Invoke();
         }
-        await SaveAsync(generation);
+        if (save) await SaveAsync(generation);
     }
     private void ApplyTrackingUpdate(ForgemagingTrackingUpdate? update)
     {
@@ -226,6 +234,7 @@ public sealed class LiveForgemagingService : IDisposable
         { InvalidateJet(); _status = "Suivi incomplet : retirez puis redéposez l’objet. Aucun résultat supplémentaire n’a été supposé."; }
         else if (update == ForgemagingTrackingUpdate.Recorded && _session?.Attempts.LastOrDefault() is { } attempt)
         {
+            _session.LastObservedRollAtUtc = attempt.AtUtc;
             string result = attempt.Outcome switch { ForgemagingOutcome.Critical => "succès critique", ForgemagingOutcome.Neutral => "succès neutre",
                 ForgemagingOutcome.Failure => "échec", _ => "résultat à confirmer" };
             _status = $"Dernier résultat : {result} · {attempt.Rune.Name} consommée. Jet et conseils actualisés.";
@@ -233,17 +242,7 @@ public sealed class LiveForgemagingService : IDisposable
     }
 
     private Dictionary<Characteristic, int>? Map(ForgemagingWireItem item)
-    {
-        Dictionary<Characteristic, int> values = [];
-        foreach (var effect in item.Effects)
-        {
-            if (!_effects.TryGetValue(effect.Code, out var definition)) return null;
-            if (definition.Stat is not { } stat) continue;
-            if (effect.Value is not { } value) return null;
-            values[stat] = checked(values.GetValueOrDefault(stat) + (int)value * definition.Sign);
-        }
-        return values;
-    }
+        => ForgemagedEquipmentStock.MapEffects(item.Effects.Select(effect => (effect.Code, effect.Value)), _effects);
     private static void ApplyValues(ForgemagingSession session, IReadOnlyDictionary<Characteristic, int> values)
     {
         foreach (var stat in values.Keys.Except(session.Lines.Select(l => l.Characteristic))) session.Lines.Add(new() { Characteristic = stat });

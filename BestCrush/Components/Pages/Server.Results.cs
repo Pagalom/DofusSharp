@@ -151,7 +151,7 @@ public partial class Server
         };
     }
 
-    IEnumerable<Equipment> FilterItemsCore(IReadOnlyCollection<Equipment> items)
+    IEnumerable<Equipment> FilterItemsCore(IReadOnlyCollection<Equipment> items, bool useCatalogueRunes = true)
     {
         IEnumerable<Equipment> result = items;
         if (Model?.CraftJobId is { } job)
@@ -203,7 +203,7 @@ public partial class Server
         IReadOnlyList<RuneFilterCriterion> criteria =
             Model?.RuneFilters ?? [];
 
-        if (criteria.Count > 0)
+        if (useCatalogueRunes && criteria.Count > 0)
         {
             result = result.Where(
                 equipment =>

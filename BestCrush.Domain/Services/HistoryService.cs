@@ -89,7 +89,10 @@ public sealed record CrushHistoryEquipmentWriteModel(
     double CoefficientPercent,
     CoefficientSource CoefficientSource,
     int RowY
-);
+)
+{
+    public CrushEquipmentComparison? Comparison { get; init; }
+}
 
 public sealed record CrushHistorySessionWriteModel(
     string ServerName,
@@ -118,7 +121,7 @@ public sealed partial class HistoryService(
             );
         }
 
-        if (sessionData.Runes.Count == 0)
+        if (sessionData.Runes.Count == 0 && sessionData.Equipments.All(equipment => equipment.Comparison is null))
         {
             throw new ArgumentException(
                 "Une session de concassage historique doit contenir au moins une rune.",
@@ -188,8 +191,7 @@ public sealed partial class HistoryService(
             CrushHistoryEquipmentWriteModel equipment
             in sessionData.Equipments)
         {
-            session.Equipments.Add(
-                new CrushHistoryEquipment(
+            var line = new CrushHistoryEquipment(
                     session,
                     equipment.DofusDbId,
                     equipmentIconIds
@@ -199,8 +201,9 @@ public sealed partial class HistoryService(
                     equipment.CoefficientPercent,
                     equipment.CoefficientSource,
                     equipment.RowY
-                )
-            );
+                );
+            line.SetComparison(equipment.Comparison);
+            session.Equipments.Add(line);
         }
 
         foreach (
@@ -250,5 +253,15 @@ public sealed partial class HistoryService(
         );
 
         return session.Id;
+    }
+
+    public async Task SetCrushAcquisitionCostAsync(Guid equipmentId, string server, long? cost, CancellationToken cancellationToken = default)
+    {
+        if (cost is < 0) throw new ArgumentOutOfRangeException(nameof(cost));
+        var line = await context.CrushHistoryEquipments.SingleAsync(e => e.Id == equipmentId &&
+            e.Session.ServerName == server, cancellationToken);
+        var comparison = line.ReadComparison() ?? throw new InvalidOperationException("Comparaison indisponible.");
+        line.SetComparison(comparison with { RecordedAcquisitionCost = cost });
+        await context.SaveChangesAsync(cancellationToken);
     }
 }

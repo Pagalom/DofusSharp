@@ -27,9 +27,9 @@
         <ApplicationId>com.dofussharp.bestcrush</ApplicationId>
 
         <!-- Versions -->
-        <Version>0.2.1</Version>
-        <ApplicationDisplayVersion>0.2.1</ApplicationDisplayVersion>
-        <ApplicationVersion>9</ApplicationVersion>
+        <Version>0.2.2</Version>
+        <ApplicationDisplayVersion>0.2.2</ApplicationDisplayVersion>
+        <ApplicationVersion>10</ApplicationVersion>
 
         <!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
         <WindowsPackageType>None</WindowsPackageType>

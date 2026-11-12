@@ -52,7 +52,7 @@
                           Label="@(_rows is null ? "Chargement des données…" : "Actualisation des données…")" Retry="ReloadFromMarketAsync" />
     @if (_rows is not null)
     {
-        <PagedDataTable Items="@FilteredRows" ResetKey="@($"{ServerName}|{_searchText}")">
+        <PagedDataTable Items="@FilteredRows" ResetKey="@($"{ServerName}|{_searchText}|{_sort}|{_ascending}")">
             <RowContent Context="pageRows">
         <div class="table-responsive">
 
@@ -64,11 +64,13 @@
 
                 <thead>
                     <tr>
-                        <th style="width: 36%;">Rune</th>
-                        <th style="width: 16%;">Prix x1</th>
-                        <th style="width: 16%;">Prix x10</th>
-                        <th style="width: 16%;">Prix x100</th>
-                        <th style="width: 16%;">Prix x1000</th>
+                        <th>Rune</th>
+                        <th class="text-end" aria-sort="@SortState(RuneSort.Weight)"><button type="button" class="btn btn-link text-reset p-0 text-nowrap" @onclick="() => SortBy(RuneSort.Weight)">Poids @SortIcon(RuneSort.Weight)</button></th>
+                        <th class="text-end" aria-sort="@SortState(RuneSort.Ratio)"><button type="button" class="btn btn-link text-reset p-0 text-nowrap" @onclick="() => SortBy(RuneSort.Ratio)">K / point de poids @SortIcon(RuneSort.Ratio)</button></th>
+                        <th>Prix x1</th>
+                        <th>Prix x10</th>
+                        <th>Prix x100</th>
+                        <th>Prix x1000</th>
                     </tr>
                 </thead>
 
@@ -87,6 +89,9 @@
                                 else { <strong>@row.Name</strong> }
                                 <StockQuantity ItemId="row.DofusDbId" ServerName="@ServerName" />
                             </td>
+
+                            <td class="text-end text-nowrap">@(row.Weight?.ToString("0.##") ?? "—")</td>
+                            <td class="text-end text-nowrap" title="@row.ReferenceTooltip">@(row.Ratio?.ToString("N2") ?? "—")</td>
 
                             <td>
                                 <SourceValueInput ReadOnly="@ServerViewFilter.IsBrowsingManually"
@@ -160,6 +165,12 @@
 
     private string? _lastSavedMessage;
     private string _searchText = "";
+    private enum RuneSort { Name, Weight, Ratio }
+    private RuneSort _sort;
+    private bool _ascending;
+    private void SortBy(RuneSort sort) { _ascending = _sort == sort && !_ascending; _sort = sort; }
+    private string? SortState(RuneSort sort) => _sort == sort ? _ascending ? "ascending" : "descending" : null;
+    private string SortIcon(RuneSort sort) => _sort == sort ? _ascending ? "▲" : "▼" : "↕";
 
     private IEnumerable<RunePriceRow> FilteredRows
     {
@@ -181,7 +192,10 @@
                     ));
             }
 
-            return result;
+            if (_sort == RuneSort.Name) return result;
+            double? Value(RunePriceRow row) => _sort == RuneSort.Weight ? row.Weight : row.Ratio;
+            var ordered = result.OrderByDescending(row => Value(row).HasValue);
+            return (_ascending ? ordered.ThenBy(Value) : ordered.ThenByDescending(Value)).ThenBy(row => row.Name);
         }
     }
     private string? _loadedServerName;
@@ -276,7 +290,8 @@
                 RunePriceRow row = new()
                 {
                     DofusDbId = rune.DofusDbId,
-                    Name = rune.Name
+                    Name = rune.Name,
+                    Weight = RuneMarketRanking.Weight(rune)
                 };
 
                 if (observations.TryGetValue(
@@ -499,6 +514,11 @@
         public required long DofusDbId { get; init; }
 
         public required string Name { get; init; }
+        public double? Weight { get; init; }
+        private (int Lot, long Price)? Reference => RuneMarketRanking.Reference(Price1, Price10, Price100, Price1000);
+        public double? Ratio => Weight is > 0 && Reference is { } reference ? reference.Price / (double)reference.Lot / Weight : null;
+        public string? ReferenceTooltip => Ratio.HasValue && Reference is { } quote
+            ? $"Lot ×{quote.Lot:N0} à {quote.Price:N0} K · {quote.Price / (double)quote.Lot:N2} K par rune" : null;
 
         public long? Price1 { get; set; }
         public MarketPriceSource? Source1 { get; set; }

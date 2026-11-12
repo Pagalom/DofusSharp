@@ -231,15 +231,28 @@ internal sealed partial class NetworkObservationWriter(
 
         try
         {
+            Dictionary<ulong, long> recoveredIds = [];
+            var unknown = crush.Lines.Where(line => !itemDetails.ContainsKey(line.ItemUid))
+                .Select(line => line.ItemUid).ToArray();
+            if (verifiedWindow is not null && unknown.Length > 0)
+            {
+                using var recoveryScope = serviceScopeFactory.CreateScope();
+                try
+                {
+                    recoveredIds = recoveryScope.ServiceProvider.GetService<ForgemagingSessionStore>()?
+                        .FindObservedItemIds(serverName, unknown) ?? [];
+                }
+                catch (InvalidDataException error) { logger.LogWarning(error, "Could not recover a crushed equipment from FM history"); }
+            }
             foreach (CrushLineObservation line in crush.Lines)
             {
                 if (!currentServerState.IsCaptureLeaseActive(lease))
                     return;
 
-                if (!itemDetails.TryGetValue(
-                        line.ItemUid,
-                        out ItemDetailObservation? item) ||
-                    item.ItemId == 0)
+                itemDetails.TryGetValue(line.ItemUid, out ItemDetailObservation? item);
+                if (item is null && recoveredIds.TryGetValue(line.ItemUid, out long recovered))
+                    item = new(line.ItemUid, (ulong)recovered, 1, []) { StatsComplete = false };
+                if (item is null || item.ItemId is 0 or > long.MaxValue)
                 {
                     logger.LogDebug(
                         "Concassage UID {Uid} reçu sans ItemId connu.",
@@ -270,7 +283,7 @@ internal sealed partial class NetworkObservationWriter(
                     new NetworkCrushResultLine(
                         checked((long)item.ItemId),
                         line.CoefficientPercent,
-                        runes));
+                        runes) { ObservedItem = item });
 
                 if (coefficientService is null ||
                     line.CoefficientPercent <= 0)

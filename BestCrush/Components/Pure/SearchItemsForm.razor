@@ -13,15 +13,21 @@
             @if (Model.LevelMin is { } min) { <FilterChip Label="@($"Niveau ≥ {min}")" Removed="() => Model.LevelMin = null" Disabled="Disabled" /> }
             @if (Model.LevelMax is { } max) { <FilterChip Label="@($"Niveau ≤ {max}")" Removed="() => Model.LevelMax = null" Disabled="Disabled" /> }
             @foreach (var criterion in Model.RuneFilters.ToArray()) { <FilterChip Label="@RuneLabel(criterion.RuneName)" Removed="() => RemoveRuneFilter(criterion)" Disabled="Disabled" /> }
-            @if (Model.MinimumRoiPercent is { } roi) { <FilterChip Label="@($"ROI ≥ {roi:N0} %")" Removed="ClearMinimumRoi" Disabled="Disabled" /> }
-            @if (Model.MinimumBenefit is { } gain) { <FilterChip Label="@($"Bénéfice ≥ {gain:N0} K")" Removed="ClearMinimumBenefit" Disabled="Disabled" /> }
-            @if (Model.ProfitabilityMode != ProfitabilityFilterMode.Best) { <FilterChip Label="@(Model.ProfitabilityMode == ProfitabilityFilterMode.Craft ? "Craft uniquement" : "Achat uniquement")" Removed="() => Model.ProfitabilityMode = ProfitabilityFilterMode.Best" Disabled="Disabled" /> }
+            @if (!Model.ForgemagedOnly && Model.MinimumRoiPercent is { } roi) { <FilterChip Label="@($"ROI ≥ {roi:N0} %")" Removed="ClearMinimumRoi" Disabled="Disabled" /> }
+            @if (Model.MinimumBenefit is { } gain) { <FilterChip Label="@($"{(Model.ForgemagedOnly ? "Gain FM" : "Bénéfice")} ≥ {gain:N0} K")" Removed="ClearMinimumBenefit" Disabled="Disabled" /> }
+            @if (!Model.ForgemagedOnly && Model.ProfitabilityMode != ProfitabilityFilterMode.Best) { <FilterChip Label="@(Model.ProfitabilityMode == ProfitabilityFilterMode.Craft ? "Craft uniquement" : "Achat uniquement")" Removed="() => Model.ProfitabilityMode = ProfitabilityFilterMode.Best" Disabled="Disabled" /> }
             @if (Model.CompleteDataOnly) { <FilterChip Label="Données complètes" Removed="() => Model.CompleteDataOnly = false" Disabled="Disabled" /> }
             @if (Model.FreshDataOnly) { <FilterChip Label="Données fraîches" Removed="() => Model.FreshDataOnly = false" Disabled="Disabled" /> }
             @if (Model.RespectJobLevels) { <FilterChip Label="Niveaux de métier" Removed="() => Model.RespectJobLevels = false" Disabled="Disabled" /> }
             @if (Model.RequireCoefficient) { <FilterChip Label="Coefficient connu" Removed="() => Model.RequireCoefficient = false" Disabled="Disabled" /> }
+            @if (Model.ForgemagedOnly) { <FilterChip Label="Objets forgemagés" Removed="() => SetForgemagedAsync(false)" Disabled="Disabled" /> }
         </Chips>
         <ChildContent>
+            <label class="form-check form-switch mb-3">
+                <input id="crushing-forgemaged-only" type="checkbox" class="form-check-input" checked="@Model.ForgemagedOnly"
+                       disabled="@Disabled" @onchange="args => SetForgemagedAsync(args.Value is true)" />
+                <span class="form-check-label">Objets forgemagés</span>
+            </label>
             <h3><i class="bi bi-box-seam" aria-hidden="true"></i>Équipements</h3>
     <div class="visual-equipment-fields">
         <div class="visual-equipment-field"><span class="d-block fw-semibold mb-1">Métier de fabrication</span>
@@ -74,6 +80,7 @@
                 <div class="col-12 col-xl-4">
                     <h3><i class="bi bi-graph-up-arrow" aria-hidden="true"></i>Rentabilité</h3>
 
+                    <div hidden="@Model.ForgemagedOnly">
                     <label class="form-label small mb-1">Source économique</label>
                     <InputSelect TValue="ProfitabilityFilterMode"
                                  @bind-Value="Model.ProfitabilityMode"
@@ -83,9 +90,10 @@
                         <option value="@ProfitabilityFilterMode.Purchase">Achat uniquement</option>
                         <option value="@ProfitabilityFilterMode.Craft">Craft uniquement</option>
                     </InputSelect>
+                    </div>
 
                     <div class="row g-2 mb-2">
-                        <div class="col-6">
+                        <div class="col-6" hidden="@Model.ForgemagedOnly">
                             <label class="form-label small mb-1">ROI min.</label>
                             <div class="input-group input-group-sm">
                                 <InputNumber @bind-Value="Model.MinimumRoiPercent"
@@ -97,7 +105,7 @@
                         </div>
 
                         <div class="col-6">
-                            <label class="form-label small mb-1">Bénéfice min.</label>
+                            <label class="form-label small mb-1">@(Model.ForgemagedOnly ? "Gain FM min." : "Bénéfice min.")</label>
                             <div class="input-group input-group-sm">
                                 <InputNumber @bind-Value="Model.MinimumBenefit"
                                              class="form-control"
@@ -174,13 +182,19 @@
     private void ToggleProfessionLevels(ChangeEventArgs args) => Model.RespectJobLevels = CanUseProfessionLevels && args.Value is true;
     private int ActiveCount => SelectedTypes.Count + Model.RuneFilters.Count +
         new[] { Model.CraftJobId is not null, Model.LevelMin is not null, Model.LevelMax is not null,
-            Model.MinimumRoiPercent is not null, Model.MinimumBenefit is not null,
+            !Model.ForgemagedOnly && Model.MinimumRoiPercent is not null, Model.MinimumBenefit is not null, Model.ForgemagedOnly,
             Model.CompleteDataOnly, Model.FreshDataOnly, Model.RequireCoefficient, Model.RespectJobLevels,
-            Model.ProfitabilityMode != ProfitabilityFilterMode.Best }.Count(x => x);
+            !Model.ForgemagedOnly && Model.ProfitabilityMode != ProfitabilityFilterMode.Best }.Count(x => x);
+    private Task SetForgemagedAsync(bool enabled)
+    {
+        Model.ForgemagedOnly = enabled;
+        return SearchChanged.InvokeAsync();
+    }
     private async Task ResetAllAsync()
     {
         Model.LevelMin = Model.LevelMax = null; Model.CraftJobId = null;
         Model.EquipmentType.SetSelectedTypes([]); ResetAdvanced();
+        await SetForgemagedAsync(false);
         await JobSelectionChanged.InvokeAsync();
     }
     private SearchItemsModel? _previousModel;

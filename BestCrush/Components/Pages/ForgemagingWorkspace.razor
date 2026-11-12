@@ -10,13 +10,29 @@
 
 <section class="fm-workspace" aria-busy="@(Busy ? "true" : "false")">
     <PageHeading Title="Forgemagie" Description="Définissez votre jet, comparez le coût des runes et ajustez les conseils après chaque tentative." />
-    <p><a class="btn btn-outline-secondary" href="https://dofocus.fr/forgemagie/" target="_blank" rel="noopener noreferrer" title="Ouvrir le simulateur de DoFocus dans le navigateur">Simulateur FM DoFocus ↗</a></p>
+    <div class="d-flex flex-wrap align-items-center gap-2 mb-3">
+        @if (!string.IsNullOrWhiteSpace(ServerName))
+        {
+            <button type="button" class="btn @(_showOwned ? "btn-outline-secondary" : "btn-secondary")" aria-pressed="@(!_showOwned ? "true" : "false")" @onclick="() => _showOwned = false">Assistant</button>
+            <button type="button" class="btn @(_showOwned ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@(_showOwned ? "true" : "false")" @onclick="() => _showOwned = true">Mes équipements</button>
+            <RuneDataLink ServerName="@ServerName" />
+        }
+        <a class="btn btn-sm btn-outline-secondary @(!string.IsNullOrWhiteSpace(ServerName) ? "ms-auto" : null)" href="https://dofocus.fr/forgemagie/" target="_blank" rel="noopener noreferrer" title="Ouvrir le simulateur de DoFocus dans le navigateur">Simulateur FM DoFocus ↗</a>
+    </div>
     @if (string.IsNullOrWhiteSpace(ServerName))
     {
         <p class="alert alert-info">Choisissez un serveur en haut pour utiliser ses prix de runes.</p>
     }
     else
     {
+        @if (_showOwned)
+        {
+            <ItemCopyScope>
+                <OwnedForgemagingList ServerName="@ServerName" Prepare="@(Busy || _gameTracking || _pending is not null ? default : EventCallback.Factory.Create<OwnedForgemagingEquipment>(this, TryOwnedRollAsync))" />
+            </ItemCopyScope>
+        }
+        else
+        {
         <div class="fm-tracking" role="group" aria-label="Mode de suivi">
             <label class="me-3 @(!CanTrackManually ? "fm-tracking-unavailable" : null)"><input type="radio" id="fm-tracking-manual" name="fm-tracking" checked="@(!_gameTracking)" disabled="@(!CanTrackManually)" @onchange="() => SelectTrackingModeAsync(false)" /> Suivi manuel</label>
             <label class="@(!_canGameTrack ? "fm-tracking-unavailable" : null)" title="@(!_canGameTrack ? _liveStatus : null)"><input type="radio" id="fm-tracking-game" name="fm-tracking" checked="@_gameTracking" disabled="@(!_canGameTrack)" @onchange="() => SelectTrackingModeAsync(true)" /> Suivi en jeu</label>
@@ -32,7 +48,7 @@
         @if (_saveError is not null) { <p class="alert alert-warning" role="alert">@_saveError</p> }
         @if (_session is { } session)
         {
-            <div class="fm-session-heading"><div><h2>@session.ItemName <small class="text-secondary">Niv. @session.Level</small></h2><span class="small text-secondary">@ServerName · Session enregistrée localement · @(_gameTracking ? "Jet reçu de Dofus" : "Jet saisi manuellement")</span></div><button type="button" class="btn btn-outline-secondary" disabled="@(Busy || _pending is not null)" @onclick="RefreshPricesAsync">@(_pricesDirty ? "Nouvelles données disponibles" : "Actualiser les données")</button></div>
+            <div class="fm-session-heading"><div><h2>@session.ItemName <small class="text-secondary">Niv. @session.Level</small></h2><span class="small text-secondary">@ServerName · @(_practiceRoll ? "Simulation à partir du jet relevé" : _gameTracking ? "Jet reçu de Dofus" : "Jet saisi manuellement")</span></div><button type="button" class="btn btn-outline-secondary" disabled="@(Busy || _pending is not null)" @onclick="RefreshPricesAsync">@(_pricesDirty ? "Nouvelles données disponibles" : "Actualiser les données")</button></div>
             <div class="fm-intent" role="group" aria-label="Objectif de la FM">
                 <label><input type="radio" name="fm-intent" checked="@(!_prepareCrushing)" @onchange="() => { _prepareCrushing = false; Recalculate(); }" /> Atteindre un jet</label>
                 <label><input type="radio" name="fm-intent" checked="@_prepareCrushing" @onchange="() => { _prepareCrushing = true; Recalculate(); }" /> Préparer un concassage</label>
@@ -128,6 +144,7 @@
             {
                 <details class="fm-card my-3"><summary>Historique de la session · @session.Attempts.Count tentative(s)</summary><button type="button" class="btn btn-sm btn-outline-secondary my-3" disabled="@(_pending is not null || Busy || _gameTracking)" @onclick="UndoAsync">Annuler la dernière saisie</button><PagedDataTable TItem="ForgemagingAttempt" Items="session.Attempts.AsEnumerable().Reverse()" PageSize="20" ResetKey="session.Attempts.Count"><RowContent Context="rows"><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Heure</th><th>Rune</th><th>Résultat</th><th>Gains et pertes</th><th>Coût</th><th>Puits après</th></tr></thead><tbody>@foreach (var attempt in rows) { <tr><td>@attempt.AtUtc.ToLocalTime().ToString("dd/MM HH:mm:ss")</td><td>@attempt.Rune.Name × @attempt.RuneCount</td><td>@OutcomeName(attempt.Outcome)<div class="small text-secondary">@(attempt.FromGame ? "Reçu du jeu" : "Saisie manuelle")</div>@if (attempt.PredictedOdds is { } predicted) { <div class="small text-secondary" title="Estimations avant cette tentative">Prévu SC/SN/EC : @predicted.Critical.ToString("N1") / @predicted.Neutral.ToString("N1") / @predicted.Failure.ToString("N1") %</div> }</td><td>@foreach (var delta in Deltas(attempt)) { <div>@(delta.Delta > 0 ? "+" : "")@delta.Delta @StatName(delta.Stat)</div> }@if (!Deltas(attempt).Any()) { <span class="text-secondary">Jet inchangé</span> }</td><td>@Money(attempt.Rune.UnitPrice * attempt.RuneCount)</td><td title="@($"Puits avant : {attempt.SinkBefore?.ToString("N2") ?? "Inconnu"}")">@(attempt.SinkAfter?.ToString("N2") ?? "Inconnu")</td></tr> }</tbody></table></div></RowContent></PagedDataTable></details>
             }
+        }
         }
     }
 </section>

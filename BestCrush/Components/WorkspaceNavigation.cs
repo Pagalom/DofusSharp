@@ -17,6 +17,7 @@ public sealed class WorkspaceNavigation
     public event Action? CrushSettingsChanged;
 
     public void OpenData() { DataOpen = true; Changed?.Invoke(); }
+    public void OpenRuneData() { DataTab = WorkspaceDataTab.Runes; OpenData(); }
     public void CloseData() { DataOpen = false; Changed?.Invoke(); }
     public void SelectDataTab(WorkspaceDataTab tab) { DataTab = tab; Changed?.Invoke(); }
     public void ShowHistory(MarketObjectType type, long id, string name)

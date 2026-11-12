@@ -49,6 +49,7 @@ public sealed class ForgemagingSession
     public int Level { get; set; }
     // An opaque recording id, never an account, HWND, PID or item instance UID.
     public string? GameRecordingId { get; set; }
+    public DateTime? LastObservedRollAtUtc { get; set; }
     public List<ForgemagingLine> Lines { get; set; } = [];
     public double? Sink { get; set; }
     public double? Budget { get; set; }

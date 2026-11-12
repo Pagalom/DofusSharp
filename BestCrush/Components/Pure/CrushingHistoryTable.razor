@@ -1,5 +1,7 @@
 @using BestCrush.Domain.Models
 @using BestCrush.Domain.Services
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceScopeFactory DataScopes
 
 <div class="table-responsive history-feed">
 <table class="table table-striped table-hover align-middle mb-0">
@@ -27,7 +29,14 @@
             <td>@(row.Kind == CrushHistoryEntryKind.Coefficient ? "Coefficient" : "Concassage effectué")</td>
             <td class="text-end text-nowrap">@(row.Quantity?.ToString("N0") ?? "—")</td>
             <td class="text-end text-nowrap">@(row.IsCleared ? "—" : row.Kind == CrushHistoryEntryKind.Coefficient ? $"{row.Value:0.##} %" : Kamas(row.Value))
-                @if (row.Kind == CrushHistoryEntryKind.Operation) { <div class="small text-body-secondary">Runes obtenues</div> }
+                @if (row.Kind == CrushHistoryEntryKind.Operation)
+                {
+                    <div class="small text-body-secondary">Runes obtenues</div>
+                    @if (row.Session is { } operation && SessionMargin(operation) is { } margin)
+                    {
+                        <div class="small @(margin < 0 ? "text-danger" : "text-success")">Marge estimée @SignedKamas(margin)</div>
+                    }
+                }
                 @if (row.IsCleared) { <div class="small text-warning">Réinitialisé</div> }
             </td>
         </tr>
@@ -36,6 +45,18 @@
             <tr><td colspan="5"><div class="history-entry-details">
             @if (row.Session is { } session)
             {
+                var comparisons = session.Equipments.Select(Comparison).ToArray();
+                int knownMargins = comparisons.Count(result => result?.Margin is not null);
+                @if (comparisons.Any(result => result is not null))
+                {
+                    <div class="mb-3">
+                        <strong>Marge estimée @SignedKamas(knownMargins > 0 ? comparisons.Sum(result => result?.Margin ?? 0) : null)</strong>
+                        @if (knownMargins < comparisons.Length) { <span class="text-warning small ms-2">@knownMargins / @comparisons.Length objets chiffrés</span> }
+                        @if (comparisons.Any(result => result is { FmRunes: 0 }))
+                        { <div class="small text-body-secondary">Seules les dépenses de FM suivies sont déduites.</div> }
+                        @if (_costError is not null) { <p class="small text-warning mb-0" role="status">@_costError</p> }
+                    </div>
+                }
                 <div class="row g-4">
                     <div class="col-12 col-xl-5"><h6>Équipements</h6>
                         @foreach (var equipment in session.Equipments.OrderBy(e => e.RowY))
@@ -43,6 +64,53 @@
                             <div class="d-flex align-items-center justify-content-between gap-3 py-2 border-bottom">
                                 <span>@equipment.EquipmentName</span><span class="text-end text-nowrap"><strong>@equipment.CoefficientPercent.ToString("0.##") %</strong><span class="small text-body-secondary d-block">@SourceName(equipment.CoefficientSource)</span></span>
                             </div>
+                            @if (Comparison(equipment) is { } result)
+                            {
+                                <details class="small py-2">
+                                    <summary>Comparaison et coûts</summary>
+                                    <div class="d-flex flex-wrap gap-3 my-2">
+                                        <span>Estimé <strong class="d-block">@Kamas(result.EstimatedValue)</strong></span>
+                                        <span>Obtenu <strong class="d-block">@Kamas(result.ObtainedValue)</strong></span>
+                                        <span>Écart <strong class="d-block">@SignedKamas(result.Difference)</strong></span>
+                                    </div>
+                                    @if (result.EstimatedValue.HasValue)
+                                    {
+                                        <p class="small text-body-secondary mb-2">Estimation reconstituée au coefficient observé · @(result.EstimatedFocus is { } focus ? $"Focus estimé {focus.ToDisplayName()}" : "Sans focus")</p>
+                                    }
+                                    <div>FM suivie <strong>@(result.FmRunes == 0 ? "—" : $"{result.FmRunes:N0} rune(s) · {Kamas(result.KnownFmCost)}")</strong>
+                                        @if (result.UnpricedFmRunes > 0) { <span class="text-warning"> · @result.UnpricedFmRunes sans prix</span> }
+                                    </div>
+                                    @if (result.FmBreakdown.Count > 0)
+                                    {
+                                        <details class="mb-2">
+                                            <summary>Runes consommées</summary>
+                                            <ul class="list-unstyled mb-1">
+                                                @foreach (var use in result.FmBreakdown)
+                                                {
+                                                    <li>@use.Name × @use.Count · @BestCrush.Components.Pages.ForgemagingWorkspace.OutcomeName(use.Outcome)
+                                                        · @(use.Unpriced == use.Count ? "Prix manquant" : use.Unpriced > 0 ? $"≥ {Kamas(use.KnownCost)}" : Kamas(use.KnownCost))</li>
+                                                }
+                                            </ul>
+                                        </details>
+                                    }
+                                    <div>Craft estimé <strong>@Kamas(result.EstimatedCraftCost)</strong></div>
+                                    <label class="mt-2">Coût payé (K)
+                                        <input type="number" class="form-control form-control-sm" min="0" step="1" placeholder="Utiliser le coût du craft"
+                                               value="@result.RecordedAcquisitionCost" @onchange="args => SaveCostAsync(session, equipment, args)" />
+                                    </label>
+                                    <div class="mt-2">Marge estimée <strong>@SignedKamas(result.Margin)</strong></div>
+                                    @if (result.Runes.Count > 0)
+                                    {
+                                        <table class="table table-sm align-middle mt-2">
+                                            <thead><tr><th>Rune</th><th class="text-end">Prévues</th><th class="text-end">Obtenues</th></tr></thead>
+                                            <tbody>
+                                                @foreach (var rune in result.Runes)
+                                                { <tr><td>@rune.Name</td><td class="text-end">@rune.Estimated?.ToString("0.##")</td><td class="text-end">@rune.Obtained</td></tr> }
+                                            </tbody>
+                                        </table>
+                                    }
+                                </details>
+                            }
                         }
                     </div>
                     <div class="col-12 col-xl-7"><h6>Runes obtenues</h6>
@@ -88,10 +156,50 @@
     [Parameter] public string? ResetKey { get; set; }
     private string? _lastKey;
     private readonly HashSet<Guid> _expanded = [];
+    private readonly Dictionary<Guid, long?> _savedCosts = [];
+    private string? _costError;
     private static readonly (HistorySortColumn Key,string Label)[] Columns = [(HistorySortColumn.Date,"Date"),(HistorySortColumn.Name,"Objet"),(HistorySortColumn.DataKind,"Relevé"),(HistorySortColumn.Quantity,"Objets"),(HistorySortColumn.Value,"Valeur")];
-    protected override void OnParametersSet() { if (_lastKey != ResetKey) { _lastKey = ResetKey; _expanded.Clear(); } }
+    protected override void OnParametersSet()
+    {
+        if (_lastKey == ResetKey) return;
+        _lastKey = ResetKey;
+        _expanded.Clear();
+        _savedCosts.Clear();
+        _costError = null;
+    }
+    private CrushEquipmentComparison? Comparison(CrushHistoryEquipment equipment)
+    {
+        var comparison = equipment.ReadComparison();
+        return comparison is not null && _savedCosts.TryGetValue(equipment.Id, out var cost)
+            ? comparison with { RecordedAcquisitionCost = cost } : comparison;
+    }
+    private double? SessionMargin(CrushHistorySession session)
+    {
+        var margins = session.Equipments.Select(equipment => Comparison(equipment)?.Margin).ToArray();
+        return margins.Length > 0 && margins.All(margin => margin.HasValue) ? margins.Sum() : null;
+    }
+    private async Task SaveCostAsync(CrushHistorySession session, CrushHistoryEquipment equipment, ChangeEventArgs args)
+    {
+        string? entered = args.Value?.ToString();
+        long? cost = null;
+        if (!string.IsNullOrWhiteSpace(entered))
+        {
+            if (!long.TryParse(entered, out long amount) || amount < 0)
+            { _costError = "Saisissez un montant entier positif ou nul."; return; }
+            cost = amount;
+        }
+        try
+        {
+            using var scope = DataScopes.CreateScope();
+            await scope.ServiceProvider.GetRequiredService<HistoryService>().SetCrushAcquisitionCostAsync(equipment.Id, session.ServerName, cost);
+            _savedCosts[equipment.Id] = cost;
+            _costError = null;
+        }
+        catch (Exception) { _costError = "Le coût n’a pas pu être enregistré."; }
+    }
     private void Toggle(Guid id) { if (!_expanded.Add(id)) _expanded.Remove(id); }
     private string Indicator(HistorySortColumn key) => key == SortColumn ? SortDirection == HistorySortDirection.Ascending ? "▲" : "▼" : "↕";
     private static string Kamas(double? value) => value is double v ? $"{v:N0} K" : "Indisponible";
+    private static string SignedKamas(double? value) => value is double v ? $"{v:+#,0;-#,0;0} K" : "Indisponible";
     private static string SourceName(CoefficientSource? source) => source switch { CoefficientSource.Manual => "Manuel", CoefficientSource.InGameAutomatic => "Jeu", CoefficientSource.DofocusInitial => "DoFocus", _ => "—" };
 }

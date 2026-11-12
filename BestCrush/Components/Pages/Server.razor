@@ -29,7 +29,9 @@
 @{ var artworkStock = Stocks.SelectedForServer(ServerName); }
 <ItemCopyScope>
 <div class="container workspace-page">
-    <PageHeading Title="Concassage" Description="Comparez les équipements à briser selon leur coût d’achat ou de craft et la valeur estimée des runes." />
+    <PageHeading Title="Concassage" Description="Comparez les équipements à briser selon leur coût d’achat ou de craft et la valeur estimée des runes.">
+        <Actions><RuneDataLink ServerName="@ServerName" /></Actions>
+    </PageHeading>
     <WorkspaceSettingsDialog Visible="@_showSettings" OnClose="CloseSettings"
                              OnYieldChanged="RefreshCrushSettingsAsync" />
 
@@ -150,10 +152,13 @@
             JobCatalog="_crushingJobCatalog" JobsLoading="_jobFiltersBusy" JobsError="@_jobFiltersError" RetryJobs="LoadCrushingJobsAsync" JobSelectionChanged="OnCrushingJobSelectionChanged" SearchChanged="StateHasChanged"
             PlayerLevel="DetectedPlayerLevel" ProfessionLevels="DetectedProfessionLevels">
             <Actions>
+                @if (Model?.ForgemagedOnly != true)
+                {
                 <label class="d-flex align-items-center gap-2">
                     <input id="use-crushing-stocks" class="form-check-input mt-0" type="checkbox" checked="@_takeStocks" @onchange="ToggleStocks" />
                     <span>Stock personnel</span>
                 </label>
+                }
                 <button class="btn btn-primary" type="submit" disabled="@(_searching || JobFilterUnavailable)">
                     @if (_searching) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
                     @AnalysisButtonText
@@ -162,6 +167,14 @@
         </SearchItemsForm>
     </form>
 
+    @if (Model is { ForgemagedOnly: true } forgemagedFilters)
+    {
+        <OwnedForgemagingList ServerName="@ServerName" Filters="forgemagedFilters" RefreshVersion="_ownedRefreshVersion"
+            FilterEquipment="FilterOwnedItems"
+            EquipmentLoaded="PrepareOwnedProfessionFiltersAsync" />
+    }
+    else
+    {
     <div>
         @if (_takeStocks)
         {
@@ -450,6 +463,7 @@
                 }
             </div>
         }
+    }
     }
 </div>
 
@@ -791,6 +805,11 @@
 
     private async Task RefreshCrushSettingsAsync()
     {
+        if (Model?.ForgemagedOnly == true)
+        {
+            _ownedRefreshVersion++;
+            StateHasChanged();
+        }
         if (_allItems is not null &&
             (_rankedItems is not null ||
              _unrankedItems is not null))
@@ -809,9 +828,22 @@
         : $"Analyse… {_processedItems:N0} / {_allItems.Length:N0}";
 
     private SearchItemsForm? _searchForm;
+    private int _ownedRefreshVersion;
+    private async Task PrepareOwnedProfessionFiltersAsync(IReadOnlyCollection<Equipment> items)
+    {
+        if (Model?.RespectJobLevels != true || items.Count == 0) return;
+        using var scope = AnalysisScopes.CreateScope();
+        await LoadProfessionRecipesAsync(items, scope.ServiceProvider);
+    }
+
     private Task AnalyzeAsync()
     {
         _searchForm?.CollapseAdvanced();
+        if (Model?.ForgemagedOnly == true)
+        {
+            _ownedRefreshVersion++;
+            return Task.CompletedTask;
+        }
         return Search(forceRefresh: false);
     }
 

@@ -20,6 +20,7 @@ public partial class ForgemagingWorkspace : IDisposable
     private ForgemagingCrushContext? _crushContext;
     private ForgemagingCrushComparison? _crushComparison;
     private bool _prepareCrushing;
+    private bool _showOwned, _practiceRoll;
     private ForgemagingSession? _session;
     private ForgemagingAdvice? _pending;
     private List<ForgemagingLine> _actual = [];
@@ -62,6 +63,7 @@ public partial class ForgemagingWorkspace : IDisposable
         if (_loadedServer == (ServerName ?? "")) return;
         _loadedServer = ServerName ?? "";
         _gameTracking = false; _canGameTrack = false; _seenLiveActivation = -1;
+        _practiceRoll = false;
         _itemLoad.Cancel(); _session = null; _pending = null; _selectedItem = 0;
         _advice = []; _runes = []; _crushContext = null; _crushComparison = null; _coaching = new([], [], null);
         _pricesDirty = false; Interlocked.Exchange(ref _priceNoticeQueued, 0); _error = _saveError = _attemptError = null;
@@ -119,7 +121,8 @@ public partial class ForgemagingWorkspace : IDisposable
         _liveStatus = view.Status;
         if (!view.CanTrack) { _canGameTrack = false; return; }
         CancelAttempt(); _itemLoad.Cancel(); _error = null;
-        _gameTracking = true; _seenLiveActivation = view.Activation; ReadLive(view);
+        _gameTracking = true; _showOwned = false; _practiceRoll = false;
+        _seenLiveActivation = view.Activation; ReadLive(view);
     }
     private async Task SwitchToManualAsync()
     {
@@ -138,7 +141,17 @@ public partial class ForgemagingWorkspace : IDisposable
         _liveLoading = view.IsLoading;
         _selectedItem = _session?.ItemId ?? 0; Recalculate();
     }
-    private async Task LoadItemAsync(bool refresh = false)
+    private async Task TryOwnedRollAsync(OwnedForgemagingEquipment row)
+    {
+        if (Busy || _gameTracking || _pending is not null || row.Roll is null) return;
+        _showOwned = false;
+        _selectedItem = row.Equipment.DofusDbId;
+        await LoadItemCoreAsync(refresh: false, row.Roll);
+    }
+
+    private Task LoadItemAsync(bool refresh = false) => LoadItemCoreAsync(refresh, null);
+
+    private async Task LoadItemCoreAsync(bool refresh, IReadOnlyList<ForgemagingLine>? startingRoll)
     {
         if (_disposed || _gameTracking || string.IsNullOrWhiteSpace(ServerName) || _pending is not null) return;
         string server = ServerName; long item = _selectedItem;
@@ -146,16 +159,27 @@ public partial class ForgemagingWorkspace : IDisposable
         _error = null;
         bool loaded = await _itemLoad.RunAsync(async token =>
         {
-            var saved = current ?? Store.Get(server, item > 0 ? item : null);
+            var saved = startingRoll is null ? current ?? Store.Get(server, item > 0 ? item : null) : null;
             long id = item > 0 ? item : saved?.ItemId ?? 0;
             if (id == 0) return null;
             using var scope = DataScopes.CreateScope();
             var data = await scope.ServiceProvider.GetRequiredService<ForgemagingDataService>().LoadAsync(id, server, token);
+            if (startingRoll is not null)
+            {
+                foreach (var observed in startingRoll)
+                {
+                    var line = data.Session.Lines.FirstOrDefault(line => line.Characteristic == observed.Characteristic);
+                    if (line is not null) line.Current = observed.Current;
+                    else if (observed.Current is int value)
+                        data.Session.Lines.Add(new() { Characteristic = observed.Characteristic, Current = value, Target = Math.Max(0, value) });
+                }
+            }
             return saved is { } existing && existing.ItemId == id ? data with { Session = existing } : data;
         });
         if (_disposed || server != ServerName) return;
         if (loaded)
         {
+            if (!refresh) _practiceRoll = startingRoll is not null;
             _session = _itemLoad.Value?.Session; _runes = _itemLoad.Value?.Runes ?? []; _crushContext = _itemLoad.Value?.Crushing;
             _selectedItem = _session?.ItemId ?? 0; _pricesDirty = false; Interlocked.Exchange(ref _priceNoticeQueued, 0); Recalculate();
         }
@@ -192,7 +216,7 @@ public partial class ForgemagingWorkspace : IDisposable
     }
     private async Task SaveAsync()
     {
-        if (_session is null || string.IsNullOrWhiteSpace(ServerName)) return;
+        if (_session is null || _practiceRoll || string.IsNullOrWhiteSpace(ServerName)) return;
         if (_gameTracking && _live is not null)
         {
             try { await _live.UpdateGoalsAsync(_session); _saveError = null; }
@@ -266,9 +290,9 @@ public partial class ForgemagingWorkspace : IDisposable
         _ = InvokeAsync(() => { if (!_disposed) { _pricesDirty = true; StateHasChanged(); } });
     }
     private static string Money(double? value) => value is { } amount ? $"{amount:N2} K" : "Prix manquant";
-    private static string OutcomeName(ForgemagingOutcome outcome) => outcome switch
+    internal static string OutcomeName(ForgemagingOutcome outcome) => outcome switch
     { ForgemagingOutcome.Critical => "Succès critique", ForgemagingOutcome.Neutral => "Succès neutre", ForgemagingOutcome.Failure => "Échec", _ => "À confirmer" };
-    private static IEnumerable<(Characteristic Stat, int Delta)> Deltas(ForgemagingAttempt attempt) =>
+    internal static IEnumerable<(Characteristic Stat, int Delta)> Deltas(ForgemagingAttempt attempt) =>
         attempt.Before.Select(l => l.Characteristic).Union(attempt.After.Select(l => l.Characteristic))
             .Select(stat => (Stat: stat, Delta: (attempt.After.FirstOrDefault(l => l.Characteristic == stat)?.Current ?? 0) -
                 (attempt.Before.FirstOrDefault(l => l.Characteristic == stat)?.Current ?? 0))).Where(x => x.Delta != 0);

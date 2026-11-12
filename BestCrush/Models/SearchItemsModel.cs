@@ -44,6 +44,7 @@ public class SearchItemsModel
     public bool FreshDataOnly { get; set; }
     public bool RequireCoefficient { get; set; }
     public bool RespectJobLevels { get; set; }
+    public bool ForgemagedOnly { get; set; }
 }
 
 public sealed class SearchFilterPreset

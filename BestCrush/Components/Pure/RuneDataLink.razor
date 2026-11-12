@@ -1,0 +1,16 @@
+@if (!string.IsNullOrWhiteSpace(ServerName))
+{
+    @if (Workspace is not null)
+    {
+        <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="Workspace.OpenRuneData">Voir les runes</button>
+    }
+    else
+    {
+        <a class="btn btn-sm btn-outline-secondary" href="@($"/servers/{Uri.EscapeDataString(ServerName)}/rune-prices")">Voir les runes</a>
+    }
+}
+
+@code {
+    [CascadingParameter] public WorkspaceNavigation? Workspace { get; set; }
+    [Parameter] public string? ServerName { get; set; }
+}

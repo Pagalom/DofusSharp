@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 
 namespace BestCrush.Domain.Models;
 
@@ -40,4 +41,11 @@ public class CrushHistoryEquipment
     public double CoefficientPercent { get; private set; }
     public CoefficientSource CoefficientSource { get; private set; }
     public int RowY { get; private set; }
+    public string? ComparisonJson { get; private set; }
+
+    public CrushEquipmentComparison? ReadComparison() => ComparisonJson is null
+        ? null : JsonSerializer.Deserialize<CrushEquipmentComparison>(ComparisonJson);
+
+    internal void SetComparison(CrushEquipmentComparison? comparison) =>
+        ComparisonJson = comparison is null ? null : JsonSerializer.Serialize(comparison);
 }

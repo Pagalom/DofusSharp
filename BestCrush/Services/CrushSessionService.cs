@@ -40,7 +40,10 @@ public sealed record NetworkCrushResultLine(
     long EquipmentDofusDbId,
     double CoefficientPercent,
     IReadOnlyList<NetworkCrushRuneResult> Runes
-);
+)
+{
+    internal BestCrush.Network.Protocol.ItemDetailObservation? ObservedItem { get; init; }
+}
 
 public sealed record CrushSessionSnapshot(
     bool IsRunning,
@@ -948,6 +951,13 @@ public sealed class CrushSessionService
 
         CrushHistorySessionWriteModel?
             history = null;
+        long capturedSessionId;
+        var networkEquipment = lines.Select((line, index) => new CrushHistoryEquipmentWriteModel(
+            line.EquipmentDofusDbId, equipments.GetValueOrDefault(line.EquipmentDofusDbId)?.Name ?? $"Objet #{line.EquipmentDofusDbId}",
+            line.CoefficientPercent, CoefficientSource.InGameAutomatic, index + 1)
+        {
+            Comparison = line.Runes.Count == 0 ? new(null, 0, null, 0, 0, 0, null, []) : null
+        }).ToArray();
 
         lock (_stateLock)
         {
@@ -955,6 +965,7 @@ public sealed class CrushSessionService
             // transaction. Mirror that behavior: each kci replaces
             // the previous result instead of accumulating forever.
             _sessionId++;
+            capturedSessionId = _sessionId;
             _valuationRefreshRevision++;
 
             _isRunning = false;
@@ -1093,12 +1104,13 @@ public sealed class CrushSessionService
 
             history =
                 TryPrepareHistorySaveLocked(
-                    _sessionId);
+                    _sessionId, networkEquipment);
         }
 
         PublishSnapshot();
-        ScheduleHistorySave(
-            history);
+        if (history is not null)
+            _ = PersistHistoryAsync(capturedSessionId, history, services =>
+                CrushOperationAssessment.AddToHistoryAsync(services, history, lines, equipments, runesById, observations));
 
         // A passive kci is an explicit crushing result:
         // surface it immediately even if the user had hidden
@@ -1358,7 +1370,7 @@ public sealed class CrushSessionService
 
     private CrushHistorySessionWriteModel?
         TryPrepareHistorySaveLocked(
-            long sessionId)
+            long sessionId, IReadOnlyList<CrushHistoryEquipmentWriteModel>? networkEquipment = null)
     {
         if (sessionId !=
                 _sessionId ||
@@ -1368,7 +1380,7 @@ public sealed class CrushSessionService
             _activeCaptureCount > 0 ||
             _pendingProcessingCount > 0 ||
             _errorMessage is not null ||
-            _runes.Count == 0 ||
+            (_runes.Count == 0 && networkEquipment is null) ||
             string.IsNullOrWhiteSpace(
                 _sessionServerName))
         {
@@ -1377,7 +1389,7 @@ public sealed class CrushSessionService
 
         IReadOnlyList<
             CrushHistoryEquipmentWriteModel>
-            equipments =
+            equipments = networkEquipment ??
                 _sessionEquipments
                     .Values
                     .OrderBy(result =>
@@ -1460,26 +1472,10 @@ public sealed class CrushSessionService
         );
     }
 
-    private void ScheduleHistorySave(
-        CrushHistorySessionWriteModel?
-            history)
-    {
-        if (history is null)
-        {
-            return;
-        }
-
-        _ =
-            PersistHistoryAsync(
-                _sessionId,
-                history
-            );
-    }
-
     private async Task PersistHistoryAsync(
         long sessionId,
         CrushHistorySessionWriteModel
-            history)
+            history, Func<IServiceProvider, Task<CrushHistorySessionWriteModel>>? enrich = null)
     {
         try
         {
@@ -1493,6 +1489,15 @@ public sealed class CrushSessionService
                     .GetRequiredService<
                         HistoryService>();
 
+            if (enrich is not null)
+            {
+                try { history = await enrich(scope.ServiceProvider); }
+                catch (Exception error)
+                {
+                    scope.ServiceProvider.GetService<ILogger<CrushSessionService>>()?
+                        .LogWarning(error, "Could not compare the observed crushing result; saving the original result");
+                }
+            }
             await historyService
                 .SaveCrushSessionAsync(
                     history

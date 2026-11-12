@@ -81,9 +81,15 @@ public partial class Server
             StateHasChanged();
         });
     }
-    private IEnumerable<Equipment> FilterItems(IReadOnlyCollection<Equipment> items)
+    private IEnumerable<Equipment> FilterItems(IReadOnlyCollection<Equipment> items) =>
+        FilterItemsBySource(items, useCatalogueRunes: true);
+
+    private IEnumerable<Equipment> FilterOwnedItems(IReadOnlyCollection<Equipment> items) =>
+        FilterItemsBySource(items, useCatalogueRunes: false);
+
+    private IEnumerable<Equipment> FilterItemsBySource(IReadOnlyCollection<Equipment> items, bool useCatalogueRunes)
     {
-        var candidates = FilterItemsCore(items);
+        var candidates = FilterItemsCore(items, useCatalogueRunes);
         if (Model?.RespectJobLevels != true) return candidates;
         var inputs = CaptureProfessionInputs();
         if (!CrushingProfessionFilterRules.CanEnable(inputs?.PlayerLevel, inputs?.Levels, Model.LevelMin, Model.LevelMax)) return [];

@@ -2,7 +2,7 @@ using BestCrush.Domain.Models;
 namespace BestCrush.Components.Pages;
 public partial class ForgemagingWorkspace
 {
-    private static string StatName(Characteristic stat) => stat switch
+    internal static string StatName(Characteristic stat) => stat switch
     {
         Characteristic.Wisdom=>"Sagesse",Characteristic.Strength=>"Force",Characteristic.Intelligence=>"Intelligence",Characteristic.Chance=>"Chance",Characteristic.Agility=>"Agilité",
         Characteristic.Vitality=>"Vitalité",Characteristic.Initiative=>"Initiative",Characteristic.Prospecting=>"Prospection",Characteristic.Power=>"Puissance",Characteristic.Healing=>"Soins",

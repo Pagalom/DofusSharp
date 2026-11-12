@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 namespace BestCrush.Domain.Services;
 
 public sealed record ForgemagingEquipmentChoice(long Id, string Name, int Level);
+public sealed record ForgemagingRuneMarket(IReadOnlyList<ForgemagingRune> Runes, IReadOnlyDictionary<long, DateTime> ObservedAt);
 public sealed record ForgemagingEquipmentData(ForgemagingSession Session, IReadOnlyList<ForgemagingRune> Runes)
 {
     public ForgemagingCrushContext? Crushing { get; init; }
@@ -14,6 +15,10 @@ public sealed class ForgemagingDataService(BestCrushDbContext context, MarketPri
 {
     private static readonly EquipmentType[] ExcludedTypes = [EquipmentType.Pet, EquipmentType.Petsmount, EquipmentType.Mount, EquipmentType.Trophy];
 
+    public Task<Equipment[]> GetOwnedEquipmentAsync(long[] ids, CancellationToken token) =>
+        context.Equipments.AsNoTracking().Include(e => e.Characteristics)
+            .Where(e => ids.Contains(e.DofusDbId) && !Enumerable.Contains(ExcludedTypes, e.Type)).ToArrayAsync(token);
+
     public async Task<IReadOnlyList<ForgemagingEquipmentChoice>> GetCatalogAsync(CancellationToken token) =>
         await context.Equipments.AsNoTracking().Where(e => !Enumerable.Contains(ExcludedTypes, e.Type)).OrderBy(e => e.Name)
             .Select(e => new ForgemagingEquipmentChoice(e.DofusDbId, e.Name, e.Level)).ToArrayAsync(token);
@@ -23,18 +28,26 @@ public sealed class ForgemagingDataService(BestCrushDbContext context, MarketPri
         if (string.IsNullOrWhiteSpace(server)) throw new ArgumentException("Choisissez un serveur.");
         var item = await context.Equipments.AsNoTracking().Include(e => e.Characteristics)
             .SingleAsync(e => e.DofusDbId == id && !Enumerable.Contains(ExcludedTypes, e.Type), token);
-        var runes = await context.Runes.AsNoTracking().OrderBy(r => r.Name).ToArrayAsync(token);
-        var observations = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Rune, server, token);
-        var unitPrices = observations.Values.Where(p => p.Quantity > 0 && p.Price > 0 && !p.IsCleared)
-            .GroupBy(p => p.DofusDbId).ToDictionary(g => g.Key, g => g.Min(p => p.Price / (double)p.Quantity));
+        var runes = await GetRuneMarketAsync(server, token);
         var session = new ForgemagingSession { ItemId = id, ItemName = item.Name, Level = item.Level,
             Lines = item.Characteristics.OrderBy(c => c.Characteristic).Select(c => new ForgemagingLine {
                 Characteristic = c.Characteristic, Minimum = Math.Min(c.From, c.To), Maximum = Math.Max(c.From, c.To),
                 Target = Math.Max(c.From, c.To) }).ToList() };
         var coefficient = coefficients is null ? null : await coefficients.GetLatestObservationAsync(id, server, token);
-        return new(session, runes.Select(r => new ForgemagingRune(r.DofusDbId, r.Name, r.Characteristic,
-            RuneGain(r.Name, r.Characteristic), unitPrices.TryGetValue(r.DofusDbId, out var price) ? price : null)).ToArray())
+        return new(session, runes.Runes)
         { Crushing = new(coefficient?.CoefficientPercent, coefficient?.ObservedAtUtc, settings?.CrushValueMultiplier ?? 1) };
+    }
+
+    public async Task<ForgemagingRuneMarket> GetRuneMarketAsync(string server, CancellationToken token)
+    {
+        var runes = await context.Runes.AsNoTracking().OrderBy(r => r.Name).ToArrayAsync(token);
+        var observations = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Rune, server, token);
+        var quotes = observations.Values.Where(p => p.Quantity > 0 && p.Price > 0 && !p.IsCleared)
+            .GroupBy(p => p.DofusDbId).ToDictionary(g => g.Key, g => g
+                .OrderBy(p => p.Price / (double)p.Quantity).ThenByDescending(p => p.ObservedAtUtc).First());
+        return new(runes.Select(r => new ForgemagingRune(r.DofusDbId, r.Name, r.Characteristic,
+            RuneGain(r.Name, r.Characteristic), quotes.TryGetValue(r.DofusDbId, out var quote) ? quote.Price / (double)quote.Quantity : null)).ToArray(),
+            quotes.ToDictionary(p => p.Key, p => p.Value.ObservedAtUtc));
     }
 
     public static int RuneGain(string name, Characteristic characteristic)

@@ -188,7 +188,11 @@ public sealed record ItemDetailObservation(
     ulong ItemUid,
     ulong ItemId,
     ulong Quantity,
-    IReadOnlyList<ItemStatObservation> Stats);
+    IReadOnlyList<ItemStatObservation> Stats)
+{
+    public DateTime? ObservedAtUtc { get; init; }
+    public bool StatsComplete { get; init; } = true;
+}
 public sealed record WorkshopSlotObservation(long Delta, ulong ItemUid);
 public sealed record InventoryQuantityObservation(ulong ItemUid, ulong NewQuantity);
 public sealed record InventoryRemoveObservation(ulong ItemUid);
@@ -914,11 +918,11 @@ public static class SemanticDecoders
         if (uid == 0 || itemId == 0)
             return null;
 
-        return new ItemDetailObservation(
-            uid,
-            itemId,
-            quantity,
-            DecodeStats(item, 3));
+        var stats = DecodeStats(item, 3);
+        return new ItemDetailObservation(uid, itemId, quantity, stats)
+        {
+            StatsComplete = stats.Count == item.Count(field => field.Number == 3)
+        };
     }
 
     private static IReadOnlyList<ItemStatObservation> DecodeStats(

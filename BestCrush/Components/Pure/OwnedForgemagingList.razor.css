@@ -1,0 +1,23 @@
+.owned-fm-picture {
+    position: relative;
+    display: inline-flex;
+    flex-shrink: 0;
+}
+
+.owned-fm-origin {
+    position: absolute;
+    top: .1rem;
+    left: .1rem;
+    display: flex;
+    padding: .1rem;
+    color: var(--bs-warning);
+    background: #202d33;
+    border-radius: .2rem;
+    font-size: .65rem;
+}
+
+.owned-fm-stat {
+    padding: .25rem .55rem;
+    background: #2e4140;
+    border-radius: .3rem;
+}

@@ -143,6 +143,21 @@ internal sealed class DofusNetworkMessageProcessor(
             !currentServerState.IsCaptureLeaseActive(lease))
             return;
 
+        if (message.Direction == "S→C" && message.CandidateWindow is not null)
+        {
+            IEnumerable<LiveStockItem> stockItems = message.Key switch
+            {
+                "irl" when InventoryBankSnapshotDecoder.Decode("irl", message.Body) is
+                    { Status: StockSnapshotCandidateStatus.CompleteCandidate } stock => stock.Rows.Select(LiveStockProtocol.FromCandidate),
+                "iqx" when LiveStockProtocol.Decode("iqx", message.Body) is { } change => change.Items,
+                _ => []
+            };
+            foreach (var item in stockItems)
+                itemDetails.Remember(new(item.Uid, item.ItemId, item.Quantity,
+                    item.Effects?.Select(effect => new ItemStatObservation(effect.EffectCode, effect.Value)).ToArray() ?? [])
+                { ObservedAtUtc = message.ObservedAtUtc, StatsComplete = item.EffectIssue is null && item.Effects is { Count: > 0 } });
+        }
+
         // Translate active wire fields to the canonical decoder schema.
         // Wire debug above intentionally retains original captured bytes.
         byte[] body = map.NormalizeBody(message.Key, message.Body);
@@ -187,7 +202,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (item is not null)
             {
-                itemDetails.Remember(item);
+                itemDetails.Remember(item with { ObservedAtUtc = message.ObservedAtUtc });
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
@@ -217,7 +232,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (item is not null)
             {
-                itemDetails.Remember(item);
+                itemDetails.Remember(item with { ObservedAtUtc = message.ObservedAtUtc });
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
@@ -247,7 +262,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (item is not null)
             {
-                itemDetails.Remember(item);
+                itemDetails.Remember(item with { ObservedAtUtc = message.ObservedAtUtc });
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
                     message.ObservedAtUtc,
@@ -277,7 +292,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (result is not null)
             {
-                itemDetails.Remember(result.Item);
+                itemDetails.Remember(result.Item with { ObservedAtUtc = message.ObservedAtUtc });
 
                 await observationWriter.RememberLastEquipmentAsync(
                     result.Item.ItemId,
