@@ -12,6 +12,16 @@ using SharpPcap;
 
 namespace BestCrush.Services;
 
+public enum NetworkCaptureStatus
+{
+    Starting,
+    Active,
+    NpcapUnavailable,
+    AccessDenied,
+    NoInterface,
+    Stopped
+}
+
 /// <summary>
 /// Passive Dofus network ingestion.
 ///
@@ -21,6 +31,19 @@ namespace BestCrush.Services;
 /// </summary>
 public sealed class DofusNetworkCaptureService : IDisposable
 {
+    public NetworkCaptureStatus Status
+    {
+        get
+        {
+#if WINDOWS
+            return Array.Exists(_statusDevices, static device => device.Started)
+                ? NetworkCaptureStatus.Active : _inactiveStatus;
+#else
+            return NetworkCaptureStatus.Stopped;
+#endif
+        }
+    }
+
     private readonly NpcapPrerequisiteService?
         npcapPrerequisiteService;
 
@@ -31,6 +54,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly LastNetworkEquipmentState _lastNetworkEquipmentState;
 #if WINDOWS
     private readonly WindowScopedNetworkEquipmentState? _windowEquipmentState;
+    private readonly LiveStockService? _liveStock;
+    private readonly LiveForgemagingService? _liveForgemaging;
     private readonly LiveDofusClientNetworkBindings? _clientBindings;
     private readonly DofusWindowService? _dofusWindowService;
     // The observer remains null in standard builds and normal Debug runs.
@@ -148,6 +173,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
         // window/card counts cross into Blazor, never candidate identity.
         using (IServiceScope scope = serviceScopeFactory.CreateScope())
         {
+            _liveStock = scope.ServiceProvider.GetService<LiveStockService>();
+            _liveForgemaging = scope.ServiceProvider.GetService<LiveForgemagingService>();
             _windowEquipmentState = scope.ServiceProvider
                 .GetService<WindowScopedNetworkEquipmentState>();
             _candidateCardsState = scope.ServiceProvider
@@ -246,6 +273,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
 
     private readonly List<ICaptureDevice> _devices = [];
+    private volatile ICaptureDevice[] _statusDevices = [];
+    private volatile NetworkCaptureStatus _inactiveStatus = NetworkCaptureStatus.Starting;
     private readonly NetworkFlowCache<TcpFlowKey, TcpReassembler>
         _streams = new();
     // One opaque session ID per bidirectional TCP socket and capture lease.
@@ -305,19 +334,17 @@ public sealed class DofusNetworkCaptureService : IDisposable
     public void Start()
     {
 #if WINDOWS
-        if (npcapPrerequisiteService is null ||
-            !npcapPrerequisiteService.Refresh())
-        {
-            logger.LogWarning(
-                "Capture réseau inactive : Npcap n'est pas disponible.");
-
-            return;
-        }
-
         lock (_captureLock)
         {
             if (_started)
                 return;
+
+            if (npcapPrerequisiteService is null || !npcapPrerequisiteService.Refresh())
+            {
+                _inactiveStatus = NetworkCaptureStatus.NpcapUnavailable;
+                logger.LogWarning("Capture réseau inactive : Npcap n'est pas disponible.");
+                return;
+            }
 
             string mapPath =
                 Path.Combine(
@@ -341,6 +368,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
             }
             catch (Exception ex)
             {
+                _inactiveStatus = IsCaptureAccessDenied(ex)
+                    ? NetworkCaptureStatus.AccessDenied : NetworkCaptureStatus.NoInterface;
                 logger.LogError(
                     ex,
                     "Impossible d'initialiser Npcap/SharpPcap.");
@@ -356,6 +385,8 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
             long epoch = Interlocked.Increment(ref _captureEpoch);
             _clientBindings?.Reset(epoch);
+            _liveStock?.ClearLive();
+            _liveForgemaging?.ClearLive();
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(epoch);
             _windowServerAttributionState?.Reset(epoch);
@@ -370,6 +401,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 _clientWindows = [];
             }
             _started = true;
+            bool accessDenied = false;
 
             foreach (
                 ICaptureDevice device
@@ -399,6 +431,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 }
                 catch (Exception ex)
                 {
+                    accessDenied |= IsCaptureAccessDenied(ex);
                     logger.LogDebug(
                         ex,
                         "Interface ignorée pour la capture Dofus : {Device}.",
@@ -419,11 +452,16 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 }
             }
 
+            _inactiveStatus = _devices.Count == 0 && accessDenied
+                ? NetworkCaptureStatus.AccessDenied : NetworkCaptureStatus.NoInterface;
+            _statusDevices = _devices.ToArray();
             if (_devices.Count == 0)
             {
                 _started = false;
                 long stoppedEpoch = Interlocked.Increment(ref _captureEpoch);
                 _clientBindings?.Reset(stoppedEpoch);
+                _liveStock?.ClearLive();
+                _liveForgemaging?.ClearLive();
                 _windowEquipmentState?.Clear();
                 _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
                 _windowServerAttributionState?.Reset(stoppedEpoch);
@@ -446,8 +484,12 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 return;
 
             _started = false;
+            _inactiveStatus = NetworkCaptureStatus.Stopped;
+            _statusDevices = [];
             long stoppedEpoch = Interlocked.Increment(ref _captureEpoch);
             _clientBindings?.Reset(stoppedEpoch);
+            _liveStock?.ClearLive();
+            _liveForgemaging?.ClearLive();
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
             _windowServerAttributionState?.Reset(stoppedEpoch);
@@ -490,6 +532,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
     }
 
 #if WINDOWS
+    private static bool IsCaptureAccessDenied(Exception exception) => exception is UnauthorizedAccessException or
+        PcapException { Error: PcapError.PermissionDenied or PcapError.PromiscuousPermissionDenied };
+
     internal void LoadProtocolMapForReplay(
         string path)
     {
@@ -1033,6 +1078,9 @@ public sealed class DofusNetworkCaptureService : IDisposable
                                 CaptureLease = verifiedServerLease
                             };
                         }
+
+                        _liveStock?.Observe(routed);
+                        _liveForgemaging?.Observe(routed);
 
                         await _messageProcessor
                             .ProcessMessageAsync(

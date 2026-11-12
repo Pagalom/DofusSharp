@@ -1,53 +1,9 @@
-/* Chrome-like workspace tabs, with readable inactive states on BestCrush's warm background. */
-.workspace-tabs {
-    display: flex;
-    flex-wrap: nowrap;
-    align-items: end;
-    gap: .2rem;
-    overflow-x: auto;
-    white-space: nowrap;
-    padding: .5rem .25rem 0;
-    border-bottom: 1px solid #cfc4ae;
-    scrollbar-width: thin;
-}
-
-.workspace-tab {
-    display: inline-flex;
-    align-items: center;
-    flex: 0 0 auto;
-    min-height: 2.5rem;
-    padding: .55rem .85rem;
-    border: 1px solid #d6cbb6;
-    border-bottom-color: #cfc4ae;
-    border-radius: .6rem .6rem 0 0;
-    text-decoration: none;
-    font-size: .875rem;
-    color: #303945;
-    background: #f0e8d7;
-    transition: background-color 100ms ease, color 100ms ease;
-}
-
-.workspace-tab:hover {
-    background: #e5dac4;
-    color: #202a36;
-}
-
-.workspace-tab:focus-visible {
-    background: #e5dac4;
-    color: #202a36;
-    outline: 2px solid #2563a6;
-    outline-offset: 2px;
-}
-
-.workspace-tab.active,
-.workspace-tab.active:hover,
-.workspace-tab.active:focus-visible {
-    background: #1f2937;
-    color: #fff;
-    border-color: #1f2937;
-    border-bottom-color: #1f2937;
-    font-weight: 600;
-}
+.workspace-frame { display:grid; grid-template-columns:64px minmax(0,1fr); align-items:start; gap:1.25rem; padding-top:.6rem; }
+.workspace-main { min-width:0; }
+.workspace-main ::deep>.container { max-width:none; }
+.workspace-skip-link { position:fixed; left:1rem; top:-100px; z-index:1100; padding:.6rem 1rem; color:#fff; background:#1f2937; border-radius:.4rem; }
+.workspace-skip-link:focus { top:.5rem; color:#fff; }
+@media(max-width:991.98px) { .workspace-frame { grid-template-columns:minmax(0,1fr); gap:.8rem; } }
 
 /* Temporary character portraits: replace the silhouette with verified
    character/class artwork when appropriate assets become available. */
@@ -138,3 +94,29 @@
     display: block;
 }
 .character-avatar-initial { z-index: 1; }
+
+/* The primary global action stands above the contextual selectors. */
+.workspace-data-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: .5rem;
+    min-width: 132px;
+    padding: .55rem 1.15rem;
+    border: 1px solid #1765a6;
+    border-radius: .45rem;
+    background: #176bb0;
+    color: #fff;
+    font-weight: 700;
+    box-shadow: 0 2px 5px #164f7526;
+    margin-right: .5rem;
+}
+.workspace-data-button:hover,
+.workspace-data-button[aria-pressed="true"] { background: #12558d; border-color: #12558d; color: #fff; }
+.workspace-data-button:focus-visible { outline: 3px solid #75b5ec; outline-offset: 3px; color: #fff; }
+@media (max-width: 900px) {
+    header { flex-wrap: wrap; }
+    .workspace-header-actions { flex-wrap: wrap; }
+}
+
+.character-context { display:flex; flex-direction:column; align-items:center; gap:2px; flex:0 0 auto; }

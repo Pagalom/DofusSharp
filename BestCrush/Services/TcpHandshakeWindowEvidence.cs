@@ -1,4 +1,4 @@
-using BestCrush.Network.Protocol;
+﻿using BestCrush.Network.Protocol;
 
 namespace BestCrush.Services;
 
@@ -12,7 +12,12 @@ namespace BestCrush.Services;
 internal sealed class TcpHandshakeWindowEvidence
 {
     private const int MaximumConnections = 96;
-    private static readonly TimeSpan MaximumAge = TimeSpan.FromSeconds(10);
+    // Connection opens before the server picker is shown. The user can
+    // spend more than ten seconds there before its selection frame closes
+    // the socket. Keep the exact SYN proof for the same bounded two-minute
+    // window as server-selection evidence, still requiring epoch, token,
+    // tuple, unique live HWND/PID and no conflicting owner.
+    private static readonly TimeSpan MaximumAge = TimeSpan.FromMinutes(2);
 
     private sealed record Evidence(
         TcpSocketTuple Socket,

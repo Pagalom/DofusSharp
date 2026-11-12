@@ -96,6 +96,8 @@ public class DofusDbItem : DofusDbResource
     /// </summary>
     public IReadOnlyCollection<DofusDbItemEffect>? Effects { get; init; }
 
+    public IReadOnlyCollection<DofusDbItemRawEffect>? PossibleEffects { get; init; }
+
     /// <summary>
     ///     The unique identifiers of the evolutive effects of the item.
     /// </summary>

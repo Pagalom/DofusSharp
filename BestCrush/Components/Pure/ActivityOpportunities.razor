@@ -1,0 +1,793 @@
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using Microsoft.Extensions.Logging
+@using System.Text.Json
+@inject ActivityOpportunityService Service
+@inject StockOpportunityService StockOpportunitiesService
+@inject GlobalSalesRepository Sales
+@inject LiveStockService Stocks
+@inject CurrentDofusClientsState Clients
+@inject CurrentWindowProfessionsState Professions
+@inject ServerViewFilterState ServerFilter
+@inject MarketDataChangeNotifier MarketChanges
+@inject IBestCrushSettingsProvider Settings
+@inject IWorkspacePreferences WorkspacePreferences
+@inject ILogger<ActivityOpportunities> Logger
+@implements IDisposable
+
+<ItemCopyScope>
+<section class="@(UsesCards ? "trading-workspace" : "")" aria-busy="@(_busy ? "true" : "false")">
+    <PageHeading Title="@Title" Description="@Description" />
+    @if (UsesCards)
+    {
+        <div class="trading-toolbar">
+            <ServiceSearch @bind-Value="_search" @bind-Value:after="ReleaseOpenTrade" Placeholder="@(IsSouls ? "Rechercher un boss ou un donjon…" : IsFarming ? "Rechercher une ressource ou un craft…" : "Rechercher parmi les objets analysés…")" />
+            <button class="btn btn-primary" disabled="@(_busy || (IsSouls || IsFarming) && Server is null)" @onclick="()=>ReloadAsync(false,true,true)">
+                @if (_busy) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>@(_busy ? "Analyse…" : "Analyser")
+            </button>
+        </div>
+    }
+    else
+    {
+    <div class="d-flex gap-3 align-items-end flex-wrap mb-3">
+        <label>Stock à valoriser par objet
+            <input class="form-control" type="number" min="1" max="10000" @bind="_volume" @bind:after="InputsChangedAsync" style="width:170px" />
+        </label>
+        <button class="btn btn-primary" disabled="@_busy" @onclick="()=>ReloadAsync(false,true,true)">
+            @if(_busy){<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>}
+            <i class="bi bi-arrow-clockwise me-1" aria-hidden="true"></i>@(_busy ? "Actualisation…" : "Actualiser l’analyse")
+        </button>
+        <a class="btn btn-outline-secondary" href="/stocks"><i class="bi bi-box-seam me-1" aria-hidden="true"></i>Voir mes stocks</a>
+    </div>
+    }
+    @if(_busy && !UsesCards){<p class="small text-secondary" role="status">Calcul en arrière-plan. Vous pouvez utiliser les filtres pendant l’actualisation.</p>}
+    @if(_error is not null){<div class="alert alert-warning" role="status">@_error</div>}
+    @if(Server is null){<div class="alert alert-info">Pas de serveur sélectionné. Veuillez sélectionner un serveur</div>}
+    @if(CanDisplay && _report is { } report)
+    {
+        var jobLevels = IsSouls ? null : JobLevels;
+        bool jobFilterAvailable = !(IsTrading || IsFarming) || jobLevels is { Count: > 0 };
+        bool respectJobLevels = !IsSouls && !IsHistoricalTrading && _respectJobs && jobFilterAvailable &&
+            (!IsFarming || _farmSource == FarmingSource.Harvest);
+        @if (!UsesCards)
+        {
+            <p class="small text-secondary"><strong>@report.Server</strong> · analyse du @report.CalculatedUtc.ToLocalTime().ToString("g")
+                <span> · les propositions utilisent les mêmes stocks indépendamment et ne s’additionnent pas.</span>
+            </p>
+        }
+        RenderFragment notices = @<text>
+            @foreach (string notice in report.Notices)
+            {
+                bool stockNotice = UsesCards && notice.StartsWith("Stocks indisponibles", StringComparison.Ordinal);
+                @if (!stockNotice || IsTrading && _strategy == "Revendre mon stock")
+                {
+                    <div class="alert alert-info py-2 small" role="status" title="@notice">@(stockNotice ? "Synchronisez l’inventaire pour valoriser votre stock." : notice)</div>
+                }
+            }
+        </text>;
+        @if (!UsesCards)
+        {
+            @notices
+            <p class="small text-secondary">La cinétique repose sur les articles vendus globalement sur 7 jours.
+                Le classement combine le gain potentiel et ce volume de marché ; il ne garantit pas le délai de votre annonce.
+                Sans historique, le montant reste visible avec une cinétique inconnue. Estimations avant taxes.</p>
+            <div class="d-flex align-items-end gap-3 flex-wrap mb-2">
+                <div class="flex-grow-1" style="min-width:230px"><ServiceSearch @bind-Value="_search" Placeholder="Nom de l’objet ou du boss…" /></div>
+                <label>Trier par<select class="form-select" @bind="_sort"><option value="kinetics">Gain et cinétique</option><option value="gain">Gain / valeur</option><option value="volume">Ventes globales / jour</option><option value="cost">Coût croissant</option></select></label>
+            </div>
+        }
+        <ServiceFilters Label="@(UsesCards ? "Filtres avancés" : "Filtres")" Count="FilterCount(respectJobLevels)" Reset="ResetViewFilters" @bind-Expanded="_filtersOpen">
+            <Chips>
+                @if (_origin.Length > 0) { <FilterChip Label="@($"Origine : {_origin}")" Removed="() => _origin = string.Empty" /> }
+                @if (_strategy.Length > 0) { <FilterChip Label="@_strategy" Removed="() => _strategy = string.Empty" /> }
+                @if (IsTrading)
+                {
+                    @foreach (var category in _tradeCategories)
+                    {
+                        <FilterChip @key="category" Label="@TradeCategoryLabel(category)"
+                                    Removed="() => ToggleTradeCategory(category)" />
+                    }
+                }
+                @if (IsFarming && _farmSource is { } source)
+                {
+                    <FilterChip Label="@(source == FarmingSource.Harvest ? "Récolte" : "Monstres")" Removed="() => SetFarmSource(null)" />
+                    @if (_harvestJob is { } job)
+                    { <FilterChip Label="@job" Removed="() => _harvestJob = null" /> }
+                    @foreach (var monster in _farmCombat.Monsters)
+                    { <FilterChip @key="monster" Label="@monster.Name" Removed="() => ToggleFarmMonster(monster)" /> }
+                    @foreach (var zone in _farmCombat.Zones)
+                    { <FilterChip @key="zone" Label="@zone.Name" Removed="() => ToggleFarmZone(zone)" /> }
+                }
+                @if (IsHistoricalTrading)
+                {
+                    @if (_minimumMedianDiscount > 0) { <FilterChip Label="@($"Remise ≥ {_minimumMedianDiscount:N0} %")" Removed="() => _minimumMedianDiscount = 0" /> }
+                    @if (_maximumMedianAgeDays is { } days) { <FilterChip Label="@($"Médiane atteinte il y a ≤ {days} j")" Removed="() => _maximumMedianAgeDays = null" /> }
+                }
+                else
+                {
+                    @if (_minimum > 0) { <FilterChip Label="@($"Gain ≥ {_minimum:N0} K")" Removed="() => _minimum = 0" /> }
+                    @if (_minimumRoi > 0) { <FilterChip Label="@($"ROI ≥ {_minimumRoi:N0} %")" Removed="() => _minimumRoi = 0" /> }
+                }
+                @if (_budget is { } budget) { <FilterChip Label="@($"Budget ≤ {budget:N0} K")" Removed="() => _budget = null" /> }
+                @if (!IsTrading && _maxLevel is { } max) { <FilterChip Label="@($"{(IsFarming ? "Niveau ressource" : "Niveau")} ≤ {max}")" Removed="() => _maxLevel = null" /> }
+                @if (respectJobLevels) { <FilterChip Label="Mes niveaux de métier" Removed="() => _respectJobs = false" /> }
+                @if (!IsHistoricalTrading && _readyOnly) { <FilterChip Label="Sans dépense" Removed="() => _readyOnly = false" /> }
+                @if (!IsHistoricalTrading && _completeOnly) { <FilterChip Label="Complets et positifs" Removed="() => _completeOnly = false" /> }
+                @if (_excludeOld) { <FilterChip Label="Prix de moins de 12 h" Removed="() => _excludeOld = false" /> }
+            </Chips>
+            <ChildContent>
+                <h3 aria-label="@(UsesCards ? "Options de filtrage" : null)">
+                    <i class="bi bi-sliders" aria-hidden="true"></i>
+                    @if (!UsesCards) { <text>Affiner les propositions</text> }
+                </h3>
+                @if (IsTrading)
+                {
+                    <div class="trading-category">
+                        <span class="d-block fw-semibold mb-1">Type d’objet</span>
+                        <div class="trading-category-choices" role="group" aria-label="Type d’objet">
+                            @foreach (var category in TradeCategories)
+                            {
+                                <VisualFilterChoice @key="category" Label="@TradeCategoryLabel(category)"
+                                                    Selected="@_tradeCategories.Contains(category)" Pressed="() => ToggleTradeCategory(category)" />
+                            }
+                        </div>
+                    </div>
+                }
+                @if (IsFarming)
+                {
+                    <div class="farm-filter-groups">
+                        <fieldset class="farm-filter-group">
+                            <legend><i class="bi bi-flower1" aria-hidden="true"></i> Récolte</legend>
+                            <VisualFilterChoice Label="Tous" Selected="@(_farmSource == FarmingSource.Harvest && _harvestJob is null)"
+                                                Pressed="ToggleAllHarvests" />
+                            <div class="trading-category-choices mt-2" role="group" aria-label="Métiers de récolte">
+                                @foreach (var job in HarvestJobs)
+                                {
+                                    <VisualFilterChoice Label="@job" Selected="@(_harvestJob == job)" Pressed="() => SelectHarvestJob(job)" />
+                                }
+                            </div>
+                            <label class="form-check form-switch mb-0 mt-3"
+                                   title="@(jobFilterAvailable ? "Les récoltes et crafts dont le niveau requis dépasse le niveau relevé sont masqués." : "Aucun niveau de métier relevé pour le personnage ciblé sur ce serveur.")">
+                                <input type="checkbox" class="form-check-input" role="switch" disabled="@(!jobFilterAvailable)"
+                                       checked="@respectJobLevels" @onchange="SetHarvestLevelFilter" />
+                                <span class="form-check-label small">Tenir compte de mes niveaux de métier</span>
+                            </label>
+                        </fieldset>
+                        <fieldset class="farm-filter-group">
+                            <legend><i class="bi bi-crosshair" aria-hidden="true"></i> Monstres</legend>
+                            <VisualFilterChoice Label="Loots de combat" Selected="@(_farmSource == FarmingSource.Combat)"
+                                                Pressed="() => ToggleFarmSource(FarmingSource.Combat)" />
+                            <FarmingMonsterPicker Selection="_farmCombat" Catalog="_combatCatalog" Loading="@(_combatLookup is not null)"
+                                Error="@_combatCatalogError" Load="LoadCombatCatalogAsync" ToggleMonster="ToggleFarmMonster" ToggleZone="ToggleFarmZone" />
+                        </fieldset>
+                    </div>
+                }
+                <div class="filter-grid">
+            @if(Module.Length==0)
+            {
+                <label>Origine<select class="form-select" @bind="_origin"><option value="">Toutes</option>
+                    @foreach(var origin in report.Candidates.GroupBy(x=>x.Module).OrderBy(x=>x.Key))
+                    {<option value="@origin.Key">@origin.First().OriginName</option>}
+                </select></label>
+            }
+            @if (!UsesCards)
+            {
+            <label>Activité<select class="form-select" @bind="_strategy"><option value="">Toutes</option>
+                @foreach(string strategy in report.Candidates.Select(x=>x.Strategy).Distinct().Order()){<option>@strategy</option>}
+            </select></label>
+            }
+            @if (IsHistoricalTrading)
+            {
+                <label>Remise minimale sur la médiane (%)
+                    <input class="form-control" type="number" min="0" max="100" @bind="_minimumMedianDiscount" />
+                </label>
+                <label>Dernier prix ≥ médiane (jours max.)
+                    <input class="form-control" type="number" min="0" @bind="_maximumMedianAgeDays" placeholder="Sans limite" />
+                </label>
+            }
+            else
+            {
+                <label>@(IsSouls ? "Gain minimum (K)" : "Gain / valeur minimum (K)")<input class="form-control" type="number" min="0" @bind="_minimum" style="width:160px" /></label>
+                <label title="@(IsFarming ? "Un seuil supérieur à zéro affiche uniquement les transformations atteignant ce rendement." : null)">
+                    @(IsSouls ? "Rendement minimum (%)" : IsFarming ? "ROI minimum du craft (%)" : "ROI minimum (%)")
+                    <input class="form-control" type="number" min="0" @bind="_minimumRoi" style="width:140px" />
+                </label>
+            }
+            @if (IsFarming)
+            {
+                <label>Quantité à valoriser<input class="form-control" type="number" min="1" max="10000" @bind="_volume" @bind:after="InputsChangedAsync" /></label>
+            }
+            <label>@(IsSouls ? "Budget pierre vide (K)" : "Budget achats (k)")<input class="form-control" type="number" min="0" @bind="_budget" placeholder="Sans limite" style="width:160px" /></label>
+            @if (!IsTrading)
+            {
+                <label>@(IsSouls ? "Niveau maximum du boss" : IsFarming ? "Niveau max. de la ressource" : "Niveau maximum")<input class="form-control" type="number" min="1" max="@(IsSouls ? (int?)null : 200)" @bind="_maxLevel" style="width:140px" /></label>
+            }
+                </div>
+        <div class="filter-checks">
+            @if (!IsHistoricalTrading)
+            {
+                @if (!IsSouls && !IsFarming)
+                {
+                <label class="@(IsTrading ? "form-check form-switch mb-0" : null)"
+                       title="@(jobFilterAvailable ? null : "Aucun niveau de métier relevé pour le personnage sélectionné sur ce serveur.")">
+                    <input type="checkbox" class="@(IsTrading ? "form-check-input" : null)" role="@(IsTrading ? "switch" : null)"
+                           disabled="@(!jobFilterAvailable)" checked="@respectJobLevels"
+                           @onchange="args => _respectJobs = jobFilterAvailable && args.Value is true" />
+                    <span class="@(IsTrading ? "form-check-label small" : null)">Tenir compte de mes niveaux de métier</span>
+                </label>
+                }
+                <label class="@(UsesCards ? "form-check form-switch mb-0" : null)">
+                    <input type="checkbox" class="@(UsesCards ? "form-check-input" : null)" role="@(UsesCards ? "switch" : null)" @bind="_readyOnly" />
+                    <span class="@(UsesCards ? "form-check-label small" : null)">@(IsSouls ? "Sans achat de pierre" : "Sans dépense en kamas")</span>
+                </label>
+                <label class="@(UsesCards ? "form-check form-switch mb-0" : null)">
+                    <input type="checkbox" class="@(UsesCards ? "form-check-input" : null)" role="@(UsesCards ? "switch" : null)" @bind="_completeOnly" />
+                    <span class="@(UsesCards ? "form-check-label small" : null)">Résultats complets et positifs uniquement</span>
+                </label>
+            }
+            <label class="@(UsesCards ? "form-check form-switch mb-0" : null)">
+                <input type="checkbox" class="@(UsesCards ? "form-check-input" : null)" role="@(UsesCards ? "switch" : null)" @bind="_excludeOld" />
+                <span class="@(UsesCards ? "form-check-label small" : null)">Exclure les prix de plus de 12 h</span>
+            </label>
+        </div>
+            </ChildContent>
+        </ServiceFilters>
+        @if (IsTrading)
+        {
+            <div class="trading-strategy-bar">
+                <TradingStrategies @bind-Value="_strategy" @bind-Value:after="ReleaseOpenTrade" />
+            </div>
+        }
+        @if (UsesCards) { @notices }
+        @if (IsSouls && report.Candidates.Count > 0 && report.Candidates.All(row => row.Revenue is null))
+        {
+            <p class="small text-secondary">Aucun prix de pierre pleine relevé sur ce serveur. Ouvrez les offres d’un boss dans l’HDV des pierres d’âme pour relever son prix.</p>
+        }
+        @if(respectJobLevels && jobLevels is null){<p class="small text-warning">Niveaux de métier non relevés pour ce personnage : les propositions restent affichées, avec les prérequis à vérifier.</p>}
+        @if(respectJobLevels && jobLevels is not null && !IsFarming){<p class="small text-secondary">Les niveaux inconnus restent à vérifier. Les activités dont le niveau connu est insuffisant sont masquées.</p>}
+        var visible = GetVisibleRows(jobLevels, respectJobLevels);
+        var targetRoi = IsTrading ? Settings.TargetRoiPercent : 0;
+        var tradingCards = IsTrading ? BuildTradingCards(visible, targetRoi) : [];
+        @if (UsesCards)
+        {
+            var count = IsTrading ? tradingCards.Count : visible.Count;
+            <div class="trading-results-toolbar">
+                <div class="trading-result-summary">
+                    @if (IsTrading && _hiddenTrades.Count > 0)
+                    {
+                        string visibilityAction = _showHidden
+                            ? "Cacher les propositions masquées"
+                            : $"Afficher les masquées ({_hiddenTrades.Count})";
+                        <button type="button" class="btn btn-sm btn-outline-secondary"
+                                data-bs-toggle="tooltip" data-bs-title="@visibilityAction" data-bs-custom-class="multiline-tooltip" aria-label="@visibilityAction"
+                                aria-pressed="@(_showHidden ? "true" : "false")"
+                                @onclick="ToggleShowHidden">
+                            <i class="bi @(_showHidden ? "bi-eye" : "bi-eye-slash")" aria-hidden="true"></i>
+                        </button>
+                    }
+                    <span class="small text-secondary" data-bs-toggle="tooltip" data-bs-title="Jusqu’à 100 résultats selon les filtres et le tri sélectionnés" data-bs-custom-class="multiline-tooltip">@Math.Min(100, count) / @count @(IsSouls ? "boss" : "résultats")</span>
+                </div>
+                <div class="trading-sort">
+                    <span class="trading-ranking-help" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@RankingHelp" data-bs-custom-class="multiline-tooltip" aria-label="Comprendre le classement"><i class="bi bi-info-circle" aria-hidden="true"></i></span>
+                    <label>Trier par
+                        <select class="form-select" @bind="_sort" @bind:after="SortChangedAsync">
+                            <option value="kinetics">Gain et cinétique</option>
+                            <option value="gain">@(IsSouls ? "Gain estimé" : "Gain / valeur")</option>
+                            <option value="volume">Ventes globales / jour</option>
+                            <option value="cost">@(IsSouls ? "Coût de la pierre" : "Coût croissant")</option>
+                            @if (IsSouls) { <option value="name">Nom du boss (A–Z)</option> }
+                            @if (IsFarming)
+                            {
+                                <option value="name">Nom de la ressource (A–Z)</option>
+                                <option value="monster">Monstre (A–Z)</option>
+                                <option value="zone">Zone (A–Z)</option>
+                            }
+                        </select>
+                    </label>
+                </div>
+            </div>
+            @if (IsFarming && _sort is "monster" or "zone")
+            {
+                @if (_combatLookup is not null)
+                { <span class="small text-secondary" role="status"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Chargement du catalogue…</span> }
+                @if (_combatCatalogError is { } catalogError)
+                { <div class="small" role="status">@catalogError <button type="button" class="btn btn-link btn-sm p-0" @onclick="LoadCombatCatalogAsync">Réessayer</button></div> }
+            }
+        }
+        else
+        {
+            <p class="small">@Math.Min(100,visible.Count) résultat(s) affiché(s) sur @visible.Count correspondant aux filtres. Les 100 meilleures propositions au maximum.</p>
+        }
+        @if ((IsTrading ? tradingCards.Count : visible.Count) == 0)
+        {
+            <div class="alert alert-info">@(IsSouls ? "Aucun boss ne correspond aux filtres." : "Aucune proposition ne correspond aux filtres.")</div>
+        }
+        else if (IsTrading)
+        {
+            var stock = Stocks.SelectedForServer(Server);
+            <div class="trading-results" aria-label="Propositions d’achat et de revente">
+                @for (int index = 0; index < Math.Min(100, tradingCards.Count); index++)
+                {
+                    var card = tradingCards[index];
+                    int position = index;
+                    <ActivityRecommendationRow @key="card.Key" Row="card.Row" CardLayout="true" Stock="stock"
+                        ListedUnits="@ListedUnitsFor(card.Row)"
+                        HistoricalLots="card.HistoricalLots" TargetRoiPercent="targetRoi"
+                        TradeExpanded="@(_openTrade?.Card.Key == card.Key)"
+                        TradeExpandedChanged="open => SetTradeExpanded(card, position, open)"
+                        OfferUnavailable="card.Unavailable" DismissOnScroll="card.DismissOnScroll"
+                        TradeHidden="@_hiddenTrades.Contains(card.Key)" TradeHiddenChanged="hidden => SetTradeHidden(card.Key, hidden)"
+                        JobLevels="jobLevels" RespectJobLevels="respectJobLevels" />
+                }
+            </div>
+        }
+        else if (IsSouls)
+        {
+            var stock = Stocks.SelectedForServer(Server);
+            <div aria-label="Captures de boss de donjon">
+                @foreach (var row in visible.Take(100))
+                {
+                    <SoulCaptureResult @key="row.Id" Row="row" Stock="stock" InitiallyExpanded="@(ItemId == row.ItemId)"
+                        ListedUnits="@ListedUnitsFor(row)" />
+                }
+            </div>
+        }
+        else if (IsFarming)
+        {
+            var stock = Stocks.SelectedForServer(Server);
+            <div aria-label="Ressources de farming">
+                @foreach (var row in visible.Take(100))
+                {
+                    <FarmingResult @key="row.Id" Row="row" Stock="stock" CombatSelection="_farmCombat" CombatCatalog="_combatCatalog" Sort="@_sort"
+                                   JobLevels="@(respectJobLevels ? jobLevels : null)" ListedUnits="@ListedUnitsFor(row)"
+                                   InitiallyExpanded="@(ItemId == row.ItemId)" />
+                }
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive"><table class="table table-striped align-middle">
+                <thead><tr><th>Objet / activité</th><th>Coût</th><th>Revente estimée</th><th>Gain / valeur</th><th>Cinétique</th></tr></thead>
+                <tbody>
+                    @foreach(var row in visible.Take(100))
+                    {
+                        <ActivityRecommendationRow @key="row.Id" Row="row" ShowSource="@(Module.Length==0)"
+                            ListedUnits="@ListedUnitsFor(row)"
+                            JobLevels="jobLevels" RespectJobLevels="respectJobLevels" />
+                    }
+                </tbody>
+            </table></div>
+        }
+    }
+</section>
+</ItemCopyScope>
+
+@code {
+    [Parameter] public string Module { get; set; }="";
+    [Parameter] public long? ItemId { get; set; }
+    private bool IsTrading => Module == "achat-vente";
+    private bool IsSouls => Module == "pierres-ame";
+    private bool IsFarming => Module == "farming";
+    private bool UsesCards => IsTrading || IsSouls || IsFarming;
+    private bool IsHistoricalTrading => IsTrading && _strategy == "Prix sous l’historique";
+    private string? Server=>ServerFilter.ServerName;
+    private string Title=>Module switch{"achat-vente"=>"Achat / Vente","pierres-ame"=>"Pierres d’âme","farming"=>"Farming",_=>"Opportunités"};
+    private string Description=>Module switch{
+        "achat-vente"=>"Écarts entre lots, prix sous l’historique et ressources à revendre ou à transformer.",
+        "pierres-ame"=>"Comparez le coût de capture des boss de donjon et le gain à la revente de leur âme.",
+        "farming"=>"Comparez la valeur de vos récoltes et loots à la revente ou après fabrication.",
+        _=>"Les propositions des différents onglets, regroupées avec leurs gains et leurs données de revente."};
+    private sealed record Inputs(string Module,string? Server,DofusClientWindowKey? Client,LiveStockSource? Stock,int Volume);
+    private Inputs? _lastInputs,_reportInputs;
+    private ActivityReport? _report;
+    private CancellationTokenSource? _scan;
+    private readonly CancellationTokenSource _listingClock = new();
+    private PersonalListingTotals? _listingTotals;
+    private string? _listingServer;
+    private int _listingRevision;
+    private bool _busy,_disposed,_respectJobs,_completeOnly,_excludeOld,_readyOnly,_filtersOpen;
+    private bool _showHidden;
+    private static readonly MarketObjectType[] TradeCategories = [MarketObjectType.Equipment, MarketObjectType.Resource, MarketObjectType.Rune];
+    private MarketObjectType[] _tradeCategories = [];
+    private FarmingSource? _farmSource;
+    private string? _harvestJob;
+    private IReadOnlyList<string> HarvestJobs = [];
+    private string? _hiddenServer;
+    private HashSet<string> _hiddenTrades = new(StringComparer.Ordinal);
+    private OpenTrade? _openTrade;
+    private sealed record TradingCard(string Key, ActivityRecommendation Row, IReadOnlyList<ActivityRecommendation>? HistoricalLots,
+        bool Unavailable = false, bool DismissOnScroll = false);
+    private sealed record OpenTrade(TradingCard Card, int Position, bool WasAtTarget);
+    private string? _error;
+    private string _search="",_strategy="",_sort="kinetics",_origin="";
+    private string? _filterPreferencesKey;
+    private TabFilters? _initialFilters;
+    private sealed record TabFilters(string Search, string Strategy, string Sort, string Origin, int Volume,
+        double Minimum, double MinimumRoi, double MinimumMedianDiscount, int? MaximumMedianAgeDays,
+        double? Budget, int? MaximumLevel, MarketObjectType? Category, bool RespectJobs, bool CompleteOnly,
+        bool ExcludeOld, bool ReadyOnly, bool FiltersOpen, FarmingSource? FarmSource = null,
+        string? HarvestJob = null, CombatSource? FarmMonster = null, FarmingCombatSelection? FarmCombat = null,
+        MarketObjectType[]? Categories = null);
+
+    private TabFilters ReadCurrentFilters() => new(_search, _strategy, _sort, _origin, _volume,
+        _minimum, _minimumRoi, _minimumMedianDiscount, _maximumMedianAgeDays, _budget, _maxLevel, null,
+        _respectJobs, _completeOnly, _excludeOld, _readyOnly, _filtersOpen, _farmSource, _harvestJob, FarmCombat: _farmCombat,
+        Categories: IsTrading ? _tradeCategories : null);
+
+    private void RestoreTabFilters()
+    {
+        _filterPreferencesKey = $"Activity.Filters.{(Module.Length == 0 ? "opportunites" : Module)}";
+        if (WorkspacePreferences.GetString(_filterPreferencesKey) is { Length: > 0 } saved)
+        {
+            try
+            {
+                if (JsonSerializer.Deserialize<TabFilters>(saved) is { } filters)
+                {
+                    (_search, _strategy, _sort, _origin, _volume) = (filters.Search, filters.Strategy, filters.Sort, filters.Origin, filters.Volume);
+                    (_minimum, _minimumRoi, _minimumMedianDiscount, _maximumMedianAgeDays) =
+                        (filters.Minimum, filters.MinimumRoi, filters.MinimumMedianDiscount, filters.MaximumMedianAgeDays);
+                    (_budget, _maxLevel) = (filters.Budget, filters.MaximumLevel);
+                    if (IsTrading)
+                    {
+                        var savedCategories = filters.Categories ?? (filters.Category is { } legacy ? [legacy] : []);
+                        _tradeCategories = TradeCategories.Where(savedCategories.Contains).ToArray();
+                    }
+                    (_respectJobs, _completeOnly, _excludeOld, _readyOnly, _filtersOpen) =
+                        (filters.RespectJobs, filters.CompleteOnly, filters.ExcludeOld, filters.ReadyOnly, filters.FiltersOpen);
+                    if (IsFarming)
+                    {
+                        (_farmSource, _harvestJob) = (filters.FarmSource, filters.HarvestJob);
+                        _farmCombat = filters.FarmCombat ?? (filters.FarmMonster is { } monster
+                            ? new FarmingCombatSelection([monster], []) : FarmingCombatSelection.Empty);
+                        _farmSource ??= _strategy switch
+                        {
+                            "Récolte" or "Récolte puis craft" => FarmingSource.Harvest,
+                            "Ressource de combat" or "Ressource de combat puis craft" => FarmingSource.Combat,
+                            _ => _respectJobs ? FarmingSource.Harvest : null
+                        };
+                        _strategy = "";
+                    }
+                }
+            }
+            catch (JsonException) { }
+        }
+        _initialFilters = ReadCurrentFilters();
+    }
+    private int FilterCount(bool respectJobLevels) => new[] { _origin.Length > 0, _strategy.Length > 0, _budget is not null,
+        !IsTrading && _maxLevel is not null, _excludeOld,
+        _farmSource is not null, _harvestJob is not null,
+        IsHistoricalTrading ? _minimumMedianDiscount > 0 : _minimum > 0,
+        IsHistoricalTrading ? _maximumMedianAgeDays.HasValue : _minimumRoi > 0,
+        respectJobLevels, !IsHistoricalTrading && _readyOnly, !IsHistoricalTrading && _completeOnly }.Count(x => x)
+        + _farmCombat.Count + _tradeCategories.Length;
+    private void ResetViewFilters()
+    {
+        ReleaseOpenTrade();
+        _origin = _strategy = ""; _minimum = _minimumRoi = 0; _budget = null; _maxLevel = null;
+        _respectJobs = _readyOnly = _completeOnly = _excludeOld = false;
+        _minimumMedianDiscount = 0;
+        _maximumMedianAgeDays = null;
+        _tradeCategories = [];
+        SetFarmSource(null);
+    }
+
+    private void ToggleFarmSource(FarmingSource source) => SetFarmSource(_farmSource == source ? null : source);
+
+    private void ToggleAllHarvests()
+    {
+        if (_farmSource == FarmingSource.Harvest && _harvestJob is null)
+        {
+            SetFarmSource(null);
+            return;
+        }
+
+        SetFarmSource(FarmingSource.Harvest);
+        _harvestJob = null;
+    }
+
+    private void SetFarmSource(FarmingSource? source)
+    {
+        _farmSource = source;
+        if (source != FarmingSource.Harvest)
+        {
+            _harvestJob = null;
+            if (IsFarming) _respectJobs = false;
+        }
+        if (source != FarmingSource.Combat)
+            _farmCombat = FarmingCombatSelection.Empty;
+    }
+
+    private void SelectHarvestJob(string job)
+    {
+        SetFarmSource(FarmingSource.Harvest);
+        _harvestJob = _harvestJob == job ? null : job;
+    }
+
+    private void SetHarvestLevelFilter(ChangeEventArgs args)
+    {
+        _respectJobs = args.Value is true;
+        if (_respectJobs) SetFarmSource(FarmingSource.Harvest);
+    }
+
+    private void ToggleTradeCategory(MarketObjectType category)
+    {
+        _tradeCategories = _tradeCategories.Contains(category)
+            ? _tradeCategories.Where(selected => selected != category).ToArray()
+            : [.. _tradeCategories, category];
+        ReleaseOpenTrade();
+    }
+    private static string TradeCategoryLabel(MarketObjectType category) => category switch
+    {
+        MarketObjectType.Equipment => "Équipements",
+        MarketObjectType.Resource => "Ressources",
+        MarketObjectType.Rune => "Runes",
+        _ => throw new ArgumentOutOfRangeException(nameof(category))
+    };
+    private int _volume=100;
+    private int? _maxLevel;
+    private int? MaximumLevel => IsTrading ? null : _maxLevel;
+    private int AnalysisVolume => IsTrading || IsSouls ? 1 : _volume;
+    private string RankingHelp => IsSouls
+        ? "Gain et cinétique privilégie les captures rentables avec un historique de ventes, puis les classe par indice. Les prix sont estimés avant taxes."
+        : IsFarming
+            ? "Gain et cinétique tient compte de la valeur estimée et des ventes du marché sur 7 jours. Les montants correspondent à la quantité choisie, avant taxes."
+            : "Les achats sous l’objectif de rentabilité passent après les autres. Gain et cinétique combine le gain et le volume de vente, compte tenu du prix et du format du lot sur 24 h. Estimations avant taxes.";
+    private double _minimum,_minimumRoi;
+    private double _minimumMedianDiscount;
+    private int? _maximumMedianAgeDays;
+    private double? _budget;
+    private IReadOnlyDictionary<string, int>? JobLevels
+    {
+        get
+        {
+            if (Server is not { } server || (!(IsTrading || IsFarming) &&
+                !string.Equals(Stocks.Selected?.ServerName, server, StringComparison.OrdinalIgnoreCase)))
+                return null;
+
+            return Professions.ForWindow(Clients.SelectedClient?.Key, IsTrading || IsFarming ? server : null)?
+                .GroupBy(profession => profession.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToDictionary(group => group.Key, group => group.Max(profession => profession.Level), StringComparer.CurrentCultureIgnoreCase);
+        }
+    }
+    private bool CanDisplay=>_report is not null && _reportInputs is { } inputs && inputs.Module==Module &&
+        inputs.Client==Clients.SelectedClient?.Key && string.Equals(inputs.Server,Server,StringComparison.OrdinalIgnoreCase) &&
+        inputs.Stock?.Id==Stocks.Selected?.Id;
+    private sealed record ViewKey(ActivityReport Report, ActivityFilters Filters, string Levels, long Minute);
+    private ViewKey? _viewKey;
+    private IReadOnlyList<ActivityRecommendation> _visible=[];
+    private IReadOnlyList<ActivityRecommendation> GetVisibleRows(
+        IReadOnlyDictionary<string, int>? levels, bool respectJobLevels)
+    {
+        string levelKey = levels is null ? "" : string.Join(';', levels.OrderBy(x => x.Key).Select(x => $"{x.Key}:{x.Value}"));
+        var now = DateTime.UtcNow;
+        bool historical = IsHistoricalTrading;
+        var filters = new ActivityFilters(_search, _strategy, _sort, ItemId,
+            historical ? 0 : _minimum, _budget, MaximumLevel, !historical && _completeOnly, _excludeOld,
+            !IsFarming && respectJobLevels, Origin: _origin, MinimumRoi: historical ? 0 : _minimumRoi,
+            ReadyOnly: !historical && _readyOnly, MinimumMedianDiscount: historical ? _minimumMedianDiscount : 0,
+            MaximumMedianAgeDays: historical ? _maximumMedianAgeDays : null,
+            TradingTargetRoi: IsTrading ? Settings.TargetRoiPercent : null,
+            TradingCategories: IsTrading ? _tradeCategories : null, FarmSource: _farmSource,
+            HarvestJob: _harvestJob, RespectHarvestLevels: IsFarming && respectJobLevels,
+            CombatSelection: IsFarming ? _farmCombat : null, CombatCatalog: IsFarming ? _combatCatalog : null);
+        long minute = _excludeOld || filters.MaximumMedianAgeDays.HasValue ? now.Ticks / TimeSpan.TicksPerMinute : 0;
+        var key = new ViewKey(_report!, filters, levelKey, minute);
+        if (key == _viewKey) return _visible;
+        _visible = ActivityRanking.Select(_report!.Candidates, filters, now, levels);
+        _viewKey = key;
+        return _visible;
+    }
+    private List<TradingCard> BuildTradingCards(IReadOnlyList<ActivityRecommendation> rows, double targetRoi)
+    {
+        var cards = rows.GroupBy(row => row.HistoricalPrice is null ? row.Id : $"history-{row.ObjectType}-{row.ItemId}")
+            .Where(group => _showHidden || !_hiddenTrades.Contains(group.Key))
+            .Select(group => new TradingCard(group.Key, group.First(),
+                group.First().HistoricalPrice is null ? null : group.ToArray()))
+            .ToList();
+        if (_openTrade is not { } open)
+            return cards;
+
+        int currentIndex = cards.FindIndex(card => card.Key == open.Card.Key);
+        bool unavailable = currentIndex < 0;
+        var current = unavailable ? open.Card : cards[currentIndex];
+        bool atTarget = !unavailable && current.Row.MeetsTradingTarget(targetRoi);
+        current = current with
+        {
+            Unavailable = unavailable,
+            DismissOnScroll = unavailable || (open.WasAtTarget && !atTarget)
+        };
+        _openTrade = open with { Card = current, WasAtTarget = open.WasAtTarget || atTarget };
+        if (!unavailable)
+            cards.RemoveAt(currentIndex);
+        cards.Insert(Math.Min(open.Position, cards.Count), current);
+        return cards;
+    }
+
+    private void SetTradeExpanded(TradingCard card, int position, bool expanded)
+    {
+        _openTrade = expanded ? new(card, position, card.Row.MeetsTradingTarget(Settings.TargetRoiPercent)) : null;
+    }
+
+    private void ReleaseOpenTrade() => _openTrade = null;
+
+    private string HiddenTradesKey => $"Trading.Hidden.{_hiddenServer}";
+
+    private void LoadHiddenTrades(string? server)
+    {
+        if (string.Equals(_hiddenServer, server, StringComparison.OrdinalIgnoreCase))
+            return;
+        _hiddenServer = server;
+        _showHidden = false;
+        _hiddenTrades.Clear();
+        if (server is not null && WorkspacePreferences.GetString(HiddenTradesKey) is { Length: > 0 } saved)
+        {
+            try { _hiddenTrades.UnionWith(JsonSerializer.Deserialize<string[]>(saved) ?? []); }
+            catch (JsonException) { }
+        }
+    }
+
+    private void ToggleShowHidden()
+    {
+        ReleaseOpenTrade();
+        _showHidden = !_showHidden;
+    }
+
+    private void SetTradeHidden(string key, bool hidden)
+    {
+        if (_hiddenServer is null)
+            return;
+        if (hidden)
+            _hiddenTrades.Add(key);
+        else
+            _hiddenTrades.Remove(key);
+        if (_hiddenTrades.Count == 0)
+        {
+            _showHidden = false;
+            WorkspacePreferences.Remove(HiddenTradesKey);
+        }
+        else
+            WorkspacePreferences.SetString(HiddenTradesKey, JsonSerializer.Serialize(_hiddenTrades));
+        if (hidden && !_showHidden && _openTrade?.Card.Key == key)
+            ReleaseOpenTrade();
+    }
+
+    protected override void OnInitialized()
+    {
+        RestoreTabFilters();
+        Stocks.Changed+=Changed;Clients.Changed+=Changed;ServerFilter.Changed+=Changed;Professions.Changed+=JobsChanged;
+        Sales.Changed+=SalesChanged;MarketChanges.Changed+=MarketChanged;
+        Sales.ListingsChanged += ListingsChanged;
+        _ = WatchListingWindowAsync(_listingClock.Token);
+        if (Settings is BestCrushSettingsService localSettings)
+            localSettings.TargetRoiChanged += TargetRoiChanged;
+    }
+    protected override Task OnParametersSetAsync()=>ReloadAsync(false);
+    private Task InputsChangedAsync()=>ReloadAsync(true,true);
+    private void Changed()=>_=InvokeAsync(()=>ReloadAsync(true));
+    private void JobsChanged()=>_=InvokeAsync(StateHasChanged);
+    private void TargetRoiChanged()
+    {
+        if (IsTrading)
+            _ = InvokeAsync(StateHasChanged);
+    }
+    private void SalesChanged(string server){if(string.Equals(server,Server,StringComparison.OrdinalIgnoreCase))_=InvokeAsync(()=>ReloadAsync(true,true));}
+    private void MarketChanged(object? sender,MarketDataChangedEventArgs e)=>SalesChanged(e.ServerName);
+    private long? ListedUnitsFor(ActivityRecommendation row) =>
+        string.Equals(_listingServer, Server, StringComparison.OrdinalIgnoreCase) ? _listingTotals?.For(row) : null;
+
+    private void ListingsChanged(string server) => _ = InvokeAsync(() => RefreshListingTotalsAsync(server));
+
+    private async Task WatchListingWindowAsync(CancellationToken token)
+    {
+        using var timer = new PeriodicTimer(TimeSpan.FromMinutes(1));
+        try
+        {
+            while (await timer.WaitForNextTickAsync(token))
+                if (!_disposed && Server is { } server)
+                    await RefreshListingTotalsAsync(server);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+    }
+
+    private async Task RefreshListingTotalsAsync(string server)
+    {
+        if (_disposed || !string.Equals(server, Server, StringComparison.OrdinalIgnoreCase))
+            return;
+        int revision = ++_listingRevision;
+        try
+        {
+            var totals = await Task.Run(() => Sales.ReadListingTotals(server, DateTimeOffset.UtcNow));
+            if (_disposed || revision != _listingRevision || !string.Equals(server, Server, StringComparison.OrdinalIgnoreCase))
+                return;
+            _listingServer = server;
+            _listingTotals = totals;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Le nombre de mises en vente est indisponible pour {Server}.", server);
+            if (!_disposed && revision == _listingRevision)
+            {
+                _listingTotals = null;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task ReloadAsync(bool debounce,bool force=false,bool refresh=false)
+    {
+        if(_disposed)return;
+        if (UsesCards && refresh) _filtersOpen = false;
+        var inputs=new Inputs(Module,Server,Clients.SelectedClient?.Key,Stocks.Selected,AnalysisVolume);
+        if(!force && inputs==_lastInputs)return;
+        _lastInputs=inputs;_scan?.Cancel();
+        using var cancellation=new CancellationTokenSource();_scan=cancellation;var token=cancellation.Token;
+        if (!CanDisplay)
+        {
+            _report = null;
+            ReleaseOpenTrade();
+        }
+        if (IsTrading)
+            LoadHiddenTrades(inputs.Server);
+        _busy=true;_error=null;StateHasChanged();
+        try
+        {
+            if(debounce)await Task.Delay(450,token);
+            if(inputs.Server is null)return;
+            if(inputs.Volume is <1 or >10000){_error="Choisissez une quantité de 1 à 10 000.";return;}
+            var report=await Service.ScanAsync(inputs.Module,inputs.Server,inputs.Stock,inputs.Volume,token,refresh);
+            if(Module.Length==0 && StockOpportunityService.CanUse(inputs.Stock,inputs.Server))
+            {
+                var craftReport=await StockOpportunitiesService.ScanAsync(inputs.Stock!,inputs.Server,1,token,useCache:true);
+                var histories=Sales.ReadHistories(inputs.Server);
+                var extra=craftReport.Candidates.Select(row=>
+                {
+                    var market=new SalesMarketKey(inputs.Server,row.Plan.MarketType,row.Plan.Product.DofusDbId);
+                    var history=row.Origin=="craft" ? histories.FirstOrDefault(x=>x.Market==market) : null;
+                    var value=SalesKineticsCalculator.EvaluateProfitability(market,row.Plan.Quantity,row.Revenue,row.Plan.EconomicCost,
+                        history?.Period(7),DateTimeOffset.UtcNow,TimeSpan.FromDays(2));
+                    var missing=row.MissingData.ToList();
+                    if(!value.Kinetics.HasMeasuredDemand)missing.Add("Cinétique à vérifier : consultez le Cours du marché des objets revendus dans Dofus.");
+                    return new ActivityRecommendation($"stock-{row.Origin}-{row.Plan.Product.DofusDbId}-{row.Focus}",row.Origin,row.Strategy,
+                        row.Plan.Product.DofusDbId,row.Plan.Product.Name,row.Plan.Product.Level,row.Plan.MarketType,
+                        row.Plan.Quantity,row.Revenue,row.Plan.EconomicCost,value,missing,
+                        row.Plan.Ingredients.Select(x=>$"{x.Required} × {x.Name} · {x.Used} possédé(s) utilisé(s), {x.Missing} manquant(s)").ToArray())
+                        {PriceUpdatedUtc=row.Evidence.OldestUtc,SourceHref=row.SourceUrl,CashRequired=row.Plan.CashRequired};
+                }).ToArray();
+                report=report with{Candidates=report.Candidates.Concat(extra).ToArray()};
+            }
+            token.ThrowIfCancellationRequested();
+            if(!_disposed && ReferenceEquals(_scan,cancellation) && inputs==_lastInputs)
+            {
+                _report=report;_reportInputs=inputs;
+                if (IsFarming)
+                {
+                    HarvestJobs = report.Candidates.Select(row => row.Job).OfType<string>()
+                        .Distinct(StringComparer.CurrentCultureIgnoreCase).Order(StringComparer.CurrentCultureIgnoreCase).ToArray();
+                    if (_combatCatalogRequested || _sort is "monster" or "zone")
+                        _ = LoadCombatCatalogAsync();
+                }
+                await RefreshListingTotalsAsync(inputs.Server);
+            }
+        }
+        catch(OperationCanceledException) when(token.IsCancellationRequested){}
+        catch(Exception ex){Logger.LogError(ex,"Analyse des activités économiques indisponible.");if(!token.IsCancellationRequested)_error="Analyse indisponible. Réessayez après actualisation des données.";}
+        finally{if(ReferenceEquals(_scan,cancellation)){_scan=null;_busy=false;}if(!_disposed)StateHasChanged();}
+    }
+    public void Dispose()
+    {
+        _combatLookup?.Cancel();
+        _disposed=true;_scan?.Cancel();Stocks.Changed-=Changed;Clients.Changed-=Changed;ServerFilter.Changed-=Changed;
+        Professions.Changed-=JobsChanged;Sales.Changed-=SalesChanged;MarketChanges.Changed-=MarketChanged;
+        Sales.ListingsChanged -= ListingsChanged;
+        _listingClock.Cancel();
+        _listingClock.Dispose();
+        if (Settings is BestCrushSettingsService localSettings)
+            localSettings.TargetRoiChanged -= TargetRoiChanged;
+        var filters = ReadCurrentFilters();
+        if (_filterPreferencesKey is not null && filters != _initialFilters)
+            WorkspacePreferences.SetString(_filterPreferencesKey, JsonSerializer.Serialize(filters));
+    }
+}

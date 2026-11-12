@@ -1,794 +1,202 @@
 @using System.Globalization
 @using BestCrush.Domain.Models
-@using BestCrush.Models
-@using Microsoft.AspNetCore.Components.Web
-@using RuneModel = BestCrush.Domain.Models.Rune
+@using Microsoft.JSInterop
+@using Microsoft.Extensions.DependencyInjection
+@implements IAsyncDisposable
+@inject IServiceProvider Services
 
-@if (Definitions.Count > 0)
-{
-    <div class="card market-analytics-chart-card">
-        <div class="card-body">
-            <div class="market-analytics-layout">
-                <div class="market-analytics-series-panel"
-                     aria-label="Séries de l'analyse">
-                    @foreach (MarketAnalyticsSeriesDefinition definition in Definitions)
-                    {
-                        MarketAnalyticsSeriesResult? result = ResultFor(definition.Id);
-                        MarketAnalyticsPoint? latest = result?.Points.LastOrDefault();
-                        string color = SeriesColor(definition.Id);
-
-                        <div class="@SeriesCardClass(definition.Id)"
-                             style="--series-color: @color"
-                             role="button"
-                             tabindex="0"
-                             aria-pressed="@(_selectedSeriesId == definition.Id)"
-                             @onclick="() => ToggleSeriesSelection(definition.Id)"
-                             @onkeydown="args => OnSeriesCardKeyDown(args, definition.Id)"
-                             @key="definition.Id">
-                            <div class="d-flex align-items-center gap-2 min-w-0">
-                                @if (GetItem(definition) is IItem item)
-                                {
-                                    <span @onclick:stopPropagation="true"
-                                          @onkeydown:stopPropagation="true">
-                                        <ItemIcon Item="item"
-                                                  Background="IconBackground.Slot"
-                                                  Size="Size.Tiny" />
-                                    </span>
-                                }
-                                <button type="button"
-                                        class="market-analytics-series-name"
-                                        title="Cliquer pour copier le nom"
-                                        @onclick="() => CopyAsync(definition.ItemName)"
-                                        @onclick:stopPropagation="true"
-                                        @onkeydown:stopPropagation="true">
-                                    @definition.ItemName
-                                </button>
-                            </div>
-
-                            <div class="small text-secondary">
-                                @AggregationLabel(definition.Aggregation) · @LotLabel(definition)
-                            </div>
-                            <div class="small text-secondary">
-                                @ValueModeLabel(definition) · @SourceLabel(definition.SourceMode)
-                            </div>
-
-                            @if (latest is not null)
-                            {
-                                <button type="button"
-                                        class="market-analytics-latest-value"
-                                        title="Cliquer pour copier la dernière valeur"
-                                        @onclick="() => CopyNumberAsync(latest.Value)"
-                                        @onclick:stopPropagation="true"
-                                        @onkeydown:stopPropagation="true">
-                                    @FormatPointValue(result!, latest.Value)
-                                </button>
-                            }
-                            else
-                            {
-                                <div class="market-analytics-no-value">
-                                    Aucune donnée
-                                </div>
-                            }
-
-                            <div class="market-analytics-series-actions">
-                                <button type="button"
-                                        class="btn btn-outline-secondary btn-sm"
-                                        @onclick="() => EditRequested.InvokeAsync(definition.Id)"
-                                        @onclick:stopPropagation="true"
-                                        @onkeydown:stopPropagation="true">
-                                    Modifier
-                                </button>
-                                <button type="button"
-                                        class="btn btn-outline-danger btn-sm"
-                                        title="Supprimer la série"
-                                        aria-label="Supprimer la série"
-                                        @onclick="() => RemoveRequested.InvokeAsync(definition.Id)"
-                                        @onclick:stopPropagation="true"
-                                        @onkeydown:stopPropagation="true">
-                                    ×
-                                </button>
-                            </div>
-                        </div>
-                    }
-                </div>
-
-                <div class="market-analytics-chart-area">
-                    @if (VisibleSeries.Count == 0)
-                    {
-                        <div class="text-center text-secondary py-5">
-                            Aucune donnée à afficher pour les séries sélectionnées.
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="market-analytics-chart-wrap">
-                            <svg viewBox="0 0 @ChartWidth @ChartHeight"
-                                 class="market-analytics-chart"
-                                 role="img"
-                                 aria-label="Graphique d'évolution des prix">
-
-                                @for (int index = 0; index <= 4; index++)
-                                {
-                                    double y = PlotTop +
-                                        index * PlotHeight / 4.0;
-                                    double value = MaxValue -
-                                        index * (MaxValue - MinValue) / 4.0;
-
-                                    <line x1="@PlotLeft"
-                                          y1="@y"
-                                          x2="@(PlotLeft + PlotWidth)"
-                                          y2="@y"
-                                          stroke="var(--bs-border-color)"
-                                          stroke-width="1" />
-
-                                    <foreignObject x="0"
-                                                   y="@(y - 8)"
-                                                   width="@(PlotLeft - 10)"
-                                                   height="18">
-                                        <div class="market-analytics-axis-label text-end"
-                                             style="line-height:18px;">
-                                            @FormatAxisValue(value)
-                                        </div>
-                                    </foreignObject>
-                                }
-
-                                <line x1="@PlotLeft"
-                                      y1="@(PlotTop + PlotHeight)"
-                                      x2="@(PlotLeft + PlotWidth)"
-                                      y2="@(PlotTop + PlotHeight)"
-                                      stroke="var(--bs-secondary-color)"
-                                      stroke-width="1.5" />
-
-                                @for (int index = 0; index <= 4; index++)
-                                {
-                                    double x = PlotLeft +
-                                        index * PlotWidth / 4.0;
-                                    DateTime timestamp =
-                                        MinTimeUtc +
-                                        TimeSpan.FromTicks(
-                                            (long)(
-                                                (MaxTimeUtc - MinTimeUtc)
-                                                    .Ticks *
-                                                index /
-                                                4.0));
-
-                                    <foreignObject x="@(x - 60)"
-                                                   y="@(PlotTop + PlotHeight + 10)"
-                                                   width="120"
-                                                   height="20">
-                                        <div class="market-analytics-axis-label text-center"
-                                             style="line-height:20px;">
-                                            @FormatDate(timestamp)
-                                        </div>
-                                    </foreignObject>
-                                }
-
-                                @foreach (MarketAnalyticsSeriesResult series in OrderedVisibleSeries)
-                                {
-                                    string color = SeriesColor(series.SeriesId);
-                                    bool selected = _selectedSeriesId == series.SeriesId;
-
-                                    @if (selected)
-                                    {
-                                        <polyline points="@PolylinePoints(series)"
-                                                  fill="none"
-                                                  stroke="rgba(255, 255, 255, .9)"
-                                                  stroke-width="9"
-                                                  stroke-linejoin="round"
-                                                  stroke-linecap="round"
-                                                  pointer-events="none" />
-                                    }
-
-                                    <polyline points="@PolylinePoints(series)"
-                                              fill="none"
-                                              stroke="@color"
-                                              stroke-width="@(selected ? 5 : 3)"
-                                              stroke-opacity="@SvgNumber(SeriesOpacity(series.SeriesId))"
-                                              stroke-linejoin="round"
-                                              stroke-linecap="round"
-                                              pointer-events="none" />
-
-                                    @foreach (MarketAnalyticsPoint point in series.Points)
-                                    {
-                                        bool hovered = IsHovered(series.SeriesId, point);
-
-                                        <circle cx="@SvgNumber(X(point.TimestampUtc))"
-                                                cy="@SvgNumber(Y(point.Value))"
-                                                r="@(hovered ? 6 : 4)"
-                                                fill="@color"
-                                                fill-opacity="@SvgNumber(SeriesOpacity(series.SeriesId))"
-                                                stroke="@(hovered ? "white" : color)"
-                                                stroke-width="@(hovered ? 3 : 0)"
-                                                pointer-events="none" />
-
-                                        <circle cx="@SvgNumber(X(point.TimestampUtc))"
-                                                cy="@SvgNumber(Y(point.Value))"
-                                                r="13"
-                                                fill="transparent"
-                                                class="market-analytics-point-hit"
-                                                @onmouseenter="() => ShowTooltip(series.SeriesId, point)"
-                                                @onmouseleave="() => HideTooltip(series.SeriesId, point)" />
-                                    }
-                                }
-
-                                @if (_hoveredPoint is not null &&
-                                    ResultFor(_hoveredPoint.SeriesId) is MarketAnalyticsSeriesResult hoveredSeries &&
-                                    DefinitionFor(_hoveredPoint.SeriesId) is MarketAnalyticsSeriesDefinition hoveredDefinition)
-                                {
-                                    double tooltipHeight =
-                                        hoveredSeries.Transformation == MarketAnalyticsTransformation.Base100
-                                            ? 132
-                                            : 112;
-
-                                    <foreignObject x="@SvgNumber(TooltipX(_hoveredPoint.Point))"
-                                                   y="@SvgNumber(TooltipY(_hoveredPoint.Point, tooltipHeight))"
-                                                   width="@TooltipWidth"
-                                                   height="@tooltipHeight"
-                                                   pointer-events="none">
-                                        <div class="market-analytics-tooltip">
-                                            <div class="fw-semibold text-truncate">
-                                                @hoveredDefinition.ItemName
-                                            </div>
-                                            <div class="small text-secondary">
-                                                @FormatDateTime(_hoveredPoint.Point.TimestampUtc)
-                                            </div>
-
-                                            @if (hoveredSeries.Transformation == MarketAnalyticsTransformation.Base100)
-                                            {
-                                                <div class="mt-1">
-                                                    Indice : <strong>@_hoveredPoint.Point.Value.ToString("0.##")</strong>
-                                                </div>
-                                                <div>
-                                                    Valeur réelle : <strong>@FormatKamas(_hoveredPoint.Point.RawValue)</strong>
-                                                </div>
-                                            }
-                                            else
-                                            {
-                                                <div class="mt-1 fw-semibold">
-                                                    @FormatKamas(_hoveredPoint.Point.RawValue)
-                                                </div>
-                                            }
-
-                                            <div class="small text-secondary text-truncate">
-                                                @SeriesDetails(hoveredDefinition)
-                                                · @_hoveredPoint.Point.ObservationCount obs.
-                                            </div>
-                                        </div>
-                                    </foreignObject>
-                                }
-                            </svg>
-                        </div>
-                    }
-                </div>
-            </div>
-        </div>
+<div class="analytics-chart @(Frameless ? "analytics-chart-frameless" : null)" @ref="_host">
+    @if (ShowLegend)
+    {
+    <div class="d-flex flex-wrap gap-2 mb-2" aria-label="Courbes affichées">
+        @foreach (var series in Series)
+        {
+            <button type="button" class="btn btn-sm btn-outline-secondary d-flex align-items-center gap-2" aria-pressed="@((!_hidden.Contains(series.Key)) ? "true" : "false")" @onclick="() => Toggle(series.Key)">
+                <span class="analytics-swatch" style="background:@Color(series.Key)"></span>@series.Name
+            </button>
+        }
     </div>
-}
+    }
+    @if (_geometry.Count == 0)
+    { <div class="analytics-no-data" role="status">Aucun point comparable pour cet affichage.</div> }
+    else
+    {
+        <svg viewBox="@($"0 0 {N(_width)} {N(_height)}")" role="img" aria-label="@(_scale == MarketAnalyticsTransformation.Base100 ? "Évolution comparée en base 100" : "Évolution comparée des prix en kamas")">
+            <title>Comparaison des évolutions de prix</title>
+            @for (int i = 0; i < 5; i++)
+            {
+                double y = 30+i*PlotHeight/4; double value = _max-i*(_max-_min)/4;
+                <line x1="75" y1="@N(y)" x2="@N(_width-20)" y2="@N(y)" stroke="#c9c2af" stroke-width="1" />
+                <foreignObject x="0" y="@N(y-10)" width="62" height="24"><div class="analytics-axis text-end">@Format(value)</div></foreignObject>
+            }
+            @for (int i = 0; i < TickCount; i++)
+            {
+                double x = 75+i*PlotWidth/(TickCount-1), labelX = i == 0 ? x : i == TickCount-1 ? x-120 : x-60;
+                DateTime time = _from.AddTicks((long)((_to-_from).Ticks*i/(double)(TickCount-1)));
+                <foreignObject x="@N(labelX)" y="@N(_height-52)" width="120" height="24"><div class="analytics-axis @(i == 0 ? "text-start" : i == TickCount-1 ? "text-end" : "text-center")">@time.ToLocalTime().ToString(_width < 500 ? "dd/MM" : "dd/MM HH:mm")</div></foreignObject>
+            }
+            <foreignObject x="75" y="@N(_height-23)" width="@N(PlotWidth)" height="23"><div class="analytics-axis">@(_scale == MarketAnalyticsTransformation.Base100 ? "Indice base 100" : "Prix (K)")</div></foreignObject>
+            @foreach (var line in _geometry)
+            {
+                @if (line.Points.Count > 1)
+                { <polyline class="analytics-connection" points="@line.Coordinates" fill="none" stroke="@line.Color" stroke-width="2.5" stroke-linejoin="round" /> }
+                @foreach (var link in line.Links)
+                {
+                    <line class="analytics-link-hit" x1="@N(link.From.X)" y1="@N(link.From.Y)" x2="@N(link.To.X)" y2="@N(link.To.Y)" stroke="transparent" stroke-width="12" @onmouseenter="() => ShowLink(line.Name,link)" @onmouseleave="ClearHover" @onclick="() => ShowLink(line.Name,link)">
+                        <title>@LinkDescription(link)</title>
+                    </line>
+                }
+                @foreach (var point in line.Points)
+                {
+                    <circle class="analytics-observation" cx="@N(point.X)" cy="@N(point.Y)" r="3" fill="@line.Color" />
+                    <circle cx="@N(point.X)" cy="@N(point.Y)" r="10" fill="transparent" class="analytics-hit" @onmouseenter="() => ShowPoint(line.Name,point.Sample)" @onmouseleave="ClearHover" @onclick="() => ShowPoint(line.Name,point.Sample)" />
+                }
+            }
+        </svg>
+        <div class="small mb-2">Points : créneaux avec relevés · Traits : liaisons visuelles entre ces points.</div>
+        <div class="analytics-readout" aria-live="polite">
+            @if (_hover is { } hover)
+            {
+                <strong>@hover.Name</strong><span>Créneau jusqu’au @Date(hover.Sample.AtUtc)</span>
+                <span>@(_scale == MarketAnalyticsTransformation.Base100 ? $"Indice : {hover.Sample.Index:0.##}" : $"Prix : {hover.Sample.Price:N2} K")</span>
+                @if (_scale == MarketAnalyticsTransformation.Base100) { <span>Prix : @hover.Sample.Price?.ToString("N2") K</span> }
+                <span>@hover.Sample.ObservationCount @(hover.Sample.ObservationCount == 1 ? "nouveau relevé" : "nouveaux relevés") dans l’intervalle</span>
+                @if (hover.Sample.IsCarried) { <span>Inclut aussi des prix précédemment relevés</span> }
+            }
+            else if (_hoverLink is { } hoveredLink)
+            { <strong>@hoveredLink.Name</strong><span>@LinkDescription(hoveredLink.Link)</span> }
+            else { <span>Survolez un point ou une liaison pour consulter son détail.</span> }
+        </div>
+    }
+</div>
 
 <style>
-    .market-analytics-layout {
-        display: grid;
-        grid-template-columns: 210px minmax(0, 1fr);
-        gap: 1rem;
-        align-items: stretch;
-    }
-
-    .market-analytics-series-panel {
-        display: flex;
-        flex-direction: column;
-        gap: .65rem;
-        max-height: 470px;
-        overflow-y: auto;
-        padding: 2px 4px 2px 2px;
-    }
-
-    .market-analytics-series-card {
-        --series-color: #0d6efd;
-        padding: .7rem .7rem .65rem .8rem;
-        border: 1px solid rgba(108, 117, 125, .38);
-        border-left: 5px solid var(--series-color);
-        border-radius: .5rem;
-        background: rgba(108, 117, 125, .055);
-        cursor: pointer;
-        transition: border-color .15s ease, box-shadow .15s ease, background-color .15s ease;
-    }
-
-    .market-analytics-series-card:hover {
-        background: rgba(108, 117, 125, .11);
-    }
-
-    .market-analytics-series-card.selected {
-        border-color: var(--series-color);
-        background: rgba(108, 117, 125, .16);
-        box-shadow: 0 0 0 2px var(--series-color), 0 0 12px rgba(255, 255, 255, .12);
-    }
-
-    .market-analytics-series-card:focus-visible {
-        outline: 2px solid var(--series-color);
-        outline-offset: 2px;
-    }
-
-    .market-analytics-series-name,
-    .market-analytics-latest-value {
-        display: block;
-        max-width: 100%;
-        padding: 0;
-        border: 0;
-        background: transparent;
-        color: inherit;
-        text-align: left;
-    }
-
-    .market-analytics-series-name {
-        overflow: hidden;
-        font-weight: 650;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .market-analytics-series-name:hover,
-    .market-analytics-latest-value:hover {
-        color: var(--bs-primary);
-        text-decoration: underline;
-    }
-
-    .market-analytics-latest-value {
-        margin-top: .45rem;
-        font-size: 1.05rem;
-        font-weight: 700;
-    }
-
-    .market-analytics-no-value {
-        margin-top: .45rem;
-        color: var(--bs-secondary-color);
-        font-size: .875rem;
-        font-style: italic;
-    }
-
-    .market-analytics-series-actions {
-        display: flex;
-        justify-content: space-between;
-        gap: .45rem;
-        margin-top: .65rem;
-    }
-
-    .min-w-0 {
-        min-width: 0;
-    }
-
-    .market-analytics-chart-area {
-        min-width: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .market-analytics-chart-wrap {
-        width: 100%;
-        overflow-x: auto;
-    }
-
-    .market-analytics-chart {
-        display: block;
-        width: 100%;
-        min-width: 760px;
-        height: auto;
-    }
-
-    .market-analytics-axis-label {
-        color: var(--bs-secondary-color);
-        font-size: 12px;
-    }
-
-    .market-analytics-point-hit {
-        cursor: crosshair;
-        pointer-events: all;
-    }
-
-    .market-analytics-tooltip {
-        height: 100%;
-        padding: .55rem .65rem;
-        overflow: hidden;
-        border: 1px solid rgba(255, 255, 255, .3);
-        border-radius: .4rem;
-        background: rgba(20, 24, 28, .97);
-        color: #f8f9fa;
-        box-shadow: 0 .35rem .9rem rgba(0, 0, 0, .4);
-        font-size: 13px;
-        line-height: 1.25;
-    }
-
-    @@media (max-width: 899.98px) {
-        .market-analytics-layout {
-            grid-template-columns: 1fr;
-        }
-
-        .market-analytics-series-panel {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-            max-height: none;
-        }
-    }
+.analytics-chart { border:1px solid #d5cdb6;border-radius:.4rem;padding:1rem;background:#fff9e6;color:#212529; }
+.analytics-chart-frameless { border:0;border-radius:0;padding:0;background:transparent; }
+.analytics-chart svg { display:block;width:100%;height:auto; }
+.analytics-chart .analytics-axis { font-size:13px;color:#495057;line-height:22px; }
+.analytics-swatch { width:18px;height:3px;display:inline-block; }
+.analytics-chart .analytics-hit { cursor:crosshair; }
+.analytics-chart .analytics-link-hit { cursor:help;pointer-events:stroke; }
+.analytics-readout { display:flex;flex-wrap:wrap;gap:.4rem 1rem;min-height:3rem;font-size:.85rem;padding-top:.6rem;border-top:1px solid #d5cdb6; }
+.analytics-no-data { padding:2rem;text-align:center;color:#495057; }
 </style>
 
 @code {
-    [Parameter]
-    public IReadOnlyList<MarketAnalyticsSeriesDefinition> Definitions { get; set; } = [];
-
-    [Parameter]
-    public IReadOnlyList<MarketAnalyticsSeriesResult> Series { get; set; } = [];
-
-    [Parameter]
-    public IReadOnlyDictionary<long, Resource> Resources { get; set; } =
-        new Dictionary<long, Resource>();
-
-    [Parameter]
-    public IReadOnlyDictionary<long, Equipment> Equipments { get; set; } =
-        new Dictionary<long, Equipment>();
-
-    [Parameter]
-    public IReadOnlyDictionary<long, RuneModel> Runes { get; set; } =
-        new Dictionary<long, RuneModel>();
-
-    [Parameter]
-    public EventCallback<Guid> EditRequested { get; set; }
-
-    [Parameter]
-    public EventCallback<Guid> RemoveRequested { get; set; }
-
-    private const double ChartWidth = 1100;
-    private const double ChartHeight = 470;
-    private const double PlotLeft = 100;
-    private const double PlotTop = 30;
-    private const double PlotWidth = 960;
-    private const double PlotHeight = 380;
-    private const double TooltipWidth = 280;
-
-    private static readonly string[] Palette =
-    [
-        "#0d6efd",
-        "#dc3545",
-        "#198754",
-        "#fd7e14",
-        "#6f42c1",
-        "#20c997",
-        "#d63384",
-        "#6c757d",
-        "#ffc107",
-        "#0dcaf0"
-    ];
-
-    private Guid? _selectedSeriesId;
-    private HoveredAnalyticsPoint? _hoveredPoint;
-    private IReadOnlyList<MarketAnalyticsSeriesDefinition>? _previousDefinitions;
-
+    [Parameter] public IReadOnlyList<MarketAnalyticsPlotSeries> Series { get; set; } = [];
+    [Parameter] public MarketAnalyticsTransformation Scale { get; set; }
+    [Parameter] public bool ShowLegend { get; set; } = true;
+    [Parameter] public bool Frameless { get; set; }
+    [Parameter] public IReadOnlyDictionary<string,string>? SeriesColors { get; set; }
+    private IReadOnlyList<MarketAnalyticsPlotSeries>? _previous;
+    private IReadOnlyDictionary<string,string>? _previousColors;
+    private MarketAnalyticsTransformation _scale;
+    private readonly HashSet<string> _hidden = [];
+    private readonly Dictionary<string,string> _colors = [];
+    private static readonly string[] Palette = ["#78bae2","#ec939b","#91cba6","#e4c27a","#c2a9e8","#79cfcd","#e5a0cf","#c5d0cf"];
+    private List<Line> _geometry = [];
+    private double _min,_max;
+    private DateTime _from,_to;
+    private double _width = 1100, _height = 420;
+    private double PlotWidth => _width-95;
+    private double PlotHeight => _height-90;
+    private int TickCount => _width < 500 ? 3 : 5;
+    private ElementReference _host;
+    private IJSObjectReference? _module, _observer;
+    private DotNetObjectReference<MarketAnalyticsChart>? _self;
+    private bool _disposed;
+    private (string Name,MarketAnalyticsSample Sample)? _hover;
+    private (string Name,Link Link)? _hoverLink;
+    private sealed record Point(double X,double Y,MarketAnalyticsSample Sample);
+    private sealed record Link(Point From,Point To,int SkippedIntervals,bool HasIntermediateReadings);
+    private sealed record Line(string Name,string Color,string Coordinates,IReadOnlyList<Link> Links,IReadOnlyList<Point> Points);
     protected override void OnParametersSet()
     {
-        if (!ReferenceEquals(_previousDefinitions, Definitions))
+        if (ReferenceEquals(_previous,Series) && _scale == Scale && ReferenceEquals(_previousColors,SeriesColors)) return;
+        _previous = Series; _scale = Scale; _previousColors = SeriesColors; ClearHover(); Rebuild();
+    }
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || Services.GetService<IJSRuntime>() is not { } js) return;
+        _module = await js.InvokeAsync<IJSObjectReference>("import","./js/analytics-chart.js");
+        if (_disposed) { await _module.DisposeAsync(); return; }
+        _self = DotNetObjectReference.Create(this);
+        _observer = await _module.InvokeAsync<IJSObjectReference>("observe",_host,_self);
+    }
+    [JSInvokable] public Task ResizeChart(double width) => InvokeAsync(() =>
+    {
+        if (_disposed || !double.IsFinite(width) || width <= 0) return;
+        width = Math.Clamp(width,240,2400);
+        if (Math.Abs(width-_width) < 1) return;
+        _width = width; _height = width < 500 ? 320 : 400;
+        ClearHover(); Rebuild(); StateHasChanged();
+    });
+    public async ValueTask DisposeAsync()
+    {
+        _disposed = true;
+        try { if (_observer is not null) { await _observer.InvokeVoidAsync("dispose"); await _observer.DisposeAsync(); } }
+        catch (JSDisconnectedException) { }
+        catch (TaskCanceledException) { }
+        finally
         {
-            _selectedSeriesId = null;
-            _hoveredPoint = null;
-            _previousDefinitions = Definitions;
-        }
-
-        if (_selectedSeriesId is Guid selectedId &&
-            Definitions.All(definition => definition.Id != selectedId))
-        {
-            _selectedSeriesId = null;
-        }
-
-        if (_hoveredPoint is not null &&
-            Definitions.All(definition =>
-                definition.Id != _hoveredPoint.SeriesId))
-        {
-            _hoveredPoint = null;
+            _self?.Dispose();
+            if (_module is not null) { try { await _module.DisposeAsync(); } catch (JSDisconnectedException) { } }
         }
     }
-
-    private IReadOnlyList<MarketAnalyticsSeriesResult> VisibleSeries =>
-        Series
-            .Where(series => series.Points.Count > 0)
-            .ToArray();
-
-    private IEnumerable<MarketAnalyticsSeriesResult> OrderedVisibleSeries =>
-        VisibleSeries.OrderBy(series =>
-            series.SeriesId == _selectedSeriesId ? 1 : 0);
-
-    private IEnumerable<MarketAnalyticsPoint> AllPoints =>
-        VisibleSeries.SelectMany(series => series.Points);
-
-    private DateTime MinTimeUtc =>
-        AllPoints.Min(point => point.TimestampUtc);
-
-    private DateTime MaxTimeUtc
+    private string Color(string key)
     {
-        get
-        {
-            DateTime min = MinTimeUtc;
-            DateTime max =
-                AllPoints.Max(point => point.TimestampUtc);
-
-            return max <= min
-                ? min.AddHours(1)
-                : max;
-        }
+        if (SeriesColors?.TryGetValue(key,out string? supplied) == true) return supplied;
+        if (!_colors.TryGetValue(key,out var color)) _colors[key] = color = Palette[_colors.Count%Palette.Length];
+        return color;
     }
-
-    private double MinValue
+    private double? Value(MarketAnalyticsSample sample) => _scale == MarketAnalyticsTransformation.Base100 ? sample.Index : sample.Price;
+    private void Toggle(string key) { if (!_hidden.Add(key)) _hidden.Remove(key); ClearHover(); Rebuild(); }
+    private void ClearHover() { _hover = null; _hoverLink = null; }
+    private void ShowPoint(string name,MarketAnalyticsSample sample) { _hoverLink = null; _hover = (name,sample); }
+    private void ShowLink(string name,Link link) { _hover = null; _hoverLink = (name,link); }
+    private bool IsObserved(MarketAnalyticsSample sample) => sample.ObservationCount > 0 && Value(sample) is double value && double.IsFinite(value);
+    private static string Date(DateTime at) => at.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
+    private static string LinkDescription(Link link)
     {
-        get
+        string detail = link.SkippedIntervals == 0 ? ""
+            : link.HasIntermediateReadings ? " Données insuffisantes pour afficher un point dans certains créneaux intermédiaires."
+            : " Aucun relevé dans les créneaux intermédiaires.";
+        return $"Liaison visuelle du {Date(link.From.Sample.AtUtc)} au {Date(link.To.Sample.AtUtc)}.{detail} Aucun prix intermédiaire calculé.";
+    }
+    private void Rebuild()
+    {
+        _geometry = [];
+        var visible = Series.Where(s => !_hidden.Contains(s.Key)).ToArray();
+        var values = visible.SelectMany(s => s.Samples).Where(IsObserved).Select(s => Value(s)!.Value).ToArray();
+        if (values.Length == 0) return;
+        _from = visible.SelectMany(s => s.Samples).Min(s => s.AtUtc); _to = visible.SelectMany(s => s.Samples).Max(s => s.AtUtc);
+        if (_to <= _from) _to = _from.AddHours(1);
+        double low = values.Min(), high = values.Max(), margin = Math.Max((high-low)*.05,Math.Abs(high)*.01);
+        _min = Math.Max(0,low-margin); _max = high+Math.Max(margin,.01);
+        foreach (var series in visible)
         {
-            double min = AllPoints.Min(point => point.Value);
-            double max = AllPoints.Max(point => point.Value);
-
-            if (Math.Abs(max - min) < 0.000001)
+            List<Point> points = []; List<Link> links = [];
+            Point? previous = null;
+            int skippedIntervals = 0;
+            bool intermediateReadings = false;
+            foreach (var sample in series.Samples)
             {
-                return min == 0
-                    ? -1
-                    : min * 0.95;
+                if (!IsObserved(sample))
+                {
+                    if (previous is not null) { skippedIntervals++; intermediateReadings |= sample.ObservationCount > 0; }
+                    continue;
+                }
+                double value = Value(sample)!.Value;
+                double x = 75+(sample.AtUtc-_from).Ticks/(double)(_to-_from).Ticks*PlotWidth;
+                double y = _height-60-(value-_min)/(_max-_min)*PlotHeight;
+                var point = new Point(x,y,sample);
+                points.Add(point);
+                if (previous is not null) links.Add(new(previous,point,skippedIntervals,intermediateReadings));
+                previous = point; skippedIntervals = 0; intermediateReadings = false;
             }
-
-            return min;
+            if (points.Count > 0) _geometry.Add(new(series.Name,Color(series.Key),string.Join(" ",points.Select(p => $"{N(p.X)},{N(p.Y)}")),links,points));
         }
     }
-
-    private double MaxValue
-    {
-        get
-        {
-            double min = AllPoints.Min(point => point.Value);
-            double max = AllPoints.Max(point => point.Value);
-
-            if (Math.Abs(max - min) < 0.000001)
-            {
-                return max == 0
-                    ? 1
-                    : max * 1.05;
-            }
-
-            return max;
-        }
-    }
-
-    private MarketAnalyticsSeriesResult? ResultFor(Guid seriesId) =>
-        Series.FirstOrDefault(series => series.SeriesId == seriesId);
-
-    private MarketAnalyticsSeriesDefinition? DefinitionFor(Guid seriesId) =>
-        Definitions.FirstOrDefault(definition => definition.Id == seriesId);
-
-    private IItem? GetItem(
-        MarketAnalyticsSeriesDefinition definition) =>
-        definition.ObjectType switch
-        {
-            MarketObjectType.Resource =>
-                Resources.GetValueOrDefault(definition.DofusDbId),
-            MarketObjectType.Equipment =>
-                Equipments.GetValueOrDefault(definition.DofusDbId),
-            _ =>
-                Runes.GetValueOrDefault(definition.DofusDbId)
-        };
-
-    private double X(DateTime timestampUtc)
-    {
-        double totalTicks = (MaxTimeUtc - MinTimeUtc).Ticks;
-        double elapsedTicks = (timestampUtc - MinTimeUtc).Ticks;
-
-        return PlotLeft + elapsedTicks / totalTicks * PlotWidth;
-    }
-
-    private double Y(double value)
-    {
-        double range = MaxValue - MinValue;
-
-        return PlotTop + PlotHeight -
-            (value - MinValue) / range * PlotHeight;
-    }
-
-    private string PolylinePoints(MarketAnalyticsSeriesResult series)
-    {
-        return string.Join(
-            " ",
-            series.Points.Select(point =>
-                $"{X(point.TimestampUtc).ToString("0.##", CultureInfo.InvariantCulture)}," +
-                $"{Y(point.Value).ToString("0.##", CultureInfo.InvariantCulture)}")
-        );
-    }
-
-    private static string SvgNumber(double value) =>
-        value.ToString("0.##", CultureInfo.InvariantCulture);
-    private string SeriesColor(Guid seriesId)
-    {
-        int index = -1;
-
-        for (int candidate = 0; candidate < Definitions.Count; candidate++)
-        {
-            if (Definitions[candidate].Id == seriesId)
-            {
-                index = candidate;
-                break;
-            }
-        }
-
-        return Palette[(index < 0 ? 0 : index) % Palette.Length];
-    }
-
-    private string SeriesCardClass(Guid seriesId) =>
-        seriesId == _selectedSeriesId
-            ? "market-analytics-series-card selected"
-            : "market-analytics-series-card";
-
-    private double SeriesOpacity(Guid seriesId) =>
-        _selectedSeriesId is null || _selectedSeriesId == seriesId
-            ? 1
-            : 0.3;
-
-    private void ToggleSeriesSelection(Guid seriesId)
-    {
-        _selectedSeriesId =
-            _selectedSeriesId == seriesId
-                ? null
-                : seriesId;
-    }
-
-    private void OnSeriesCardKeyDown(
-        KeyboardEventArgs args,
-        Guid seriesId)
-    {
-        if (args.Key is "Enter" or " ")
-        {
-            ToggleSeriesSelection(seriesId);
-        }
-    }
-
-    private void ShowTooltip(
-        Guid seriesId,
-        MarketAnalyticsPoint point)
-    {
-        _hoveredPoint = new HoveredAnalyticsPoint(seriesId, point);
-    }
-
-    private void HideTooltip(
-        Guid seriesId,
-        MarketAnalyticsPoint point)
-    {
-        if (IsHovered(seriesId, point))
-        {
-            _hoveredPoint = null;
-        }
-    }
-
-    private bool IsHovered(
-        Guid seriesId,
-        MarketAnalyticsPoint point) =>
-        _hoveredPoint?.SeriesId == seriesId &&
-        _hoveredPoint.Point.TimestampUtc == point.TimestampUtc;
-
-    private double TooltipX(MarketAnalyticsPoint point)
-    {
-        double pointX = X(point.TimestampUtc);
-        double right = pointX + 14;
-
-        return right + TooltipWidth <= ChartWidth
-            ? right
-            : Math.Max(0, pointX - TooltipWidth - 14);
-    }
-
-    private double TooltipY(
-        MarketAnalyticsPoint point,
-        double tooltipHeight)
-    {
-        double pointY = Y(point.Value);
-        double above = pointY - tooltipHeight - 12;
-
-        return above >= 0
-            ? above
-            : Math.Min(
-                ChartHeight - tooltipHeight,
-                pointY + 12
-            );
-    }
-
-    private bool AllVisibleSeriesAreBase100 =>
-        VisibleSeries.Count > 0 &&
-        VisibleSeries.All(series =>
-            series.Transformation == MarketAnalyticsTransformation.Base100);
-
-    private string FormatAxisValue(double value)
-    {
-        if (AllVisibleSeriesAreBase100)
-        {
-            return value.ToString("0.#");
-        }
-
-        return value switch
-        {
-            >= 1_000_000 => $"{value / 1_000_000:0.##} M",
-            >= 1_000 => $"{value / 1_000:0.##} k",
-            _ => value.ToString("0.##")
-        };
-    }
-
-    private static string FormatPointValue(
-        MarketAnalyticsSeriesResult series,
-        double value) =>
-        series.Transformation == MarketAnalyticsTransformation.Base100
-            ? $"Indice {value:0.##}"
-            : FormatKamas(value);
-
-    private static string FormatKamas(double value) =>
-        $"{value:N0} K";
-
-    private static string AggregationLabel(
-        MarketAnalyticsAggregation aggregation) =>
-        aggregation switch
-        {
-            MarketAnalyticsAggregation.Mean => "Moyenne",
-            MarketAnalyticsAggregation.FirstQuartile => "Q1",
-            MarketAnalyticsAggregation.ThirdQuartile => "Q3",
-            _ => "Médiane"
-        };
-
-    private static string LotLabel(
-        MarketAnalyticsSeriesDefinition definition) =>
-        definition.LotQuantity is int quantity
-            ? $"x{quantity}"
-            : "Tous";
-
-    private static string LotDetailsLabel(
-        MarketAnalyticsSeriesDefinition definition) =>
-        definition.LotQuantity is int quantity
-            ? $"x{quantity}"
-            : "Tous les lots";
-
-    private static string ValueModeLabel(
-        MarketAnalyticsSeriesDefinition definition) =>
-        definition.LotQuantity is null ||
-        definition.ValueMode == MarketAnalyticsValueMode.UnitPrice
-            ? "Prix/u"
-            : "Prix/lot";
-
-    private static string SourceLabel(
-        MarketAnalyticsSourceMode sourceMode) =>
-        sourceMode switch
-        {
-            MarketAnalyticsSourceMode.Manual => "Manuel",
-            MarketAnalyticsSourceMode.All => "Toutes sources",
-            _ => "Jeu"
-        };
-
-    private static string SeriesDetails(
-        MarketAnalyticsSeriesDefinition definition) =>
-        $"{AggregationLabel(definition.Aggregation)} · " +
-        $"{LotDetailsLabel(definition)} · " +
-        ValueModeLabel(definition);
-
-    private static string FormatDate(DateTime utc) =>
-        utc.ToLocalTime().ToString("dd/MM HH:mm");
-
-    private static string FormatDateTime(DateTime utc) =>
-        utc.ToLocalTime().ToString("dd/MM/yyyy HH:mm");
-
-    private static Task CopyAsync(string value)
-    {
-        return Microsoft.Maui.ApplicationModel.DataTransfer
-            .Clipboard
-            .Default
-            .SetTextAsync(value);
-    }
-
-    private static Task CopyNumberAsync(double value)
-    {
-        return CopyAsync(
-            value.ToString(
-                "0.########",
-                CultureInfo.InvariantCulture
-            )
-        );
-    }
-
-    private sealed record HoveredAnalyticsPoint(
-        Guid SeriesId,
-        MarketAnalyticsPoint Point
-    );
+    private string Format(double value) => _scale == MarketAnalyticsTransformation.Base100 ? value.ToString("0.#") : value >= 1000000 ? $"{value/1000000:0.#} M" : value >= 1000 ? $"{value/1000:0.#} k" : value.ToString("0.##");
+    private static string N(double value) => value.ToString("0.##",CultureInfo.InvariantCulture);
 }
-

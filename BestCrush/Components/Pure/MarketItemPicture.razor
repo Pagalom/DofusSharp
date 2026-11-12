@@ -1,0 +1,20 @@
+@using BestCrush.Domain.Services
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+<span class="market-item-picture" aria-hidden="true">
+    @if (_image is { } image) { <img src="data:@image" alt="" width="36" height="36" loading="lazy" /> }
+    else { <i class="bi bi-box" aria-hidden="true"></i> }
+</span>
+@code {
+    [Parameter] public long? IconId { get; set; }
+    private long? _previous;
+    private string? _image;
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_previous == IconId) return;
+        _previous = IconId; _image = null;
+        if (IconId is not { } id) return;
+        try { if (Services.GetService<ItemsService>() is { } items) { var image = await items.GetItemIconAsync(id); if (_previous == id) _image = image; } }
+        catch { /* Missing artwork must never prevent selecting an item. */ }
+    }
+}

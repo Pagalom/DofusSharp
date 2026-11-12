@@ -1,0 +1,35 @@
+<details class="service-result" open="@_expanded">
+    <summary @onclick="Toggle" @onclick:preventDefault>
+        <span class="service-result-summary">@Summary</span>
+        @if (Focus.HasDelegate)
+        {
+            <button type="button" class="btn btn-outline-secondary btn-sm service-result-focus"
+                    title="Mettre cet équipement en focus dans l’overlay" aria-label="@($"Mettre {FocusItemName ?? "cet équipement"} en focus dans l’overlay")"
+                    @onclick="Focus" @onclick:stopPropagation="true" @onclick:preventDefault="true">
+                <i class="bi bi-bullseye" aria-hidden="true"></i>
+            </button>
+        }
+        <i class="bi @(_expanded ? "bi-chevron-up" : "bi-chevron-down") service-result-chevron" aria-hidden="true"></i>
+        <span class="visually-hidden">@(_expanded ? "Masquer le détail" : "Voir le détail")</span>
+    </summary>
+    @if (_expanded)
+    {
+        <div class="service-result-detail">@ChildContent
+            <button type="button" class="btn btn-outline-secondary btn-sm mt-3" @onclick="Toggle"><i class="bi bi-chevron-up me-1" aria-hidden="true"></i>Fermer le détail</button>
+        </div>
+    }
+</details>
+@code {
+    [Parameter, EditorRequired] public RenderFragment Summary { get; set; } = default!;
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public EventCallback Focus { get; set; }
+    [Parameter] public string? FocusItemName { get; set; }
+    [Parameter] public bool InitiallyExpanded { get; set; }
+    private bool _expanded, _initialized, _previousInitial;
+    protected override void OnParametersSet()
+    {
+        if (!_initialized || InitiallyExpanded != _previousInitial) _expanded = InitiallyExpanded;
+        _previousInitial = InitiallyExpanded; _initialized = true;
+    }
+    private void Toggle() => _expanded = !_expanded;
+}

@@ -1,0 +1,105 @@
+@page "/stocks"
+@using BestCrush.Services
+@using BestCrush.Network.Protocol
+@using Microsoft.EntityFrameworkCore
+@using BestCrush.Domain
+@using DofusSharp.DofusDb.ApiClients
+@using DofusSharp.DofusDb.ApiClients.Search
+@inject LiveStockService StocksService
+@inject CurrentDofusClientsState Clients
+@inject CurrentCharacterState Characters
+@inject IDbContextFactory<BestCrushDbContext> DatabaseFactory
+@implements IDisposable
+
+<div class="container-fluid workspace-page">
+    <PageHeading Title="Banque et inventaire" Description="Les objets reçus, les quantités modifiées et les retraits mettent à jour le stock pendant que BestCrush est ouvert." />
+    @if (WalletProfile is { } wallet && (wallet.PocketKamas is not null || wallet.BankKamas is not null))
+    {
+        <p class="stock-wallet-summary" aria-label="Kamas du personnage">
+            @if (wallet.PocketKamas is { } pocket) { <span><i class="bi bi-coin" aria-hidden="true"></i>Sur le personnage : <strong>@pocket.ToString("N0") K</strong></span> }
+            @if (wallet.BankKamas is { } bank) { <span><i class="bi bi-bank" aria-hidden="true"></i>En banque : <strong>@bank.ToString("N0") K</strong></span> }
+        </p>
+    }
+    <div class="d-flex gap-2 mb-3 flex-wrap">
+        <input class="form-control" style="max-width:350px" placeholder="Rechercher un objet ou un identifiant…" aria-label="Rechercher un objet" @bind="_search" @bind:event="oninput" />
+        <select class="form-select" style="max-width:230px" @bind="_container"><option value="">Tous les conteneurs</option><option value="inventory">Inventaire</option><option value="bank">Banque</option></select>
+    </div>
+    @if (_source is null) { <div class="alert alert-info">Aucun relevé pour le personnage ciblé dans la session en cours.
+        Reconnectez-le avec BestCrush ouvert pour relever son inventaire. Ouvrez sa banque pour l'inclure.</div> }
+    else
+    {
+        <p><strong>@_source.Label</strong> · @(_source.ServerName ?? "Serveur en cours d'identification") · Dernière observation : @_source.UpdatedUtc.ToLocalTime().ToString("g")</p>
+        @foreach (var state in _source.Containers)
+        {
+            if (state.Stale || !state.Complete) { <div class="alert alert-warning">@(state.Container == "bank" ? "Banque" : "Inventaire") : @(state.Stale ? "une mise à jour n'a pas pu être appliquée" : "relevé complet manquant"). @(state.Container == "bank" ? "Rouvrez la banque." : "Reconnectez le personnage.") Les quantités ne sont pas utilisées pour les disponibilités.</div> }
+        }
+        <p class="small text-secondary">@Rows.Count() lignes · Les équipements aux effets différents restent distincts. Les effets non interprétés sont conservés intégralement lorsqu'ils respectent les limites de capture.</p>
+        <div class="table-responsive"><table class="table table-striped align-middle"><thead><tr><th>Objet</th><th>Conteneur</th><th class="text-end">Quantité</th><th>Effets</th></tr></thead><tbody>
+        @foreach (var row in Rows)
+        {
+            <tr><td><strong>@Name(row.Item.ItemId)</strong><div class="small text-secondary">ID @row.Item.ItemId</div></td><td>@(row.Container == "bank" ? "Banque" : "Inventaire")</td><td class="text-end">@row.Item.Quantity.ToString("N0")</td><td>@(row.Item.EffectWire is null ? "Bruts manquants" : row.Item.Effects is null ? "Conservés · à interpréter" : "Décodés")</td></tr>
+        }
+        </tbody></table></div>
+    }
+    @if (_catalogWarning is not null) { <p class="small text-secondary">@_catalogWarning</p> }
+</div>
+@code {
+    private CharacterSessionProfile? WalletProfile => Clients.SelectedClient is { } client
+        ? Characters.Characters.FirstOrDefault(profile => Characters.IsCharacterConnected(profile.Key) && Characters.WindowForCharacter(profile.Key) == client.Key)
+        : null;
+    private void WalletChanged() => _ = InvokeAsync(StateHasChanged);
+    private string _search="",_container="";
+    private LiveStockSource? _source;
+    private readonly Dictionary<ulong,string> _names=[];
+    private readonly HashSet<ulong> _attempted=[];
+    private readonly SemaphoreSlim _refreshGate=new(1,1);
+    private readonly CancellationTokenSource _stop=new();
+    private bool _disposed;
+    private string? _catalogWarning;
+    private IEnumerable<(string Container,LiveStockItem Item)> Rows =>
+        (_source?.Containers ?? []).Where(x=>_container.Length==0 || x.Container==_container)
+        .SelectMany(x=>x.Items.Select(i=>(x.Container,Item:i)))
+        .Where(x=>_search.Length==0 || Name(x.Item.ItemId).Contains(_search,StringComparison.CurrentCultureIgnoreCase) || x.Item.ItemId.ToString().Contains(_search))
+        .OrderBy(x=>Name(x.Item.ItemId),StringComparer.CurrentCultureIgnoreCase);
+    private string Name(ulong id)=>_names.GetValueOrDefault(id) ?? $"Objet {id}";
+    protected override async Task OnInitializedAsync()
+    {
+        StocksService.Changed+=Changed;Clients.Changed+=Changed;Characters.Changed+=WalletChanged;
+        await ReloadAsync();
+    }
+    private void Changed()=>_ = InvokeAsync(async()=>{await ReloadAsync();StateHasChanged();});
+    private async Task ReloadAsync()
+    {
+        await _refreshGate.WaitAsync();
+        try
+        {
+            if(_disposed)return;
+            _source=StocksService.Selected;
+            long[] ids=(_source?.Containers ?? []).SelectMany(x=>x.Items).Select(x=>x.ItemId)
+                .Where(x=>x<=(ulong)long.MaxValue && !_attempted.Contains(x)).Select(x=>(long)x).Distinct().ToArray();
+            if(ids.Length==0)return;
+            await using var db=await DatabaseFactory.CreateDbContextAsync(_stop.Token);
+            var names=await db.Equipments.AsNoTracking().Where(x=>ids.Contains(x.DofusDbId)).Select(x=>new {x.DofusDbId,x.Name}).ToArrayAsync(_stop.Token);
+            foreach(var item in names)_names[(ulong)item.DofusDbId]=item.Name;
+            var resources=await db.Resources.AsNoTracking().Where(x=>ids.Contains(x.DofusDbId)).Select(x=>new {x.DofusDbId,x.Name}).ToArrayAsync(_stop.Token);
+            foreach(var item in resources)_names[(ulong)item.DofusDbId]=item.Name;
+            var runes=await db.Runes.AsNoTracking().Where(x=>ids.Contains(x.DofusDbId)).Select(x=>new {x.DofusDbId,x.Name}).ToArrayAsync(_stop.Token);
+            foreach(var item in runes)_names[(ulong)item.DofusDbId]=item.Name;
+            var client=DofusDbClient.Production().Items();
+            foreach(var batch in ids.Where(x=>!_names.ContainsKey((ulong)x)).Chunk(40))
+            {
+                using var timeout=CancellationTokenSource.CreateLinkedTokenSource(_stop.Token);timeout.CancelAfter(TimeSpan.FromSeconds(8));
+                try
+                {
+                    var result=await client.SearchAsync(new DofusDbSearchQuery {Limit=40,Select=["id","name"],Predicates=[new DofusDbSearchPredicate.In("id",batch.Select(x=>x.ToString()).ToArray())]},timeout.Token);
+                    foreach(var item in result.Data)if(item.Id is >0 && batch.Contains(item.Id.Value) && !string.IsNullOrWhiteSpace(item.Name?.Fr))_names[(ulong)item.Id.Value]=item.Name.Fr;
+                }
+                catch(Exception ex) when(ex is HttpRequestException or OperationCanceledException or System.Text.Json.JsonException) { _catalogWarning="Certains noms du catalogue public sont indisponibles. Les quantités restent enregistrées.";break; }
+            }
+            foreach(var id in ids)_attempted.Add((ulong)id);
+        }
+        catch(OperationCanceledException) when(_disposed) { }
+        finally{_refreshGate.Release();}
+    }
+    public void Dispose(){_disposed=true;_stop.Cancel();StocksService.Changed-=Changed;Clients.Changed-=Changed;Characters.Changed-=WalletChanged;}
+}

@@ -27,9 +27,9 @@
         <ApplicationId>com.dofussharp.bestcrush</ApplicationId>
 
         <!-- Versions -->
-        <Version>0.2.0</Version>
-        <ApplicationDisplayVersion>0.2.0</ApplicationDisplayVersion>
-        <ApplicationVersion>8</ApplicationVersion>
+        <Version>0.2.1</Version>
+        <ApplicationDisplayVersion>0.2.1</ApplicationDisplayVersion>
+        <ApplicationVersion>9</ApplicationVersion>
 
         <!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
         <WindowsPackageType>None</WindowsPackageType>
@@ -106,7 +106,7 @@
       <ProjectReference Include="..\DofusSharp.DofusDb.ApiClients\DofusSharp.DofusDb.ApiClients.csproj" />
     </ItemGroup>
 
-    <!-- Legal-release guard: official DOFUS job/class PNGs installed for
+    <!-- Legal-release guard: official DOFUS PNGs installed for
          private development are not cleared for public redistribution.
          Fail closed on Release rather than silently bundling them. -->
     <Target Name="PreventRestrictedDofusArtworkInRelease"
@@ -114,11 +114,11 @@
             Condition="'$(Configuration)' == 'Release'">
         <ItemGroup>
             <_RestrictedDofusArtwork
-                Include="$(MSBuildProjectDirectory)\wwwroot\img\dofus\**\*.png" />
+                Include="$(MSBuildProjectDirectory)\wwwroot\img\dofus\**\*.png;$(MSBuildProjectDirectory)\wwwroot\img\runes\*.png" />
         </ItemGroup>
         <Error
             Condition="'@(_RestrictedDofusArtwork)' != ''"
-            Text="Publication bloquee : images officielles DOFUS detectees sous wwwroot/img/dofus. Les deplacer temporairement avant toute compilation Release ou obtenir et documenter l'autorisation d'Ankama. Voir NOTICE-RESSOURCES-ANKAMA.md. En developpement, utiliser Debug." />
+            Text="Publication bloquee : images officielles DOFUS detectees sous wwwroot/img/dofus ou wwwroot/img/runes. Compiler la release depuis un dossier Git propre. Voir NOTICE-RESSOURCES-ANKAMA.md." />
     </Target>
 
 </Project>

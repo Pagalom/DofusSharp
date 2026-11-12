@@ -1,0 +1,44 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Services
+@using BestCrush.Models
+<div class="crushing-missing border rounded px-3 py-2 mt-2 small">
+    <strong class="crushing-missing-title"><i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>@(Partial ? "Résultat partiel" : "Données absentes")</strong>
+    @foreach (var group in _groups)
+    {
+        <div class="crushing-missing-group"><span>@group.Label</span><div class="crushing-missing-icons">
+            @foreach (var item in group.Items)
+            {
+                <StockItemArtwork ItemId="item.DofusDbId" Stock="Stock"><ItemIcon Item="item" Size="Size.Small" Background="IconBackground.Slot" Tooltip="@($"{item.Name} : prix manquant")" /></StockItemArtwork>
+            }
+        </div></div>
+    }
+    @foreach (var message in _other) { <p class="mt-2 mb-0">@message</p> }
+</div>
+@code {
+    [Parameter] public EquipmentProfitabilityResult? Calculation { get; set; }
+    [Parameter] public CraftCostResult? CraftCost { get; set; }
+    [Parameter] public LiveStockSource? Stock { get; set; }
+    [Parameter] public IReadOnlyCollection<string> Messages { get; set; } = [];
+    [Parameter] public bool Partial { get; set; } = true;
+    private List<(string Label, IItem[] Items)> _groups = [];
+    private string[] _other = [];
+    protected override void OnParametersSet()
+    {
+        _groups.Clear();
+        var equipment = Calculation?.Equipment;
+        var missing = (CraftCost ?? Calculation?.CraftCost)?.Resources.Where(x => !x.HasPrice).ToArray() ?? [];
+        IItem Artwork(CraftResourceCostLine line) => RecipeArtwork.Find(equipment, line) ?? new Resource(line.DofusDbId) { Name = line.ResourceName };
+        var resources = missing.Where(x => x.ObjectType == MarketObjectType.Resource).Select(Artwork).ToArray();
+        if (resources.Length > 0) _groups.Add(("Ressource(s) :", resources));
+        var runes = (Calculation?.PotentialRunes ?? []).Concat(Calculation?.Scenarios.SelectMany(s => s.Runes.Keys) ?? [])
+            .DistinctBy(x => x.DofusDbId).Where(r => Messages.Any(m => m == $"Prix de rune manquant : {r.Name}")).Cast<IItem>().ToArray();
+        if (runes.Length > 0) _groups.Add(("Rune(s) :", runes));
+        var equipments = missing.Where(x => x.ObjectType == MarketObjectType.Equipment).Select(Artwork).ToList();
+        if (equipment is not null && Messages.Contains("Prix local de l'équipement manquant")) equipments.Insert(0, equipment);
+        if (equipments.Count > 0) _groups.Add(("Équipement(s) :", equipments.DistinctBy(x => x.DofusDbId).ToArray()));
+        _other = Messages.Where(m =>
+            !(m.StartsWith("Craft incomplet :", StringComparison.Ordinal) && missing.Length > 0) &&
+            !(m.StartsWith("Prix de rune manquant :", StringComparison.Ordinal) && runes.Any(r => m == $"Prix de rune manquant : {r.Name}")) &&
+            !(m == "Prix local de l'équipement manquant" && equipment is not null)).ToArray();
+    }
+}

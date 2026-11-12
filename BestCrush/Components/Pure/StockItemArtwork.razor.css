@@ -1,0 +1,14 @@
+.stock-item-artwork { position:relative; display:inline-flex; flex:none; vertical-align:middle; }
+.stock-origins { position:absolute; z-index:1; top:0; left:0; display:inline-flex; gap:1px; }
+.stock-origin {
+    display:grid;
+    place-items:center;
+    width:15px;
+    height:15px;
+    border-radius:.22rem;
+    background:var(--bc-panel,#222e34);
+    color:var(--bc-gold,#e4c27a);
+    font-size:12px;
+    cursor:help;
+}
+.stock-origin:focus-visible { outline:1px solid currentColor; outline-offset:1px; }

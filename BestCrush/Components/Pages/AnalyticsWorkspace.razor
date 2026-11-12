@@ -1,0 +1,191 @@
+@implements IDisposable
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using BestCrush.Services
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Logging
+@inject IServiceScopeFactory DataScopes
+@inject MarketAnalyticsPresetService Presets
+@inject MarketDataChangeNotifier PriceChanges
+@inject ILogger<AnalyticsWorkspace> Logger
+
+<div class="analytics-workspace" aria-busy="@Busy" @onkeydown="HandleKeyDown">
+    <PageHeading Title="Analyses" Description="Comparez l’évolution des prix d’objets et de groupes, en kamas ou en base 100.">
+        <Actions><span class="small text-secondary" role="status">@_status</span></Actions>
+    </PageHeading>
+    <div class="analytics-toolbar">
+        <label class="analytics-preset">Analyse<select class="form-select" @bind:get="_savedId" @bind:set="SelectPresetByIdAsync"><option value="">@(_savedId is null ? _name : "Nouvelle analyse")</option>@foreach (var preset in _presets) { <option value="@preset.Id">@preset.Name</option> }</select></label>
+        <div class="analytics-control"><span>Période</span><div class="analytics-segments" role="group" aria-label="Période">@foreach (var period in Enum.GetValues<MarketAnalyticsPeriod>()) { <button type="button" aria-pressed="@((_period == period) ? "true" : "false")" @onclick="() => SetPeriodAsync(period)">@PeriodName(period)</button> }</div></div>
+        <div class="analytics-control"><span>Affichage</span><div class="analytics-segments" role="group" aria-label="Affichage"><button type="button" aria-pressed="@((_scale == MarketAnalyticsTransformation.Base100) ? "true" : "false")" @onclick="() => _scale = MarketAnalyticsTransformation.Base100">Base 100</button><button type="button" aria-pressed="@((_scale == MarketAnalyticsTransformation.Raw) ? "true" : "false")" @onclick="() => _scale = MarketAnalyticsTransformation.Raw">Kamas</button></div></div>
+        <div class="analytics-save-actions">
+            <button class="btn btn-outline-secondary" type="button" disabled="@(_draft is not null)" @onclick="RequestSave"><i class="bi bi-save" aria-hidden="true"></i> Enregistrer</button>
+            <details class="analytics-menu"><summary class="btn btn-outline-secondary analytics-menu-trigger" aria-label="Actions sur l’analyse">⋯</summary><div class="analytics-menu-content"><button type="button" @onclick="NewAnalysis">Nouvelle analyse</button><button type="button" @onclick="() => OpenNamePanel(NameAction.Rename)">Renommer</button><button type="button" @onclick="() => OpenNamePanel(NameAction.SaveCopy)">Enregistrer sous…</button><button type="button" disabled="@(_savedId is null)" @onclick="OpenDeletePanel">Supprimer l’analyse enregistrée</button></div></details>
+        </div>
+    </div>
+    @if (_error is not null) { <div class="alert alert-danger mt-3" role="alert">@_error</div> }
+    @if (_presetError is not null) { <div class="alert alert-warning mt-3" role="alert">@_presetError</div> }
+    @if (_dirty && _series.Count > 0) { <div class="alert alert-info py-2 mt-3" role="status">Nouveaux relevés disponibles. <button class="btn btn-sm btn-outline-info ms-2" type="button" @onclick="RefreshAsync">Actualiser</button></div> }
+    <DataLoadingIndicator Busy="@Busy" Failed="@(_error is not null)" Label="Calcul de la comparaison…" Retry="RefreshAsync" />
+    <div class="analytics-content">
+        <aside class="analytics-sidebar" aria-label="Mes courbes">
+            <div class="analytics-sidebar-title"><h2>Mes courbes</h2><span class="small text-secondary">@_series.Count</span></div>
+            <button class="btn btn-primary analytics-add" type="button" disabled="@(!_catalogReady)" @onclick="BeginAdd"><i class="bi bi-plus-lg" aria-hidden="true"></i> Ajouter une courbe</button>
+            @foreach (var definition in _series)
+            {
+                var result = _comparison?.Groups.FirstOrDefault(g => g.DefinitionId == definition.Id);
+                <div class="analytics-series-row @(!definition.IsVisible ? "analytics-series-hidden" : null)" @key="definition.Id">
+                    <div class="analytics-series-heading"><input class="form-check-input" type="checkbox" checked="@definition.IsVisible" aria-label="@($"Afficher {definition.ItemName}")" @onchange="args => ToggleVisibility(definition.Id,args)" /><button class="analytics-series-name" type="button" @onclick="() => OpenDetailsAsync(definition.Id)"><span class="analytics-series-swatch" style="background:@DefinitionColor(definition.Id)"></span>@definition.ItemName</button></div>
+                    @if (result is not null) { <div class="analytics-series-meta">@result.Members.Count objets sélectionnés · @result.BaselineMemberCount à la référence</div> }
+                    <div class="analytics-series-actions"><button type="button" class="analytics-text-button" @onclick="() => OpenDetailsAsync(definition.Id)">@(definition.SelectionMode == MarketAnalyticsSelectionMode.Single ? "Voir le détail" : "Voir les objets")</button><details class="analytics-menu"><summary class="analytics-text-button analytics-menu-trigger" aria-label="@($"Actions pour {definition.ItemName}")">⋯</summary><div class="analytics-menu-content"><button type="button" @onclick="() => BeginEdit(definition.Id)">Modifier</button><button type="button" @onclick="() => RemoveSeriesAsync(definition.Id)">Retirer de l’analyse</button></div></details></div>
+                </div>
+            }
+        </aside>
+        <section class="analytics-plot" aria-label="Graphique comparatif">
+            <div class="analytics-plot-heading"><div><h2>Évolution comparée</h2>@if (_comparison?.ReferenceUtc is DateTime reference && _scale == MarketAnalyticsTransformation.Base100) { <div class="small text-secondary">Base 100 au @reference.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</div> }else if (_scale == MarketAnalyticsTransformation.Raw) { <div class="small text-secondary">Prix en kamas</div> }</div><div class="d-flex gap-2 flex-wrap"><button type="button" class="btn btn-sm btn-outline-secondary" disabled="@Busy" aria-label="Actualiser les relevés" title="Actualiser les relevés" @onclick="RefreshAsync"><i class="bi bi-arrow-clockwise" aria-hidden="true"></i></button><button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OpenOptions"><i class="bi bi-sliders" aria-hidden="true"></i> Options avancées</button></div></div>
+            @if (_series.Count == 0) { <div class="analytics-empty">Ajoutez un objet ou un groupe pour commencer une comparaison.</div> }
+            else if (_series.All(s => !s.IsVisible)) { <div class="analytics-empty">Cochez une courbe dans « Mes courbes » pour l’afficher.</div> }
+            else if (_comparison is { } comparison)
+            {
+                @if (_scale == MarketAnalyticsTransformation.Base100 && comparison.ReferenceUtc is null) { <div class="alert alert-warning mt-3">Pas de référence commune disponible. Élargissez la période, ajustez la fraîcheur des prix ou consultez les prix en kamas.</div> }
+                <MarketAnalyticsChart Series="_visiblePlots" Scale="_scale" SeriesColors="_plotColors" ShowLegend="@NeedsPlotLegend" Frameless="true" />
+                @if (_plots.Count > CurvesPerPage) { <div class="d-flex justify-content-between flex-wrap align-items-center gap-2 my-2"><span class="small">Courbes @(_plotPage*CurvesPerPage+1)–@(Math.Min((_plotPage+1)*CurvesPerPage,_plots.Count)) sur @_plots.Count</span><div class="d-flex gap-2"><button class="btn btn-sm btn-outline-secondary" type="button" disabled="@(_plotPage == 0)" @onclick="() => ChangePlotPage(-1)">Précédentes</button><button class="btn btn-sm btn-outline-secondary" type="button" disabled="@((_plotPage+1)*CurvesPerPage >= _plots.Count)" @onclick="() => ChangePlotPage(1)">Suivantes</button></div></div> }
+                <div class="analytics-plot-footer"><span>@ServerName · @ResolutionLabel</span><span>Les objets absents à la référence restent exclus de la fusion.</span></div>
+            }
+        </section>
+    </div>
+    @if (_panel != AnalyticsPanel.None)
+    {
+        <button type="button" class="analytics-panel-backdrop" aria-label="Fermer le panneau" @onclick="ClosePanel"></button>
+        <section class="analytics-drawer" role="dialog" aria-modal="true" aria-labelledby="analytics-panel-title">
+            <div class="analytics-drawer-header"><h2 id="analytics-panel-title">@PanelTitle</h2><button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Fermer le panneau" @ref="_panelFocus" @onclick="ClosePanel">✕</button></div>
+            @if (_panelError is not null) { <div class="alert alert-danger" role="alert">@_panelError</div> }
+            @if (_panel == AnalyticsPanel.Editor && _draft is { } draft)
+            {
+                @if (_editingId is null) { <div class="analytics-shortcuts"><button class="btn btn-sm btn-outline-secondary" type="button" @onclick="QuickAllRunesAsync">Toutes les runes</button><button class="btn btn-sm btn-outline-secondary" type="button" @onclick="OpenCharacteristic">Comparer par caractéristique</button></div> }
+                <div class="analytics-mode-choices" role="group" aria-label="Sélection">@foreach (var mode in Enum.GetValues<MarketAnalyticsSelectionMode>()) { <button type="button" class="btn btn-outline-secondary" aria-pressed="@((draft.SelectionMode == mode) ? "true" : "false")" @onclick="() => SetDraftMode(mode)">@ModeName(mode)</button> }</div>
+            <div class="analytics-builder-grid">
+                <label>Famille<select class="form-select" @bind="draft.ObjectType" @bind:after="DraftTypeChanged"><option value="@MarketObjectType.Rune">Runes</option><option value="@MarketObjectType.Equipment">Équipements</option><option value="@MarketObjectType.Resource">Ressources</option></select></label>
+                <label>Nom de la courbe<input class="form-control" placeholder="Nom automatique si vide" @bind="draft.ItemName" /></label>
+            </div>
+            @if (draft.SelectionMode is MarketAnalyticsSelectionMode.Single or MarketAnalyticsSelectionMode.Custom)
+            {
+                <label class="mt-3">Rechercher dans le catalogue<input class="form-control" type="search" @bind="_builderSearch" @bind:event="oninput" @bind:after="BuilderSearchChanged" /></label>
+                @if (draft.SelectionMode == MarketAnalyticsSelectionMode.Single)
+                {
+                    <label class="mt-2">Objet<select class="form-select" @bind="draft.DofusDbId" @bind:after="SingleItemChanged">@foreach (var item in SingleChoices) { <option value="@item.Key.DofusDbId">@item.Name</option> }</select></label>
+                    <div class="small mt-1">La recherche affiche jusqu’à 50 correspondances.</div>
+                }
+                else
+                {
+                    var matches = BuilderMatches;
+                    <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 my-2"><span>@draft.Members.Count objets sélectionnés · @matches.Count correspondances</span><button class="btn btn-sm btn-outline-secondary" type="button" @onclick="AddMatchingMembers">Ajouter toutes les correspondances</button></div>
+                    <div class="analytics-member-picker">
+                    @foreach (var item in matches.Skip(_builderPage*BuilderPageSize).Take(BuilderPageSize))
+                    {
+                        <label class="d-flex flex-row gap-2 align-items-center"><input class="form-check-input mt-0" type="checkbox" checked="@draft.Members.Any(m => m.Key == item.Key)" @onchange="args => ToggleMember(item,args)" />@item.Name</label>
+                    }
+                    </div>
+                    <div class="d-flex gap-2 align-items-center mt-2"><button class="btn btn-sm btn-outline-secondary" type="button" disabled="@(_builderPage == 0)" @onclick="() => _builderPage--">Précédent</button><span class="small">Page @(_builderPage+1)</span><button class="btn btn-sm btn-outline-secondary" type="button" disabled="@((_builderPage+1)*BuilderPageSize >= matches.Count)" @onclick="() => _builderPage++">Suivant</button></div>
+                    @if (draft.Members.Count > 0)
+                    {
+                        <details class="mt-2"><summary>Sélection personnelle (@draft.Members.Count)</summary>
+                        @foreach (var member in draft.Members.Take(50)) { <button class="btn btn-sm btn-outline-secondary m-1" type="button" @onclick="() => RemoveMember(member.Key)">@member.Name ×</button> }
+                        @if (draft.Members.Count > 50) { <div class="small">Les 50 premiers objets sont affichés.</div> }
+                        </details>
+                    }
+                }
+            }
+            @if (draft.SelectionMode == MarketAnalyticsSelectionMode.Criteria)
+            {
+                <div class="analytics-builder-grid mt-3">
+                    @if (draft.ObjectType != MarketObjectType.Resource)
+                    { <label>Caractéristique positive<select class="form-select" @bind="draft.Characteristic"><option value="">Toutes</option>@foreach (var stat in Characteristics) { <option value="@stat">@StatName(stat)</option> }</select></label> }
+                    @if (draft.ObjectType == MarketObjectType.Equipment)
+                    { <div><div class="mb-1">Types d’objet</div><EquipmentTypeFilter AvailableTypes="EquipmentTypes" SelectedTypes="draft.EquipmentTypes" SelectedTypesChanged="SetTypes" DisclosureGroup="analytics-builder" /></div> }
+                    <label>Niveau minimum<input class="form-control" type="number" min="1" max="200" @bind="draft.LevelMin" /></label>
+                    <label>Niveau maximum<input class="form-control" type="number" min="1" max="200" @bind="draft.LevelMax" /></label>
+                    <label>Nom contenant<input class="form-control" @bind="draft.SearchText" /></label>
+                </div>
+            }
+            <details class="mt-3"><summary>Calcul des prix</summary><div class="analytics-builder-grid mt-2">
+                <label>Lot<select class="form-select" @bind="draft.LotQuantity"><option value="">Tous les lots</option><option value="1">× 1</option><option value="10">× 10</option><option value="100">× 100</option><option value="1000">× 1 000</option></select></label>
+                <label>Valeur<select class="form-select" @bind="draft.ValueMode" disabled="@(draft.LotQuantity is null)"><option value="@MarketAnalyticsValueMode.UnitPrice">Prix unitaire</option><option value="@MarketAnalyticsValueMode.LotPrice">Prix du lot</option></select></label>
+                <label>Source<select class="form-select" @bind="draft.SourceMode"><option value="@MarketAnalyticsSourceMode.InGameAutomatic">Relevés en jeu</option><option value="@MarketAnalyticsSourceMode.Manual">Saisies manuelles</option><option value="@MarketAnalyticsSourceMode.All">Toutes les sources</option></select></label>
+                <label>Prix par créneau<select class="form-select" @bind="draft.Aggregation"><option value="@MarketAnalyticsAggregation.Median">Médiane</option><option value="@MarketAnalyticsAggregation.Mean">Moyenne</option><option value="@MarketAnalyticsAggregation.FirstQuartile">Premier quartile</option><option value="@MarketAnalyticsAggregation.ThirdQuartile">Troisième quartile</option></select></label>
+                <label>Fusion du groupe<select class="form-select" @bind="draft.GroupAggregation"><option value="@MarketAnalyticsGroupAggregation.Mean">Moyenne à poids égaux</option><option value="@MarketAnalyticsGroupAggregation.Median">Médiane des objets</option></select></label>
+            </div></details>
+            <div class="analytics-drawer-footer"><span>@PreviewCount objets correspondent</span><button class="btn btn-primary" type="button" @onclick="CommitDraftAsync">@(_editingId is null ? "Ajouter" : "Appliquer")</button></div>
+            }
+            else if (_panel == AnalyticsPanel.Characteristic)
+            {
+                <label>Caractéristique<select class="form-select" @bind="_quickCharacteristic">@foreach (var stat in Characteristics) { <option value="@stat">@StatName(stat)</option> }</select></label><p class="small text-secondary mt-3">Deux groupes : les runes et les équipements qui donnent un bonus dans cette caractéristique.</p>
+                <div class="analytics-drawer-footer"><button class="btn btn-outline-secondary" type="button" @onclick="ClosePanel">Annuler</button><button class="btn btn-primary" type="button" @onclick="QuickCharacteristicAsync">Comparer runes et équipements</button></div>
+            }
+            else if (_panel == AnalyticsPanel.Details && Inspected is { } group)
+            {
+                var definition = _series.First(s => s.Id == group.DefinitionId);
+                <p class="small text-secondary">@group.Members.Count objets sélectionnés · @group.BaselineMemberCount à la référence · @group.CurrentMemberCount avec un prix récent</p>
+                <div class="analytics-segments my-3" role="group" aria-label="Détail de la courbe">
+                    <button type="button" aria-pressed="@(!_historyTab ? "true" : "false")" @onclick="ShowObjects">Objets</button>
+                    <button type="button" aria-pressed="@(_historyTab ? "true" : "false")" @onclick="() => OpenHistoryAsync()">Historique</button>
+                </div>
+                @if (!_historyTab)
+                {
+                @if (definition.SelectionMode != MarketAnalyticsSelectionMode.Single) { <label class="analytics-check my-3"><input class="form-check-input" type="checkbox" checked="@definition.FuseMembers" @onchange="args => ToggleFusion(definition.Id,args)" />Fusionner en une courbe</label> }
+                <input class="form-control my-3" type="search" placeholder="Rechercher un objet du groupe" aria-label="Rechercher un objet du groupe" @bind="_memberSearch" @bind:event="oninput" />
+                <PagedDataTable TItem="MarketAnalyticsMemberSeries" Items="InspectedMembers" PageSize="20" ResetKey="@($"{group.DefinitionId}:{_memberSearch}")">
+                    <RowContent Context="rows"><div class="table-responsive"><table class="table table-sm align-middle mb-0"><thead><tr><th>Objet</th><th class="text-end">Prix récent</th><th class="text-end">Évolution</th><th></th></tr></thead><tbody>
+                        @foreach (var member in rows) { <tr><td>@member.Member.Name<div class="small text-secondary">Réf. : @Money(member.ReferencePrice)</div><div class="small text-secondary">@(member.ReferencePrice is null ? "Absent à la référence" : member.Samples.LastOrDefault()?.Price is null ? "Pas de prix récent" : member.Samples.Last().IsCarried ? "Dernier prix connu" : "Relevé récent")</div></td><td class="text-end text-nowrap">@Money(member.Samples.LastOrDefault()?.Price)</td><td class="text-end text-nowrap">@Change(member)</td><td><button class="btn btn-sm btn-outline-secondary mb-1" type="button" @onclick="() => OpenHistoryAsync(member.Member)">Historique</button><button class="btn btn-sm btn-outline-secondary" type="button" title="Comparer séparément" aria-label="@($"Comparer {member.Member.Name} séparément")" @onclick="() => IsolateAsync(member.Member)">Isoler</button></td></tr> }
+                    </tbody></table></div></RowContent>
+                </PagedDataTable>
+                }
+                else
+                {
+                    @if (group.Members.Count > 1)
+                    {
+                        <label class="d-block mb-2">Rechercher un objet<input class="form-control" type="search" @bind="_historySearch" @bind:event="oninput" placeholder="Nom de l’objet" /></label>
+                        <label class="d-block mb-2">Objet<select class="form-select" @bind="HistoryMemberValue" @bind:after="ReloadHistoryAsync">@foreach (var member in HistoryChoices) { <option value="@($"{(int)member.ObjectType}:{member.DofusDbId}")">@member.Name</option> }</select></label>
+                        @if (HistoryChoices.Count >= 50) { <p class="small text-secondary">Affinez la recherche pour retrouver les autres objets.</p> }
+                    }
+                    <label class="analytics-check my-3"><input class="form-check-input" type="checkbox" @bind="_historyAll" @bind:after="ReloadHistoryAsync" />Tout l’historique</label>
+                    <p class="small text-secondary">@ServerName · @(_historyAll ? "Tout l’historique" : $"Période du graphique : {_comparison?.FromUtc.ToLocalTime():dd/MM/yyyy HH:mm} – {_comparison?.ToUtc.ToLocalTime():dd/MM/yyyy HH:mm}") · Tous les lots et toutes les sources.</p>
+                    @if (_historyLoad.IsLoading) { <div role="status" class="small my-3"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Chargement des relevés…</div> }
+                    else if (_historyError is not null) { <div role="alert">@_historyError <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="LoadHistoryAsync">Réessayer</button></div> }
+                    else if (_history is { } history)
+                    {
+                        @if (history.Rows.Count == 0) { <p class="text-secondary">Aucun relevé pour cet objet sur cette période.</p> }
+                        else
+                        {
+                            <div class="table-responsive"><table class="table table-sm align-middle analytics-history"><thead><tr><th>Date et heure</th><th class="text-end">Prix unitaire</th><th class="text-end">Lot</th></tr></thead><tbody>
+                                @foreach (var row in history.Rows)
+                                {
+                                    <tr><td class="text-nowrap">@row.AtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm:ss")<div class="small text-secondary">@(row.IsCleared ? "Réinitialisation" : row.Source == MarketPriceSource.Manual ? "Saisie manuelle" : "Relevé en jeu")</div></td><td class="text-end text-nowrap" title="@(row.IsCleared ? "Prix effacé" : $"Prix du lot : {row.Price:N0} K")">@(row.UnitPrice is { } price ? $"{price:N2} K" : "—")</td><td class="text-end text-nowrap">× @row.Quantity</td></tr>
+                                }
+                            </tbody></table></div>
+                        }
+                        <div class="d-flex justify-content-between align-items-center my-3"><button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_historyPage == 0)" @onclick="() => ChangeHistoryPageAsync(-1)">Précédent</button><span class="small">Page @(_historyPage + 1)</span><button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(!history.HasMore)" @onclick="() => ChangeHistoryPageAsync(1)">Suivant</button></div>
+                    }
+                }
+                <div class="analytics-drawer-footer"><button class="btn btn-outline-secondary" type="button" @onclick="() => BeginEdit(group.DefinitionId)">Modifier</button><button class="btn btn-primary" type="button" @onclick="ClosePanel">Fermer</button></div>
+            }
+            else if (_panel == AnalyticsPanel.Options)
+            {
+                <label>Fraîcheur maximale (heures)<input class="form-control" type="number" min="1" max="8760" @bind="_optionsAge" /></label><p class="small text-secondary mt-2">Durée pendant laquelle un ancien relevé reste utilisable dans le calcul d’un groupe.</p>
+                <div class="analytics-builder-grid mt-3">
+                    <label>Prix par créneau<select class="form-select" @bind="_optionsAggregation"><option value="">Selon chaque courbe</option>@foreach (var value in Enum.GetValues<MarketAnalyticsAggregation>()) { <option value="@value">@AggregationName(value)</option> }</select></label>
+                    <label>Source<select class="form-select" @bind="_optionsSource"><option value="">Selon chaque courbe</option><option value="@MarketAnalyticsSourceMode.InGameAutomatic">Relevés en jeu</option><option value="@MarketAnalyticsSourceMode.Manual">Saisies manuelles</option><option value="@MarketAnalyticsSourceMode.All">Toutes les sources</option></select></label>
+                    <label>Lot<select class="form-select" @bind="_optionsLot"><option value="mixed">Selon chaque courbe</option><option value="all">Tous les lots</option><option value="1">× 1</option><option value="10">× 10</option><option value="100">× 100</option><option value="1000">× 1 000</option></select></label>
+                </div>
+                <p class="small text-secondary mt-3">Les choix ci-dessus s’appliquent aux courbes de cette analyse. « Selon chaque courbe » conserve leurs réglages individuels.</p><div class="analytics-drawer-footer"><button class="btn btn-outline-secondary" type="button" @onclick="ClosePanel">Annuler</button><button class="btn btn-primary" type="button" @onclick="ApplyOptionsAsync">Appliquer</button></div>
+            }
+            else if (_panel == AnalyticsPanel.Name)
+            {
+                <label>Nom de l’analyse<input class="form-control" @bind="_nameDraft" @bind:event="oninput" @onkeydown="HandleNameKeyDown" /></label><div class="analytics-drawer-footer"><button class="btn btn-outline-secondary" type="button" @onclick="ClosePanel">Annuler</button><button class="btn btn-primary" type="button" @onclick="CompleteName">Enregistrer</button></div>
+            }
+            else if (_panel == AnalyticsPanel.Delete)
+            {
+                <p>Supprimer l’analyse enregistrée « @_name » ?</p><p class="small text-secondary mt-2">Les relevés de prix sont conservés.</p><div class="analytics-drawer-footer"><button class="btn btn-outline-secondary" type="button" @onclick="ClosePanel">Annuler</button><button class="btn btn-danger" type="button" @onclick="ConfirmDelete">Supprimer</button></div>
+            }
+        </section>
+    }
+</div>

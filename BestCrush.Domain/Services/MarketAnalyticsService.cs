@@ -1,307 +1,109 @@
 using BestCrush.Domain.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace BestCrush.Domain.Services;
 
-public sealed class MarketAnalyticsService(
-    MarketPriceService marketPriceService)
+/// <summary>Loads a lightweight catalog and one shared observation batch for an entire comparison.</summary>
+public sealed partial class MarketAnalyticsService(BestCrushDbContext context)
 {
-    public async Task<MarketAnalyticsSeriesResult>
-        BuildSeriesAsync(
-            MarketAnalyticsSeriesDefinition definition,
-            string serverName,
-            MarketAnalyticsPeriod period,
-            CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<MarketAnalyticsCatalogItem>> GetCatalogAsync(CancellationToken token = default)
     {
-        DateTime nowUtc = DateTime.UtcNow;
-        DateTime? fromUtc = GetFromUtc(period, nowUtc);
-
-        MarketPriceSource? source =
-            definition.SourceMode switch
-            {
-                MarketAnalyticsSourceMode.InGameAutomatic =>
-                    MarketPriceSource.InGameAutomatic,
-                MarketAnalyticsSourceMode.Manual =>
-                    MarketPriceSource.Manual,
-                _ => null
-            };
-
-        IReadOnlyList<MarketPriceObservation> observations =
-            await marketPriceService.GetHistoryAsync(
-                definition.ObjectType,
-                definition.DofusDbId,
-                serverName,
-                fromUtc,
-                nowUtc,
-                source,
-                definition.LotQuantity,
-                cancellationToken
-            );
-
-        if (observations.Count == 0)
-        {
-            return new MarketAnalyticsSeriesResult(
-                definition.Id,
-                BuildLabel(definition),
-                definition.Transformation,
-                []
-            );
-        }
-
-        TimeSpan bucketSize =
-            GetBucketSize(
-                period,
-                observations[0].ObservedAtUtc,
-                observations[^1].ObservedAtUtc
-            );
-
-        List<MarketAnalyticsPoint> points =
-            observations
-                .GroupBy(observation =>
-                    BucketStart(
-                        observation.ObservedAtUtc,
-                        bucketSize
-                    ))
-                .OrderBy(group => group.Key)
-                .Select(group =>
-                {
-                    double[] values = group
-                        .Select(observation =>
-                            definition.LotQuantity is null ||
-                            definition.ValueMode ==
-                                MarketAnalyticsValueMode.UnitPrice
-                                    ? (double)observation.Price /
-                                        observation.Quantity
-                                    : observation.Price)
-                        .OrderBy(value => value)
-                        .ToArray();
-
-                    double rawValue = Aggregate(
-                        values,
-                        definition.Aggregation
-                    );
-
-                    return new MarketAnalyticsPoint(
-                        group.Key +
-                            TimeSpan.FromTicks(
-                                bucketSize.Ticks / 2),
-                        rawValue,
-                        rawValue,
-                        values.Length
-                    );
-                })
-                .ToList();
-
-        if (definition.Transformation ==
-            MarketAnalyticsTransformation.Base100)
-        {
-            double? baseValue = points
-                .Select(point => point.Value)
-                .FirstOrDefault(value => value > 0);
-
-            if (baseValue is > 0)
-            {
-                double divisor = baseValue.Value;
-
-                points = points
-                    .Select(point =>
-                        point with
-                        {
-                            Value =
-                                point.Value /
-                                divisor *
-                                100.0
-                        })
-                    .ToList();
-            }
-        }
-
-        return new MarketAnalyticsSeriesResult(
-            definition.Id,
-            BuildLabel(definition),
-            definition.Transformation,
-            points
-        );
+        var equipment = await context.Equipments.AsNoTracking().Select(e => new { e.DofusDbId,e.Name,e.Level,e.Type }).ToArrayAsync(token);
+        var traits = await context.Set<ItemCharacteristicLine>().AsNoTracking()
+            .Where(c => c.From > 0 || c.To > 0).Select(c => new { c.Equipment.DofusDbId,c.Characteristic }).Distinct().ToArrayAsync(token);
+        var byId = traits.GroupBy(t => t.DofusDbId).ToDictionary(g => g.Key,g => (IReadOnlyList<Characteristic>)g.Select(t => t.Characteristic).ToArray());
+        var resources = await context.Resources.AsNoTracking().Select(r => new { r.DofusDbId,r.Name,r.Level }).ToArrayAsync(token);
+        var runes = await context.Runes.AsNoTracking().Select(r => new { r.DofusDbId,r.Name,r.Level,r.Characteristic }).ToArrayAsync(token);
+        return equipment.Select(e => new MarketAnalyticsCatalogItem(new(MarketObjectType.Equipment,e.DofusDbId),e.Name,e.Level,e.Type,byId.GetValueOrDefault(e.DofusDbId) ?? []))
+            .Concat(resources.Select(r => new MarketAnalyticsCatalogItem(new(MarketObjectType.Resource,r.DofusDbId),r.Name,r.Level,null,[])))
+            .Concat(runes.Select(r => new MarketAnalyticsCatalogItem(new(MarketObjectType.Rune,r.DofusDbId),r.Name,r.Level,null,[r.Characteristic])))
+            .OrderBy(i => i.Name).ToArray();
     }
 
-    private static DateTime? GetFromUtc(
-        MarketAnalyticsPeriod period,
-        DateTime nowUtc)
+    public async Task<MarketAnalyticsComparison> BuildComparisonAsync(MarketAnalyticsRequest request,
+        IReadOnlyList<MarketAnalyticsCatalogItem> catalog, CancellationToken token = default)
     {
-        return period switch
+        token.ThrowIfCancellationRequested();
+        if (string.IsNullOrWhiteSpace(request.ServerName)) throw new ArgumentException("Choisissez un serveur.");
+        if (request.Series.Select(s => s.Id).Distinct().Count() != request.Series.Count) throw new ArgumentException("Les courbes doivent avoir des identifiants distincts.");
+        if (request.MaxQuoteAgeHours is < 1 or > 8760 || request.MaxPoints is < 2 or > 512) throw new ArgumentException("Paramètres de période invalides.");
+        var selections = request.Series.Select(d => ResolveMembers(d,catalog)).ToArray();
+        var keys = selections.SelectMany(m => m).Select(m => m.Key).Distinct().ToArray();
+        DateTime to = request.ToUtc ?? DateTime.UtcNow;
+        DateTime? from = request.FromUtc ?? request.Period switch
         {
-            MarketAnalyticsPeriod.Hours24 =>
-                nowUtc.AddHours(-24),
-            MarketAnalyticsPeriod.Days7 =>
-                nowUtc.AddDays(-7),
-            MarketAnalyticsPeriod.Days30 =>
-                nowUtc.AddDays(-30),
-            _ => null
+            MarketAnalyticsPeriod.Hours24 => to.AddHours(-24),MarketAnalyticsPeriod.Days7 => to.AddDays(-7),
+            MarketAnalyticsPeriod.Days30 => to.AddDays(-30),_ => null
         };
-    }
-
-    private static TimeSpan GetBucketSize(
-        MarketAnalyticsPeriod period,
-        DateTime firstUtc,
-        DateTime lastUtc)
-    {
-        return period switch
+        if (from >= to) throw new ArgumentException("Période invalide.");
+        long[] equipmentIds = keys.Where(k => k.ObjectType == MarketObjectType.Equipment).Select(k => k.DofusDbId).ToArray();
+        long[] resourceIds = keys.Where(k => k.ObjectType == MarketObjectType.Resource).Select(k => k.DofusDbId).ToArray();
+        long[] runeIds = keys.Where(k => k.ObjectType == MarketObjectType.Rune).Select(k => k.DofusDbId).ToArray();
+        var query = context.MarketPriceObservations.AsNoTracking().Where(o => o.ServerName == request.ServerName && o.Quantity > 0 &&
+            ((o.ObjectType == MarketObjectType.Equipment && Enumerable.Contains(equipmentIds,o.DofusDbId)) ||
+             (o.ObjectType == MarketObjectType.Resource && Enumerable.Contains(resourceIds,o.DofusDbId)) ||
+             (o.ObjectType == MarketObjectType.Rune && Enumerable.Contains(runeIds,o.DofusDbId))));
+        // Shared filters are safe to push into SQL; different series still share the same read.
+        if (request.Series.Count > 0 && request.Series.Select(d => d.SourceMode).Distinct().Count() == 1 && request.Series[0].SourceMode != MarketAnalyticsSourceMode.All)
         {
-            MarketAnalyticsPeriod.Hours24 =>
-                TimeSpan.FromHours(1),
-            MarketAnalyticsPeriod.Days7 =>
-                TimeSpan.FromHours(6),
-            MarketAnalyticsPeriod.Days30 =>
-                TimeSpan.FromDays(1),
-            _ => AdaptiveBucketSize(
-                lastUtc - firstUtc)
-        };
-    }
-
-    private static TimeSpan AdaptiveBucketSize(
-        TimeSpan span)
-    {
-        if (span <= TimeSpan.FromDays(3))
+            var source = request.Series[0].SourceMode == MarketAnalyticsSourceMode.Manual ? MarketPriceSource.Manual : MarketPriceSource.InGameAutomatic;
+            query = query.Where(o => o.Source == source);
+        }
+        int? commonLot = request.Series.Count > 0 && request.Series.Select(d => d.LotQuantity).Distinct().Count() == 1
+            ? request.Series[0].LotQuantity : null;
+        var maxAge = TimeSpan.FromHours(request.MaxQuoteAgeHours);
+        DateTime? lookback = from.HasValue && from.Value >= DateTime.MinValue + maxAge ? from.Value - maxAge : null;
+        var quotes = keys.Length == 0 ? [] : await MarketPriceReliability.IncludeReferenceWindow(query, lookback, to)
+            .Where(o => o.Price > 0 || o.IsCleared)
+            .OrderBy(o => o.ObservedAtUtc).ThenBy(o => o.Id).ToArrayAsync(token);
+        var rejected = MarketPriceReliability.GetRejectedHistoryIds(quotes);
+        var selected = quotes.Where(o => o.ObservedAtUtc <= to && (!commonLot.HasValue || o.Quantity == commonLot.Value));
+        if (!from.HasValue)
         {
-            return TimeSpan.FromHours(1);
+            from = selected.Where(o => !o.IsCleared && !rejected.Contains(o.Id))
+                .Select(o => (DateTime?)DateTime.SpecifyKind(o.ObservedAtUtc, DateTimeKind.Utc)).FirstOrDefault();
+            if (from >= to) from = to.AddTicks(-1);
         }
 
-        if (span <= TimeSpan.FromDays(14))
-        {
-            return TimeSpan.FromHours(3);
-        }
-
-        if (span <= TimeSpan.FromDays(60))
-        {
-            return TimeSpan.FromHours(12);
-        }
-
-        if (span <= TimeSpan.FromDays(365))
-        {
-            return TimeSpan.FromDays(1);
-        }
-
-        return TimeSpan.FromDays(7);
-    }
-
-    private static DateTime BucketStart(
-        DateTime utc,
-        TimeSpan bucketSize)
-    {
-        DateTime normalized =
-            utc.Kind == DateTimeKind.Utc
-                ? utc
-                : utc.ToUniversalTime();
-
-        long ticks =
-            normalized.Ticks /
-            bucketSize.Ticks *
-            bucketSize.Ticks;
-
-        return new DateTime(
-            ticks,
-            DateTimeKind.Utc
-        );
-    }
-
-    private static double Aggregate(
-        IReadOnlyList<double> sortedValues,
-        MarketAnalyticsAggregation aggregation)
-    {
-        if (sortedValues.Count == 0)
-        {
-            return 0;
-        }
-
-        return aggregation switch
-        {
-            MarketAnalyticsAggregation.Mean =>
-                sortedValues.Average(),
-            MarketAnalyticsAggregation.FirstQuartile =>
-                Percentile(sortedValues, 0.25),
-            MarketAnalyticsAggregation.ThirdQuartile =>
-                Percentile(sortedValues, 0.75),
-            _ =>
-                Percentile(sortedValues, 0.50)
-        };
-    }
-
-    private static double Percentile(
-        IReadOnlyList<double> sortedValues,
-        double percentile)
-    {
-        if (sortedValues.Count == 1)
-        {
-            return sortedValues[0];
-        }
-
-        double position =
-            (sortedValues.Count - 1) *
-            percentile;
-
-        int lower = (int)Math.Floor(position);
-        int upper = (int)Math.Ceiling(position);
-
-        if (lower == upper)
-        {
-            return sortedValues[lower];
-        }
-
-        double fraction =
-            position - lower;
-
-        return sortedValues[lower] +
-            (sortedValues[upper] -
-                sortedValues[lower]) *
-            fraction;
-    }
-
-    private static string BuildLabel(
-        MarketAnalyticsSeriesDefinition definition)
-    {
-        string aggregation =
-            definition.Aggregation switch
+        from ??= to.AddDays(-7);
+        var observations = selected.Where(o => !lookback.HasValue || o.ObservedAtUtc >= lookback.Value)
+            .Select(o =>
             {
-                MarketAnalyticsAggregation.Mean =>
-                    "moyenne",
-                MarketAnalyticsAggregation.FirstQuartile =>
-                    "Q1",
-                MarketAnalyticsAggregation.ThirdQuartile =>
-                    "Q3",
-                _ => "médiane"
-            };
+                // An excluded quote ends the carry of an older price for that lot.
+                bool isRejected = rejected.Contains(o.Id);
+                return new MarketAnalyticsObservation(new(o.ObjectType,o.DofusDbId),
+                    DateTime.SpecifyKind(o.ObservedAtUtc,DateTimeKind.Utc),
+                    isRejected ? 0 : o.Price,o.Quantity,o.Source,o.IsCleared || isRejected);
+            }).ToArray();
+        return MarketAnalyticsCalculator.Calculate(request with { FromUtc = from,ToUtc = to },selections,observations,token);
+    }
 
-        string lot =
-            definition.LotQuantity is int quantity
-                ? $"x{quantity}"
-                : "tous lots";
-
-        string value =
-            definition.LotQuantity is null ||
-            definition.ValueMode ==
-                MarketAnalyticsValueMode.UnitPrice
-                    ? "prix unitaire"
-                    : "prix du lot";
-
-        string source =
-            definition.SourceMode switch
-            {
-                MarketAnalyticsSourceMode.Manual =>
-                    "manuel",
-                MarketAnalyticsSourceMode.All =>
-                    "toutes sources",
-                _ => "jeu"
-            };
-
-        string transformation =
-            definition.Transformation ==
-                MarketAnalyticsTransformation.Base100
-                    ? " · base 100"
-                    : string.Empty;
-
-        return
-            $"{definition.ItemName} — " +
-            $"{aggregation} · {lot} · " +
-            $"{value} · {source}" +
-            transformation;
+    public static IReadOnlyList<MarketAnalyticsMember> ResolveMembers(MarketAnalyticsSeriesDefinition definition,
+        IReadOnlyList<MarketAnalyticsCatalogItem> catalog)
+    {
+        if (definition.LotQuantity is <= 0) throw new ArgumentException("Le lot doit être positif.");
+        if (definition.LevelMin > definition.LevelMax) throw new ArgumentException("Les niveaux minimum et maximum sont inversés.");
+        if (definition.SelectionMode == MarketAnalyticsSelectionMode.Single)
+        {
+            if (definition.DofusDbId <= 0) return [];
+            var key = new MarketAnalyticsItemKey(definition.ObjectType,definition.DofusDbId);
+            return [new(definition.ObjectType,definition.DofusDbId,catalog.FirstOrDefault(c => c.Key == key)?.Name ?? definition.ItemName)];
+        }
+        if (definition.SelectionMode == MarketAnalyticsSelectionMode.Custom)
+        {
+            var lookup = catalog.ToDictionary(c => c.Key);
+            return definition.Members.DistinctBy(m => m.Key).Where(m => m.DofusDbId > 0)
+                .Select(m => m with { Name = lookup.GetValueOrDefault(m.Key)?.Name ?? m.Name }).ToArray();
+        }
+        IEnumerable<MarketAnalyticsCatalogItem> items = catalog.Where(c => c.Key.ObjectType == definition.ObjectType);
+        if (definition.SelectionMode == MarketAnalyticsSelectionMode.Criteria)
+        {
+            if (definition.Characteristic is Characteristic characteristic) items = items.Where(i => i.Characteristics.Contains(characteristic));
+            if (definition.EquipmentTypes.Count > 0) items = items.Where(i => i.EquipmentType is EquipmentType type && definition.EquipmentTypes.Contains(type));
+            if (definition.LevelMin is int min) items = items.Where(i => i.Level >= min);
+            if (definition.LevelMax is int max) items = items.Where(i => i.Level <= max);
+            if (!string.IsNullOrWhiteSpace(definition.SearchText)) items = items.Where(i => i.Name.Contains(definition.SearchText.Trim(),StringComparison.CurrentCultureIgnoreCase));
+        }
+        return items.Select(i => new MarketAnalyticsMember(i.Key.ObjectType,i.Key.DofusDbId,i.Name)).ToArray();
     }
 }

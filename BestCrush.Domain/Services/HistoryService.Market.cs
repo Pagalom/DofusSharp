@@ -5,7 +5,7 @@ namespace BestCrush.Domain.Services;
 
 public sealed partial class HistoryService
 {
-    public Task<HistoryPage<MarketHistoryRow>>
+    public async Task<HistoryPage<MarketHistoryRow>>
         GetMarketHistoryAsync(
             MarketObjectType objectType,
             string serverName,
@@ -15,32 +15,48 @@ public sealed partial class HistoryService
             HistorySortColumn sortColumn,
             HistorySortDirection sortDirection,
             int take,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            long? itemId = null,
+            HistoryQueryOptions? options = null)
     {
-        return objectType switch
+        var observations = context.MarketPriceObservations.AsNoTracking()
+            .Where(quote => quote.ObjectType == objectType && quote.ServerName == serverName);
+        if (itemId is long id)
+            observations = observations.Where(quote => quote.DofusDbId == id);
+        if (objectType is MarketObjectType.Resource or MarketObjectType.Rune &&
+            options?.Source is not (HistoryObservationSource.Manual or HistoryObservationSource.DoFocus))
+        {
+            var rejected = await MarketPriceReliability.GetRejectedHistoryIdsAsync(
+                observations, options?.FromUtc, options?.BeforeUtc, cancellationToken);
+            observations = observations.Where(quote => !rejected.Contains(quote.Id));
+        }
+
+        return await (objectType switch
         {
             MarketObjectType.Resource =>
                 GetResourceHistoryAsync(
-                    serverName,
+                    observations,
                     searchText,
                     levelMin,
                     levelMax,
                     sortColumn,
                     sortDirection,
                     take,
-                    cancellationToken
+                    cancellationToken,
+                    options
                 ),
 
             MarketObjectType.Rune =>
                 GetRuneHistoryAsync(
-                    serverName,
+                    observations,
                     searchText,
                     levelMin,
                     levelMax,
                     sortColumn,
                     sortDirection,
                     take,
-                    cancellationToken
+                    cancellationToken,
+                    options
                 ),
 
             _ =>
@@ -49,34 +65,28 @@ public sealed partial class HistoryService
                     objectType,
                     "Cet historique de marché est réservé aux ressources et aux runes."
                 )
-        };
+        });
     }
 
     private async Task<HistoryPage<MarketHistoryRow>>
         GetResourceHistoryAsync(
-            string serverName,
+            IQueryable<MarketPriceObservation> observations,
             string? searchText,
             int? levelMin,
             int? levelMax,
             HistorySortColumn sortColumn,
             HistorySortDirection sortDirection,
             int take,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            HistoryQueryOptions? options)
     {
         IQueryable<MarketHistoryRow> query =
-            from observation in context
-                .MarketPriceObservations
-                .AsNoTracking()
+            from observation in observations
             join resource in context
                 .Resources
                 .AsNoTracking()
                 on observation.DofusDbId
                 equals resource.DofusDbId
-            where
-                observation.ObjectType ==
-                    MarketObjectType.Resource &&
-                observation.ServerName ==
-                    serverName
             select new MarketHistoryRow
             {
                 ObservationId = observation.Id,
@@ -98,14 +108,16 @@ public sealed partial class HistoryService
             levelMax
         );
 
+        query = ApplyObservationOptions(query, options);
         query = ApplyMarketSort(
             query,
             sortColumn,
             sortDirection
         );
+        query = ((IOrderedQueryable<MarketHistoryRow>)query).ThenBy(row => row.ObservationId);
 
         return await ToPageAsync(
-            query,
+            query.Skip(Math.Max(0, options?.Skip ?? 0)),
             take,
             cancellationToken
         );
@@ -113,29 +125,23 @@ public sealed partial class HistoryService
 
     private async Task<HistoryPage<MarketHistoryRow>>
         GetRuneHistoryAsync(
-            string serverName,
+            IQueryable<MarketPriceObservation> observations,
             string? searchText,
             int? levelMin,
             int? levelMax,
             HistorySortColumn sortColumn,
             HistorySortDirection sortDirection,
             int take,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            HistoryQueryOptions? options)
     {
         IQueryable<MarketHistoryRow> query =
-            from observation in context
-                .MarketPriceObservations
-                .AsNoTracking()
+            from observation in observations
             join rune in context
                 .Runes
                 .AsNoTracking()
                 on observation.DofusDbId
                 equals rune.DofusDbId
-            where
-                observation.ObjectType ==
-                    MarketObjectType.Rune &&
-                observation.ServerName ==
-                    serverName
             select new MarketHistoryRow
             {
                 ObservationId = observation.Id,
@@ -157,14 +163,16 @@ public sealed partial class HistoryService
             levelMax
         );
 
+        query = ApplyObservationOptions(query, options);
         query = ApplyMarketSort(
             query,
             sortColumn,
             sortDirection
         );
+        query = ((IOrderedQueryable<MarketHistoryRow>)query).ThenBy(row => row.ObservationId);
 
         return await ToPageAsync(
-            query,
+            query.Skip(Math.Max(0, options?.Skip ?? 0)),
             take,
             cancellationToken
         );

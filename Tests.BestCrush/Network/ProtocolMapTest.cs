@@ -29,6 +29,8 @@ public sealed class ProtocolMapTest : IDisposable
         map.MarketSelectionResponse.Should().Be(useMissingFile ? null : "jzs");
         map.CurrentCrushResult.Should().Be(useMissingFile ? null : "kag");
         map.CurrentItemDetail.Should().Be(useMissingFile ? null : "kch");
+        map.CurrentMarketListingRequest.Should().Be(useMissingFile ? null : "jyq");
+        map.CurrentMarketListingCreated.Should().Be(useMissingFile ? null : "jxt");
         new[] { map.PriceList, map.CrushResult, map.ItemDetail, map.WorkshopSlotPut,
                 map.PurchaseRequest, map.PurchaseOffer, map.PurchaseReceipt,
                 map.InventoryAdd, map.InventoryQuantity, map.InventoryRemove,
@@ -56,6 +58,8 @@ public sealed class ProtocolMapTest : IDisposable
         map.MarketSelectionResponse.Should().BeNull();
         map.CurrentCrushResult.Should().BeNull();
         map.CurrentItemDetail.Should().BeNull();
+        map.CurrentMarketListingRequest.Should().BeNull();
+        map.CurrentMarketListingCreated.Should().BeNull();
         map.DiagnosticMessages.Should().BeEquivalentTo(new[] { "kef", "KEF" });
     }
 

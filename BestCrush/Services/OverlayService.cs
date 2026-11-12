@@ -711,6 +711,15 @@ private bool _hasF7VisibilitySnapshot;
         return matching.Length == 1;
     }
 
+    public async Task FocusEquipmentAndCopyNameAsync(Equipment equipment, string? serverName)
+    {
+        if (!currentServerState.AutomaticRoutingEnabled && serverName is not null)
+            currentServerState.SelectServer(serverName);
+
+        await FocusEquipmentAsync(equipment);
+        await Microsoft.Maui.ApplicationModel.DataTransfer.Clipboard.Default.SetTextAsync(equipment.Name);
+    }
+
     public async Task FocusEquipmentAsync(
         Equipment equipment)
     {

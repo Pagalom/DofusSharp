@@ -77,6 +77,8 @@ public sealed class CurrentWindowProfessionsStateTest
 
         view.Observe(Wire("ipz", Roster(), A, 21, lease)).Should().BeTrue();
         view.ForWindow(A).Should().HaveCount(20);
+        view.ForWindow(A, lease.ServerName.ToLowerInvariant()).Should().HaveCount(20);
+        view.ForWindow(A, "Un autre serveur").Should().BeNull();
         view.ForWindow(B).Should().BeNull();
         view.ForWindow(A)!.Should().Contain(job =>
             job.Name == "Bûcheron" && job.Level == 1 &&

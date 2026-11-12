@@ -1,0 +1,97 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+
+<div class="table-responsive history-feed">
+<table class="table table-striped table-hover align-middle mb-0">
+    <thead><tr>
+        @foreach (var column in Columns)
+        {
+            <th class="@(column.Key is HistorySortColumn.Value or HistorySortColumn.Quantity ? "text-end" : null)"><button type="button" class="history-sort" @onclick="() => SortRequested.InvokeAsync(column.Key)">@column.Label @Indicator(column.Key)</button></th>
+        }
+    </tr></thead>
+    <tbody>
+    @if (Rows.Count == 0) { <tr><td colspan="5" class="text-center py-4">Aucun relevé ne correspond à ces filtres.</td></tr> }
+    @foreach (var row in Rows)
+    {
+        bool expanded = _expanded.Contains(row.Id);
+        <tr data-entry-kind="@row.Kind">
+            <td class="text-nowrap">@row.ObservedAtUtc.ToLocalTime().ToString("dd/MM/yyyy")<div class="small text-body-secondary">@row.ObservedAtUtc.ToLocalTime().ToString("HH:mm")</div></td>
+            <td><button type="button" class="history-object" aria-expanded="@expanded" @onclick="() => Toggle(row.Id)"><span aria-hidden="true">@(expanded ? "⌄" : "›")</span><span>
+                @if (row.Session is { } summary)
+                {
+                    @foreach (var line in summary.Equipments.OrderBy(e => e.RowY)) { <span class="d-block">@line.EquipmentName</span> }
+                    @if (summary.Equipments.Count == 0) { <span>Concassage</span> }
+                }
+                else { <span>@row.Name</span> }
+            </span></button></td>
+            <td>@(row.Kind == CrushHistoryEntryKind.Coefficient ? "Coefficient" : "Concassage effectué")</td>
+            <td class="text-end text-nowrap">@(row.Quantity?.ToString("N0") ?? "—")</td>
+            <td class="text-end text-nowrap">@(row.IsCleared ? "—" : row.Kind == CrushHistoryEntryKind.Coefficient ? $"{row.Value:0.##} %" : Kamas(row.Value))
+                @if (row.Kind == CrushHistoryEntryKind.Operation) { <div class="small text-body-secondary">Runes obtenues</div> }
+                @if (row.IsCleared) { <div class="small text-warning">Réinitialisé</div> }
+            </td>
+        </tr>
+        @if (expanded)
+        {
+            <tr><td colspan="5"><div class="history-entry-details">
+            @if (row.Session is { } session)
+            {
+                <div class="row g-4">
+                    <div class="col-12 col-xl-5"><h6>Équipements</h6>
+                        @foreach (var equipment in session.Equipments.OrderBy(e => e.RowY))
+                        {
+                            <div class="d-flex align-items-center justify-content-between gap-3 py-2 border-bottom">
+                                <span>@equipment.EquipmentName</span><span class="text-end text-nowrap"><strong>@equipment.CoefficientPercent.ToString("0.##") %</strong><span class="small text-body-secondary d-block">@SourceName(equipment.CoefficientSource)</span></span>
+                            </div>
+                        }
+                    </div>
+                    <div class="col-12 col-xl-7"><h6>Runes obtenues</h6>
+                        @foreach (var rune in session.Runes.OrderBy(r => r.RuneName))
+                        {
+                            <div class="py-2 border-bottom">
+                                <div class="d-flex justify-content-between gap-3"><span>@rune.RuneName <span class="small text-body-secondary">× @rune.Quantity.ToString("N0")</span></span><strong class="text-nowrap">@Kamas(rune.Value)</strong></div>
+                                @foreach (var lot in rune.Lots.OrderByDescending(l => l.LotQuantity))
+                                {
+                                    <div class="small d-flex flex-wrap justify-content-between gap-2 mt-1">
+                                        <span>@BestCrush.Components.Pages.History.FormatCrushHistoryLot(lot)</span>
+                                        <span class="text-body-secondary">@lot.LotPrice.ToString("N0") K / lot
+                                            @if (lot.IsEstimated) { <span> · estimé</span> }
+                                            @if (lot.PriceSource is MarketPriceSource source) { <span> · @(source == MarketPriceSource.Manual ? "Manuel" : "Jeu")</span> }
+                                            @if (lot.PriceObservedAtUtc is DateTime at) { <span> · @at.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</span> }
+                                        </span>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+                <div class="text-end mt-3"><span class="small text-body-secondary">Valeurs enregistrées au moment du concassage</span><div>Valeur brute : <strong>@Kamas(session.TotalValue)</strong></div>
+                    @if (session.DiscountedTotalValue.HasValue) { <div>Après décote de @session.DiscountPercent.ToString("0.##") % : <strong>@Kamas(session.DiscountedTotalValue)</strong></div> }
+                    else { <div class="small text-body-secondary">Décote non enregistrée</div> }
+                </div>
+            }
+            else
+            {
+                <div class="d-flex flex-wrap gap-4 small"><div>Coefficient relevé<strong class="d-block">@row.Value?.ToString("0.##") %</strong></div><div>Source<strong class="d-block">@SourceName(row.Source)</strong></div><div>Date du relevé<strong class="d-block">@row.ObservedAtUtc.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</strong></div></div>
+            }
+            </div></td></tr>
+        }
+    }
+    </tbody>
+</table></div>
+
+@code {
+    [Parameter] public IReadOnlyList<CrushHistoryEntry> Rows { get; set; } = [];
+    [Parameter] public HistorySortColumn SortColumn { get; set; }
+    [Parameter] public HistorySortDirection SortDirection { get; set; }
+    [Parameter] public EventCallback<HistorySortColumn> SortRequested { get; set; }
+    [Parameter] public string? ResetKey { get; set; }
+    private string? _lastKey;
+    private readonly HashSet<Guid> _expanded = [];
+    private static readonly (HistorySortColumn Key,string Label)[] Columns = [(HistorySortColumn.Date,"Date"),(HistorySortColumn.Name,"Objet"),(HistorySortColumn.DataKind,"Relevé"),(HistorySortColumn.Quantity,"Objets"),(HistorySortColumn.Value,"Valeur")];
+    protected override void OnParametersSet() { if (_lastKey != ResetKey) { _lastKey = ResetKey; _expanded.Clear(); } }
+    private void Toggle(Guid id) { if (!_expanded.Add(id)) _expanded.Remove(id); }
+    private string Indicator(HistorySortColumn key) => key == SortColumn ? SortDirection == HistorySortDirection.Ascending ? "▲" : "▼" : "↕";
+    private static string Kamas(double? value) => value is double v ? $"{v:N0} K" : "Indisponible";
+    private static string SourceName(CoefficientSource? source) => source switch { CoefficientSource.Manual => "Manuel", CoefficientSource.InGameAutomatic => "Jeu", CoefficientSource.DofocusInitial => "DoFocus", _ => "—" };
+}

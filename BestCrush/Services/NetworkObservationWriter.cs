@@ -1,4 +1,4 @@
-using BestCrush.Domain;
+﻿using BestCrush.Domain;
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
 using BestCrush.Network.Protocol;
@@ -12,7 +12,7 @@ namespace BestCrush.Services;
 /// Persists semantic network observations and updates application state.
 /// Existing scope, cache, notification and ordering semantics are preserved.
 /// </summary>
-internal sealed class NetworkObservationWriter(
+internal sealed partial class NetworkObservationWriter(
     IServiceScopeFactory serviceScopeFactory,
     CurrentServerState currentServerState,
     LastNetworkEquipmentState lastNetworkEquipmentState,
@@ -64,6 +64,8 @@ internal sealed class NetworkObservationWriter(
                 context,
                 cancellationToken);
 
+        if (objectType is null)
+            objectType = await ResolveEmptySoulStoneAsync(checked((long)market.ItemId), context, lease, cancellationToken);
         if (!currentServerState.IsCaptureLeaseActive(lease))
             return;
 
@@ -112,6 +114,30 @@ internal sealed class NetworkObservationWriter(
                 .GetRequiredService<MarketPriceService>();
 
         int[] quantities = [1, 10, 100, 1000];
+        if (requireStackable)
+        {
+            // A complete ladder includes an explicit slot for each size.
+            var lotPrices = new Dictionary<int, long?>();
+            for (int index = 0; index < quantities.Length; index++)
+            {
+                ulong minimum = market.Offers
+                    .Select(offer => offer.Ladder[index])
+                    .Where(price => price > 0)
+                    .DefaultIfEmpty(0UL)
+                    .Min();
+                lotPrices.Add(quantities[index], minimum == 0 ? null : checked((long)minimum));
+            }
+
+            var reportedLots = await marketPriceService.RecordAutomaticLotSnapshotAsync(
+                objectType.Value, checked((long)market.ItemId), serverName, lotPrices, cancellationToken);
+            if (currentServerState.IsCaptureLeaseActive(lease))
+            {
+                foreach (int quantity in reportedLots)
+                    marketDataChangeNotifier.Notify(objectType.Value, checked((long)market.ItemId), serverName, quantity);
+            }
+            return;
+        }
+
         int maximumLadderLength =
             market.Offers.Max(
                 offer => offer.Ladder.Count);
@@ -369,6 +395,35 @@ internal sealed class NetworkObservationWriter(
             window, lease, captureEpoch, equipmentId, observedAtUtc);
     }
 
+    internal async Task PersistGlobalHistoryAsync(GlobalMarketHistory history, DateTime observedAtUtc,
+        NetworkCaptureLease lease, CancellationToken cancellationToken)
+    {
+        if (!currentServerState.IsCaptureLeaseActive(lease)) return;
+        using var scope = serviceScopeFactory.CreateScope();
+        var repository = scope.ServiceProvider.GetService<GlobalSalesRepository>();
+        if (repository is null) return;
+        var context = scope.ServiceProvider.GetRequiredService<BestCrushDbContext>();
+        var objectType = await ResolveMarketObjectTypeAsync(history.ItemId, context, cancellationToken);
+        if (objectType is null)
+        {
+            if (await PersistBossSoulHistoryAsync(history, observedAtUtc, lease, cancellationToken)) return;
+            objectType = await ResolveEmptySoulStoneAsync(history.ItemId, context, lease, cancellationToken);
+        }
+        if (objectType is null || !IsMarketCaptureEnabled(objectType.Value) ||
+            !currentServerState.IsCaptureLeaseActive(lease)) return;
+        var market = new SalesMarketKey(lease.ServerName, objectType.Value, history.ItemId);
+        var captured = new DateTimeOffset(observedAtUtc);
+        var snapshot = new GlobalSalesHistory(market, captured,
+            history.Last24Hours.Select(x => new GlobalSalePoint(x.UnitPrice, x.UnitsSold, x.RecordedAtUtc)).ToArray(),
+            history.Last30Days.Select(x => new GlobalSalePoint(x.UnitPrice, x.UnitsSold, x.RecordedAtUtc)).ToArray());
+        if (repository.SaveHistory(snapshot))
+        {
+            marketDataChangeNotifier.Notify(objectType.Value, history.ItemId, lease.ServerName);
+            await debugWriter.WriteEventDebugAsync(observedAtUtc,
+                $"[GLOBAL-SALES] ItemId={history.ItemId} units24h={snapshot.Period(1).UnitsSold} units7d={snapshot.Period(7).UnitsSold} units30d={snapshot.Period(30).UnitsSold}", cancellationToken);
+        }
+    }
+
     private bool IsMarketCaptureEnabled(
         MarketObjectType objectType)
     {
@@ -395,7 +450,7 @@ internal sealed class NetworkObservationWriter(
     {
         if (_marketObjectTypes.TryGetValue(
             dofusDbId,
-            out MarketObjectType? cached))
+            out MarketObjectType? cached) && cached is not null)
         {
             return cached;
         }

@@ -15,18 +15,19 @@ public sealed partial class EquipmentProfitabilityService(
     public async Task<EquipmentProfitabilityContext>
         LoadContextAsync(
             string serverName,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool includeCrushingData = true, bool includeRunePrices = false)
     {
         IReadOnlyDictionary<
             (long DofusDbId, int Quantity),
             MarketPriceObservation>
             runePrices =
-                await marketPriceService
+                includeCrushingData || includeRunePrices ? await marketPriceService
                     .GetLatestObservationsForServerAsync(
                         MarketObjectType.Rune,
                         serverName,
                         cancellationToken
-                    );
+                    ) : new Dictionary<(long DofusDbId, int Quantity), MarketPriceObservation>();
 
         IReadOnlyDictionary<
             (long DofusDbId, int Quantity),
@@ -52,7 +53,7 @@ public sealed partial class EquipmentProfitabilityService(
 
         Dictionary<long, CoefficientObservation>
             coefficients =
-                (await coefficientService
+                includeCrushingData ? (await coefficientService
                     .GetLatestObservationsForServerAsync(
                         serverName,
                         cancellationToken
@@ -60,7 +61,7 @@ public sealed partial class EquipmentProfitabilityService(
                 .ToDictionary(
                     pair => pair.Key,
                     pair => pair.Value
-                );
+                ) : new Dictionary<long, CoefficientObservation>();
 
         return new EquipmentProfitabilityContext
         {
@@ -76,7 +77,10 @@ public sealed partial class EquipmentProfitabilityService(
             Equipment equipment,
             string serverName,
             EquipmentProfitabilityContext context,
-            bool forceRefresh = false)
+            bool forceRefresh = false,
+            bool includeThresholds = true,
+            bool includeUnpricedScenarios = false,
+            bool allowRemoteCoefficient = true)
     {
         HashSet<string> missingData = [];
 
@@ -86,7 +90,8 @@ public sealed partial class EquipmentProfitabilityService(
                 serverName,
                 context,
                 missingData,
-                forceRefresh
+                forceRefresh,
+                allowRemoteCoefficient
             );
 
         context.EquipmentPrices.TryGetValue(
@@ -181,7 +186,7 @@ public sealed partial class EquipmentProfitabilityService(
 
         if (coefficient is null ||
             (
-                itemCost is null &&
+                !includeUnpricedScenarios && itemCost is null &&
                 craftCost.TotalCost is null
             ))
         {
@@ -239,7 +244,8 @@ public sealed partial class EquipmentProfitabilityService(
                     runesWithoutFocus,
                     valuesWithoutFocus,
                     estimatedLines,
-                    context.RunePrices
+                    context.RunePrices,
+                    includeThresholds
                 )
             );
         }
@@ -289,7 +295,8 @@ public sealed partial class EquipmentProfitabilityService(
                     runesWithFocus,
                     valuesWithFocus,
                     estimatedLines,
-                    context.RunePrices
+                    context.RunePrices,
+                    includeThresholds
                 )
             );
         }
@@ -338,7 +345,8 @@ public sealed partial class EquipmentProfitabilityService(
             string serverName,
             EquipmentProfitabilityContext context,
             HashSet<string> missingData,
-            bool forceRefresh)
+            bool forceRefresh,
+            bool allowRemoteCoefficient)
     {
         if (context.Coefficients.TryGetValue(
             equipment.DofusDbId,
@@ -346,6 +354,12 @@ public sealed partial class EquipmentProfitabilityService(
                 coefficient))
         {
             return coefficient;
+        }
+
+        if (!allowRemoteCoefficient)
+        {
+            missingData.Add("Coefficient de brisage indisponible");
+            return null;
         }
 
         DofocusItem detailedItem;

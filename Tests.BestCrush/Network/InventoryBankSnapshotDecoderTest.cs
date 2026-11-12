@@ -74,6 +74,8 @@ public sealed class InventoryBankSnapshotDecoderTest
             .Should().BeNull();
         InventoryBankSnapshotDecoder.Decode("irl", [])!
             .Status.Should().Be(StockSnapshotCandidateStatus.Malformed);
+        InventoryBankSnapshotDecoder.Decode("irp", [])!
+            .Status.Should().Be(StockSnapshotCandidateStatus.EmptyCandidate);
 
         InventoryBankSnapshotDecoder.Decode("irl", Snapshot("irl"))!
             .Status.Should().Be(StockSnapshotCandidateStatus.EmptyCandidate);
@@ -84,6 +86,23 @@ public sealed class InventoryBankSnapshotDecoderTest
             .Status.Should().Be(StockSnapshotCandidateStatus.Incomplete);
         InventoryBankSnapshotDecoder.Decode("irp", [0x00])!
             .Status.Should().Be(StockSnapshotCandidateStatus.Malformed);
+    }
+
+    [Fact]
+    public void NonemptyBankCanOmitItsZeroBalance()
+    {
+        byte[] items = Message(Row(2, 2418, 888), Row(5, 2427, 999));
+        var bank = new LiveStockBook().Observe("irp", items, DateTime.UnixEpoch)!;
+
+        bank.Complete.Should().BeTrue();
+        bank.Stale.Should().BeFalse();
+        bank.Items.Select(item => item.Quantity).Should().Equal(2UL, 5UL);
+        InventoryBankSnapshotDecoder.Decode("irl", items)!
+            .Status.Should().Be(StockSnapshotCandidateStatus.Incomplete);
+        InventoryBankSnapshotDecoder.Decode("irp", Message(Bytes(1, [0x01]), items))!
+            .Status.Should().Be(StockSnapshotCandidateStatus.Incomplete);
+        InventoryBankSnapshotDecoder.Decode("irp", Message(items, Row(1, 1523, 888)))!
+            .Status.Should().Be(StockSnapshotCandidateStatus.Incomplete);
     }
 
     [Fact]

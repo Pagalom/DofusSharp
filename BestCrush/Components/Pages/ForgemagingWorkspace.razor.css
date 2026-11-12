@@ -1,0 +1,34 @@
+.fm-workspace { padding-top:0; }
+.fm-picker,.fm-well-budget,.fm-result-controls { display:grid; grid-template-columns:1fr 1fr; gap:1rem; margin:1.3rem 0; }
+.fm-picker label,.fm-well-budget label,.fm-result-controls label,.fm-extra label { display:flex; flex-direction:column; gap:.35rem; }
+.fm-picker select,.fm-extra select,.fm-result-controls select { background-color:#eeeade; color:#495057; }
+.fm-session-heading,.fm-card-heading { display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.75rem; margin-bottom:1rem; }
+.fm-session-heading { margin-top:1.8rem; }
+.fm-session-heading h2 { font-size:1.5rem; margin-bottom:.2rem; }
+.fm-session-heading h2 small { font-size:.9rem; }
+.fm-columns { display:grid; grid-template-columns:minmax(0,1.7fr) minmax(270px,1fr); gap:1rem; }
+.fm-card { border:1px solid #ccc3ae; border-radius:.45rem; padding:1.1rem; min-width:0; }
+.fm-card h3 { font-size:1.1rem; margin:0; }
+.fm-stats input { min-width:75px; max-width:110px; }
+.fm-stats td { padding-top:.55rem; padding-bottom:.55rem; }
+.fm-extra { display:flex; gap:.5rem; align-items:end; margin-top:.9rem; }
+.fm-extra label { flex:1; }
+.fm-spent { display:flex; flex-direction:column; gap:.25rem; margin:1.3rem 0; }
+.fm-spent strong { font-size:1.8rem; }
+.fm-spent span { color:#6c757d; font-size:.9rem; }
+.fm-model { margin-top:1.5rem; }
+.fm-observed-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:.75rem; }
+.fm-actions,.fm-roll-actions { display:flex; gap:.5rem; justify-content:flex-end; flex-wrap:wrap; }
+.fm-roll-actions { margin-top:.5rem; }
+.fm-result { border-color:#176bb0; }
+.fm-intent { display:flex; flex-wrap:wrap; gap:1.25rem; margin:1rem 0; }
+.fm-next { border-left:4px solid #176bb0; }
+.fm-crush-values { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:1rem; }
+.fm-crush-values>div { display:flex; flex-direction:column; gap:.3rem; }
+.fm-crush-values strong { font-size:1.3rem; }
+@media(max-width:700px) { .fm-crush-values { grid-template-columns:1fr; } }
+@media(max-width:1050px) { .fm-columns { grid-template-columns:1fr; } }
+@media(max-width:600px) { .fm-picker,.fm-well-budget,.fm-result-controls { grid-template-columns:1fr; }.fm-card { padding:.75rem; } }
+
+.fm-tracking-unavailable { opacity:.45; cursor:not-allowed; }
+.fm-tracking-unavailable input { cursor:not-allowed; }

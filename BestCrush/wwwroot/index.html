@@ -11,11 +11,12 @@
 
     <link href="css/app.css" rel="stylesheet"/>
     <link href="BestCrush.styles.css" rel="stylesheet"/>
+    <link href="css/character-palette.css" rel="stylesheet"/>
     
     <link href="data:," rel="icon">
 </head>
 
-<body>
+<body class="bestcrush-theme">
 
 <div class="status-bar-safe-area"></div>
 
@@ -36,19 +37,37 @@
 <script autostart="false" src="_framework/blazor.webview.js"></script>
 <script autostart="false" src="js/popper.min.js"></script>
 <script autostart="false" src="js/bootstrap.bundle.min.js"></script>
+<script src="js/filter-disclosures.js"></script>
 
 <script>
-    function createTooltip(records) {
-        for (const record of records) {
-            for (const addedNode of record.addedNodes) {
-                if (addedNode.hasAttribute && addedNode.getAttribute && addedNode.hasAttribute("data-bs-toggle") && addedNode.getAttribute("data-bs-toggle") === "tooltip") {
-                    const _ = new bootstrap.Tooltip(addedNode);
-                }
-            }
+    const tooltipSelector = '[data-bs-toggle="tooltip"]';
+    new bootstrap.Tooltip(document.body, {
+        selector: tooltipSelector,
+        title(trigger) {
+            return trigger.getAttribute('data-bs-title') ?? trigger.getAttribute('title') ?? '';
+        }
+    });
+
+    function disposeTooltip(trigger) {
+        const tooltip = bootstrap.Tooltip.getInstance(trigger);
+        if (!tooltip) return;
+        if (trigger.hasAttribute('aria-describedby')) {
+            trigger.addEventListener('hidden.bs.tooltip', () => tooltip.dispose(), { once: true });
+            tooltip.hide();
+        } else {
+            tooltip.dispose();
         }
     }
 
-    const observer = new MutationObserver(createTooltip);
+    const observer = new MutationObserver(records => {
+        for (const record of records) {
+            for (const node of record.removedNodes) {
+                if (!(node instanceof Element) || node.isConnected) continue;
+                if (node.matches(tooltipSelector)) disposeTooltip(node);
+                node.querySelectorAll(tooltipSelector).forEach(disposeTooltip);
+            }
+        }
+    });
     observer.observe(document.body, {childList: true, subtree: true});
 </script>
 

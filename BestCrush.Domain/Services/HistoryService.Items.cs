@@ -16,12 +16,29 @@ public sealed partial class HistoryService
             HistorySortColumn sortColumn,
             HistorySortDirection sortDirection,
             int take,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            long? itemId = null,
+            HistoryQueryOptions? options = null)
+    {
+        var query = await BuildItemHistoryQueryAsync(serverName, searchText, levelMin, levelMax,
+            equipmentType, obtainableRuneDofusDbId, itemId, options, cancellationToken);
+        query = ((IOrderedQueryable<ItemHistoryRow>)ApplyItemSort(query, sortColumn, sortDirection))
+            .ThenBy(row => row.ObservationId);
+        return await ToPageAsync(query.Skip(Math.Max(0, options?.Skip ?? 0)), take, cancellationToken);
+    }
+
+    private async Task<IQueryable<ItemHistoryRow>> BuildItemHistoryQueryAsync(
+        string serverName, string? searchText, int? levelMin, int? levelMax,
+        EquipmentType? equipmentType, long? obtainableRuneDofusDbId, long? itemId,
+        HistoryQueryOptions? options, CancellationToken cancellationToken)
     {
         IQueryable<Equipment> equipments =
             context
                 .Equipments
                 .AsNoTracking();
+
+        if (itemId is long selectedItemId)
+            equipments = equipments.Where(item => item.DofusDbId == selectedItemId);
 
         if (!string.IsNullOrWhiteSpace(
                 searchText))
@@ -87,10 +104,7 @@ public sealed partial class HistoryService
             }
             else
             {
-                return new HistoryPage<ItemHistoryRow>(
-                    [],
-                    false
-                );
+                equipments = equipments.Where(equipment => false);
             }
         }
 
@@ -170,17 +184,7 @@ public sealed partial class HistoryService
                 coefficientQuery
             );
 
-        query = ApplyItemSort(
-            query,
-            sortColumn,
-            sortDirection
-        );
-
-        return await ToPageAsync(
-            query,
-            take,
-            cancellationToken
-        );
+        return ApplyObservationOptions(query, options);
     }
 
     private static IQueryable<ItemHistoryRow>

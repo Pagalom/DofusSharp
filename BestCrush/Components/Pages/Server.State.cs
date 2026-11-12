@@ -13,6 +13,7 @@ public partial class Server
 {
     private sealed class ServerPageState
     {
+        public long MarketRevision { get; set; }
         public SearchItemsModel Model { get; set; } =
             new();
 
@@ -57,6 +58,9 @@ public partial class Server
         public Dictionary<long, CoefficientObservation>
             Coefficients { get; set; } =
                 new();
+
+        public Dictionary<long, EquipmentProfitabilityResult> BaseCalculations { get; set; } = new();
+        public bool TakeStocks { get; set; }
 
         public SortOrder SortOrder { get; set; }
     }

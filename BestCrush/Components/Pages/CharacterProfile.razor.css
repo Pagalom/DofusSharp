@@ -3,23 +3,6 @@
     margin: 0 auto;
 }
 
-.profile-page-intro { margin-bottom: 26px; }
-
-.profile-page-intro h1 {
-    margin: 0 0 6px;
-    color: #25323a;
-    font-size: clamp(1.8rem, 2.9vw, 2.35rem);
-    font-weight: 790;
-    letter-spacing: -.025em;
-}
-
-.profile-page-intro p {
-    color: #656d71;
-    max-width: 800px;
-    margin: 0;
-    font-size: .9rem;
-}
-
 .profile-sheet-section { margin: 0 0 28px; }
 
 .profile-section-heading h2 {

@@ -1,0 +1,38 @@
+.craft-search-toolbar { display:flex; align-items:center; gap:.8rem; margin-bottom:.75rem; }
+.craft-search-toolbar ::deep .service-search { flex:1; min-width:0; }
+.craft-search-toolbar > button { flex:none; min-height:40px; }
+.craft-amount-filters { margin-top:1rem; }
+.craft-recipe-filters:empty { display:none; }
+.craft-workspace ::deep .craft-recipe-filters { grid-template-columns:1fr; }
+.craft-recipe-filters ::deep .visual-choices { display:flex; flex-wrap:wrap; gap:.4rem; }
+.craft-type-disclosure {
+    display:block;
+    padding:.25rem 0;
+    margin:.25rem 0;
+    border:0;
+    background:none;
+    color:var(--bc-gold,#e4c27a);
+    font-size:.875rem;
+    text-decoration:underline;
+    cursor:pointer;
+}
+.craft-loading { display:flex; align-items:center; gap:.5rem; font-size:.85rem; color:var(--bc-muted,#64706c); }
+.craft-results-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem; margin:1.25rem 0 .75rem; }
+.craft-sort { display:flex; align-items:center; gap:.75rem; font-size:.85rem; }
+.craft-sort > span { cursor:help; }
+.craft-sort label { display:flex; align-items:center; gap:.65rem; white-space:nowrap; }
+.craft-sort .form-select { min-width:180px; }
+.craft-update-warning { color:#bd913d; }
+.craft-workspace ::deep .form-switch .form-check-input:enabled { cursor:pointer; }
+.craft-workspace ::deep .form-switch .form-check-input:enabled:not(:checked) {
+    background-color:var(--bc-hover);
+    border-color:var(--bc-muted);
+    --bs-form-switch-bg:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3E%3Ccircle r='3' fill='%23e1e9e7'/%3E%3C/svg%3E");
+}
+.craft-workspace ::deep .form-switch .form-check-input:disabled + .form-check-label { color:var(--bc-muted); opacity:.65; }
+@media(max-width:580px) {
+    .craft-search-toolbar { flex-wrap:wrap; }
+    .craft-search-toolbar ::deep .service-search { flex-basis:100%; }
+    .craft-results-toolbar { align-items:flex-start; }
+    .craft-sort { flex-wrap:wrap; }
+}

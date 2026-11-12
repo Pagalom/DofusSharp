@@ -1,0 +1,46 @@
+@using BestCrush.Services
+@implements IDisposable
+@if (_text is not null)
+{
+    <div class="copy-notice" role="status" aria-live="polite" aria-atomic="true">
+        <i class="bi bi-check-circle-fill" aria-hidden="true"></i><span>« @_text » copié</span>
+    </div>
+}
+@code {
+    [Parameter, EditorRequired] public ItemCopyFeedback Feedback { get; set; } = default!;
+    private string? _text;
+    private CancellationTokenSource? _dismissal;
+    private bool _disposed;
+    protected override void OnInitialized() => Feedback.Copied += OnCopied;
+    private void OnCopied(string text) { if (!_disposed) _ = InvokeAsync(() => ShowAsync(text)); }
+    private async Task ShowAsync(string text)
+    {
+        if (_disposed) return;
+        _dismissal?.Cancel();
+        var dismissal = new CancellationTokenSource();
+        _dismissal = dismissal;
+        _text = text;
+        StateHasChanged();
+        try
+        {
+            await Task.Delay(1300, dismissal.Token);
+            if (!_disposed && ReferenceEquals(_dismissal, dismissal))
+            {
+                _text = null;
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException) { }
+        finally
+        {
+            if (ReferenceEquals(_dismissal, dismissal)) _dismissal = null;
+            dismissal.Dispose();
+        }
+    }
+    public void Dispose()
+    {
+        _disposed = true;
+        Feedback.Copied -= OnCopied;
+        _dismissal?.Cancel();
+    }
+}

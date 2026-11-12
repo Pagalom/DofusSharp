@@ -1,0 +1,37 @@
+@typeparam TItem
+<div aria-busy="false">
+    @RowContent(PageItems)
+    <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 py-2">
+        <span class="small text-secondary" role="status">@RangeLabel</span>
+        @if (_items.Count > PageSize)
+        {
+            <nav class="d-flex align-items-center gap-2" aria-label="Pages du tableau">
+                <button class="btn btn-sm btn-outline-secondary" type="button" disabled="@(_page == 0)" @onclick="Previous">Précédent</button>
+                <span class="small">Page @(_page + 1) / @PageCount</span>
+                <button class="btn btn-sm btn-outline-secondary" type="button" disabled="@(_page + 1 >= PageCount)" @onclick="Next">Suivant</button>
+            </nav>
+        }
+    </div>
+</div>
+@code {
+    [Parameter, EditorRequired] public IEnumerable<TItem> Items { get; set; } = [];
+    [Parameter, EditorRequired] public RenderFragment<IReadOnlyList<TItem>> RowContent { get; set; } = default!;
+    [Parameter] public string? ResetKey { get; set; }
+    [Parameter] public int PageSize { get; set; } = 50;
+    private IReadOnlyList<TItem> _items = [];
+    private string? _lastKey;
+    private int _page;
+    private int PageCount => Math.Max(1, (_items.Count + PageSize - 1) / PageSize);
+    private IReadOnlyList<TItem> PageItems => _items.Skip(_page * PageSize).Take(PageSize).ToArray();
+    private string RangeLabel => _items.Count == 0 ? "Aucun résultat" :
+        $"{_page * PageSize + 1:N0}–{Math.Min((_page + 1) * PageSize, _items.Count):N0} sur {_items.Count:N0}";
+    protected override void OnParametersSet()
+    {
+        if (PageSize < 1) throw new ArgumentOutOfRangeException(nameof(PageSize));
+        _items = Items as IReadOnlyList<TItem> ?? Items.ToArray();
+        if (_lastKey != ResetKey) { _lastKey = ResetKey; _page = 0; }
+        _page = Math.Min(_page, PageCount - 1);
+    }
+    private void Previous() => _page = Math.Max(0, _page - 1);
+    private void Next() => _page = Math.Min(PageCount - 1, _page + 1);
+}

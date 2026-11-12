@@ -1,10 +1,10 @@
 .character-sheet {
-    --sheet-bg: #222e34;
-    --sheet-panel: #2b3a3e;
+    --sheet-bg: var(--bc-panel, #222e34);
+    --sheet-panel: var(--bc-raised, #2b3a3e);
     --sheet-panel-deep: #1d292f;
-    --sheet-gold: #e4c27a;
-    --sheet-text: #f5f1e8;
-    --sheet-muted: #b9c4c2;
+    --sheet-gold: var(--bc-gold, #e4c27a);
+    --sheet-text: var(--bc-text, #f5f1e8);
+    --sheet-muted: var(--bc-muted, #b9c4c2);
     width: min(100%, 610px);
     min-width: 0;
     background: var(--sheet-bg);
@@ -92,55 +92,6 @@
 }
 
 .sheet-body { padding: 16px 18px 10px; }
-
-.sheet-wallets {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 10px;
-    margin-bottom: 18px;
-}
-
-.sheet-wallet {
-    min-width: 0;
-    min-height: 80px;
-    border-radius: 9px;
-    padding: 12px 14px;
-    border: 1px solid #51605d;
-    background: linear-gradient(140deg, #31423f, #293739);
-}
-
-.sheet-wallet-caption {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: #d2d8d0;
-    font-size: .78rem;
-    margin-bottom: 7px;
-}
-
-.sheet-wallet-caption img {
-    width: 22px;
-    height: 22px;
-    object-fit: contain;
-}
-
-.sheet-wallet-bank {
-    display: grid;
-    place-items: center;
-    width: 22px;
-    height: 22px;
-    font-size: 1.25rem;
-    font-weight: bold;
-    color: #d8bb78;
-}
-
-.sheet-wallet-amount {
-    display: block;
-    color: var(--sheet-gold);
-    font-size: 1.1rem;
-    font-weight: 800;
-    overflow-wrap: anywhere;
-}
 
 .sheet-section-title {
     display: flex;
@@ -284,7 +235,6 @@
     .sheet-header { padding: 12px; gap: 13px; }
     .sheet-portrait { flex-basis: 80px; height: 104px; }
     .sheet-body { padding: 12px 12px 8px; }
-    .sheet-wallet { padding: 10px; }
     .sheet-footer { padding: 10px 12px 12px; flex-wrap: wrap; }
     .sheet-footnote { max-width: none; }
 }
@@ -322,3 +272,8 @@
     height: calc(100% - 4px);
     object-fit: contain;
 }
+
+.sheet-actions { display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:.5rem; flex:0 0 auto; }
+.sheet-stocks { background:transparent; color:var(--sheet-text); }
+.sheet-stocks:hover:not(:disabled) { background:#3a4c48; color:#fff; }
+.sheet-stocks:disabled { opacity:.5; cursor:default; }

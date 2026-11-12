@@ -1,0 +1,26 @@
+@using BestCrush.Services
+
+@if (Message is { } message)
+{
+    <span class="network-capture-off" role="img" tabindex="0" aria-label="@message"
+          data-bs-toggle="tooltip" data-bs-title="@message" data-bs-custom-class="multiline-tooltip">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="1.8" stroke-linecap="round" aria-hidden="true" focusable="false">
+            <path d="M2 8a16 16 0 0 1 2.3-1.6M8.2 5.1A16 16 0 0 1 22 8M5 12a11 11 0 0 1 3-1.9m5.2-.6A11 11 0 0 1 19 12M8 16a6 6 0 0 1 3.8-1.6M3 3l18 18" />
+            <circle cx="12" cy="20" r="1" fill="currentColor" stroke="none" />
+        </svg>
+    </span>
+}
+
+@code {
+    [Parameter] public NetworkCaptureStatus Status { get; set; }
+
+    private string? Message => Status switch
+    {
+        NetworkCaptureStatus.NpcapUnavailable => "Capture réseau inactive.\nNpcap est indisponible.",
+        NetworkCaptureStatus.AccessDenied => "Capture réseau inactive.\nNpcap refuse l’accès. Relancez BestCrush en tant qu’administrateur.",
+        NetworkCaptureStatus.NoInterface => "Capture réseau inactive.\nAucune interface de capture n’est active.",
+        NetworkCaptureStatus.Stopped => "Capture réseau arrêtée.",
+        _ => null
+    };
+}

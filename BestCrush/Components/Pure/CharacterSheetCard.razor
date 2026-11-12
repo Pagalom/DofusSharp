@@ -45,23 +45,6 @@
     </header>
 
     <div class="sheet-body">
-        <div class="sheet-wallets" aria-label="Richesses">
-            <div class="sheet-wallet">
-                <div class="sheet-wallet-caption">
-                    <img src="img/kama-24.png" alt="" width="22" height="22" />
-                    <span>Kamas</span>
-                </div>
-                <strong class="sheet-wallet-amount">@(PocketKamas?.ToString("N0", CultureInfo.CurrentCulture) ?? "Non observés")</strong>
-            </div>
-            <div class="sheet-wallet">
-                <div class="sheet-wallet-caption">
-                    <span class="sheet-wallet-bank" aria-hidden="true">▤</span>
-                    <span>Banque</span>
-                </div>
-                <strong class="sheet-wallet-amount">@(BankKamas?.ToString("N0", CultureInfo.CurrentCulture) ?? "Non observés")</strong>
-            </div>
-        </div>
-
         <section class="sheet-jobs" aria-label="Métiers et progression">
             <h3 class="sheet-section-title">
                 <span aria-hidden="true">⚒</span>
@@ -147,6 +130,14 @@
         <span class="sheet-footnote">
             @(IsExperimental ? "Nom et classe issus de la fenêtre ; niveau candidat issu du réseau." : "Données attribuées après vérification.")
         </span>
+        <div class="sheet-actions">
+            @if (OnViewStocks.HasDelegate)
+            {
+                <button type="button" class="sheet-target sheet-stocks" @onclick="OnViewStocks" disabled="@(!CanViewStocks)"
+                        aria-label="@($"Voir les stocks de {DisplayName}")">
+                    <i class="bi bi-box-seam me-1" aria-hidden="true"></i>Voir les stocks
+                </button>
+            }
         @if (CanSelect)
         {
             <button class="sheet-target @(IsTargetButtonSelected ? "sheet-target--selected" : "")"
@@ -154,6 +145,7 @@
                 @(IsTargetButtonSelected ? "Fenêtre ciblée" : "Cibler")
             </button>
         }
+        </div>
     </footer>
 </article>
 
@@ -167,8 +159,6 @@
     [Parameter] public int? Level { get; set; }
     [Parameter] public string? ServerName { get; set; }
     [Parameter] public int? ServerId { get; set; }
-    [Parameter] public long? PocketKamas { get; set; }
-    [Parameter] public long? BankKamas { get; set; }
     [Parameter] public IReadOnlyList<AccountProfessionProgress>? Professions { get; set; }
     [Parameter] public bool ProfessionsAreProvisional { get; set; }
     [Parameter] public bool IsExperimental { get; set; }
@@ -179,6 +169,8 @@
     [Parameter] public bool IsBrowsingManually { get; set; }
     [Parameter] public bool CanSelect { get; set; } = true;
     [Parameter] public EventCallback OnSelect { get; set; }
+    [Parameter] public EventCallback OnViewStocks { get; set; }
+    [Parameter] public bool CanViewStocks { get; set; } = true;
 
     private bool IsTargetButtonSelected => IsSelected && !IsBrowsingManually;
 

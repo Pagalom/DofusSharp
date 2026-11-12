@@ -50,7 +50,11 @@ public static class MauiProgram
             builder.Services.AddSingleton(new ImageCache(Path.Combine(dataDirectory, "Cache", "images")));
             builder.Services.AddSingleton<IWorkspacePreferences, MauiWorkspacePreferences>();
             builder.Services.AddSingleton<CurrentCharacterState>();
+            builder.Services.AddSingleton(new WeeklyRoutineStore(Path.Combine(dataDirectory, "Data", "weekly-routine.json")));
             builder.Services.AddSingleton<CurrentDofusClientsState>();
+            builder.Services.AddSingleton(new LiveStockRepository(Path.Combine(dataDirectory, "Data", "stock-current.db")));
+            builder.Services.AddSingleton<LiveStockService>();
+            builder.Services.AddSingleton(_ => new GlobalSalesRepository(Path.Combine(dataDirectory, "Data", "global-sales.db")));
             builder.Services.AddSingleton<ServerViewFilterState>();
             // Inactive by default; only an explicitly opted-in Debug capture
             // exposes ephemeral unverified network candidate cards.
@@ -88,7 +92,9 @@ public static class MauiProgram
                     automaticRoutingEnabled: true));
             builder.Services.AddSingleton<BestCrush.Domain.Services.IDataPriorityProvider,BestCrush.Services.DataPriorityService>();
             builder.Services.AddSingleton<BestCrush.Services.BestCrushSettingsService>();
-            builder.Services.AddSingleton<BestCrush.Services.MarketAnalyticsPresetService>();
+            builder.Services.AddSingleton(provider => new BestCrush.Services.MarketAnalyticsPresetService(
+                provider.GetRequiredService<IWorkspacePreferences>(),
+                Path.Combine(dataDirectory,"Data","analytics-presets.json")));
             builder.Services.AddSingleton<BestCrush.Domain.Services.IBestCrushSettingsProvider>(serviceProvider => serviceProvider.GetRequiredService<BestCrush.Services.BestCrushSettingsService>());
             builder.Services.AddSingleton<FocusedEquipmentState>();
             builder.Services.AddSingleton<LastNetworkEquipmentState>();
@@ -97,8 +103,19 @@ public static class MauiProgram
             builder.Services.AddScoped<BestCrush.Services.DofusItemTooltipDetectionService>();
             builder.Services.AddScoped<MarketPriceService>();
             builder.Services.AddScoped<MarketAnalyticsService>();
+            builder.Services.AddScoped<ForgemagingDataService>();
+            builder.Services.AddSingleton<LiveForgemagingService>();
+            builder.Services.AddSingleton(new ForgemagingSessionStore(Path.Combine(dataDirectory, "Data", "fm-sessions.json")));
             builder.Services.AddScoped<CoefficientService>();
             builder.Services.AddScoped<CraftCostService>();
+            builder.Services.AddScoped<StockCraftPlanner>();
+            builder.Services.AddScoped<IOpportunityProvider, CraftOpportunityProvider>();
+            builder.Services.AddScoped<IOpportunityProvider, CrushingOpportunityProvider>();
+            builder.Services.AddScoped<StockOpportunityService>();
+            builder.Services.AddSingleton(provider => new ActivityCatalogService(
+                provider.GetRequiredService<IDofusDbClientsFactory>(), provider.GetRequiredService<IHttpClientFactory>(),
+                Path.Combine(dataDirectory, "Cache", "activities")));
+            builder.Services.AddScoped<ActivityOpportunityService>();
             builder.Services.AddScoped<EquipmentProfitabilityService>();
             builder.Services.AddScoped<HistoryService>();
             builder.Services.AddScoped<ApplicationUpgradesHandler>();

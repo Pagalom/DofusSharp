@@ -1,0 +1,270 @@
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+@inject ActivityCatalogService Catalog
+@implements IDisposable
+
+@if (CardLayout)
+{
+    <article class="trading-card @(ShouldStopBuying ? "trade-below-target" : "")" data-dismiss-on-scroll="@(DismissOnScroll ? "true" : null)">
+        <details open="@TradeOpen">
+            <summary @onclick="ToggleAsync" @onclick:preventDefault>
+                <span class="trade-identity">
+                    <TradeItemImage Name="@Row.Name" IconId="Row.IconId" ItemId="Row.ItemId" Stock="@(IsStock ? Stock : null)" />
+                    <span><strong><CopyTextButton Value="@Row.Name" Tooltip="Copier le nom de l’objet">@Row.Name</CopyTextButton></strong><small>@if (Row.Level > 0) { <span>Niv. @Row.Level · </span> }@StrategyLabel · ×@Row.Quantity.ToString("N0")</small></span>
+                </span>
+                @if (OfferUnavailable)
+                {
+                    <span class="trade-status"><i class="bi bi-x-circle" aria-hidden="true"></i> Proposition retirée</span>
+                }
+                else if (Row.HistoricalPrice is { } historical)
+                {
+                    <span class="trade-stat"><small>Prix actuel du lot</small><CopyAmount Value="historical.CurrentLotPrice" Tooltip="Prix d’achat relevé pour ce lot" /></span>
+                    <span class="trade-stat"><small>Médiane sur 7 j</small><CopyAmount Value="historical.MedianLotPrice" ShowFraction="true" Tooltip="Prix médian des ventes sur 7 jours, pondéré par les quantités et ramené à la taille du lot" /></span>
+                    <span class="trade-stat trade-median-age" data-bs-toggle="tooltip" data-bs-title="@MedianDateTooltip(historical)" data-bs-custom-class="multiline-tooltip">
+                        <small>Dernier prix ≥ médiane</small>
+                        <span>@MedianAgeLabel(historical.DaysSinceMedian(DateTimeOffset.UtcNow))</span>
+                    </span>
+                }
+                else
+                {
+                    @if (!IsStock)
+                    {
+                        <span class="trade-stat"><small>Achat</small><CopyAmount Value="Row.Cost" Tooltip="Total des achats" /></span>
+                    }
+                    <span class="trade-stat"><small>@(IsStock ? "Valeur de revente" : "Revente estimée")</small><CopyAmount Value="Row.Revenue" Tooltip="@ResaleTooltip" /></span>
+                    @if (!IsStock)
+                    {
+                        <span class="trade-stat trade-gain"><small>Gain estimé</small>
+                            <CopyAmount Value="Row.Profitability.Gain" Color="@GainColor" Plus="true" Tooltip="@GainCalculation" />
+                            @if (Row.Profitability.RoiPercent is { } roi && Row.Cost > 0)
+                            { <small data-bs-toggle="tooltip" data-bs-title="Rendement par rapport aux achats" data-bs-custom-class="multiline-tooltip">@roi.ToString("N1") %</small> }
+                        </span>
+                    }
+                }
+                <span class="trade-market">
+                    <span class="trade-status-icons">
+                        @if (!OfferUnavailable)
+                        { <ResaleQuotaIndicator Quota="Row.ResaleQuota" ListedUnits="ListedUnits" /> }
+                        @if (ShouldStopBuying)
+                        { <span class="trade-stop-icon" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@StopReason" data-bs-custom-class="multiline-tooltip" aria-label="Ne plus acheter"><i class="bi bi-x-circle" aria-hidden="true"></i></span> }
+                        @if (!Row.Complete)
+                        { <span class="trade-warning" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@string.Join("\n", Row.MissingData)" data-bs-custom-class="multiline-tooltip" aria-label="Données à compléter"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i></span> }
+                        @if (!Row.Profitability.Kinetics.HasMeasuredDemand)
+                        { <span tabindex="0" data-bs-toggle="tooltip" data-bs-title="@HistoryStatus" data-bs-custom-class="multiline-tooltip" aria-label="@HistoryStatus"><i class="bi bi-clock-history" aria-hidden="true"></i></span> }
+                        @if (Row.PriceUpdatedUtc is { } stale && DateTime.UtcNow - stale > TimeSpan.FromHours(12))
+                        { <span class="trade-warning" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Prix à actualiser : relevé de plus de 12 heures" data-bs-custom-class="multiline-tooltip" aria-label="Prix à actualiser"><i class="bi bi-clock" aria-hidden="true"></i></span> }
+                    </span>
+                </span>
+                @if (!OfferUnavailable)
+                {
+                    <button type="button" class="trade-visibility"
+                            data-bs-toggle="tooltip" data-bs-title="@(TradeHidden ? "Réafficher" : "Masquer")" data-bs-custom-class="multiline-tooltip"
+                            aria-label="@($"{(TradeHidden ? "Réafficher" : "Masquer")} la proposition pour {Row.Name}")"
+                            @onclick="() => TradeHiddenChanged.InvokeAsync(!TradeHidden)" @onclick:stopPropagation>
+                        <i class="bi @(TradeHidden ? "bi-eye-slash" : "bi-eye")" aria-hidden="true"></i>
+                    </button>
+                }
+                <i class="bi @(TradeOpen ? "bi-chevron-up" : "bi-chevron-down") trade-chevron" aria-hidden="true"></i>
+                <span class="visually-hidden">@(TradeOpen ? "Masquer le détail" : "Voir le détail")</span>
+            </summary>
+            @if (TradeOpen)
+            {
+                <div class="trade-detail">
+                    @if (!OfferUnavailable)
+                    {
+                        <TradingResultDetail Row="Row" Crafts="Crafts" HistoricalLots="HistoricalLots" TargetRoiPercent="TargetRoiPercent" Stock="Stock" />
+                    }
+                    <div class="trade-detail-actions">
+                        <button type="button" class="btn btn-outline-secondary btn-sm" data-close-trading-detail @onclick="ToggleAsync"><i class="bi bi-chevron-up me-1" aria-hidden="true"></i>Fermer le détail</button>
+                        @if (!OfferUnavailable && Row.Details.Count > 0)
+                        {
+                            <span class="trade-information" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@string.Join("\n", Row.Details)" data-bs-custom-class="multiline-tooltip"
+                                  aria-label="Précisions sur les prix"><i class="bi bi-info-circle" aria-hidden="true"></i></span>
+                        }
+                    </div>
+                </div>
+            }
+        </details>
+        @if (!TradeOpen && Crafts.Count > 0)
+        {
+            <div class="trade-craft-peek">
+                <span data-bs-toggle="tooltip" data-bs-title="Cette ressource peut rapporter plus dans ces crafts. Comparez le gain du craft entier après valorisation de tous ses ingrédients." data-bs-custom-class="multiline-tooltip"><i class="bi bi-tools" aria-hidden="true"></i> À comparer en craft</span>
+                @foreach (var craft in Crafts)
+                {
+                    <TradeItemImage Name="@craft.Name" IconId="craft.IconId" Size="32" Tooltip="@($"{craft.Name}\n{craft.Recipe}")" />
+                    <a href="@($"/modules/craft?item={craft.ItemId}")" data-bs-toggle="tooltip" data-bs-title="@craft.Recipe" data-bs-custom-class="multiline-tooltip" aria-label="@($"Ouvrir {craft.Name} dans Craft")"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+                }
+            </div>
+        }
+    </article>
+}
+else
+{
+<tr>
+    <td>
+        <button type="button" class="btn btn-link text-body p-0 text-start fw-bold" aria-expanded="@(_expanded ? "true" : "false")" @onclick="ToggleAsync"><strong>@Row.Name</strong></button>
+        <div class="small text-secondary">Niv. @Row.Level · @Row.Strategy · @Row.Quantity.ToString("N0") unité(s)</div>
+        @if (ShowSource) { <a class="small" href="@Row.SourceUrl">Ouvrir dans @Row.OriginName</a> }
+        @if (Row.Job is not null)
+        {
+            <div class="small">@Row.Job · niveau @(Row.RequiredJobLevel?.ToString() ?? "à vérifier")</div>
+        }
+        @if (Row.CraftJob is not null)
+        { <div class="small">Craft : @Row.CraftJob · niveau @(Row.RequiredCraftLevel?.ToString() ?? "à vérifier")</div> }
+        @CraftNotice
+        <details class="mt-2" open="@_expanded">
+            <summary @onclick="ToggleAsync" @onclick:preventDefault><i class="bi bi-chevron-right small me-1" aria-hidden="true"></i>Voir le détail</summary>
+            @if (_expanded)
+            {
+                @DetailContent
+
+            }
+        </details>
+    </td>
+    <td>@Money(Row.Cost)
+        @if(Row.Spending is { } cash && Row.Cost is { } economic && Math.Abs(cash-economic)>0.001)
+        {<div class="small text-secondary">@Money(cash) à débourser</div>}
+    </td>
+    <td>@Money(Row.Revenue) <ResaleQuotaIndicator Quota="Row.ResaleQuota" ListedUnits="ListedUnits" /></td>
+    <td>
+        <strong class="@(Row.Profitability.Gain > 0 ? "text-success" : "")">@Money(Row.Profitability.Gain)</strong>
+        <div class="small text-secondary">@(Row.Strategy is "Récolte" or "Ressource de combat" or "Revendre mon stock" ? "Valeur encaissable" : "Gain brut estimé")</div>
+        @if (Row.Profitability.RoiPercent is { } roi && Row.Cost > 0) { <div class="small">@roi.ToString("N1") %</div> }
+    </td>
+    <td>
+        @if (Row.Profitability.Kinetics.UnitsPerDay is { } daily)
+        { <strong>@daily.ToString("N1")</strong><div class="small">@(Row.UsesResaleVolumeCeiling ? "articles compatibles / jour au maximum" : "articles / jour")</div> }
+        else { <span class="text-secondary">Inconnue</span> }
+        <span class="badge @(Row.Complete ? "bg-success" : "bg-secondary")">@(Row.Complete ? "Données complètes" : "Données incomplètes")</span>
+        @if (Row.PriceUpdatedUtc is { } at && DateTime.UtcNow-at>TimeSpan.FromHours(12))
+        { <div class="small text-warning">Prix à actualiser</div> }
+    </td>
+</tr>
+
+}
+
+@code {
+    [Parameter, EditorRequired] public ActivityRecommendation Row { get; set; } = default!;
+    [Parameter] public LiveStockSource? Stock { get; set; }
+    [Parameter] public long? ListedUnits { get; set; }
+    [Parameter] public bool CardLayout { get; set; }
+    [Parameter] public IEnumerable<ActivityRecommendation>? HistoricalLots { get; set; }
+    [Parameter] public double TargetRoiPercent { get; set; }
+    [Parameter] public bool TradeExpanded { get; set; }
+    [Parameter] public EventCallback<bool> TradeExpandedChanged { get; set; }
+    [Parameter] public bool TradeHidden { get; set; }
+    [Parameter] public EventCallback<bool> TradeHiddenChanged { get; set; }
+    [Parameter] public bool OfferUnavailable { get; set; }
+    [Parameter] public bool DismissOnScroll { get; set; }
+    [Parameter] public bool ShowSource { get; set; }
+    [Parameter] public IReadOnlyDictionary<string,int>? JobLevels { get; set; }
+    [Parameter] public bool RespectJobLevels { get; set; }
+    private bool IsStock => Row.Strategy == "Revendre mon stock";
+    private bool TradeOpen => TradeExpandedChanged.HasDelegate ? TradeExpanded : _expanded;
+    private bool ShouldStopBuying => Row.IsTradingPurchase && (OfferUnavailable || !Row.MeetsTradingTarget(TargetRoiPercent));
+    private string StopReason => OfferUnavailable
+        ? "Ne plus acheter. Cette proposition ne remplit plus les conditions de l’analyse."
+        : $"Ne plus acheter. Le rendement est sous l’objectif de {TargetRoiPercent:N0} %.";
+    private string StrategyLabel => Row.Strategy switch { "Recomposer des lots" => "Lots", "Prix sous l’historique" => "Historique", "Revendre mon stock" => "Stock", _ => Row.Strategy };
+    private static string MedianAgeLabel(int? days) => days switch
+    {
+        null => "—",
+        0 => "Moins d’un jour",
+        1 => "Il y a 1 jour",
+        _ => $"Il y a {days} jours"
+    };
+    private static string MedianDateTooltip(HistoricalPriceComparison price) => price.LastAtOrAboveMedianUtc is { } at
+        ? $"Dernier relevé de ventes à ce niveau ou au-dessus le {at.ToLocalTime():g}"
+        : "Aucun relevé au niveau de la médiane sur l’historique disponible.";
+    private string GainColor => Row.Profitability.Gain is { } gain ? CrushingGainColor.For(gain, Row.Cost) : "#FFFFFF";
+    private string GainCalculation => $"{Row.Revenue:N0} (revente) − {Row.Cost:N0} (achats) · avant taxes";
+    private string ResaleTooltip => Row.TradingLots?.HistoricalResale == true
+        ? "Revente indicative d’après la médiane des ventes sur 7 jours."
+        : IsStock ? "Valeur de revente estimée. Le coût de votre acquisition passée n’est pas connu." : "Total de revente estimé aux prix des lots relevés";
+    private string HistoryStatus => Row.Profitability.Kinetics.Status switch
+    {
+        SalesKineticsStatus.NoObservedSales => "Aucune vente observée sur 7 jours",
+        SalesKineticsStatus.Outdated => "Historique à actualiser dans le Cours du marché de Dofus",
+        _ => "Historique à relever dans le Cours du marché de Dofus"
+    };
+    private RenderFragment CraftNotice => @<div>
+        @if (Crafts.Count > 0)
+        {
+            <div class="small mt-2">Cette ressource peut rapporter plus dans ces crafts :
+                @foreach (var craft in Crafts)
+                {
+                    <a class="me-2" href="@($"/modules/craft?item={craft.ItemId}")" title="@craft.Recipe"
+                       aria-label="@($"{craft.Name}. Recette : {craft.Recipe}")">@craft.Name</a>
+                }
+            </div>
+        }
+    </div>;
+    private RenderFragment DetailContent => @<div>
+                @foreach (string line in Row.Details) { <p class="small mb-1">@line</p> }
+                @if (Crafts.Count > 0)
+                {
+                    <p class="small text-secondary">Le gain indiqué concerne le craft entier, après valorisation de tous ses ingrédients.
+                        Les propositions réutilisent les mêmes ressources et ne s’additionnent pas.</p>
+                    @foreach (var craft in Crafts)
+                    {
+                        <div class="small">@craft.Name : @Money(craft.AdditionalGain) de gain potentiel par craft
+                            @if (craft.Job is not null) { <span> · @craft.Job niveau @craft.RequiredLevel</span> }
+                        </div>
+                    }
+                }
+                @if (Row.MonsterIds.Count > 0)
+                {
+                    <p class="small mt-2 mb-1"><strong>Monstres qui peuvent fournir cette ressource</strong></p>
+                    @if (_loadingMonsters) { <span class="spinner-border spinner-border-sm" role="status" aria-label="Chargement des monstres"></span> }
+                    @if (_monsterError) { <p class="small text-warning">Monstres indisponibles pour le moment. Réouvrez le détail pour réessayer.</p> }
+                    @foreach (var monster in _monsters) { <div class="small">@monster.Name · niveau @(monster.Level?.ToString() ?? "inconnu")</div> }
+                    @if (Row.MonsterIds.Count > 50) { <p class="small text-secondary">50 sources présentées sur @Row.MonsterIds.Count.</p> }
+                }
+                @if (Row.Module != "pierres-ame" && Row.Profitability.Kinetics.Evidence is { } evidence)
+                {
+                    <p class="small mt-2">Ventes globales : @evidence.UnitsSold.ToString("N0") articles du
+                        @evidence.PeriodStartUtc.ToLocalTime().ToString("g") au @evidence.PeriodEndUtc.ToLocalTime().ToString("g").
+                        Volume du marché entier ; le délai de votre annonce dépend aussi des concurrents et de votre prix.</p>
+                }
+                @if (Row.Profitability.MarketDailyGainCapacity is { } capacity)
+                {
+                    <p class="small text-secondary mb-1" tabindex="0" style="cursor:help" title="@IndexCalculation"
+                       data-bs-toggle="tooltip" data-bs-title="@IndexCalculation">Indice : @capacity.ToString("N1")</p>
+                }
+                @foreach (string missing in Row.MissingData) { <div class="small text-warning">@missing</div> }
+    </div>;
+    private bool _expanded, _loadingMonsters, _monsterError;
+    private IReadOnlyList<CombatSource> _monsters=[];
+    private readonly CancellationTokenSource _stop=new();
+    private IReadOnlyList<CraftAlternative> Crafts => Row.Crafts.Where(x=>!RespectJobLevels || JobLevels is null ||
+        x.Job is null || x.RequiredLevel is null || !JobLevels.TryGetValue(x.Job,out int level) || level>=x.RequiredLevel).ToArray();
+    private async Task ToggleAsync()
+    {
+        if (CardLayout && TradeExpandedChanged.HasDelegate)
+        {
+            await TradeExpandedChanged.InvokeAsync(!TradeExpanded);
+            return;
+        }
+        _expanded=!_expanded;
+        if(!_expanded || Row.MonsterIds.Count==0 || _monsters.Count>0 || _loadingMonsters)return;
+        _loadingMonsters=true;_monsterError=false;
+        try { _monsters=await Catalog.GetCombatSourcesAsync(Row.MonsterIds,_stop.Token); }
+        catch(OperationCanceledException) when(_stop.IsCancellationRequested) { }
+        catch { _monsterError=true; }
+        finally { _loadingMonsters=false; }
+    }
+    private string? IndexCalculation
+    {
+        get
+        {
+            if (Row.Profitability.Gain is not { } gain || Row.Profitability.Kinetics.UnitsPerDay is not { } daily ||
+                Row.Profitability.Kinetics.MarketAbsorptionDays is not { } days) return null;
+            // Use the ranked sale quantity, which can differ from a farming resource volume.
+            double quantity = days * daily;
+            string demand = Row.UsesResaleVolumeCeiling ? "volume compatible par jour au maximum" : "ventes globales par jour";
+            return $"{gain:#,0.#########} (Gain) × {daily:#,0.#########} ({demand}) ÷ {quantity:#,0.#########} (quantité mise en vente)";
+        }
+    }
+    private static string Money(double? value)=>value is null ? "—" : $"{value:N0} k";
+    public void Dispose(){_stop.Cancel();_stop.Dispose();}
+}

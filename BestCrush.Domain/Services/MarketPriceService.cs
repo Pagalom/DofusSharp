@@ -8,7 +8,7 @@ public class MarketPriceService(BestCrushDbContext context,
 {
     private static readonly TimeSpan
         IdenticalPriceConfirmationInterval =
-            TimeSpan.FromHours(6);
+            MarketPriceReliability.ComparisonWindow;
 
     public async Task<MarketPriceObservation> AddObservationAsync(
         MarketObjectType objectType,
@@ -76,6 +76,56 @@ public class MarketPriceService(BestCrushDbContext context,
         await context.SaveChangesAsync(cancellationToken);
 
         return observation;
+    }
+
+    public async Task<IReadOnlyList<int>> RecordAutomaticLotSnapshotAsync(
+        MarketObjectType objectType,
+        long dofusDbId,
+        string serverName,
+        IReadOnlyDictionary<int, long?> lotPrices,
+        CancellationToken cancellationToken)
+    {
+        var previous = await context.MarketPriceObservations.AsNoTracking()
+            .Where(quote => quote.ObjectType == objectType && quote.DofusDbId == dofusDbId &&
+                quote.ServerName == serverName)
+            .GroupBy(quote => new { quote.Quantity, quote.Source })
+            .Select(group => group.OrderByDescending(quote => quote.ObservedAtUtc).First())
+            .ToListAsync(cancellationToken);
+        var latest = previous.ToDictionary(quote => (quote.Quantity, quote.Source));
+        var now = DateTime.UtcNow;
+        List<int> reportedLots = [];
+        foreach (var (quantity, price) in lotPrices)
+        {
+            var automatic = latest.GetValueOrDefault((quantity, MarketPriceSource.InGameAutomatic));
+            var manual = latest.GetValueOrDefault((quantity, MarketPriceSource.Manual));
+            if (price is null)
+            {
+                bool manualStillCurrent = manual is { IsCleared: false } &&
+                    (automatic is null || manual.ObservedAtUtc > automatic.ObservedAtUtc);
+                if (automatic is not { IsCleared: false } && !manualStillCurrent)
+                    continue;
+            }
+
+            reportedLots.Add(quantity);
+            if (price is not null && automatic is { IsCleared: false } &&
+                automatic.Price == price && now - automatic.ObservedAtUtc < IdenticalPriceConfirmationInterval)
+                continue;
+
+            context.MarketPriceObservations.Add(new MarketPriceObservation
+            {
+                ObjectType = objectType,
+                DofusDbId = dofusDbId,
+                ServerName = serverName,
+                Quantity = quantity,
+                Source = MarketPriceSource.InGameAutomatic,
+                Price = price ?? 0,
+                IsCleared = price is null,
+                ObservedAtUtc = now
+            });
+        }
+
+        await context.SaveChangesAsync(cancellationToken);
+        return reportedLots;
     }
 
     public async Task ClearLocalAsync(
@@ -152,16 +202,13 @@ public class MarketPriceService(BestCrushDbContext context,
                     observation.ObservedAtUtc)
                 .ToListAsync(cancellationToken);
 
-        return observations
-            .GroupBy(observation =>
-                (
-                    observation.DofusDbId,
-                    observation.Quantity,
-                    observation.Source
-                ))
+        var latest = observations
+            .GroupBy(observation => (observation.DofusDbId, observation.Quantity, observation.Source))
             .Select(group => group.First())
-            .Where(observation =>
-                !observation.IsCleared)
+            .Where(observation => !observation.IsCleared);
+        var rejected = MarketPriceReliability.GetRejectedHistoryIds(observations);
+
+        return MarketPriceReliability.FilterCurrent(latest, rejected)
             .ToDictionary(
                 observation =>
                     (
@@ -174,7 +221,8 @@ public class MarketPriceService(BestCrushDbContext context,
     }
 
     private MarketPriceObservation? ResolveEffectiveObservation(
-        IEnumerable<MarketPriceObservation> observations)
+        IEnumerable<MarketPriceObservation> observations,
+        bool excludeUnavailableLots)
     {
         MarketPriceObservation[] ordered =
             observations
@@ -198,6 +246,10 @@ public class MarketPriceService(BestCrushDbContext context,
                     p.Source ==
                         MarketPriceSource.InGameAutomatic
             );
+
+        if (excludeUnavailableLots && latestGame is { IsCleared: true } &&
+            (manual is null || manual.ObservedAtUtc <= latestGame.ObservedAtUtc))
+            return null;
 
         MarketPriceObservation? game =
             latestGame is not null &&
@@ -229,21 +281,20 @@ public class MarketPriceService(BestCrushDbContext context,
                 .Where(p =>
                     p.ObjectType == objectType &&
                     p.DofusDbId == dofusDbId &&
-                    p.ServerName == serverName &&
-                    p.Quantity == quantity)
+                    p.ServerName == serverName)
                 .OrderByDescending(p => p.ObservedAtUtc)
                 .ToListAsync(cancellationToken);
 
-        return ResolveEffectiveObservation(
-            observations
-        );
+        return ResolveCurrentObservations(observations)
+            .FirstOrDefault(quote => quote.Quantity == quantity);
     }
 
     public async Task<IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation>>
         GetLatestObservationsForServerAsync(
             MarketObjectType objectType,
             string serverName,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            bool excludeUnavailableLots = false)
     {
         List<MarketPriceObservation> observations =
             await context.MarketPriceObservations
@@ -254,20 +305,17 @@ public class MarketPriceService(BestCrushDbContext context,
                 .OrderByDescending(p => p.ObservedAtUtc)
                 .ToListAsync(cancellationToken);
 
-        return observations
-            .GroupBy(p => (p.DofusDbId, p.Quantity))
-            .Select(group => new
-            {
-                group.Key,
-                Observation =
-                    ResolveEffectiveObservation(group)
-            })
-            .Where(result =>
-                result.Observation is not null)
-            .ToDictionary(
-                result => result.Key,
-                result => result.Observation!
-            );
+        return ResolveCurrentObservations(observations, excludeUnavailableLots)
+            .ToDictionary(quote => (quote.DofusDbId, quote.Quantity));
+    }
+
+    private IEnumerable<MarketPriceObservation> ResolveCurrentObservations(
+        IReadOnlyList<MarketPriceObservation> observations, bool excludeUnavailableLots = false)
+    {
+        var latest = observations.GroupBy(quote => (quote.DofusDbId, quote.Quantity))
+            .Select(group => ResolveEffectiveObservation(group, excludeUnavailableLots))
+            .OfType<MarketPriceObservation>();
+        return MarketPriceReliability.FilterCurrent(latest, MarketPriceReliability.GetRejectedHistoryIds(observations));
     }
 
     public async Task<IReadOnlyList<MarketPriceObservation>>
@@ -296,9 +344,15 @@ public class MarketPriceService(BestCrushDbContext context,
                 .Where(observation =>
                     observation.ObjectType == objectType &&
                     observation.DofusDbId == dofusDbId &&
-                    observation.ServerName == serverName &&
-                    !observation.IsCleared &&
-                    observation.Price > 0);
+                    observation.ServerName == serverName);
+
+        if (objectType is MarketObjectType.Resource or MarketObjectType.Rune && source != MarketPriceSource.Manual)
+        {
+            var rejected = await MarketPriceReliability.GetRejectedHistoryIdsAsync(query, fromUtc, toUtc, cancellationToken);
+            query = query.Where(observation => !rejected.Contains(observation.Id));
+        }
+
+        query = query.Where(observation => !observation.IsCleared && observation.Price > 0);
 
         if (fromUtc.HasValue)
         {
@@ -349,9 +403,10 @@ public class MarketPriceService(BestCrushDbContext context,
     public MarketValueResult? CalculateValue(
         long dofusDbId,
         double quantity,
-        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> observations)
+        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> observations,
+        long lotPriceReduction = 0)
     {
-        return MarketPriceCalculator.CalculateValue(dofusDbId, quantity, observations);
+        return MarketPriceCalculator.CalculateValue(dofusDbId, quantity, observations, lotPriceReduction);
     }
 
     public MarketPurchaseResult? CalculateMinimumPurchaseCost(

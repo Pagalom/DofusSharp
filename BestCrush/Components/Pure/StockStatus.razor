@@ -1,0 +1,42 @@
+@using BestCrush.Services
+@using Microsoft.AspNetCore.Components.Web
+@inject LiveStockService Stocks
+@inject CurrentDofusClientsState Clients
+@inject LiveDofusClientNetworkBindings Bindings
+@implements IDisposable
+
+@if (HasCharacter)
+{
+<div class="stock-status @(_dismissed ? "hints-dismissed" : "")" role="group" aria-label="Synchronisation des stocks">
+    @foreach (var container in Containers)
+    {
+        <span class="stock-status-slot">
+            @if (!IsSynchronized(container.Key))
+            {
+                <span class="stock-warning" tabindex="0" role="img" data-stock-container="@container.Key"
+                      aria-label="@($"{container.Label} non synchronisé{(container.Key == "bank" ? "e" : "")}")"
+                      aria-describedby="@($"{_id}-{container.Key}")" @onpointerenter="ResetHint" @onfocus="ResetHint" @onkeydown="HandleKey">
+                    <StockContainerIcon Bank="@(container.Key == "bank")" />
+                    <span class="stock-hint" role="tooltip" id="@($"{_id}-{container.Key}")">@container.Label</span>
+                </span>
+            }
+        </span>
+    }
+</div>
+}
+
+@code {
+    [Parameter] public DofusClientWindowKey? Window { get; set; }
+    private static readonly (string Key, string Label)[] Containers = [("inventory", "Inventaire"), ("bank", "Banque")];
+    private readonly string _id = $"stock-sync-{Guid.NewGuid():N}";
+    private bool _dismissed, _disposed;
+    private bool HasCharacter => (Window is { } window ? Clients.Clients.FirstOrDefault(client => client.Key == window) : Clients.SelectedClient)
+        ?.HasCharacterTitle == true;
+    private bool IsSynchronized(string container) => (Window is { } window ? Stocks.ForWindow(window) : Stocks.Selected)
+        ?.Containers.Any(state => state.Container == container && state.Complete && !state.Stale) == true;
+    private void ResetHint() => _dismissed = false;
+    private void HandleKey(KeyboardEventArgs args) { if (args.Key == "Escape") _dismissed = true; }
+    protected override void OnInitialized() { Stocks.Changed += Refresh; Clients.Changed += Refresh; Bindings.Changed += Refresh; }
+    private void Refresh() { if (!_disposed) _ = InvokeAsync(StateHasChanged); }
+    public void Dispose() { _disposed = true; Stocks.Changed -= Refresh; Clients.Changed -= Refresh; Bindings.Changed -= Refresh; }
+}

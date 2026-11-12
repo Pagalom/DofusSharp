@@ -1,0 +1,8 @@
+.equipment-search { min-width:0; }
+.equipment-matches { display:none; padding:.8rem; margin-top:.5rem; border:1px solid #d6cbb6; border-radius:.5rem; background:#f4eedf; }
+.equipment-search:focus-within .equipment-matches { display:block; }
+.equipment-matches ul { list-style:none; padding:0; margin:0 0 .4rem; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.25rem; }
+.equipment-matches button { display:flex; align-items:center; gap:.7rem; width:100%; padding:.5rem; border:0; border-radius:.4rem; background:transparent; color:#273342; text-align:left; }
+.equipment-matches button:hover,.equipment-matches button:focus-visible { background:#e7dcc6; outline:2px solid #b9c8d4; }
+.equipment-matches strong { font-size:.9rem; }.equipment-matches small { display:block; color:#7f796d; font-size:.8rem; }
+@media(max-width:767px) { .equipment-matches ul { grid-template-columns:minmax(0,1fr); } }

@@ -1,4 +1,4 @@
-﻿/*#if (SampleContent)*/
+/*#if (SampleContent)*/
 
 html, body {
     width: 100%;
@@ -111,4 +111,19 @@ h1:focus {
 .multiline-tooltip .tooltip-inner img {
     margin-left: 2px;
     vertical-align: -1px;
+}
+/* Choices use neutral surfaces; text and number entry keep their dark fields. */
+.form-select {
+    color: #495057;
+    background-color: #efede6;
+    border-color: #adb5bd;
+    --bs-form-select-bg-img: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%236c757d' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e");
+}
+.form-select option {
+    color: #495057;
+    background-color: #efede6;
+}
+.form-select:disabled {
+    color: #6c757d;
+    background-color: #e6e3db;
 }

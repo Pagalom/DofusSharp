@@ -1,0 +1,54 @@
+.trading-toolbar { display:flex; align-items:end; gap:1rem; flex-wrap:wrap; }
+.trading-toolbar ::deep .service-search { flex:1 1 330px; }
+.trading-toolbar > button { min-height:40px; }
+.trading-category { margin-bottom:1rem; }
+.trading-category-choices { display:flex; flex-wrap:wrap; gap:.4rem; }
+.trading-category-choices ::deep .visual-filter-choice {
+    background:var(--bc-heading);
+    color:var(--bc-text);
+    border-color:var(--bc-control-border);
+}
+.trading-category-choices ::deep .visual-filter-choice:hover { background:var(--bc-hover); }
+.trading-category-choices ::deep .visual-filter-choice.selected {
+    background:var(--bc-hover);
+    color:var(--bc-gold);
+    border-color:var(--bc-gold);
+}
+.farm-filter-groups {
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    align-items:start;
+    gap:1rem;
+    margin-bottom:1rem;
+}
+.farm-filter-group {
+    min-width:0;
+    padding:.65rem .85rem .85rem;
+    border:1px solid var(--bc-control-border);
+    border-radius:.45rem;
+}
+.farm-filter-group legend { float:none; width:auto; padding:0 .25rem; margin:0 0 .2rem; font-size:.9rem; font-weight:650; color:var(--bc-gold); }
+.farm-filter-group ::deep .form-check-input:disabled + .form-check-label { color:var(--bc-muted); opacity:.65; }
+@media(max-width:700px) {
+    .farm-filter-groups { grid-template-columns:1fr; }
+}
+.trading-strategy-bar ::deep .trading-strategies { margin:0; }
+.trading-strategy-bar + .alert { margin-top:1rem; }
+.trading-results-toolbar { display:flex; justify-content:space-between; align-items:end; flex-wrap:wrap; gap:.75rem; margin:1.25rem 0 .5rem; }
+.trading-result-summary { display:flex; flex-direction:column; align-items:flex-start; gap:.35rem; }
+.trading-results-toolbar label { display:flex; align-items:center; gap:.6rem; font-size:.875rem; }
+.trading-results-toolbar select { width:auto; min-width:190px; }
+.trading-help { margin:.5rem 0 1rem; }
+.trading-help summary { cursor:pointer; }
+.trading-help p { margin:.5rem 0 0; max-width:90ch; }
+.trading-results { display:grid; gap:.7rem; }
+.trading-workspace ::deep .service-filters-body .filter-grid { align-items:start; }
+.trading-workspace ::deep .form-switch .form-check-input:enabled { cursor:pointer; }
+.trading-workspace ::deep .form-switch .form-check-input:enabled:not(:checked) {
+    background-color:var(--bc-hover);
+    border-color:var(--bc-muted);
+    --bs-form-switch-bg:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-4 -4 8 8'%3E%3Ccircle r='3' fill='%23e1e9e7'/%3E%3C/svg%3E");
+}
+
+.trading-sort { display:flex; align-items:center; gap:.7rem; }
+.trading-ranking-help { color:#636e6c; cursor:help; }

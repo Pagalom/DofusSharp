@@ -1,4 +1,4 @@
-# Protocole réseau BestCrush — source unique de vérité
+﻿# Protocole réseau BestCrush — source unique de vérité
 
 ## Fichier à maintenir après une mise à jour de Dofus
 
@@ -7,8 +7,8 @@
 Il est partagé et copié tel quel dans les sorties de **BestCrush**, **BestCrush.NetworkProbe** et **Tests.BestCrush**. Il porte trois responsabilités :
 
 1. Les **codes des messages** (ex. `market_selection_response = jzs`, `price_list = jzn`, `crush_result = kci`).
-2. La **correspondance des champs Protobuf** (section `field_mappings`) pour les **21 routes** de capture actuellement connues.
-3. L'**état de vérification** de chaque route (section `verified_routes`, même ensemble de 21 noms).
+2. La **correspondance des champs Protobuf** (section `field_mappings`) pour les **23 routes** de capture actuellement connues.
+3. L'**état de vérification** de chaque route (section `verified_routes`, même ensemble de 23 noms).
 
 Ce fichier utilise `schema_version: 1`. Une version de schéma non supportée bloque le chargement.
 

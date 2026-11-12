@@ -1,294 +1,78 @@
 @using BestCrush.Domain.Models
 @using BestCrush.Models
 <div id="search-items-form">
-    <div class="d-flex flex-column align-items-center mb-3">
-        <div class="fw-semibold mb-1">Recherche</div>
-        <InputText @bind-Value="Model.SearchText"
-                   class="form-control"
-                   style="max-width:420px"
-                   placeholder="Nom de l'équipement"
-                   disabled="@Disabled" />
+    <div class="crushing-search-row">
+        <div class="crushing-search"><ServiceSearch Value="@Model.SearchText" ValueChanged="ChangeSearchAsync" Placeholder="Filtrer les équipements par nom…" Label="Rechercher dans la liste des équipements" Disabled="Disabled" /></div>
+        @if (Actions is not null) { <div class="crushing-choice-actions">@Actions</div> }
     </div>
-    <div class="d-flex flex-column align-items-center mb-3">
-        <div class="fw-semibold mb-1">Niveau</div>
-        <div class="input-group justify-content-center">
-            <InputNumber @bind-Value="Model.LevelMin" class="form-control flex-grow-0" style="width:100px" placeholder="Min" aria-label="Min" disabled="@Disabled"/>
-            <span class="input-group-text">à</span>
-            <InputNumber @bind-Value="Model.LevelMax" class="form-control flex-grow-0" style="width:100px" placeholder="Max" aria-label="Max" disabled="@Disabled"/>
+    <ServiceFilters Count="ActiveCount" Reset="ResetAllAsync" Disabled="Disabled" Label="Filtres avancés"
+                    Expanded="_advancedVisible" ExpandedChanged="value => _advancedVisible = value">
+        <Chips>
+            @if (Model.CraftJobId is not null) { <FilterChip Label="@($"Métier : {JobOptions.FirstOrDefault(x => x.Value == Model.CraftJobId.ToString())?.Label}")" Removed="() => SelectJob(string.Empty)" Disabled="Disabled" /> }
+            @foreach (var type in SelectedTypes) { <FilterChip Label="@type.ToDisplayName()" Removed="() => TypesChanged(SelectedTypes.Where(x => x != type).ToArray())" Disabled="Disabled" /> }
+            @if (Model.LevelMin is { } min) { <FilterChip Label="@($"Niveau ≥ {min}")" Removed="() => Model.LevelMin = null" Disabled="Disabled" /> }
+            @if (Model.LevelMax is { } max) { <FilterChip Label="@($"Niveau ≤ {max}")" Removed="() => Model.LevelMax = null" Disabled="Disabled" /> }
+            @foreach (var criterion in Model.RuneFilters.ToArray()) { <FilterChip Label="@RuneLabel(criterion.RuneName)" Removed="() => RemoveRuneFilter(criterion)" Disabled="Disabled" /> }
+            @if (Model.MinimumRoiPercent is { } roi) { <FilterChip Label="@($"ROI ≥ {roi:N0} %")" Removed="ClearMinimumRoi" Disabled="Disabled" /> }
+            @if (Model.MinimumBenefit is { } gain) { <FilterChip Label="@($"Bénéfice ≥ {gain:N0} K")" Removed="ClearMinimumBenefit" Disabled="Disabled" /> }
+            @if (Model.ProfitabilityMode != ProfitabilityFilterMode.Best) { <FilterChip Label="@(Model.ProfitabilityMode == ProfitabilityFilterMode.Craft ? "Craft uniquement" : "Achat uniquement")" Removed="() => Model.ProfitabilityMode = ProfitabilityFilterMode.Best" Disabled="Disabled" /> }
+            @if (Model.CompleteDataOnly) { <FilterChip Label="Données complètes" Removed="() => Model.CompleteDataOnly = false" Disabled="Disabled" /> }
+            @if (Model.FreshDataOnly) { <FilterChip Label="Données fraîches" Removed="() => Model.FreshDataOnly = false" Disabled="Disabled" /> }
+            @if (Model.RespectJobLevels) { <FilterChip Label="Niveaux de métier" Removed="() => Model.RespectJobLevels = false" Disabled="Disabled" /> }
+            @if (Model.RequireCoefficient) { <FilterChip Label="Coefficient connu" Removed="() => Model.RequireCoefficient = false" Disabled="Disabled" /> }
+        </Chips>
+        <ChildContent>
+            <h3><i class="bi bi-box-seam" aria-hidden="true"></i>Équipements</h3>
+    <div class="visual-equipment-fields">
+        <div class="visual-equipment-field"><span class="d-block fw-semibold mb-1">Métier de fabrication</span>
+            <JobFilter Inline="true" Options="JobOptions" SelectedValue="@(Model.CraftJobId?.ToString() ?? "")"
+                SelectedValueChanged="SelectJob" Disabled="Disabled" DisclosureGroup="@_filterDisclosureGroup" />
+        </div>
+        <div class="visual-equipment-field"><span class="d-block fw-semibold mb-1">Types d’objet</span>
+            <EquipmentTypeFilter Inline="true" AvailableTypes="AvailableTypes" SelectedTypes="SelectedTypes" SelectedTypesChanged="TypesChanged"
+                Disabled="Disabled" DisclosureGroup="@_filterDisclosureGroup" AllTypesLabel="@(Model.CraftJobId is null ? "Tous" : "Tous du métier")"
+                AllTypesDescription="@(Model.CraftJobId is null ? "Tous les types inclus" : "Tous les types du métier inclus")" />
         </div>
     </div>
-    <div class="d-flex justify-content-center gap-3 flex-wrap mb-3">
-        <div class="d-flex flex-column align-items-center">
-            <div class="fw-semibold mb-1">Équipements</div>
-            <div class="input-group flex-nowrap">
-                <InputCheckbox @bind-Value="Model.EquipmentType.Amulet" class="btn-check" id="btn-amulet" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-amulet" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Amulet.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Amulet" Href="img/necklace.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Ring" class="btn-check" id="btn-ring" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-ring" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Ring.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Ring" Href="img/ring.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Belt" class="btn-check" id="btn-belt" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-belt" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Belt.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Belt" Href="img/belt.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Boots" class="btn-check" id="btn-boots" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-boots" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Boots.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Boots" Href="img/boots.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Hat" class="btn-check" id="btn-hat" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-hat" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Hat.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Hat" Href="img/hat.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Cloak" class="btn-check" id="btn-cloak" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-cloak" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Cloak.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Cloak" Href="img/cape.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Shield" class="btn-check" id="btn-shield" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-shield" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Shield.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Shield" Href="img/shield.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Trophy" class="btn-check" id="btn-trophy" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-trophy" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Trophy.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Trophy" Href="img/trophy.svg"/>
-                </label>
-
-                <button type="button" class="btn btn-light border" @onclick="ResetEquipments" data-bs-toggle="tooltip" data-bs-title="Réinitialiser">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </div>
-        </div>
-
-        <div class="d-flex flex-column align-items-center">
-            <div class="fw-semibold mb-1">Armes</div>
-            <div class="input-group flex-nowrap">
-                <InputCheckbox @bind-Value="Model.EquipmentType.Bow" class="btn-check" id="btn-bow" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-bow" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Bow.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Bow" Href="img/bow.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Wand" class="btn-check" id="btn-wand" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-wand" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Wand.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Wand" Href="img/wand.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Staff" class="btn-check" id="btn-staff" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-staff" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Staff.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Staff" Href="img/staff.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Dagger" class="btn-check" id="btn-dagger" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-dagger" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Dagger.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Dagger" Href="img/dagger.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Sword" class="btn-check" id="btn-sword" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-sword" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Sword.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Sword" Href="img/sword.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Scythe" class="btn-check" id="btn-scythe" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-scythe" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Scythe.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Scythe" Href="img/scythe.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Axe" class="btn-check" id="btn-axe" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-axe" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Axe.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Axe" Href="img/axe.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Lance" class="btn-check" id="btn-lance" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-lance" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Lance.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Lance" Href="img/lance.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Hammer" class="btn-check" id="btn-hammer" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-hammer" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Hammer.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Hammer" Href="img/hammer.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Shovel" class="btn-check" id="btn-shovel" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-shovel" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Shovel.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Shovel" Href="img/shovel.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Pickaxe" class="btn-check" id="btn-pickaxe" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-pickaxe" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Pickaxe.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Pickaxe" Href="img/pickaxe.svg"/>
-                </label>
-
-                <InputCheckbox @bind-Value="Model.EquipmentType.Tool" class="btn-check" id="btn-tool" autocomplete="off" disabled="@Disabled"/>
-                <label class="btn btn-light border" for="btn-tool" data-bs-toggle="tooltip" data-bs-title="@EquipmentType.Tool.ToDisplayName()">
-                    <Svg Width="24" Height="24" Alt="Tool" Href="img/tool.svg"/>
-                </label>
-
-                <button type="button" class="btn btn-light border" @onclick="ResetWeapons" data-bs-toggle="tooltip" data-bs-title="Réinitialiser">
-                    <i class="bi bi-x-lg"></i>
-                </button>
-            </div>
-        </div>
-    </div>
-
-    <div class="d-flex justify-content-center mb-3">
-        <button type="button"
-                class="btn btn-outline-secondary btn-sm"
-                @onclick="ToggleAdvanced"
-                disabled="@Disabled">
-            @(_advancedVisible ? "Masquer les filtres avancés" : "Filtres avancés")
-        </button>
-    </div>
-
-    @if (HasAdvancedFilters())
+            <label class="d-block mb-3" style="max-width:360px">Niveau
+                <span class="input-group"><InputNumber @bind-Value="Model.LevelMin" @bind-Value:after="LevelBoundsChanged" class="form-control" placeholder="Min" aria-label="Niveau minimum" disabled="@Disabled" /><span class="input-group-text">à</span><InputNumber @bind-Value="Model.LevelMax" @bind-Value:after="LevelBoundsChanged" class="form-control" placeholder="Max" aria-label="Niveau maximum" disabled="@Disabled" /></span>
+            </label>
+    @if (JobsLoading)
     {
-        <div class="d-flex justify-content-center align-items-center gap-1 flex-wrap mb-3">
-            <span class="small text-secondary me-1">Filtres actifs :</span>
-
-            @foreach (RuneFilterCriterion criterion in Model.RuneFilters.ToArray())
-            {
-                <button type="button"
-                        class="btn btn-outline-secondary btn-sm py-0"
-                        title="Retirer ce filtre"
-                        @onclick="() => RemoveRuneFilter(criterion)"
-                        disabled="@Disabled">
-                    @criterion.RuneName ×
-                </button>
-            }
-
-            @if (Model.MinimumRoiPercent is double minimumRoi)
-            {
-                <button type="button" class="btn btn-outline-secondary btn-sm py-0"
-                        @onclick="ClearMinimumRoi" disabled="@Disabled">
-                    ROI ≥ @minimumRoi.ToString("0.##") % ×
-                </button>
-            }
-
-            @if (Model.MinimumBenefit is double minimumBenefit)
-            {
-                <button type="button" class="btn btn-outline-secondary btn-sm py-0"
-                        @onclick="ClearMinimumBenefit" disabled="@Disabled">
-                    Bénéfice ≥ @minimumBenefit.ToString("N0") K ×
-                </button>
-            }
-
-            @if (Model.CompleteDataOnly)
-            {
-                <button type="button" class="btn btn-outline-secondary btn-sm py-0"
-                        @onclick="() => Model.CompleteDataOnly = false" disabled="@Disabled">
-                    Données complètes ×
-                </button>
-            }
-
-            @if (Model.FreshDataOnly)
-            {
-                <button type="button" class="btn btn-outline-secondary btn-sm py-0"
-                        @onclick="() => Model.FreshDataOnly = false" disabled="@Disabled">
-                    Données fraîches ×
-                </button>
-            }
-
-            @if (Model.RequireCoefficient)
-            {
-                <button type="button" class="btn btn-outline-secondary btn-sm py-0"
-                        @onclick="() => Model.RequireCoefficient = false" disabled="@Disabled">
-                    Coefficient connu ×
-                </button>
-            }
+        <p class="small text-secondary" role="status"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Chargement des métiers…</p>
+    }
+    @if (JobsError is not null)
+    {
+        <div class="small text-warning mb-3" role="status">@JobsError
+            <button class="btn btn-sm btn-outline-secondary ms-2" type="button" @onclick="RetryJobs" disabled="@(Disabled || JobsLoading)">Réessayer</button>
         </div>
     }
-
-    @if (_advancedVisible)
-    {
-        <div class="border rounded p-3 mb-3">
-            <div class="row g-3">
-                <div class="col-12 col-lg-7">
-                    <div class="fw-semibold mb-2">Runes / caractéristiques</div>
-
-                    <div class="d-flex gap-2 align-items-end flex-wrap mb-2">
-                        <div style="min-width:260px; flex:1">
-                            <label class="form-label small mb-1">Ajouter une rune</label>
-                            <InputSelect TValue="long?"
-                                         @bind-Value="_runeToAdd"
-                                         class="form-select form-select-sm"
-                                         disabled="@Disabled">
-                                <option value="">Choisir une rune...</option>
-                                @foreach (Rune rune in AvailableRunes.OrderBy(r => r.Name))
-                                {
-                                    <option value="@rune.DofusDbId">@rune.Name</option>
-                                }
-                            </InputSelect>
-                        </div>
-
-                        <button type="button"
-                                class="btn btn-outline-primary btn-sm"
-                                @onclick="AddRuneFilter"
-                                disabled="@(Disabled || _runeToAdd is null)">
-                            Ajouter
-                        </button>
-
-                        <div style="min-width:170px">
-                            <label class="form-label small mb-1">Correspondance</label>
-                            <InputSelect TValue="RuneFilterMatchMode"
-                                         @bind-Value="Model.RuneMatchMode"
-                                         class="form-select form-select-sm"
-                                         disabled="@Disabled">
-                                <option value="@RuneFilterMatchMode.Any">Au moins une</option>
-                                <option value="@RuneFilterMatchMode.All">Toutes</option>
-                            </InputSelect>
-                        </div>
+            <div class="row g-4">
+                <div class="col-12 col-xl-8">
+                    <h3><i class="bi bi-gem" aria-hidden="true"></i>Runes / caractéristiques</h3>
+                    <div class="rune-picker-toolbar">
+                        <div class="rune-search"><ServiceSearch @bind-Value="_runeSearch" Placeholder="Chercher une rune…" Label="Chercher parmi les runes" Disabled="Disabled" /></div>
+                        <label>Correspondance<InputSelect TValue="RuneFilterMatchMode" @bind-Value="Model.RuneMatchMode" class="form-select form-select-sm" disabled="@Disabled">
+                            <option value="@RuneFilterMatchMode.Any">Au moins une</option><option value="@RuneFilterMatchMode.All">Toutes</option>
+                        </InputSelect></label>
                     </div>
-
-                    @if (Model.RuneFilters.Count == 0)
-                    {
-                        <div class="text-secondary small">
-                            Aucune rune sélectionnée.
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="d-flex flex-column gap-2">
-                            @foreach (RuneFilterCriterion criterion in Model.RuneFilters.ToArray())
-                            {
-                                Rune? rune = AvailableRunes.FirstOrDefault(
-                                    candidate => candidate.DofusDbId == criterion.DofusDbId);
-
-                                <div class="d-flex align-items-center gap-2 border rounded px-2 py-1">
-                                    @if (rune is not null)
-                                    {
-                                        <ItemIcon Item="rune"
-                                                  Background="IconBackground.Slot"
-                                                  Size="Size.Tiny" />
-                                    }
-
-                                    <span class="flex-grow-1 small fw-semibold text-decoration-underline"
-                                          role="button"
-                                          title="Cliquer pour copier le nom de la rune"
-                                          @onclick="() => CopyTextAsync(criterion.RuneName)">
-                                        @criterion.RuneName
-                                    </span>
-
-                                    <button type="button"
-                                            class="btn btn-outline-danger btn-sm"
-                                            title="Retirer"
-                                            @onclick="() => RemoveRuneFilter(criterion)"
-                                            disabled="@Disabled">
-                                        ×
-                                    </button>
-                                </div>
-                            }
-                        </div>
-                    }
+                    <div class="rune-families" role="group" aria-label="Famille des runes">
+                        @foreach (var family in RuneFamilies)
+                        {
+                            <button type="button" class="btn btn-sm @(_runeFamily == family ? "btn-secondary" : "btn-outline-secondary")" aria-pressed="@(_runeFamily == family ? "true" : "false")" disabled="@Disabled" @onclick="() => _runeFamily = family">@family</button>
+                        }
+                    </div>
+                    <div class="rune-choice-grid" role="group" aria-label="Runes à obtenir">
+                        @foreach (var rune in VisibleRunes)
+                        {
+                            <VisualFilterChoice Label="@RuneLabel(rune.Name)" Image="@(rune.DofusDbIconId is { } icon ? $"img/runes/{icon}.png" : "img/runes/unknown.svg")" FallbackImage="img/runes/unknown.svg" Selected="@Model.RuneFilters.Any(x => x.DofusDbId == rune.DofusDbId)"
+                                                Pressed="() => ToggleRuneFilter(rune)" Disabled="Disabled" />
+                        }
+                    </div>
+                    @if (!VisibleRunes.Any()) { <p class="small text-secondary mt-2">Aucune rune ne correspond à cette recherche.</p> }
                 </div>
-
-                <div class="col-12 col-lg-5">
-                    <div class="fw-semibold mb-2">Rentabilité</div>
+                <div class="col-12 col-xl-4">
+                    <h3><i class="bi bi-graph-up-arrow" aria-hidden="true"></i>Rentabilité</h3>
 
                     <label class="form-label small mb-1">Source économique</label>
                     <InputSelect TValue="ProfitabilityFilterMode"
@@ -338,6 +122,11 @@
                         <label class="form-check-label small">Données fraîches uniquement</label>
                     </div>
 
+                    <label class="form-check form-switch" title="@ProfessionFilterUnavailableReason">
+                        <input id="crushing-respect-job-levels" type="checkbox" class="form-check-input" checked="@(Model.RespectJobLevels && CanUseProfessionLevels)"
+                               disabled="@(Disabled || !CanUseProfessionLevels)" @onchange="ToggleProfessionLevels" />
+                        <span class="form-check-label small">Prise en compte niveau métier</span>
+                    </label>
                     <div class="form-check form-switch">
                         <InputCheckbox @bind-Value="Model.RequireCoefficient"
                                        class="form-check-input"
@@ -347,16 +136,8 @@
                 </div>
             </div>
 
-            <div class="d-flex justify-content-end mt-3">
-                <button type="button"
-                        class="btn btn-outline-secondary btn-sm"
-                        @onclick="ResetAdvanced"
-                        disabled="@Disabled">
-                    Réinitialiser les filtres avancés
-                </button>
-            </div>
-        </div>
-    }
+        </ChildContent>
+    </ServiceFilters>
 </div>
 
 @code {
@@ -371,24 +152,103 @@
     public IReadOnlyCollection<Rune> AvailableRunes { get; set; } =
         Array.Empty<Rune>();
 
-    private bool _advancedVisible;
-    private long? _runeToAdd;
-
-    private static Task CopyTextAsync(
-        string? value)
+    [Parameter] public BestCrush.Services.EquipmentJobFilterCatalog? JobCatalog { get; set; }
+    [Parameter] public bool JobsLoading { get; set; }
+    [Parameter] public string? JobsError { get; set; }
+    [Parameter] public EventCallback RetryJobs { get; set; }
+    [Parameter] public EventCallback JobSelectionChanged { get; set; }
+    [Parameter] public RenderFragment? Actions { get; set; }
+    [Parameter] public EventCallback SearchChanged { get; set; }
+    private async Task ChangeSearchAsync(string value)
     {
-        if (string.IsNullOrWhiteSpace(
-            value))
+        Model.SearchText = value;
+        await SearchChanged.InvokeAsync();
+    }
+    [Parameter] public int? PlayerLevel { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, int>? ProfessionLevels { get; set; }
+    private bool CanUseProfessionLevels => BestCrush.Services.CrushingProfessionFilterRules.CanEnable(
+        PlayerLevel, ProfessionLevels, Model.LevelMin, Model.LevelMax);
+    private string? ProfessionFilterUnavailableReason => BestCrush.Services.CrushingProfessionFilterRules.UnavailableReason(
+        PlayerLevel, ProfessionLevels, Model.LevelMin, Model.LevelMax);
+    private void LevelBoundsChanged() { if (!CanUseProfessionLevels) Model.RespectJobLevels = false; }
+    private void ToggleProfessionLevels(ChangeEventArgs args) => Model.RespectJobLevels = CanUseProfessionLevels && args.Value is true;
+    private int ActiveCount => SelectedTypes.Count + Model.RuneFilters.Count +
+        new[] { Model.CraftJobId is not null, Model.LevelMin is not null, Model.LevelMax is not null,
+            Model.MinimumRoiPercent is not null, Model.MinimumBenefit is not null,
+            Model.CompleteDataOnly, Model.FreshDataOnly, Model.RequireCoefficient, Model.RespectJobLevels,
+            Model.ProfitabilityMode != ProfitabilityFilterMode.Best }.Count(x => x);
+    private async Task ResetAllAsync()
+    {
+        Model.LevelMin = Model.LevelMax = null; Model.CraftJobId = null;
+        Model.EquipmentType.SetSelectedTypes([]); ResetAdvanced();
+        await JobSelectionChanged.InvokeAsync();
+    }
+    private SearchItemsModel? _previousModel;
+    private BestCrush.Services.EquipmentJobFilterCatalog? _previousCatalog;
+    private long? _previousJob;
+    private readonly string _filterDisclosureGroup = $"crushing-filters-{Guid.NewGuid():N}";
+    private IReadOnlyList<JobFilter.Option> JobOptions => (JobCatalog?.Jobs ?? Array.Empty<BestCrush.Services.CraftingJob>())
+        .Select(job => new JobFilter.Option(job.Id.ToString(), job.Name))
+        .Concat(Model.CraftJobId is { } selected && JobCatalog?.ContainsJob(selected) != true
+            ? new[] { new JobFilter.Option(selected.ToString(), $"Métier #{selected} · indisponible") } : Array.Empty<JobFilter.Option>()).ToArray();
+    private Task SelectJob(string value)
+    {
+        if (Disabled) return Task.CompletedTask;
+        Model.CraftJobId = long.TryParse(value, out long id) ? id : null;
+        return JobChanged();
+    }
+    private IReadOnlyCollection<EquipmentType> AvailableTypes => JobCatalog?.TypesFor(Model.CraftJobId) ??
+        (Model.CraftJobId is null ? EquipmentTypesFilter.SupportedTypes : Array.Empty<EquipmentType>());
+    private IReadOnlyCollection<EquipmentType> SelectedTypes => Model.EquipmentType.GetSelectedTypes();
+    protected override void OnParametersSet()
+    {
+        LevelBoundsChanged();
+        if (_previousModel != Model || _previousCatalog != JobCatalog || _previousJob != Model.CraftJobId)
         {
-            return Task.CompletedTask;
+            if (Model.CraftJobId is { } job && JobCatalog?.ContainsJob(job) == true) NormalizeJobTypes();
+            _previousModel = Model; _previousCatalog = JobCatalog; _previousJob = Model.CraftJobId;
         }
+    }
+    private Task JobChanged()
+    {
+        NormalizeJobTypes();
+        return JobSelectionChanged.InvokeAsync();
+    }
+    private void NormalizeJobTypes()
+    {
+        if (Model.CraftJobId is { } job && JobCatalog?.ContainsJob(job) == true)
+            Model.EquipmentType.SetSelectedTypes(SelectedTypes.Where(AvailableTypes.Contains));
+    }
+    private void TypesChanged(IReadOnlyCollection<EquipmentType> types)
+    {
+        if (!Disabled) Model.EquipmentType.SetSelectedTypes(types.Where(AvailableTypes.Contains));
+    }
 
-        return Microsoft.Maui.ApplicationModel.DataTransfer
-            .Clipboard
-            .Default
-            .SetTextAsync(
-                value.Trim()
-            );
+    public void CollapseAdvanced()
+    {
+        if (!_advancedVisible) return;
+        _advancedVisible = false;
+        StateHasChanged();
+    }
+    private static string RuneLabel(string name) => name.StartsWith("Rune de ", StringComparison.OrdinalIgnoreCase) ? name[8..] :
+        name.StartsWith("Rune ", StringComparison.OrdinalIgnoreCase) ? name[5..] : name;
+
+    private bool _advancedVisible;
+    private string _runeSearch = "";
+    private string _runeFamily = "Caractéristiques";
+    private static readonly string[] RuneFamilies = ["Caractéristiques", "Dommages", "Résistances", "Toutes"];
+    private static string RuneFamily(Rune rune) => rune.Characteristic.ToString().StartsWith("Damage", StringComparison.Ordinal) ? "Dommages" :
+        rune.Characteristic.ToString().StartsWith("Resistance", StringComparison.Ordinal) ? "Résistances" : "Caractéristiques";
+    private IEnumerable<Rune> VisibleRunes => AvailableRunes.Where(rune =>
+        (string.IsNullOrWhiteSpace(_runeSearch) ? _runeFamily == "Toutes" || RuneFamily(rune) == _runeFamily :
+            rune.Name.Contains(_runeSearch.Trim(), StringComparison.CurrentCultureIgnoreCase)))
+        .OrderBy(rune => rune.Name, StringComparer.CurrentCultureIgnoreCase);
+    private void ToggleRuneFilter(Rune rune)
+    {
+        if (Disabled) return;
+        var existing = Model.RuneFilters.FirstOrDefault(x => x.DofusDbId == rune.DofusDbId);
+        if (existing is not null) Model.RuneFilters.Remove(existing);
+        else Model.RuneFilters.Add(new() { DofusDbId = rune.DofusDbId, Characteristic = rune.Characteristic, RuneName = rune.Name });
     }
 
     private void ToggleAdvanced()
@@ -396,57 +256,10 @@
         _advancedVisible = !_advancedVisible;
     }
 
-    private void AddRuneFilter()
-    {
-        if (_runeToAdd is not long runeId)
-        {
-            return;
-        }
-
-        Rune? rune =
-            AvailableRunes.FirstOrDefault(
-                candidate =>
-                    candidate.DofusDbId == runeId
-            );
-
-        if (rune is null ||
-            Model.RuneFilters.Any(
-                criterion =>
-                    criterion.DofusDbId == runeId
-            ))
-        {
-            _runeToAdd = null;
-            return;
-        }
-
-        Model.RuneFilters.Add(
-            new RuneFilterCriterion
-            {
-                DofusDbId = rune.DofusDbId,
-                Characteristic = rune.Characteristic,
-                RuneName = rune.Name
-            }
-        );
-
-        _runeToAdd = null;
-    }
-
     private void RemoveRuneFilter(
         RuneFilterCriterion criterion)
     {
         Model.RuneFilters.Remove(criterion);
-    }
-
-    private bool HasAdvancedFilters()
-    {
-        return Model.RuneFilters.Count > 0 ||
-            Model.MinimumRoiPercent is not null ||
-            Model.MinimumBenefit is not null ||
-            Model.CompleteDataOnly ||
-            Model.FreshDataOnly ||
-            Model.RequireCoefficient ||
-            Model.ProfitabilityMode !=
-                ProfitabilityFilterMode.Best;
     }
 
     private void ClearMinimumRoi()
@@ -469,34 +282,7 @@
         Model.CompleteDataOnly = false;
         Model.FreshDataOnly = false;
         Model.RequireCoefficient = false;
-    }
-
-    void ResetEquipments()
-    {
-        Model.EquipmentType.Amulet = false;
-        Model.EquipmentType.Ring = false;
-        Model.EquipmentType.Belt = false;
-        Model.EquipmentType.Boots = false;
-        Model.EquipmentType.Hat = false;
-        Model.EquipmentType.Cloak = false;
-        Model.EquipmentType.Shield = false;
-        Model.EquipmentType.Trophy = false;
-    }
-
-    void ResetWeapons()
-    {
-        Model.EquipmentType.Bow = false;
-        Model.EquipmentType.Wand = false;
-        Model.EquipmentType.Staff = false;
-        Model.EquipmentType.Dagger = false;
-        Model.EquipmentType.Sword = false;
-        Model.EquipmentType.Scythe = false;
-        Model.EquipmentType.Axe = false;
-        Model.EquipmentType.Lance = false;
-        Model.EquipmentType.Hammer = false;
-        Model.EquipmentType.Shovel = false;
-        Model.EquipmentType.Pickaxe = false;
-        Model.EquipmentType.Tool = false;
+        Model.RespectJobLevels = false;
     }
 
 }

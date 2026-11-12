@@ -136,7 +136,7 @@ public sealed class CurrentWindowProfessionsState(CurrentServerState serverState
     }
 
     public IReadOnlyList<AccountProfessionProgress>? ForWindow(
-        DofusClientWindowKey? window)
+        DofusClientWindowKey? window, string? serverName = null)
     {
         if (window is not { } key)
             return null;
@@ -144,7 +144,8 @@ public sealed class CurrentWindowProfessionsState(CurrentServerState serverState
         // Acquiring the live lease BEFORE our private lock avoids lock-order
         // inversion with the network worker.
         NetworkCaptureLease? live = serverState.GetWindowCaptureLease(key);
-        if (live is not { } lease || !serverState.IsCaptureLeaseActive(lease))
+        if (live is not { } lease || !serverState.IsCaptureLeaseActive(lease) ||
+            (serverName is not null && !string.Equals(lease.ServerName, serverName, StringComparison.OrdinalIgnoreCase)))
             return null;
 
         lock (_sync)

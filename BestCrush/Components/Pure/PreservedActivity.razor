@@ -1,0 +1,15 @@
+@ChildContent
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public string? Route { get; set; }
+    private RenderFragment? _previousContent;
+    private string? _previousRoute;
+    private bool _changed;
+    protected override void OnParametersSet()
+    {
+        _changed = !ReferenceEquals(_previousContent, ChildContent) || _previousRoute != Route;
+        _previousContent = ChildContent;
+        _previousRoute = Route;
+    }
+    protected override bool ShouldRender() => _changed;
+}

@@ -1,0 +1,50 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Services
+@using BestCrush.Models
+@using System.Numerics
+@inject LiveStockService Stocks
+@inject CurrentDofusClientsState Clients
+@implements IDisposable
+@if (Result is { Resources.Count: > 0 })
+{
+    var stock = ServerName is null ? Stocks.Selected : Stocks.SelectedForServer(ServerName);
+    <div class="craft-availability small mt-2 border-top pt-2">
+        <strong>Disponibilité</strong>
+        <div class="craft-stock-list">
+        @foreach (var ingredient in Result.Resources)
+        {
+            var inventory = stock?.QuantityIn(ingredient.DofusDbId, "inventory");
+            var bank = stock?.QuantityIn(ingredient.DofusDbId, "bank");
+            var quantity = (inventory ?? BigInteger.Zero) + (bank ?? BigInteger.Zero);
+            bool complete = inventory is not null && bank is not null;
+            var item = RecipeArtwork.Find(Equipment, ingredient) ?? new Resource(ingredient.DofusDbId) { Name = ingredient.ResourceName };
+            <div class="craft-stock-entry" aria-label="@ingredient.ResourceName">
+                <StockItemArtwork ItemId="ingredient.DofusDbId" Stock="stock">
+                    <ItemIcon Item="item" Size="Size.Small" Background="IconBackground.Slot" Tooltip="@StockTooltip(ingredient, inventory, bank)" OnClick="() => CopyNameAsync(ingredient.ResourceName)" />
+                </StockItemArtwork>
+                <div><strong>@ingredient.RequiredQuantity requis</strong>
+                    <span class="@(quantity >= ingredient.RequiredQuantity ? "text-success" : "text-secondary")">@(complete ? $"{quantity:N0} disponibles" : inventory is null && bank is null ? "Stock inconnu" : quantity > 0 ? $"Au moins {quantity:N0} disponibles" : "Stock partiel")</span>
+                </div>
+            </div>
+        }
+        </div>
+    </div>
+}
+@code {
+    [CascadingParameter] public ItemCopyFeedback? CopyFeedback { get; set; }
+    [Parameter] public CraftCostResult? Result { get; set; }
+    [Parameter] public Equipment? Equipment { get; set; }
+    [Parameter] public string? ServerName { get; set; }
+    private static string StockTooltip(CraftResourceCostLine line, BigInteger? inventory, BigInteger? bank)
+    {
+        string text = $"{line.ResourceName}\nInventaire : {inventory?.ToString("N0") ?? "non synchronisé"}\nBanque : {bank?.ToString("N0") ?? "non synchronisée"}";
+        if (inventory is not null && bank is not null) text += $"\nÀ acheter : {BigInteger.Max(0, line.RequiredQuantity - inventory.Value - bank.Value):N0}";
+        text += line.Cost is { } cost ? $"\nCoût : {cost:N0} K" : "\nPrix indisponible";
+        return text;
+    }
+    private Task CopyNameAsync(string name) => CopyFeedback is not null ? CopyFeedback.CopyAsync(name)
+        : Microsoft.Maui.ApplicationModel.DataTransfer.Clipboard.Default.SetTextAsync(name);
+    protected override void OnInitialized() { Stocks.Changed += Refresh; Clients.Changed += Refresh; }
+    private void Refresh() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() { Stocks.Changed -= Refresh; Clients.Changed -= Refresh; }
+}

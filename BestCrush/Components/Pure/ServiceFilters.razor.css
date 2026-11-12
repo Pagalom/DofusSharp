@@ -1,0 +1,11 @@
+ .service-filters { margin:1rem 0; }
+.service-filters-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:.6rem; }
+.service-filters-toggle { display:inline-flex; align-items:center; gap:.6rem; min-height:40px; }
+.service-filters-body { margin-top:.85rem; padding:1rem; border:1px solid #d6cbb6; border-radius:.55rem; background:#efe9dc55; }
+.service-filter-chips { display:flex; align-items:center; flex-wrap:wrap; gap:.45rem; margin-top:.75rem; }
+.service-filters-body ::deep .filter-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(185px,1fr)); gap:1rem; align-items:end; }
+.service-filters-body ::deep label { max-width:100%; }
+.service-filters-body ::deep h3 { display:flex; align-items:center; gap:.5rem; font-size:.95rem; margin:0 0 1rem; }
+.service-filters-body ::deep .filter-checks { display:flex; flex-wrap:wrap; gap:.75rem 1.5rem; margin-top:1rem; padding-top:1rem; border-top:1px solid #d6cbb6; }
+
+.service-filters-body ::deep .filter-grid .form-control { width:100% !important; }

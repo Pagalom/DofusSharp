@@ -1,4 +1,4 @@
-﻿using DofusSharp.DofusDb.ApiClients.Models.Common;
+using DofusSharp.DofusDb.ApiClients.Models.Common;
 using DofusSharp.DofusDb.ApiClients.Models.Items;
 
 namespace DofusSharp.DofusDb.ApiClients.Models.Jobs;
@@ -23,9 +23,13 @@ public class DofusDbSkill : DofusDbResource
     /// </summary>
     public IReadOnlyCollection<long>? ModifiableItemTypeIds { get; init; }
 
+    /// <summary>The item identifiers that this crafting skill can produce.</summary>
+    public IReadOnlyCollection<long>? CraftableItemIds { get; init; }
+
     /// <summary>
     ///     The unique identifier of the gathered resource item associated with this skill.
     /// </summary>
+    [System.Text.Json.Serialization.JsonPropertyName("gatheredRessourceItem")]
     public long? GatheredResourceItem { get; init; }
 
     /// <summary>

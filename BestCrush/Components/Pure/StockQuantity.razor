@@ -1,0 +1,14 @@
+@using BestCrush.Services
+@inject LiveStockService Stocks
+@inject CurrentDofusClientsState Clients
+@implements IDisposable
+<div class="small text-info">
+    Sac : @(Stocks.Quantity(ItemId, "inventory", ServerName)?.ToString("N0") ?? "—") · Banque : @(Stocks.Quantity(ItemId, "bank", ServerName)?.ToString("N0") ?? "—")
+</div>
+@code {
+    [Parameter] public long ItemId { get; set; }
+    [Parameter] public string? ServerName { get; set; }
+    protected override void OnInitialized() { Stocks.Changed += Refresh; Clients.Changed += Refresh; }
+    private void Refresh() => _ = InvokeAsync(StateHasChanged);
+    public void Dispose() { Stocks.Changed -= Refresh; Clients.Changed -= Refresh; }
+}

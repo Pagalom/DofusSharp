@@ -1,0 +1,12 @@
+.soul-picture {
+    display:inline-grid;
+    place-items:center;
+    flex:none;
+    width:42px;
+    height:42px;
+    border-radius:.4rem;
+    background:var(--bc-heading,#31423f);
+    color:#a8c8c8;
+}
+.soul-picture-filled { color:#ddc1f4; }
+.soul-picture-filled .soul-stone-body { fill:#634d78; }

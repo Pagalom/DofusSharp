@@ -1,9 +1,9 @@
-﻿@using BestCrush.Domain.Models
+@using BestCrush.Domain.Models
 @using BestCrush.Domain.Services
 @using BestCrush.Models
 @inject ItemsService ItemsService
 
-<button id="item-icon-@GetHashCode()"
+<button type="button" @onclick="HandleClickAsync" id="item-icon-@GetHashCode()"
         class="btn p-0"
         data-bs-toggle="tooltip"
         data-bs-title="@TooltipText"
@@ -49,8 +49,19 @@
 </button>
 
 @code {
+    [CascadingParameter] public BestCrush.Services.ItemCopyFeedback? CopyFeedback { get; set; }
+
+    private async Task HandleClickAsync()
+    {
+        if (OnClick.HasDelegate) await OnClick.InvokeAsync();
+        else if (CopyFeedback is not null) await CopyFeedback.CopyAsync(Item?.Name);
+    }
+
     string? _icon;
     bool _loadingIcon;
+    bool _iconRequested;
+    long? _requestedIconId;
+    int _iconRequestVersion;
 
     int BackgroundSizeInPx =>
         Size switch
@@ -75,6 +86,9 @@
             };
 
     [Parameter]
+    public EventCallback OnClick { get; set; }
+
+    [Parameter]
     public IItem? Item { get; init; }
 
     [Parameter]
@@ -88,21 +102,33 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        if (Item is null)
+        long? iconId = Item?.DofusDbIconId;
+        // A stock toggle or sort changes amounts, not the image. Keep the loaded
+        // bytes instead of rereading and re-encoding the disk cache on every render.
+        if (_iconRequested && _requestedIconId == iconId) return;
+        _iconRequested = true;
+        _requestedIconId = iconId;
+        int version = ++_iconRequestVersion;
+        _icon = null;
+        if (iconId is null)
         {
-            _icon = null;
             _loadingIcon = false;
             return;
         }
-
         _loadingIcon = true;
         try
         {
-            _icon = await ItemsService.GetItemIconAsync(Item);
+            var icon = await ItemsService.GetItemIconAsync(iconId.Value);
+            if (version == _iconRequestVersion) _icon = icon;
+        }
+        catch
+        {
+            if (version == _iconRequestVersion) _iconRequested = false;
+            throw;
         }
         finally
         {
-            _loadingIcon = false;
+            if (version == _iconRequestVersion) _loadingIcon = false;
         }
     }
     [Parameter]

@@ -1,0 +1,70 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceScopeFactory Scopes
+@implements IDisposable
+
+<div class="equipment-search" @onkeydown="HandleKey">
+    <ServiceSearch Value="@Value" ValueChanged="SearchChangedAsync" Placeholder="Nom de l’équipement…" Label="Rechercher un équipement" Disabled="Disabled" />
+    @if (_open && !string.IsNullOrWhiteSpace(Value) && Value.Trim().Length >= 2)
+    {
+        <div class="equipment-matches">
+            @if (_busy) { <p class="small text-secondary mb-0" role="status"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Recherche dans le catalogue…</p> }
+            else if (_error)
+            { <p class="small text-secondary mb-0">Suggestions indisponibles. Vous pouvez lancer l’analyse avec le nom saisi.</p> }
+            else
+            {
+                var matches = Matches;
+                @if (matches.Length == 0) { <p class="small text-secondary mb-0">Aucun équipement ne correspond à ce nom.</p> }
+                else
+                {
+                    <span class="small text-secondary d-block mb-2">Équipements correspondants</span>
+                    <ul aria-label="Équipements correspondants">
+                        @foreach (var item in matches)
+                        {
+                            <li @key="item.DofusDbId"><button type="button" disabled="@Disabled" @onclick="() => ChooseAsync(item)">
+                                <MarketItemPicture IconId="item.DofusDbIconId" />
+                                <span><strong>@item.Name</strong><small>@item.Type.ToDisplayName() · Niv. @item.Level</small></span>
+                                <i class="bi bi-chevron-right ms-auto" aria-hidden="true"></i>
+                            </button></li>
+                        }
+                    </ul>
+                    <small class="text-secondary">8 suggestions au maximum. Précisez le nom pour affiner la recherche.</small>
+                }
+            }
+        </div>
+    }
+</div>
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public EventCallback<Equipment> Selected { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public Func<Equipment, bool>? Accept { get; set; }
+    [Parameter] public bool CraftableOnly { get; set; } = true;
+    private IReadOnlyCollection<Equipment> _catalog = [];
+    private bool _open, _busy, _error, _loaded, _disposed;
+    private readonly CancellationTokenSource _stop = new();
+    private Equipment[] Matches => _catalog.Where(e => (Accept?.Invoke(e) ?? true) && e.Name.Contains(Value?.Trim() ?? "", StringComparison.CurrentCultureIgnoreCase))
+        .OrderByDescending(e => e.Name.StartsWith(Value?.Trim() ?? "", StringComparison.CurrentCultureIgnoreCase))
+        .ThenBy(e => e.Name, StringComparer.CurrentCultureIgnoreCase).Take(8).ToArray();
+    private async Task SearchChangedAsync(string value)
+    {
+        await ValueChanged.InvokeAsync(value); _open = true;
+        if (_loaded || _busy || value.Trim().Length < 2) return;
+        _busy = true; _error = false;
+        try
+        {
+            using var scope = Scopes.CreateScope();
+            var items = scope.ServiceProvider.GetRequiredService<ItemsService>();
+            var catalog = await Task.Run(() => items.GetEquipmentValueCatalogAsync(craftableOnly: CraftableOnly, cancellationToken: _stop.Token), _stop.Token);
+            if (!_disposed) { _catalog = catalog; _loaded = true; }
+        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        catch { if (!_disposed) _error = true; }
+        finally { _busy = false; }
+    }
+    private async Task ChooseAsync(Equipment item) { if (Disabled) return; _open = false; await Selected.InvokeAsync(item); }
+    private void HandleKey(KeyboardEventArgs args) { if (args.Key == "Escape") _open = false; }
+    public void Dispose() { _disposed = true; _stop.Cancel(); _stop.Dispose(); }
+}

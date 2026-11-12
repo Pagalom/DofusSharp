@@ -1,0 +1,99 @@
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+
+@{ var row = Opportunity; }
+<tr>
+    <td><div class="d-flex align-items-center gap-2"><MarketItemPicture IconId="row.Plan.Product.DofusDbIconId" /><button type="button" class="btn btn-link text-body p-0 text-start fw-bold" aria-expanded="@(_expanded ? "true" : "false")" @onclick="ToggleDetails"><strong data-result-name>@row.Plan.Product.Name</strong></button></div><div class="small">Niv. @row.Plan.Product.Level · @row.OriginName</div>
+        @if (ShowProfession)
+        {
+            <div class="small text-secondary">@(Profession?.Job ?? "Métier non renseigné") ·
+                @(Profession?.Level is { } required ? $"niveau {required} requis" : "niveau requis inconnu")</div>
+        }
+        <div class="small">@row.Strategy · lot de @row.Plan.Quantity</div>
+        @if (ShowSourceLink) { <a href="@row.SourceUrl">Ouvrir dans @row.OriginName</a> }
+        <details class="mt-2" open="@_expanded">
+            <summary @onclick="ToggleDetails" @onclick:preventDefault><i class="bi bi-chevron-right small me-1" aria-hidden="true"></i>Voir le détail</summary>
+            @if (_expanded)
+            {
+            <ul class="small ps-3 mt-2">
+            @foreach (var line in row.Plan.Ingredients)
+            {
+                <li>@line.Name : @line.Required requis · @line.Available.ToString("N0") disponibles · @line.Used utilisés · @line.Missing manquants
+                    @if (line.Purchase is { } purchase && line.Missing>0)
+                    {
+                        <span> · achat @purchase.PurchasedQuantity (@Money(purchase.TotalCost)), surplus @purchase.SurplusQuantity</span>
+                    }
+                    @if (!line.HasValuation) { <strong> · prix manquant</strong> }
+                </li>
+            }
+            </ul>
+            <p class="small">Coût économique : @Money(_owned) de stock + @Money(_cash) d'achats −
+                @Money(_surplus) de surplus conservé = @Money(_economicCost).
+                Le surplus est valorisé au plus bas entre sa valeur de marché et sa part du coût d'achat.</p>
+            @if (row.Focus is not null)
+            {
+                <p class="small">@row.Focus · estimation à coefficient constant et décote de concassage des paramètres.</p>
+                @foreach (var rune in row.Runes ?? []) { <div class="small">@rune.Name : @rune.Quantity.ToString("N2") estimées</div> }
+            }
+            @foreach (var missing in row.MissingData) { <div class="small text-danger">@missing</div> }
+            @if (row.Evidence.Coefficient is { } coefficient)
+            {
+                <p class="small">Coefficient @coefficient.CoefficientPercent.ToString("N2") % · @coefficient.Source · @coefficient.ObservedAtUtc.ToLocalTime().ToString("g")</p>
+            }
+            @foreach (var observation in row.Evidence.Prices.OrderBy(x=>x.ObservedAtUtc))
+            {
+                <div class="small text-secondary">Prix #@observation.DofusDbId · lot @observation.Quantity · @Money(observation.Price) ·
+                    @observation.Source · @observation.ObservedAtUtc.ToLocalTime().ToString("g")</div>
+            }
+            }
+        </details>
+    </td>
+    <td>@row.Plan.CraftableNow.ToString("N0")</td>
+    <td>@Money(_cash)</td><td>@Money(_owned)</td><td>@Money(row.Revenue)</td>
+    <td class="@(_benefit>0 ? "text-success" : "text-danger")"><strong>@Money(_benefit)</strong><div class="small">@(_roi?.ToString("N1") ?? "—") %</div></td>
+    <td>@if(row.UsesEstimatedPrices) { <div class="small">Prix extrapolés des lots</div> }<span class="badge @(_complete ? "bg-success" : "bg-secondary")">@(_complete ? "Complètes" : "Incomplètes")</span>
+        <div class="small @(_stale ? "text-danger" : "text-secondary")">@(_stale ? "À actualiser" : "Récentes")</div>
+        <div class="small">@(_oldest?.ToLocalTime().ToString("g") ?? "Date inconnue")</div></td>
+</tr>
+
+@code {
+    [Parameter, EditorRequired] public EconomicOpportunity Opportunity { get; set; } = default!;
+    [Parameter] public bool ShowSourceLink { get; set; }
+    [Parameter] public bool InitiallyExpanded { get; set; }
+    [Parameter] public bool ShowProfession { get; set; }
+    [Parameter] public RecipeProfession? Profession { get; set; }
+    private RecipeProfession? _previousProfession;
+    private bool _previousShowProfession;
+    private EconomicOpportunity? _previous;
+    private bool _expanded, _initialized, _previousInitial, _previousLink, _shouldRender = true;
+    private bool _stale, _complete;
+    private DateTime? _oldest;
+    private double? _cash, _owned, _economicCost, _surplus, _benefit, _roi;
+
+    protected override void OnParametersSet()
+    {
+        bool newRow = !ReferenceEquals(_previous, Opportunity);
+        bool stale = Opportunity.Evidence.IsStale(DateTime.UtcNow);
+        _shouldRender = !_initialized || newRow || _previousLink != ShowSourceLink ||
+            _previousInitial != InitiallyExpanded || _stale != stale ||
+            _previousProfession != Profession || _previousShowProfession != ShowProfession;
+        if (!_initialized || _previousInitial != InitiallyExpanded) _expanded = InitiallyExpanded;
+        if (newRow)
+        {
+            _cash = Opportunity.Plan.CashRequired;
+            _owned = Opportunity.Plan.OwnedValue;
+            _surplus = Opportunity.Plan.SurplusCredit;
+            _economicCost = Opportunity.Plan.EconomicCost;
+            _benefit = Opportunity.Benefit;
+            _roi = Opportunity.RoiPercent;
+            _complete = Opportunity.IsComplete;
+            _oldest = Opportunity.Evidence.OldestUtc;
+        }
+        _previous = Opportunity; _previousLink = ShowSourceLink;
+        _previousProfession = Profession; _previousShowProfession = ShowProfession;
+        _previousInitial = InitiallyExpanded; _stale = stale; _initialized = true;
+    }
+    protected override bool ShouldRender() => _shouldRender;
+    private void ToggleDetails() { _expanded = !_expanded; _shouldRender = true; }
+    private static string Money(double? amount) => amount is null ? "—" : $"{amount:N0} k";
+}

@@ -1,4 +1,5 @@
-﻿@inject ItemsService ItemsService
+@using BestCrush.Services
+@inject ItemsService ItemsService
 @inject RunesService RunesService
 @inject BestCrush.Services.BestCrushSettingsService BestCrushSettings
 @inject ILogger<Server> Logger
@@ -7,6 +8,11 @@
 @inject NavigationManager NavigationManager
 @inject IDataPriorityProvider DataPriorityProvider
 @inject EquipmentProfitabilityService EquipmentProfitabilityService
+@inject BestCrush.Services.LiveStockService Stocks
+@inject BestCrush.Services.CurrentDofusClientsState Clients
+@inject StockCraftPlanner StockPlanner
+@inject Microsoft.Extensions.DependencyInjection.IServiceScopeFactory AnalysisScopes
+@using Microsoft.Extensions.DependencyInjection
 
 @implements IDisposable
 
@@ -20,273 +26,17 @@
 @using System.Text.Json
 
 
-<div class="container">
-    <div class="d-flex justify-content-end gap-2 mb-3">
-        
-        <a class="btn btn-outline-secondary"
-        href="@($"/servers/{ServerName}/equipment-prices")">
-            Prix locaux des équipements
-        </a>
+@{ var artworkStock = Stocks.SelectedForServer(ServerName); }
+<ItemCopyScope>
+<div class="container workspace-page">
+    <PageHeading Title="Concassage" Description="Comparez les équipements à briser selon leur coût d’achat ou de craft et la valeur estimée des runes." />
+    <WorkspaceSettingsDialog Visible="@_showSettings" OnClose="CloseSettings"
+                             OnYieldChanged="RefreshCrushSettingsAsync" />
 
-        <a class="btn btn-outline-secondary"
-        href="@($"/servers/{ServerName}/rune-prices")">
-            Prix locaux des runes
-        </a>
-        <a class="btn btn-outline-secondary"
-        href="@($"/servers/{ServerName}/resource-prices")">
-            Prix locaux des ressources
-        </a>
-        <a class="btn btn-outline-secondary"
-        href="@($"/servers/{ServerName}/coefficients")">
-            Coefficients
-        </a>
-        <a class="btn btn-outline-secondary"
-           href="@BestCrush.Components.KnownRoutes.History(ServerName)">
-            Historique
-        </a>
-        <button type="button"
-                class="btn btn-outline-info"
-                @onclick="OverlayService.Toggle">
-            Overlay
-        </button>
-        <button class="btn btn-outline-secondary"
-                title="Paramètres"
-                aria-label="Paramètres"
-                @onclick="OpenSettings">
-            ⚙
-        </button>
 
-        @if (_showSettings)
-        {
-            <div style="
-                position: fixed;
-                inset: 0;
-                background: rgba(0, 0, 0, 0.45);
-                z-index: 2000;
-                display: flex;
-                align-items: center;
-                justify-content: center;"
-                @onclick="CloseSettings">
-
-                <div class="card shadow"
-                    style="
-                        width: 540px;
-                        max-width: calc(100vw - 40px);
-                        padding: 20px;
-                        max-height: calc(100vh - 40px);
-                        overflow-y: auto;"
-                    @onclick:stopPropagation="true">
-
-                    <div class="d-flex justify-content-between align-items-center mb-4">
-                        <h4 class="m-0">
-                            Paramètres
-                        </h4>
-
-                        <button type="button"
-                                class="btn-close"
-                                @onclick="CloseSettings">
-                        </button>
-                    </div>
-
-                    <div class="border rounded p-3 mb-3">
-                        <h6 class="mb-3">Marché &amp; capture</h6>
-
-                        <label class="form-label fw-bold">
-                            Données capturées automatiquement
-                        </label>
-
-                        <div class="text-muted small mb-3">
-                            Choisis quelles données BestCrush est autorisé
-                            à enregistrer automatiquement depuis Dofus.
-                        </div>
-
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input"
-                                   type="checkbox"
-                                   id="capture-equipment"
-                                   @bind="BestCrushSettings.EquipmentCaptureEnabled" />
-                            <label class="form-check-label" for="capture-equipment">
-                                Prix des équipements
-                            </label>
-                        </div>
-
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input"
-                                   type="checkbox"
-                                   id="capture-runes"
-                                   @bind="BestCrushSettings.RuneCaptureEnabled" />
-                            <label class="form-check-label" for="capture-runes">
-                                Prix des runes
-                            </label>
-                        </div>
-
-                        <div class="form-check form-switch mb-2">
-                            <input class="form-check-input"
-                                   type="checkbox"
-                                   id="capture-resources"
-                                   @bind="BestCrushSettings.ResourceCaptureEnabled" />
-                            <label class="form-check-label" for="capture-resources">
-                                Prix des ressources
-                            </label>
-                        </div>
-
-                        <div class="form-check form-switch mb-4">
-                            <input class="form-check-input"
-                                   type="checkbox"
-                                   id="capture-coefficients"
-                                   @bind="BestCrushSettings.CoefficientCaptureEnabled" />
-                            <label class="form-check-label" for="capture-coefficients">
-                                Coefficients de brisage
-                            </label>
-                        </div>
-
-                        <label class="form-label fw-bold">
-                            Priorité des données
-                        </label>
-
-                        <div class="text-muted small mb-2">
-                            Détermine quelle source est utilisée lorsqu'une
-                            valeur manuelle et une capture jeu sont disponibles.
-                        </div>
-
-                        <select class="form-select"
-                                value="@DataPriorityProvider.Priority"
-                                @onchange="OnDataPriorityChanged">
-                            <option value="@DataPriority.Manual">Manuel</option>
-                            <option value="@DataPriority.InGameAutomatic">Capture jeu</option>
-                        </select>
-                    </div>
-
-                    <div class="border rounded p-3 mb-3">
-                        <h6 class="mb-3">Concassage &amp; rentabilité</h6>
-
-                        <label class="form-label fw-bold"
-                               for="crush-yield-estimation-mode">
-                            Estimation du jet de concassage
-                        </label>
-
-                        <div class="text-muted small mb-2">
-                            Détermine le jet utilisé pour estimer le nombre
-                            de runes obtenu lors du concassage.
-                        </div>
-
-                        <select id="crush-yield-estimation-mode"
-                                class="form-select"
-                                value="@BestCrushSettings.CrushYieldEstimationMode"
-                                @onchange="OnCrushYieldEstimationModeChanged">
-                            <option value="@CrushYieldEstimationMode.Conservative">
-                                Jet prudent de concassage
-                            </option>
-                            <option value="@CrushYieldEstimationMode.Average">
-                                Jet moyen de concassage
-                            </option>
-                        </select>
-
-                        <div class="text-muted small mt-2 mb-4">
-                            Prudent : utilise le jet minimum de chaque caractéristique.
-                            Moyen : utilise la moyenne entre le minimum et le maximum.
-                        </div>
-
-                        <label class="form-label fw-bold"
-                               for="crush-value-discount">
-                            Décote de valorisation du concassage
-                        </label>
-
-                        <div class="text-muted small mb-2">
-                            Réduit la valeur théorique des runes pour estimer
-                            plus prudemment la valeur réellement récupérable.
-                            Cette décote est aussi utilisée pour les bénéfices et rendements.
-                        </div>
-
-                        <div class="input-group mb-4">
-                            <input id="crush-value-discount"
-                                   type="number"
-                                   class="form-control"
-                                   min="0"
-                                   max="100"
-                                   step="0.5"
-                                   @bind="BestCrushSettings.CrushValueDiscountPercent" />
-                            <span class="input-group-text">%</span>
-                        </div>
-
-                        <label class="form-label fw-bold"
-                               for="target-roi">
-                            Objectif de rentabilité
-                        </label>
-
-                        <div class="text-muted small mb-2">
-                            Rendement minimum souhaité pour déterminer
-                            le prix maximal d'achat d'un équipement.
-                        </div>
-
-                        <div class="input-group">
-                            <input id="target-roi"
-                                   type="number"
-                                   class="form-control"
-                                   min="0"
-                                   max="1000"
-                                   step="1"
-                                   @bind="BestCrushSettings.TargetRoiPercent" />
-                            <span class="input-group-text">%</span>
-                        </div>
-                    </div>
-
-                    <div class="border rounded p-3 mb-3">
-                        <h6 class="mb-3">Interface &amp; overlays</h6>
-
-                        <div class="text-muted small mb-3">
-                            Les positions et tailles sont conservées automatiquement
-                            entre les lancements et les mises à jour.
-                        </div>
-
-                        <button type="button"
-                                class="btn btn-outline-secondary"
-                                @onclick="RestoreOverlayLayouts">
-                            Restaurer la position par défaut des overlays
-                        </button>
-
-                        @if (!string.IsNullOrWhiteSpace(
-                            _overlayLayoutResetMessage))
-                        {
-                            <div class="text-success small mt-2">
-                                @_overlayLayoutResetMessage
-                            </div>
-                        }
-                    </div>
-
-                    <div class="border rounded p-3">
-                        <h6 class="mb-3">Développement</h6>
-
-                        <div class="text-muted small mb-3">
-                            Conserve les artefacts nécessaires pour diagnostiquer
-                            la capture passive et la lecture d'infobulle F8.
-                        </div>
-
-                        <div class="form-check form-switch">
-                            <input class="form-check-input"
-                                   type="checkbox"
-                                   id="devtool-keep-debug-artifacts"
-                                   @bind="BestCrushSettings.DevTool_KeepDebugArtifacts" />
-                            <label class="form-check-label"
-                                   for="devtool-keep-debug-artifacts">
-                                Conserver les artefacts de debug
-                            </label>
-                        </div>
-
-                        <div class="text-muted small mt-2">
-                            Désactivé : les captures temporaires F8
-                            sont supprimées et aucune trace réseau détaillée n'est écrite.
-                            Activé : les fichiers sont conservés dans
-                            %LOCALAPPDATA%\BestCrush\DebugCaptures.
-                        </div>
-                    </div>
-                </div>
-            </div>
-        }
-
-    </div>
-
-    <div class="card border-0 bg-light mb-3">
+    <details class="mb-3">
+        <summary class="btn btn-outline-secondary btn-sm"><i class="bi bi-bookmark me-2" aria-hidden="true"></i>Filtres enregistrés</summary>
+    <div class="card border-0 bg-light mt-2">
         <div class="card-body py-2">
             <div class="d-flex align-items-center gap-2 flex-wrap">
                 <label class="small fw-semibold text-nowrap" for="saved-filter-select">
@@ -389,32 +139,50 @@
         </div>
     </div>
 
-    <form method="post" @onsubmit="Count" @formname="search-form">
-        <SearchItemsForm Model="Model"
-                         AvailableRunes="_availableRunes"
-                         Disabled="_searching" />
-        <div class="d-flex justify-content-center my-4">
-            <button class="btn btn-primary" type="submit" disabled="@_searching">Rechercher les objets</button>
-        </div>
+    </details>
+
+    @if (StockItemId is not null)
+    {
+        <p class="small">Équipement ciblé · <a href="@AllEquipmentUrl">Afficher tous les objets</a></p>
+    }
+    <form method="post" @onsubmit="AnalyzeAsync" @onsubmit:preventDefault @formname="search-form">
+        <SearchItemsForm @ref="_searchForm" Model="Model" AvailableRunes="_availableRunes" Disabled="_searching"
+            JobCatalog="_crushingJobCatalog" JobsLoading="_jobFiltersBusy" JobsError="@_jobFiltersError" RetryJobs="LoadCrushingJobsAsync" JobSelectionChanged="OnCrushingJobSelectionChanged" SearchChanged="StateHasChanged"
+            PlayerLevel="DetectedPlayerLevel" ProfessionLevels="DetectedProfessionLevels">
+            <Actions>
+                <label class="d-flex align-items-center gap-2">
+                    <input id="use-crushing-stocks" class="form-check-input mt-0" type="checkbox" checked="@_takeStocks" @onchange="ToggleStocks" />
+                    <span>Stock personnel</span>
+                </label>
+                <button class="btn btn-primary" type="submit" disabled="@(_searching || JobFilterUnavailable)">
+                    @if (_searching) { <span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span> }
+                    @AnalysisButtonText
+                </button>
+            </Actions>
+        </SearchItemsForm>
     </form>
 
-    @if (_allItems is not null && _rankedItems is null)
+    <div>
+        @if (_takeStocks)
+        {
+            <div class="small text-secondary mt-1" title="Le gain après achats ne déduit pas la valeur de revente des ingrédients possédés.">
+                @if (UseStockCalculation)
+                {
+                    <span>@(BestCrush.Services.StockOpportunityService.HasSynchronizedBank(_preparedStockSource) ? "Inventaire + banque" : "Inventaire seul") · gain après achats, avant taxes.</span>
+                }
+                else if (_preparingStocks) { <span>Préparation des stocks…</span> }
+                else { <span>Inventaire non synchronisé sur ce serveur : calcul standard affiché. Reconnectez le personnage avec BestCrush ouvert.</span> }
+            </div>
+        }
+    </div>
+    @if (_marketUpdating) { <p class="small text-secondary" role="status"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Actualisation des prix…</p> }
+    @if (_marketRefreshError is not null) { <p class="small text-warning" role="status">@_marketRefreshError</p> }
+    @if (_analysisError is not null)
     {
-        <div class="text-center">
-            @_allItems.Length objet(s) correspondent aux critères structurels.
-            @if (HasEconomicFilters())
-            {
-                <span class="text-secondary">Les filtres économiques seront appliqués pendant le calcul.</span>
-            }
-        </div>
-
-        <div class="d-flex justify-content-center my-4">
-            <button class="btn btn-primary" @onclick="() => Search(false)" disabled="@_searching">Trouver le <span class="fw-semibold">Best Crush</span></button>
-        </div>
-
+        <div class="alert alert-warning" role="status">@_analysisError</div>
     }
 
-    @if (_allItems is not null && _searching)
+    @if (_allItems is not null && _analyzing)
     {
         int done = _processedItems;
         double ratio = _allItems.Length == 0
@@ -423,12 +191,19 @@
         int percent = (int)(ratio * 100);
 
         {
-            <div class="progress mb-4" role="progressbar" aria-label="Basic example" aria-valuenow="@done" aria-valuemin="0" aria-valuemax="@_allItems.Length">
+            <div class="progress mb-4" role="progressbar" aria-label="Progression de l’analyse des concassages" aria-valuenow="@done" aria-valuemin="0" aria-valuemax="@_allItems.Length">
                 <div class="progress-bar progress-bar-striped progress-bar-animated text-bg-warning" style="width: @percent%">@done / @_allItems.Length</div>
             </div>
         }
     }
 
+    @if (!_searching && _rankedItems is not null && _unrankedItems is not null &&
+        !string.IsNullOrWhiteSpace(Model?.SearchText) &&
+        !_rankedItems.Any(x => MatchesSearchText(x.Equipment)) && !_unrankedItems.Any(MatchesSearchText) &&
+        (_rankedItems.Count + _unrankedItems.Count > 0))
+    {
+        <p class="alert alert-info" role="status">Aucun résultat déjà analysé ne correspond à ce nom. Relancez l’analyse pour rechercher d’autres équipements.</p>
+    }
     @if (_unrankedItems is not null && _rankedItems is not null)
     {
         @if (_rankedItems.Count > 0)
@@ -451,11 +226,11 @@
                     <div class="d-flex gap-2">
                         <label for="sort-order" class="col-form-label col-form-label-sm text-nowrap">Tri par</label>
                         <InputSelect TValue="SortOrder" @bind-Value="_sortOrder" class="form-select form-select-sm" id="sort-order">
-                            <option value="@SortOrder.BestBenefit">Bénéfice — meilleur mode</option>
+                            <option value="@SortOrder.BestBenefit">@(UseStockCalculation ? "Gain après achats — meilleur mode" : "Bénéfice — meilleur mode")</option>
                             <option value="@SortOrder.BestYield">ROI — meilleur mode</option>
-                            <option value="@SortOrder.PurchaseBenefit">Bénéfice achat</option>
+                            <option value="@SortOrder.PurchaseBenefit">@(UseStockCalculation ? "Gain après achat de l’équipement" : "Bénéfice achat")</option>
                             <option value="@SortOrder.PurchaseYield">ROI achat</option>
-                            <option value="@SortOrder.CraftBenefit">Bénéfice craft</option>
+                            <option value="@SortOrder.CraftBenefit">@(UseStockCalculation ? "Gain après achats (craft)" : "Bénéfice craft")</option>
                             <option value="@SortOrder.CraftYield">ROI craft</option>
                             <option value="@SortOrder.HighestTargetMargin">Marge avant seuil</option>
                             <option value="@SortOrder.HighestRuneValue">Valeur runes ajustée</option>
@@ -466,19 +241,19 @@
                         </InputSelect>
                     </div>
                     <div>
-                        <button class="btn btn-light border" @onclick="() => Search(true)">Tout rafraîchir</button>
+                        <button class="btn btn-light border" @onclick="() => Search(true)" disabled="@_searching">Tout rafraîchir</button>
                     </div>
                 </div>
-                <ul class="list-group list-group-flush rounded">
+                <div class="service-results">
                     @{
                         ItemCrushResult[] completeLines =
                             bestLinesOrdered
-                                .Where(item => !IsPartial(item))
+                                .Where(item => MatchesSearchText(item.Equipment) && !IsPartial(item))
                                 .ToArray();
 
                         ItemCrushResult[] partialLines =
                             bestLinesOrdered
-                                .Where(IsPartial)
+                                .Where(item => MatchesSearchText(item.Equipment) && IsPartial(item))
                                 .ToArray();
                     }
                     @if (completeLines.Length > 0)
@@ -490,99 +265,85 @@
                             </span>
                         </h5>
 
-                        @foreach (ItemCrushResult item in completeLines)
+                        <PagedDataTable Items="completeLines" PageSize="30" ResetKey="@($"{ServerName}|{_sortOrder}|{StockItemId}|{Model?.SearchText}")">
+                            <RowContent Context="pageRows">
+                        @foreach (ItemCrushResult item in pageRows)
                         {
-                            <li class="list-group-item">
-                                <CrushResultLine Equipment="item.Equipment"
+                            <div class="p-0" @key="item.Equipment.DofusDbId">
+                                <ServiceResult InitiallyExpanded="@(StockItemId == item.Equipment.DofusDbId)" Focus="() => FocusInOverlay(item.Equipment)" FocusItemName="@item.Equipment.Name">
+<Summary>
+    <span class="result-identity"><StockItemArtwork ItemId="item.Equipment.DofusDbId" Stock="artworkStock"><MarketItemPicture IconId="item.Equipment.DofusDbIconId" /></StockItemArtwork><span><span class="result-name"><CopyTextButton Value="@item.Equipment.Name" Tooltip="Copier le nom de l’équipement">@item.Equipment.Name</CopyTextButton></span><small>@item.Equipment.Type.ToDisplayName() · Niv. @item.Equipment.Level</small></span></span>
+    <span class="result-stat"><small>Coefficient</small><strong>@item.Coefficient.CoefficientPercent.ToString("N0") %</strong></span>
+    <span class="result-stat"><small>Valeur des runes</small><strong>@CrushMoney(item.AdjustedRuneValue)</strong></span>
+    <span class="result-stat"><small>@(UseStockCalculation ? "Gain après achats" : "Gain estimé")</small><strong style="@($"color: {GainColor(item)}")">@CrushMoney(GetEffectiveBenefit(item))</strong></span>
+</Summary>
+<ChildContent>
+                                <CrushResultLine Stock="artworkStock" Equipment="item.Equipment"
                                                 Cost="item.Cost"
                                                 CraftCost="item.CraftCost"
-                                                Coefficient="item.Coefficient"
                                                 FocusedCharacteristic="item.FocusedCharacteristic"
                                                 Runes="item.Runes"
                                                 RuneValues="item.RuneValues"
                                                 AdjustedRuneValue="item.AdjustedRuneValue"
-                                                CalculatedPurchaseBenefit="item.PurchaseBenefit"
-                                                CalculatedPurchaseYield="item.PurchaseYield"
-                                                CalculatedCraftBenefit="item.CraftBenefit"
-                                                CalculatedCraftYield="item.CraftYield"
-                                                TargetRoiPercent="item.TargetRoiPercent"
-                                                PurchaseState="item.PurchaseState"
-                                                CraftState="item.CraftState"
-                                                SortOrder="_sortOrder"
                                                 NoImage="_searching"
-                                                Refresh="() => Refresh(item.Equipment)"
-                                                Focus="() => FocusInOverlay(item.Equipment)" />
-                                <CraftCostSummary Result="item.CraftCost" />
-                            </li>
+                                                />
+                                <CraftCostSummary Equipment="item.Equipment" StockServerName="@ServerName" Result="item.CraftCost" StockPlan="@(UseStockCalculation ? _stockPlans.GetValueOrDefault(item.Equipment.DofusDbId) : null)" />
+</ChildContent>
+                                </ServiceResult>
+                            </div>
                         }
+                            </RowContent>
+                        </PagedDataTable>
                     }
                     @if (partialLines.Length > 0)
                     {
-                        <h5 class="mt-5 mb-1">
-                            Résultats partiels
+                        <h5 class="mt-5 mb-3">
+                            Données partielles
                             <span class="badge text-bg-warning">
                                 @partialLines.Length
                             </span>
                         </h5>
 
-                        <p class="text-secondary small">
-                            Hors classement : le meilleur scénario réel peut être différent tant que certains prix sont manquants.
-                        </p>
-
-                        @foreach (ItemCrushResult item in partialLines)
+                        <PagedDataTable Items="partialLines" PageSize="30" ResetKey="@($"{ServerName}|{_sortOrder}|{StockItemId}|{Model?.SearchText}")">
+                            <RowContent Context="pageRows">
+                        @foreach (ItemCrushResult item in pageRows)
                         {
-                            <li class="list-group-item">
+                            <div class="p-0" @key="item.Equipment.DofusDbId">
+                                <ServiceResult InitiallyExpanded="@(StockItemId == item.Equipment.DofusDbId)" Focus="() => FocusInOverlay(item.Equipment)" FocusItemName="@item.Equipment.Name">
+<Summary>
+    <span class="result-identity"><StockItemArtwork ItemId="item.Equipment.DofusDbId" Stock="artworkStock"><MarketItemPicture IconId="item.Equipment.DofusDbIconId" /></StockItemArtwork><span><span class="result-name"><CopyTextButton Value="@item.Equipment.Name" Tooltip="Copier le nom de l’équipement">@item.Equipment.Name</CopyTextButton></span><small>@item.Equipment.Type.ToDisplayName() · Niv. @item.Equipment.Level</small></span></span>
+    <span class="result-stat"><small>Coefficient</small><strong>@item.Coefficient.CoefficientPercent.ToString("N0") %</strong></span>
+    <span class="result-stat"><small>Valeur des runes</small><strong>@CrushMoney(item.AdjustedRuneValue)</strong></span>
+    <span class="result-stat"><small>@(UseStockCalculation ? "Gain après achats" : "Gain estimé")</small><strong style="@($"color: {GainColor(item)}")">@CrushMoney(GetEffectiveBenefit(item))</strong></span>
+</Summary>
+<ChildContent>
 
-                                <CrushResultLine Equipment="item.Equipment"
+                                <CrushResultLine Stock="artworkStock" Equipment="item.Equipment"
                                                 Cost="item.Cost"
                                                 CraftCost="item.CraftCost"
-                                                Coefficient="item.Coefficient"
                                                 FocusedCharacteristic="item.FocusedCharacteristic"
                                                 Runes="item.Runes"
                                                 RuneValues="item.RuneValues"
                                                 AdjustedRuneValue="item.AdjustedRuneValue"
-                                                CalculatedPurchaseBenefit="item.PurchaseBenefit"
-                                                CalculatedPurchaseYield="item.PurchaseYield"
-                                                CalculatedCraftBenefit="item.CraftBenefit"
-                                                CalculatedCraftYield="item.CraftYield"
-                                                TargetRoiPercent="item.TargetRoiPercent"
-                                                PurchaseState="item.PurchaseState"
-                                                CraftState="item.CraftState"
-                                                SortOrder="_sortOrder"
                                                 NoImage="_searching"
-                                                Refresh="() => Refresh(item.Equipment)"
-                                                Focus="() => FocusInOverlay(item.Equipment)" />
-                                
-                                <CraftCostSummary Result="item.CraftCost" />
+                                                />
+                                <CraftCostSummary Equipment="item.Equipment" StockServerName="@ServerName" Result="item.CraftCost" StockPlan="@(UseStockCalculation ? _stockPlans.GetValueOrDefault(item.Equipment.DofusDbId) : null)" />
 
                                 @if (_missingDataByItem.TryGetValue(
                                     item.Equipment.DofusDbId,
                                     out HashSet<string>? warnings))
                                 {
-                                    <div class="alert alert-warning py-2 px-3 mt-2 mb-0 small">
-
-                                        <strong>
-                                            ⚠ Résultat partiel — meilleur scénario connu
-                                        </strong>
-
-                                        <div class="mt-1">
-                                            Certaines possibilités de brisage ne peuvent pas encore être valorisées :
-                                        </div>
-
-                                        <ul class="mb-0 mt-1">
-                                            @foreach (string warning in warnings)
-                                            {
-                                                <li>@warning</li>
-                                            }
-                                        </ul>
-
-                                    </div>
+                                    <CrushingMissingData Calculation="@_baseCalculations.GetValueOrDefault(item.Equipment.DofusDbId)" CraftCost="item.CraftCost" Messages="warnings" Stock="artworkStock" />
                                 }
 
-                            </li>
+</ChildContent>
+                                </ServiceResult>
+                            </div>
                         }
+                            </RowContent>
+                        </PagedDataTable>
                     }
-                </ul>
+                </div>
             </div>
         }
 
@@ -632,163 +393,69 @@
                     _ =>
                         unrankedItems
                 };
+            unrankedItemsOrdered = unrankedItemsOrdered.Where(MatchesSearchText);
 
             <div class="my-4">
 
                 <h5>
-                    Objets avec données manquantes
+                    Données absentes
                     <span class="badge text-bg-secondary">
-                        @unrankedItems.Count
+                        @unrankedItemsOrdered.Count()
                     </span>
                 </h5>
 
                 <div class="list-group">
 
-                    @foreach (Equipment item in unrankedItemsOrdered)
+                    <PagedDataTable Items="unrankedItemsOrdered" PageSize="30" ResetKey="@($"{ServerName}|{_sortOrder}|{StockItemId}|{Model?.SearchText}")">
+                        <RowContent Context="pageRows">
+                    @foreach (Equipment item in pageRows)
                     {
-                        <div class="list-group-item">
-
-                            <div class="d-flex justify-content-between align-items-center">
-
-                                <div>
-                                    <strong role="button"
-                                            class="text-decoration-underline"
-                                            title="Cliquer pour copier le nom"
-                                            @onclick="() => CopyTextAsync(item.Name)">
-                                        @item.Name
-                                    </strong>
-                                    <span class="text-secondary">
-                                        Niv. @item.Level
-                                    </span>
-                                </div>
-
-                                <span class="badge text-bg-secondary">
-                                    Rentabilité indisponible
-                                </span>
-
-                            </div>
-
-                            @if (_coefficients.TryGetValue(
-                                item.DofusDbId,
-                                out CoefficientObservation? coefficient))
-                            {
-                                <div class="small mt-1 @(coefficient.Source == CoefficientSource.DofocusInitial ? "text-primary" : "text-secondary")">
-                                    Coeff.
-                                    <span role="button"
-                                          class="text-decoration-underline"
-                                          title="Cliquer pour copier le coefficient"
-                                          @onclick="() => CopyPercentAsync(coefficient.CoefficientPercent)">
-                                        @coefficient.CoefficientPercent.ToString("0.##") %
-                                    </span>
-                                </div>
-                            }
-
-                            @if (_equipmentPrices.TryGetValue(
-                                (item.DofusDbId, 1),
-                                out MarketPriceObservation? equipmentPrice) &&
-                                !equipmentPrice.IsCleared)
-                            {
-                                DataFreshness equipmentPriceFreshness =
-                                    DataFreshnessEvaluator.Evaluate(
-                                        equipmentPrice.ObservedAtUtc
-                                    );
-
-                                <div class="border rounded px-3 py-2 mt-2">
-                                    <div class="d-flex justify-content-between align-items-center gap-3">
-                                        <span class="small text-secondary">
-                                            Prix achat
-                                        </span>
-
-                                        <div class="text-end">
-                                            <strong>
-                                                @($"{equipmentPrice.Price:N0} K")
-                                            </strong>
-
-                                            <div class="small @FreshnessCssClass(equipmentPriceFreshness)">
-                                                @MarketSourceLabel(equipmentPrice.Source)
-                                                • @FreshnessLabel(equipmentPriceFreshness)
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                            }
-
-                            @if (_craftCostsByItem.TryGetValue(
-                                item.DofusDbId,
-                                out CraftCostResult? craftCost))
-                            {
-                                <CraftCostSummary Result="craftCost" />
-                            }
-
-                            @if (_missingDataByItem.TryGetValue(
-                                item.DofusDbId,
-                                out HashSet<string>? missingData))
-                            {
-                                <ul class="small text-secondary mb-0 mt-2">
-
-                                    @foreach (string message in missingData)
+                        <div @key="item.DofusDbId">
+                            <ServiceResult InitiallyExpanded="@(StockItemId == item.DofusDbId)" Focus="() => FocusInOverlay(item)" FocusItemName="@item.Name">
+                                <Summary><span class="result-identity"><StockItemArtwork ItemId="item.DofusDbId" Stock="artworkStock"><MarketItemPicture IconId="item.DofusDbIconId" /></StockItemArtwork><span><span class="result-name"><CopyTextButton Value="@item.Name" Tooltip="Copier le nom de l’équipement">@item.Name</CopyTextButton></span><small>@item.Type.ToDisplayName() · Niv. @item.Level</small></span></span><span class="badge text-bg-secondary">Données manquantes</span></Summary>
+                                <ChildContent>
+                                    <CrushResultLine Equipment="item" Stock="artworkStock" Cost="@_baseCalculations.GetValueOrDefault(item.DofusDbId)?.EquipmentCost"
+                                        CraftCost="@_craftCostsByItem.GetValueOrDefault(item.DofusDbId)" NoImage="_searching" />
+                                    @if (_craftCostsByItem.TryGetValue(item.DofusDbId, out CraftCostResult? craftCost))
                                     {
-                                        <li>@message</li>
+                                        <CraftCostSummary Equipment="item" StockServerName="@ServerName" Result="@(UseStockCalculation && _stockPlans.TryGetValue(item.DofusDbId, out var plan) ? StockCrushingProjection.RemainingCost(plan) : craftCost)" StockPlan="@(UseStockCalculation ? _stockPlans.GetValueOrDefault(item.DofusDbId) : null)" />
                                     }
-
-                                </ul>
-                            }
-                            else
-                            {
-                                <div class="small text-secondary mt-2">
-                                    Calcul indisponible pour une raison inconnue.
-                                </div>
-                            }
-                            <div class="d-flex justify-content-end mt-2">
-                                <div class="btn-group btn-group-sm">
-
-                                    <button class="btn btn-light"
-                                            @onclick="async () => await Refresh(item)">
-                                        Rafraîchir
-                                    </button>
-
-                                    <button class="btn btn-light"
-                                            title="Mettre cet équipement en focus dans l'overlay"
-                                            aria-label="Mettre cet équipement en focus dans l'overlay"
-                                            @onclick="async () => await FocusInOverlay(item)">
-                                        ◎
-                                    </button>
-
-                                </div>
-                            </div>
-
+                                    @if (_missingDataByItem.TryGetValue(item.DofusDbId, out HashSet<string>? missingData))
+                                    {
+                                        <CrushingMissingData Calculation="@_baseCalculations.GetValueOrDefault(item.DofusDbId)" CraftCost="@(UseStockCalculation && _stockPlans.TryGetValue(item.DofusDbId, out var missingPlan) ? StockCrushingProjection.RemainingCost(missingPlan) : null)" Messages="missingData" Partial="false" Stock="artworkStock" />
+                                    }
+                                </ChildContent>
+                            </ServiceResult>
                         </div>
                     }
 
+                        </RowContent>
+                    </PagedDataTable>
                 </div>
 
             </div>
         }
 
-        @if (_rankedItems.Count == 0 &&
+        @if (!_searching && _analysisError is null && _rankedItems.Count == 0 &&
             (HasEconomicFilters() || _unrankedItems.Count == 0))
         {
-            <div class="text-center text-secondary border rounded py-4 my-4">
-                Aucun équipement ne satisfait les filtres actuels.
+            <div class="text-center text-secondary border rounded py-4 my-4" role="status">
+                @if (_allItems is { Length: 0 })
+                {
+                    <span>Aucun équipement ne correspond à ces filtres. Modifiez-les puis relancez l’analyse.</span>
+                }
+                else
+                {
+                    <span>Aucun équipement ne satisfait les filtres actuels.</span>
+                }
             </div>
         }
     }
 </div>
 
+</ItemCopyScope>
+
 @code {
-    private string?
-        _overlayLayoutResetMessage;
-
-    private void RestoreOverlayLayouts()
-    {
-        OverlayService
-            .RestoreOverlayLayoutsToDefaults();
-
-        _overlayLayoutResetMessage =
-            "Positions et tailles des overlays restaurées.";
-    }
-
-
     private static readonly Dictionary<string, ServerPageState>
         _sessionStates =
             new(StringComparer.OrdinalIgnoreCase);
@@ -810,16 +477,12 @@
     private string _presetNameDraft = string.Empty;
     private bool _confirmDeletePreset;
     private string? _presetMessage;
-    private void OpenSettings()
-    {
-        _showSettings = true;
-    }
     private void CloseSettings()
     {
         _showSettings = false;
 
         // A global header link may have opened the existing settings
-        // modal via ?settings=1. Remove that query when closing it.
+        // modal via ?settings=true. Remove that query when closing it.
         if (ShowSettingsFromQuery)
             NavigationManager.NavigateTo(
                 BestCrush.Components.KnownRoutes.Server(ServerName),
@@ -854,8 +517,15 @@
     [SupplyParameterFromForm]
     private SearchItemsModel? Model { get; set; }
 
+    [CascadingParameter] public WorkspaceNavigation? Workspace { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
+        InitializeProfessionTracking();
+        InitializeMarketTracking();
+        if (Workspace is not null) Workspace.CrushSettingsChanged += OnWorkspaceCrushSettingsChanged;
+        Stocks.Changed += OnCrushingStockChanged;
+        Clients.Changed += OnCrushingStockChanged;
         _availableRunes =
             (await RunesService.GetRunesAsync())
                 .OrderBy(
@@ -872,35 +542,44 @@
                     StringComparer.CurrentCultureIgnoreCase
                 )
                 .ToList();
+        _ = LoadCrushingJobsAsync();
     }
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         if (ShowSettingsFromQuery)
-            _showSettings = true;
-
-        if (!CurrentServerState.AutomaticRoutingEnabled)
-            CurrentServerState.SelectServer(ServerName);
-
-        if (string.Equals(
-            _loadedServerName,
-            ServerName,
-            StringComparison.OrdinalIgnoreCase))
         {
-            return;
+            if (Workspace is null) _showSettings = true;
+            else
+            {
+                Workspace.OpenSettings();
+                NavigationManager.NavigateTo(KnownRoutes.Server(ServerName), replace: true);
+            }
         }
-
-        bool firstLoad =
-            _loadedServerName is null;
-
-        SaveSessionState();
-
-        _loadedServerName =
-            ServerName;
-
-        LoadSessionState(
-            useSuppliedModel: firstLoad
-        );
+        if (!CurrentServerState.AutomaticRoutingEnabled) CurrentServerState.SelectServer(ServerName);
+        bool serverChanged = !string.Equals(_loadedServerName, ServerName, StringComparison.OrdinalIgnoreCase);
+        bool itemChanged = _lastStockItemId != StockItemId;
+        bool stocksQueryChanged = _lastStocksQuery != UseStocksFromQuery;
+        if (serverChanged)
+        {
+            InvalidateMarketRefresh();
+            bool firstLoad = _loadedServerName is null;
+            SaveSessionState();
+            _loadedServerName = ServerName;
+            LoadSessionState(useSuppliedModel: firstLoad);
+            await PrepareStocksAsync(force: true);
+            CatchUpMarketChanges();
+        }
+        if (stocksQueryChanged && UseStocksFromQuery)
+        {
+            _takeStocks = true;
+            RebuildVisibleCalculations();
+        }
+        _lastStocksQuery = UseStocksFromQuery;
+        _lastStockItemId = StockItemId;
+        // Links from Opportunities open the existing filtered screen, never a second menu.
+        if (((itemChanged || serverChanged) && StockItemId is not null) || (itemChanged && _allItems is not null))
+            await Search(false);
     }
 
     private static string MarketSourceLabel(
@@ -985,27 +664,7 @@
         );
     }
 
-    async Task FocusInOverlay(
-        Equipment equipment)
-    {
-        if (!CurrentServerState.AutomaticRoutingEnabled)
-            CurrentServerState.SelectServer(ServerName);
-
-        await OverlayService
-            .FocusEquipmentAsync(
-                equipment
-            );
-
-        // Action explicite de l'utilisateur :
-        // le bouton Focus copie aussi le nom exact afin
-        // de pouvoir le rechercher immédiatement dans Dofus.
-        await Microsoft.Maui.ApplicationModel.DataTransfer
-            .Clipboard
-            .Default
-            .SetTextAsync(
-                equipment.Name
-            );
-    }
+    Task FocusInOverlay(Equipment equipment) => OverlayService.FocusEquipmentAndCopyNameAsync(equipment, ServerName);
 
     private void LoadSessionState(
         bool useSuppliedModel)
@@ -1062,6 +721,10 @@
 
         _sortOrder =
             state.SortOrder;
+        _baseCalculations = state.BaseCalculations;
+        _marketRevision = state.MarketRevision;
+        _takeStocks = UseStocksFromQuery || state.TakeStocks;
+
     }
 
     private void SaveSessionState()
@@ -1106,47 +769,28 @@
 
         _sessionState.SortOrder =
             _sortOrder;
+        _sessionState.BaseCalculations = _baseCalculations;
+        _sessionState.MarketRevision = _marketRevision;
+        _sessionState.TakeStocks = _takeStocks;
     }
 
     public void Dispose()
     {
+        DisposeProfessionTracking();
+        if (Workspace is not null) Workspace.CrushSettingsChanged -= OnWorkspaceCrushSettingsChanged;
+        _stockDisposed = true;
+        DisposeMarketTracking();
+        _jobFiltersStop.Cancel();
+        _stockPreparationVersion++;
+        Stocks.Changed -= OnCrushingStockChanged;
+        Clients.Changed -= OnCrushingStockChanged;
         SaveSessionState();
     }
 
-    private void OnDataPriorityChanged(
-        ChangeEventArgs args)
+    private void OnWorkspaceCrushSettingsChanged() => _ = InvokeAsync(RefreshCrushSettingsAsync);
+
+    private async Task RefreshCrushSettingsAsync()
     {
-        if (Enum.TryParse(
-            args.Value?.ToString(),
-            out DataPriority priority))
-        {
-            DataPriorityProvider.Priority =
-                priority;
-        }
-    }
-
-    private async Task OnCrushYieldEstimationModeChanged(
-        ChangeEventArgs args)
-    {
-        if (!Enum.TryParse(
-            args.Value?.ToString(),
-            out CrushYieldEstimationMode mode))
-        {
-            return;
-        }
-
-        if (BestCrushSettings.CrushYieldEstimationMode ==
-            mode)
-        {
-            return;
-        }
-
-        BestCrushSettings.CrushYieldEstimationMode =
-            mode;
-
-        await OverlayService
-            .RefreshFocusedProfitabilityAsync();
-
         if (_allItems is not null &&
             (_rankedItems is not null ||
              _unrankedItems is not null))
@@ -1157,312 +801,129 @@
         }
     }
 
-    async Task Count()
+    private bool _analyzing;
+    private string? _analysisError;
+    private string AnalysisButtonText => !_searching ? "Analyser"
+        : !_analyzing ? "Actualisation…"
+        : _allItems is null ? "Préparation de l’analyse…"
+        : $"Analyse… {_processedItems:N0} / {_allItems.Length:N0}";
+
+    private SearchItemsForm? _searchForm;
+    private Task AnalyzeAsync()
     {
-        if (_searching)
-        {
-            return;
-        }
-
-        _rankedItems = null;
-        _unrankedItems = null;
-        _processedItems = 0;
-
-        StateHasChanged();
-
-        IReadOnlyCollection<Equipment> allItems = await ItemsService.GetEquipmentsAsync();
-        Equipment[] items = FilterItems(allItems).ToArray();
-        _allItems = items;
+        _searchForm?.CollapseAdvanced();
+        return Search(forceRefresh: false);
     }
 
-    async Task Search(
-        bool forceRefresh)
+    async Task Search(bool forceRefresh)
     {
-        if (_searching)
+        if (_searching || _stockDisposed) return;
+        bool respectProfessions = Model?.RespectJobLevels == true;
+        var professionInputs = CaptureProfessionInputs();
+        if (respectProfessions && !CrushingProfessionFilterRules.CanEnable(professionInputs?.PlayerLevel, professionInputs?.Levels, Model?.LevelMin, Model?.LevelMax))
         {
+            _analysisError = CrushingProfessionFilterRules.UnavailableReason(professionInputs?.PlayerLevel, professionInputs?.Levels, Model?.LevelMin, Model?.LevelMax);
+            Model!.RespectJobLevels = false;
+            return;
+        }
+        if (JobFilterUnavailable)
+        {
+            _analysisError = "Le métier sélectionné n’est pas disponible. Choisissez Tous les métiers ou réessayez son chargement.";
             return;
         }
 
+        _marketGeneration++;
+        _allItems = null;
         _rankedItems = null;
         _unrankedItems = null;
         _processedItems = 0;
+        _analysisError = null;
         _searching = true;
+        _analyzing = true;
         _missingDataByItem.Clear();
-
-        await InvokeAsync(
-            StateHasChanged
-        );
+        _baseCalculations.Clear();
+        _stockPlans.Clear();
+        _stockResults.Clear();
+        _stockPreparationVersion++;
+        _preparingStocks = false;
+        string analysisServer = ServerName;
+        long analysisMarketRevision = _marketChanges?.Revision ?? 0;
+        bool IsCurrent() => !_stockDisposed && ServerName == analysisServer &&
+            (!respectProfessions || professionInputs?.Key == CaptureProfessionInputs()?.Key);
+        await InvokeAsync(StateHasChanged);
 
         try
         {
-            Task<IReadOnlyCollection<Equipment>> itemsTask =
-                ItemsService.GetEquipmentsAsync();
-
-            Task<IReadOnlyDictionary<Characteristic, Rune>>
-                runesByCharacteristicAsync =
-                    RunesService.GetRunesByCharacteristicAsync();
-
-            await Task.WhenAll(
-                itemsTask,
-                runesByCharacteristicAsync
-            );
-
-            Equipment[] items =
-                FilterItems(
-                    await itemsTask
-                )
-                .ToArray();
-
+            // This scope owns its DB context; the worker never shares the view's
+            // context with price/stock interactions or another page.
+            using var scope = AnalysisScopes.CreateScope();
+            var itemsService = scope.ServiceProvider.GetRequiredService<ItemsService>();
+            var profitabilityService = scope.ServiceProvider.GetRequiredService<EquipmentProfitabilityService>();
+            var loaded = await Task.Run(async () =>
+            {
+                var all = await itemsService.GetEquipmentsAsync();
+                var market = await profitabilityService.LoadContextAsync(analysisServer);
+                return (Items: all, Market: market);
+            });
+            if (!IsCurrent()) return;
+            if (respectProfessions)
+                await LoadProfessionRecipesAsync(FilterItemsCore(loaded.Items), scope.ServiceProvider);
+            if (!IsCurrent()) return;
+            Equipment[] items = FilterItems(loaded.Items).ToArray();
             _allItems = items;
-
-            await InvokeAsync(
-                StateHasChanged
-            );
-
             _rankedItems = [];
             _unrankedItems = [];
-
-            EquipmentProfitabilityContext profitabilityContext =
-                await EquipmentProfitabilityService
-                    .LoadContextAsync(
-                        ServerName
-                    );
-
-            _runePrices =
-                profitabilityContext.RunePrices;
-
-            _equipmentPrices =
-                profitabilityContext.EquipmentPrices;
-
-            _resourcePrices =
-                profitabilityContext.ResourcePrices;
-
-            _coefficients =
-                profitabilityContext.Coefficients;
-
+            var profitabilityContext = loaded.Market;
+            _runePrices = profitabilityContext.RunePrices;
+            _equipmentPrices = profitabilityContext.EquipmentPrices;
+            _resourcePrices = profitabilityContext.ResourcePrices;
+            _coefficients = profitabilityContext.Coefficients;
             _craftCostsByItem.Clear();
+            SetStockInputs(Stocks.Selected);
+            await InvokeAsync(StateHasChanged);
 
+            var renderClock = System.Diagnostics.Stopwatch.StartNew();
             foreach (Equipment item in items)
             {
+                if (!IsCurrent()) return;
                 try
                 {
-                    EquipmentProfitabilityResult profitability =
-                        await EquipmentProfitabilityService
-                            .CalculateAsync(
-                                item,
-                                ServerName,
-                                profitabilityContext,
-                                forceRefresh
-                            );
-
-                    _craftCostsByItem[item.DofusDbId] =
-                        profitability.CraftCost;
-
-                    foreach (string missingData
-                        in profitability.MissingData)
-                    {
-                        AddMissingData(
-                            item,
-                            missingData
-                        );
-                    }
-
-                    List<ItemCrushResult> allResults =
-                        profitability.Scenarios
-                            .Select(ToItemCrushResult)
-                            .ToList();
-
-                    List<ItemCrushResult> result =
-                        allResults
-                            .Where(MatchesExactRuneFilters)
-                            .Where(PassesEconomicFilters)
-                            .ToList();
-
-                    if (Model?.CompleteDataOnly == true &&
-                        profitability.MissingData.Count > 0)
-                    {
-                        result.Clear();
-                    }
-
-                    if (allResults.Count == 0)
-                    {
-                        _unrankedItems.Add(item);
-                    }
-                    else if (result.Count > 0)
-                    {
-                        _rankedItems.AddRange(result);
-                    }
+                    var profitability = await Task.Run(() => profitabilityService.CalculateAsync(
+                        item, analysisServer, profitabilityContext, forceRefresh, includeUnpricedScenarios: true));
+                    if (!IsCurrent()) return;
+                    _craftCostsByItem[item.DofusDbId] = profitability.CraftCost;
+                    CacheCalculation(profitability);
+                    AddVisibleCalculation(profitability);
                 }
                 catch (Exception exn)
                 {
+                    if (!IsCurrent()) return;
                     _unrankedItems.Add(item);
-
-                    AddMissingData(
-                        item,
-                        "Erreur lors de la récupération des données de brisage"
-                    );
-
-                    Logger.LogError(
-                        exn,
-                        "Error while processing item {ItemName} ({ItemId})",
-                        item.Name,
-                        item.DofusDbId
-                    );
-
-                    await InvokeAsync(
-                        StateHasChanged
-                    );
+                    AddMissingData(item, "Erreur lors de la récupération des données de brisage");
+                    Logger.LogError(exn, "Error while processing item {ItemName} ({ItemId})", item.Name, item.DofusDbId);
                 }
-
                 _processedItems++;
-
-                await InvokeAsync(
-                    StateHasChanged
-                );
+                // Show the first result immediately, then limit costly list
+                // renders while retaining visible progress throughout the scan.
+                if (_processedItems == 1 || _processedItems == items.Length || renderClock.ElapsedMilliseconds >= 100)
+                {
+                    await InvokeAsync(StateHasChanged);
+                    renderClock.Restart();
+                }
             }
-        }
-        catch (Exception exn)
-        {
-            Logger.LogError(
-                exn,
-                "An error occured while searching for best crush."
-            );
-        }
-        finally
-        {
-            _searching = false;
-
-            await InvokeAsync(
-                StateHasChanged
-            );
-        }
-    }
-
-    async Task Refresh(
-        Equipment equipment)
-    {
-        if (_searching ||
-            _unrankedItems is null ||
-            _rankedItems is null)
-        {
-            return;
-        }
-
-        _searching = true;
-
-        await InvokeAsync(
-            StateHasChanged
-        );
-
-        try
-        {
-            EquipmentProfitabilityContext
-                profitabilityContext =
-                    await EquipmentProfitabilityService
-                        .LoadContextAsync(
-                            ServerName
-                        );
-
-            _runePrices =
-                profitabilityContext.RunePrices;
-
-            _equipmentPrices =
-                profitabilityContext.EquipmentPrices;
-
-            _resourcePrices =
-                profitabilityContext.ResourcePrices;
-
-            _coefficients =
-                profitabilityContext.Coefficients;
-
-            _missingDataByItem.Remove(
-                equipment.DofusDbId
-            );
-
-            EquipmentProfitabilityResult
-                profitability =
-                    await EquipmentProfitabilityService
-                        .CalculateAsync(
-                            equipment,
-                            ServerName,
-                            profitabilityContext,
-                            true
-                        );
-
-            _craftCostsByItem[
-                equipment.DofusDbId
-            ] =
-                profitability.CraftCost;
-
-            foreach (string missingData
-                    in profitability.MissingData)
-            {
-                AddMissingData(
-                    equipment,
-                    missingData
-                );
-            }
-
-            _unrankedItems.RemoveAll(
-                item =>
-                    item.DofusDbId ==
-                    equipment.DofusDbId
-            );
-
-            _rankedItems.RemoveAll(
-                result =>
-                    result.Equipment.DofusDbId ==
-                    equipment.DofusDbId
-            );
-
-            List<ItemCrushResult> allResults =
-                profitability.Scenarios
-                    .Select(ToItemCrushResult)
-                    .ToList();
-
-            List<ItemCrushResult> result =
-                allResults
-                    .Where(MatchesExactRuneFilters)
-                    .Where(PassesEconomicFilters)
-                    .ToList();
-
-            if (Model?.CompleteDataOnly == true &&
-                profitability.MissingData.Count > 0)
-            {
-                result.Clear();
-            }
-
-            if (allResults.Count == 0)
-            {
-                _unrankedItems.Add(
-                    equipment
-                );
-            }
-            else if (result.Count > 0)
-            {
-                _rankedItems.AddRange(
-                    result
-                );
-            }
-
+            _marketRevision = analysisMarketRevision;
             SaveSessionState();
         }
         catch (Exception exn)
         {
-            Logger.LogError(
-                exn,
-                "Error while refreshing item {ItemName} ({ItemId})",
-                equipment.Name,
-                equipment.DofusDbId
-            );
+            Logger.LogError(exn, "An error occured while searching for best crush.");
+            if (IsCurrent()) _analysisError = "L’analyse n’a pas pu aboutir. Réessayez avec le bouton Analyser.";
         }
         finally
         {
             _searching = false;
-
-            await InvokeAsync(
-                StateHasChanged
-            );
+            _analyzing = false;
+            if (!_stockDisposed) { await InvokeAsync(StateHasChanged); CatchUpMarketChanges(); }
         }
     }
 

@@ -1,0 +1,36 @@
+@using BestCrush.Services
+
+<span class="stock-item-artwork">
+    @ChildContent
+    @if (_inventory > 0 || _bank > 0)
+    {
+        <span class="stock-origins" @onclick:stopPropagation="true" @onclick:preventDefault="true">
+            @if (_inventory > 0)
+            {
+                string label = $"Inventaire : {_inventory:N0}";
+                <span class="stock-origin" role="img" tabindex="0" aria-label="@label" data-bs-toggle="tooltip"
+                      data-bs-title="@label" data-bs-custom-class="multiline-tooltip"><StockContainerIcon /></span>
+            }
+            @if (_bank > 0)
+            {
+                string label = $"Banque : {_bank:N0}";
+                <span class="stock-origin" role="img" tabindex="0" aria-label="@label" data-bs-toggle="tooltip"
+                      data-bs-title="@label" data-bs-custom-class="multiline-tooltip"><StockContainerIcon Bank="true" /></span>
+            }
+        </span>
+    }
+</span>
+
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public LiveStockSource? Stock { get; set; }
+    [Parameter] public long ItemId { get; set; }
+
+    private System.Numerics.BigInteger? _inventory, _bank;
+
+    protected override void OnParametersSet()
+    {
+        _inventory = Stock?.QuantityIn(ItemId, "inventory");
+        _bank = Stock?.QuantityIn(ItemId, "bank");
+    }
+}

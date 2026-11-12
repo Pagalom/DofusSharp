@@ -10,9 +10,16 @@ public sealed class StockSnapshotDeltaStudy
     private readonly bool _identifyBlockedItemTypes;
     private readonly StockOpaqueWireSnapshotStudy _wireSnapshotStudy = new();
 
-    public StockSnapshotDeltaStudy(bool identifyBlockedItemTypes = false)
+    private readonly Action<int, StockSnapshotWireCandidate>? _snapshotObserver;
+    private readonly Action<int, string, byte[]>? _eventObserver;
+
+    public StockSnapshotDeltaStudy(bool identifyBlockedItemTypes = false,
+        Action<int, StockSnapshotWireCandidate>? snapshotObserver = null,
+        Action<int, string, byte[]>? eventObserver = null)
     {
         _identifyBlockedItemTypes = identifyBlockedItemTypes;
+        _snapshotObserver = snapshotObserver;
+        _eventObserver = eventObserver;
     }
 
     private const int MaxSessions = 16;
@@ -37,9 +44,14 @@ public sealed class StockSnapshotDeltaStudy
 
     public string? Observe(int sessionNumber, string opcode, ReadOnlySpan<byte> body)
     {
+        if (sessionNumber > 0 && body.Length <= 256 * 1024 &&
+            LiveStockProtocol.IsStockOpcode(opcode))
+            _eventObserver?.Invoke(sessionNumber, opcode, body.ToArray());
         if (sessionNumber <= 0 || opcode is not
             ("irl" or "irp" or "iqx" or "iqz" or "irx" or "iqm" or "iqq"))
             return null;
+
+
 
         if (!_sessions.TryGetValue(sessionNumber, out SessionStocks? state))
         {
@@ -67,6 +79,8 @@ public sealed class StockSnapshotDeltaStudy
                 InventoryBankSnapshotDecoder.Decode(opcode, body);
             if (snapshot is null)
                 return null;
+
+            _snapshotObserver?.Invoke(sessionNumber, snapshot);
 
             Dictionary<ulong, StockItemWireCandidate>? rows =
                 snapshot.Status == StockSnapshotCandidateStatus.CompleteCandidate

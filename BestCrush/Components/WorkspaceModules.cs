@@ -1,15 +1,16 @@
 namespace BestCrush.Components;
 
 /// <summary>
-/// The nine fixed workspace tabs. The current Concassage UI keeps its
-/// legacy route until M3; the new modules use server-independent routes.
+/// Activity navigation, including the quieter cross-activity analysis tool.
+/// Concassage keeps its existing server-scoped route.
 /// </summary>
-internal sealed record WorkspaceModule(string Slug, string Name);
+internal sealed record WorkspaceModule(string Slug, string Name, bool IsUtility = false);
 
 internal static class WorkspaceModules
 {
     internal static IReadOnlyList<WorkspaceModule> All { get; } =
     [
+        new("routine", "Routine"),
         new("concassage", "Concassage"),
         new("achat-vente", "Achat / Vente"),
         new("pierres-ame", "Pierres d'âme"),
@@ -18,7 +19,8 @@ internal static class WorkspaceModules
         new("elevage", "Élevage"),
         new("farming", "Farming"),
         new("forgemagie", "Forgemagie"),
-        new("opportunites", "Opportunités")
+        new("opportunites", "Opportunités"),
+        new("analyses", "Analyses", IsUtility: true)
     ];
 
     internal static WorkspaceModule? Find(string? slug) =>

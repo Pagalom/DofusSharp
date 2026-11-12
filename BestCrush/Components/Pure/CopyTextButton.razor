@@ -1,0 +1,17 @@
+@using BestCrush.Services
+<button type="button" class="copy-text @Class" style="@Style"
+        data-bs-toggle="@(string.IsNullOrWhiteSpace(Tooltip) ? null : "tooltip")" data-bs-title="@Tooltip" data-bs-custom-class="multiline-tooltip"
+        aria-label="@($"Copier {Value}")" @onclick="CopyAsync" @onclick:stopPropagation="true" @onclick:preventDefault="true">
+    @ChildContent
+</button>
+@code {
+    [CascadingParameter] public ItemCopyFeedback? Feedback { get; set; }
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public string? Tooltip { get; set; }
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string? Style { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private Task CopyAsync() => string.IsNullOrWhiteSpace(Value) ? Task.CompletedTask
+        : Feedback is not null ? Feedback.CopyAsync(Value)
+        : Microsoft.Maui.ApplicationModel.DataTransfer.Clipboard.Default.SetTextAsync(Value.Trim());
+}

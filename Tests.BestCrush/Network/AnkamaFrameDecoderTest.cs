@@ -59,6 +59,26 @@ public sealed class AnkamaFrameDecoderTest
     }
 
     [Fact]
+    public void ObservedEmptyBankTypeOnlyEnvelopeIsDeliveredAsAnExplicitEmptyBody()
+    {
+        byte[] bank = Bytes(1, Encoding.UTF8.GetBytes("type.ankama.com/irp"));
+        var result = AnkamaFrameDecoder.FindAny(Bytes(7, bank))!;
+        result.Key.Should().Be("irp");
+        result.Body.Should().BeEmpty();
+        AnkamaFrameDecoder.FindAny(Any("irp", []))!.Body.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void EmptyBankExceptionDoesNotAcceptWrongWireTypesOrExtraFields()
+    {
+        byte[] type = Bytes(1, Encoding.UTF8.GetBytes("type.ankama.com/irp"));
+        AnkamaFrameDecoder.FindAny(Message(type, Unsigned(2, 0))).Should().BeNull();
+        AnkamaFrameDecoder.FindAny(Message(type, Unsigned(9, 1))).Should().BeNull();
+        AnkamaFrameDecoder.FindAny(Message(type, type)).Should().BeNull();
+        AnkamaFrameDecoder.FindAny([]).Should().BeNull();
+    }
+
+    [Fact]
     public void RequiresBodyAndRejectsMalformedOuterMessageEvenWithAValidAny()
     {
         AnkamaFrameDecoder.FindAny(Bytes(1, Encoding.UTF8.GetBytes("type.ankama.com/jzn")))

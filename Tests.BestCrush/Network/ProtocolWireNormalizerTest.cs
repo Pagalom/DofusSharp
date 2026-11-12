@@ -244,6 +244,7 @@ public sealed class ProtocolWireNormalizerTest
 
         string[] routeNames =
         [
+            "global_market_history_request", "global_market_history_response",
             "price_list", "market_selection_response", "crush_result",
             "crush_result_current", "item_detail", "item_detail_current",
             "workshop_slot_put", "purchase_request",
@@ -251,7 +252,8 @@ public sealed class ProtocolWireNormalizerTest
             "inventory_quantity", "inventory_remove", "craft_prepare",
             "craft_output", "smithmagic_request", "smithmagic_batch_request",
             "smithmagic_result", "smithmagic_aux",
-            "market_listing_request", "market_listing_created"
+            "market_listing_request", "market_listing_created",
+            "market_listing_request_current", "market_listing_created_current"
         ];
 
         foreach (string route in routeNames)

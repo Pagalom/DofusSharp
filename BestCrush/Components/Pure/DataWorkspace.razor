@@ -1,0 +1,53 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Components.Pages
+@if (string.IsNullOrWhiteSpace(ServerName))
+{
+    <div class="container workspace-page">
+        <PageHeading Title="Données" Description="Choisissez un serveur en haut pour consulter ses données." />
+    </div>
+}
+else
+{
+    @if (_visited.Contains(WorkspaceDataTab.Equipment))
+    {
+        <div hidden="@(Tab != WorkspaceDataTab.Equipment)">
+            <EquipmentPrices Priority="@Priority" ServerName="@ServerName" IsEmbedded="true" IsActive="@(IsActive && Tab == WorkspaceDataTab.Equipment)" />
+        </div>
+    }
+    @if (_visited.Contains(WorkspaceDataTab.Runes))
+    {
+        <div hidden="@(Tab != WorkspaceDataTab.Runes)">
+            <RunePrices Priority="@Priority" ServerName="@ServerName" IsEmbedded="true" IsActive="@(IsActive && Tab == WorkspaceDataTab.Runes)" />
+        </div>
+    }
+    @if (_visited.Contains(WorkspaceDataTab.Resources))
+    {
+        <div hidden="@(Tab != WorkspaceDataTab.Resources)">
+            <ResourcePrices Priority="@Priority" ServerName="@ServerName" IsEmbedded="true" IsActive="@(IsActive && Tab == WorkspaceDataTab.Resources)" />
+        </div>
+    }
+    @if (_visited.Contains(WorkspaceDataTab.Coefficients))
+    {
+        <div hidden="@(Tab != WorkspaceDataTab.Coefficients)">
+            <Coefficients Priority="@Priority" ServerName="@ServerName" IsEmbedded="true" IsActive="@(IsActive && Tab == WorkspaceDataTab.Coefficients)" />
+        </div>
+    }
+    @if (_visited.Contains(WorkspaceDataTab.History))
+    {
+        <div hidden="@(Tab != WorkspaceDataTab.History)">
+            <History ServerName="@ServerName" IsEmbedded="true" IsActive="@(IsActive && Tab == WorkspaceDataTab.History)" InitialSelection="@HistorySelection" />
+        </div>
+    }
+}
+@code {
+    [Parameter] public string? ServerName { get; set; }
+    [Parameter] public WorkspaceDataTab Tab { get; set; }
+    [Parameter] public DataPriority Priority { get; set; }
+    [Parameter] public bool IsActive { get; set; } = true;
+    [Parameter] public ObjectHistorySelection? HistorySelection { get; set; }
+    private readonly HashSet<WorkspaceDataTab> _visited = [];
+    protected override void OnParametersSet()
+    {
+        if (IsActive && !string.IsNullOrWhiteSpace(ServerName)) _visited.Add(Tab);
+    }
+}

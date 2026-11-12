@@ -1,11 +1,12 @@
 using System.Text.Json;
 using BestCrush.Domain.Models;
-using Microsoft.Maui.Storage;
+using BestCrush.Domain.Services;
 
 namespace BestCrush.Services;
 
-public sealed class MarketAnalyticsPresetService
+public sealed class MarketAnalyticsPresetService(IWorkspacePreferences preferences, string? filePath = null)
 {
+    private readonly object _sync = new();
     private const string PresetsKey =
         "Analytics.MarketPresets.v1";
 
@@ -14,11 +15,14 @@ public sealed class MarketAnalyticsPresetService
 
     public IReadOnlyList<MarketAnalyticsPreset> GetAll()
     {
+        lock (_sync) return Read();
+    }
+
+    private IReadOnlyList<MarketAnalyticsPreset> Read()
+    {
+        bool fromFile = filePath is not null && File.Exists(filePath);
         string json =
-            Preferences.Get(
-                PresetsKey,
-                "[]"
-            );
+            fromFile ? File.ReadAllText(filePath!) : preferences.GetString(PresetsKey) ?? "[]";
 
         try
         {
@@ -34,8 +38,9 @@ public sealed class MarketAnalyticsPresetService
                 .Select(Clone)
                 .ToArray();
         }
-        catch
+        catch (JsonException error)
         {
+            if (fromFile) throw new InvalidDataException("Les analyses enregistrées ne peuvent pas être lues.",error);
             return [];
         }
     }
@@ -43,8 +48,10 @@ public sealed class MarketAnalyticsPresetService
     public void Save(
         MarketAnalyticsPreset preset)
     {
+        lock (_sync)
+        {
         List<MarketAnalyticsPreset> presets =
-            GetAll()
+            Read()
                 .Select(Clone)
                 .ToList();
 
@@ -63,18 +70,22 @@ public sealed class MarketAnalyticsPresetService
         }
 
         Persist(presets);
+        }
     }
 
     public void Delete(Guid presetId)
     {
+        lock (_sync)
+        {
         List<MarketAnalyticsPreset> presets =
-            GetAll()
+            Read()
                 .Where(preset =>
                     preset.Id != presetId)
                 .Select(Clone)
                 .ToList();
 
         Persist(presets);
+        }
     }
 
     public static MarketAnalyticsPreset Clone(
@@ -85,6 +96,8 @@ public sealed class MarketAnalyticsPresetService
             Id = preset.Id,
             Name = preset.Name,
             Period = preset.Period,
+            Scale = preset.Scale,
+            MaxQuoteAgeHours = preset.MaxQuoteAgeHours,
             Series = preset.Series
                 .Select(Clone)
                 .ToList()
@@ -100,6 +113,16 @@ public sealed class MarketAnalyticsPresetService
             ObjectType = series.ObjectType,
             DofusDbId = series.DofusDbId,
             ItemName = series.ItemName,
+            SelectionMode = series.SelectionMode,
+            Members = (series.Members ?? []).ToList(),
+            Characteristic = series.Characteristic,
+            EquipmentTypes = (series.EquipmentTypes ?? []).ToList(),
+            LevelMin = series.LevelMin,
+            LevelMax = series.LevelMax,
+            SearchText = series.SearchText,
+            FuseMembers = series.FuseMembers,
+            IsVisible = series.IsVisible,
+            GroupAggregation = series.GroupAggregation,
             LotQuantity = series.LotQuantity,
             ValueMode = series.ValueMode,
             Aggregation = series.Aggregation,
@@ -108,7 +131,7 @@ public sealed class MarketAnalyticsPresetService
         };
     }
 
-    private static void Persist(
+    private void Persist(
         IReadOnlyCollection<MarketAnalyticsPreset> presets)
     {
         string json =
@@ -117,9 +140,15 @@ public sealed class MarketAnalyticsPresetService
                 JsonOptions
             );
 
-        Preferences.Set(
-            PresetsKey,
-            json
-        );
+        if (filePath is null) { preferences.SetString(PresetsKey,json); return; }
+        string target = Path.GetFullPath(filePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+        string temporary = target + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary,json);
+            File.Move(temporary,target,overwrite:true);
+        }
+        finally { if (File.Exists(temporary)) File.Delete(temporary); }
     }
 }

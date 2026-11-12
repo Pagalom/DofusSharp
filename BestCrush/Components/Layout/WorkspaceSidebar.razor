@@ -1,0 +1,90 @@
+@using BestCrush.Components
+
+<aside class="workspace-sidebar @(_expanded ? "expanded" : "") @(_tooltipsDismissed ? "tooltips-dismissed" : "")"
+       @onkeydown="HandleKey" @onpointerleave="ResetTooltips" @onfocusin="ResetTooltips">
+    <button type="button" class="workspace-menu-toggle" aria-controls="workspace-navigation-links"
+            aria-expanded="@(_expanded ? "true" : "false")" @onclick="() => _expanded = !_expanded">
+        <span>Menu · @CurrentLabel</span><span aria-hidden="true">@(_expanded ? "−" : "+")</span>
+    </button>
+    <nav id="workspace-navigation-links" class="workspace-navigation" aria-label="@(DataOpen ? "Données du marché" : "Services BestCrush")">
+        @if (DataOpen)
+        {
+            <div class="workspace-nav-group">
+                <h2>Données du marché</h2>
+                @foreach (WorkspaceDataTab tab in Enum.GetValues<WorkspaceDataTab>())
+                {
+                    <button type="button" class="workspace-nav-item @(DataTab == tab ? "active" : "")"
+                            aria-label="@DataTabName(tab)" aria-current="@(DataTab == tab ? "page" : null)"
+                            @onpointerenter="ResetTooltips" @onclick="() => ChooseDataAsync(tab)">
+                        <WorkspaceNavigationIcon IconKey="@tab.ToString()" />
+                        <span class="workspace-nav-label">@DataTabName(tab)</span>
+                        <span class="workspace-nav-hint" aria-hidden="true">@DataTabName(tab)</span>
+                    </button>
+                }
+            </div>
+        }
+        else
+        {
+            <div class="workspace-nav-group">
+                <h2>Au quotidien</h2>
+                @foreach (var module in WorkspaceModules.All.Where(m => m.Slug is "routine" or "opportunites"))
+                {
+                    <a class="@ItemClass(module)" href="@WorkspaceModules.Href(module, ServerName)"
+                       aria-label="@module.Name" aria-current="@(ActiveModule == module.Slug ? "page" : null)" @onpointerenter="ResetTooltips" @onclick="CloseMenu">
+                        <WorkspaceNavigationIcon IconKey="@module.Slug" />
+                        <span class="workspace-nav-label">@module.Name</span>
+                        <span class="workspace-nav-hint" aria-hidden="true">@module.Name</span>
+                    </a>
+                }
+            </div>
+            <div class="workspace-nav-group">
+                <h2>Activités</h2>
+                @foreach (var module in WorkspaceModules.All.Where(m => !m.IsUtility && m.Slug is not ("routine" or "opportunites")))
+                {
+                    <a class="@ItemClass(module)" href="@WorkspaceModules.Href(module, ServerName)"
+                       aria-label="@module.Name" aria-current="@(ActiveModule == module.Slug ? "page" : null)" @onpointerenter="ResetTooltips" @onclick="CloseMenu">
+                        <WorkspaceNavigationIcon IconKey="@module.Slug" />
+                        <span class="workspace-nav-label">@module.Name</span>
+                        <span class="workspace-nav-hint" aria-hidden="true">@module.Name</span>
+                    </a>
+                }
+            </div>
+            <div class="workspace-nav-group workspace-nav-tools">
+                <h2>Outils</h2>
+                @foreach (var module in WorkspaceModules.All.Where(m => m.IsUtility))
+                {
+                    <a class="@ItemClass(module)" href="@WorkspaceModules.Href(module, ServerName)"
+                       aria-label="@module.Name" aria-current="@(ActiveModule == module.Slug ? "page" : null)" @onpointerenter="ResetTooltips" @onclick="CloseMenu">
+                        <WorkspaceNavigationIcon IconKey="@module.Slug" />
+                        <span class="workspace-nav-label">@module.Name</span>
+                        <span class="workspace-nav-hint" aria-hidden="true">@module.Name</span>
+                    </a>
+                }
+            </div>
+        }
+    </nav>
+</aside>
+
+@code {
+    [Parameter] public string? ServerName { get; set; }
+    [Parameter] public string? ActiveModule { get; set; }
+    [Parameter] public bool DataOpen { get; set; }
+    [Parameter] public WorkspaceDataTab DataTab { get; set; }
+    [Parameter] public EventCallback<WorkspaceDataTab> OnDataTabSelected { get; set; }
+    private bool _expanded;
+    private bool _tooltipsDismissed;
+    private string CurrentLabel => DataOpen ? $"Données · {DataTabName(DataTab)}" : WorkspaceModules.Find(ActiveModule)?.Name ?? "Navigation";
+    private string ItemClass(WorkspaceModule module) => "workspace-nav-item" + (ActiveModule == module.Slug ? " active" : "");
+    private void CloseMenu() { _expanded = false; _tooltipsDismissed = true; }
+    private void ResetTooltips() => _tooltipsDismissed = false;
+    private void HandleKey(KeyboardEventArgs args) { if (args.Key == "Escape") CloseMenu(); }
+    private async Task ChooseDataAsync(WorkspaceDataTab tab) { CloseMenu(); await OnDataTabSelected.InvokeAsync(tab); }
+    private static string DataTabName(WorkspaceDataTab tab) => tab switch
+    {
+        WorkspaceDataTab.Equipment => "Équipements",
+        WorkspaceDataTab.Runes => "Runes",
+        WorkspaceDataTab.Resources => "Ressources",
+        WorkspaceDataTab.Coefficients => "Coefficients",
+        _ => "Historique"
+    };
+}

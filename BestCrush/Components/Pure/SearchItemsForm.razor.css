@@ -1,0 +1,58 @@
+.crushing-choice-row {
+    position: relative;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.crushing-choice-field {
+    flex: 1 1 180px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.crushing-choice-row ::deep summary {
+    width: 100%;
+    max-width: 100%;
+    text-align: left;
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+
+.crushing-choice-row ::deep details > div {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 1030;
+    width: min(600px, 100%);
+}
+
+.crushing-choice-actions {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    flex: 0 0 auto;
+    margin-left: auto;
+}
+
+@media (max-width: 767px) {
+    .crushing-choice-actions {
+        width: 100%;
+        flex-wrap: wrap;
+        justify-content: space-between;
+    }
+}
+
+.crushing-search-row { display:flex; align-items:flex-start; flex-wrap:wrap; gap:1rem; }
+.crushing-search { flex:1 1 400px; min-width:0; }
+.crushing-search-row .crushing-choice-actions { min-height:44px; }
+
+.visual-equipment-fields { display:grid; gap:1rem; margin-bottom:1rem; }
+.visual-equipment-field { min-width:0; }
+.rune-picker-toolbar { display:flex; align-items:end; flex-wrap:wrap; gap:.75rem; margin-bottom:.75rem; }
+.rune-search { flex:1 1 210px; min-width:0; }
+.rune-picker-toolbar > label { min-width:145px; font-size:.8rem; }
+.rune-families { display:flex; flex-wrap:wrap; gap:.35rem; margin-bottom:.75rem; }
+.rune-choice-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(115px,1fr)); gap:.4rem; }

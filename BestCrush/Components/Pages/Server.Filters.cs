@@ -159,8 +159,8 @@ public partial class Server
             item.CraftCost.IsComplete &&
             item.CraftCost.Resources.All(
                 resource =>
-                    resource.Purchase?.Freshness ==
-                        DataFreshness.Fresh
+                    (resource.Purchase?.TotalCost == 0 && item.StockPlan is not null) ||
+                    resource.Purchase?.Freshness == DataFreshness.Fresh
             );
 
         return (Model?.ProfitabilityMode ??
@@ -206,8 +206,7 @@ public partial class Server
                     double.MinValue,
 
             ProfitabilityFilterMode.Craft =>
-                item.CraftYield ??
-                    double.MinValue,
+                item.CraftRankingYield,
 
             _ => item.Yield
         };

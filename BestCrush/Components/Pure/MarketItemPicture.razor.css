@@ -1,0 +1,2 @@
+ .market-item-picture { display:inline-flex; align-items:center; justify-content:center; flex:0 0 40px; width:40px; height:40px; border-radius:.4rem; background:#e8dfca70; color:#7f796d; }
+.market-item-picture img { object-fit:contain; }

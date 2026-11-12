@@ -1,0 +1,19 @@
+<button type="button" class="visual-filter-choice @(Selected ? "selected" : "")" aria-pressed="@(Selected ? "true" : "false")" @onclick="Pressed" disabled="@Disabled">
+    @if (Image is not null && (!_imageFailed || FallbackImage is not null)) { <img src="@(_imageFailed ? FallbackImage : Image)" alt="" width="24" height="24" @onerror="UseFallback" /> }
+    @if (Icon is not null) { <i class="bi @Icon" aria-hidden="true"></i> }
+    <span>@Label</span>
+    @if (Selected) { <i class="bi bi-check-lg" aria-hidden="true"></i> }
+</button>
+@code {
+    [Parameter, EditorRequired] public string Label { get; set; } = "";
+    [Parameter] public string? Icon { get; set; }
+    [Parameter] public string? Image { get; set; }
+    [Parameter] public string? FallbackImage { get; set; }
+    private string? _lastImage;
+    private bool _imageFailed;
+    protected override void OnParametersSet() { if (_lastImage != Image) { _lastImage = Image; _imageFailed = false; } }
+    private void UseFallback() { _imageFailed = true; }
+    [Parameter] public bool Selected { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback Pressed { get; set; }
+}

@@ -21,7 +21,7 @@ public class GameDataUpgradeHandlerTest : IDisposable
         ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "16", "17", "18", "121", "311", "19", "20", "21", "22", "82", "114", "151", "271"];
 
     const string RuneTypeId = "78";
-    const string RuneCatalogVersion = "dofusdb-only-v2";
+    const string RuneCatalogVersion = "dofusdb-base-effects-v3";
 
     readonly TestDatabase _testDatabase;
     readonly BestCrushDbContext _context;
@@ -291,6 +291,58 @@ public class GameDataUpgradeHandlerTest : IDisposable
         Equipment? equipment = equipments.Should().ContainSingle().Which;
 
         await Verify(equipment);
+    }
+
+    [Fact]
+    public async Task RepairsMissingEquipmentStatsInPlaceAndKeepsRecipesAndPrices()
+    {
+        var cape = new Equipment(6954) { Type = EquipmentType.Cloak, Name = "Cape du Mulou" };
+        var cloth = new Resource(501) { Name = "Étoffe" };
+        cape.Recipe.Add(new RecipeEntry(cape, cloth, 2));
+        _context.Equipments.Add(cape);
+        _context.Upgrades.AddRange(
+            new Upgrade { Kind = UpgradeKind.DofusDb, NewVersion = "1.2.3", UpgradeDate = DateTime.Now },
+            new Upgrade { Kind = UpgradeKind.RuneCatalog, NewVersion = RuneCatalogVersion, UpgradeDate = DateTime.Now });
+        _context.MarketPriceObservations.Add(EconomicTestData.Price(6954, 1, 14999, type: MarketObjectType.Equipment));
+        await _context.SaveChangesAsync();
+        var existingId = cape.Id;
+        _context.ChangeTracker.Clear();
+
+        _dofusDbItemsClientMock.Setup(client => client.SearchAsync(
+                It.Is<DofusDbSearchQuery>(query => IsEquipmentQuery(query)), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new DofusDbSearchResult<DofusDbItem> { Total = 1, Limit = 1, Skip = 0, Data =
+            [
+                new DofusDbItem
+                {
+                    Id = 6954, TypeId = 17, Effects = [],
+                    PossibleEffects =
+                    [
+                        new() { BaseEffectId = 5, DiceNum = 61, DiceSide = 80 },
+                        new() { BaseEffectId = 11, DiceNum = 1, DiceSide = 0 },
+                        new() { BaseEffectId = 42, DiceNum = 6, DiceSide = 10 },
+                        new() { BaseEffectId = 377, DiceNum = 0, DiceSide = 10 },
+                        new() { BaseEffectId = 14, DiceNum = 8, DiceSide = 10 }
+                    ]
+                }
+            ] });
+
+        await _handler.UpgradeAsync(new Version(1, 2, 3));
+        await _handler.UpgradeAsync(new Version(1, 2, 3));
+
+        using var persisted = _testDatabase.CreateContext();
+        var repaired = await persisted.Equipments.Include(equipment => equipment.Characteristics)
+            .Include(equipment => equipment.Recipe).SingleAsync();
+        repaired.Id.Should().Be(existingId);
+        repaired.Characteristics.Select(line => (line.Characteristic, line.From, line.To))
+            .Should().BeEquivalentTo(new[] { (Characteristic.Vitality, 61, 80),
+                (Characteristic.Range, 1, 1), (Characteristic.Wisdom, -6, -10),
+                (Characteristic.Dodge, 0, -10) });
+        repaired.Recipe.Should().ContainSingle();
+        (await persisted.MarketPriceObservations.SingleAsync()).Price.Should().Be(14999);
+        _dofusDbItemsClientMock.Verify(client => client.SearchAsync(It.IsAny<DofusDbSearchQuery>(),
+            It.IsAny<CancellationToken>()), Times.Once);
+        _dofusDbRecipesClientMock.Verify(client => client.SearchAsync(It.IsAny<DofusDbSearchQuery>(),
+            It.IsAny<CancellationToken>()), Times.Never);
     }
 
     [Fact]
@@ -614,6 +666,63 @@ public class GameDataUpgradeHandlerTest : IDisposable
         _dofusDbRecipesClientMock.Verify(client => client.SearchAsync(
             It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()), Times.Never);
     }
+
+    [Fact]
+    public async Task RepairsTheOldRuneCatalogFromBetaBaseEffectsAndPreservesPrices()
+    {
+        _context.Upgrades.AddRange(
+            new Upgrade { Kind = UpgradeKind.DofusDb, NewVersion = "1.2.3", UpgradeDate = DateTime.Now },
+            new Upgrade { Kind = UpgradeKind.RuneCatalog, NewVersion = "dofusdb-only-v2", UpgradeDate = DateTime.Now });
+        _context.Runes.Add(new Rune(10057) { Name = "Rune de chasse", Characteristic = Characteristic.Hunting });
+        _context.MarketPriceObservations.Add(EconomicTestData.Price(1525, 10, 900, type: MarketObjectType.Rune));
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+
+        SetDofusDbRunes(
+            BetaRune(1525, "Rune Cha", 9),
+            BetaRune(1550, "Rune Pa Cha", 9),
+            BetaRune(30695, "Rune Ra Ré Terre", 130),
+            BetaRune(10057, "Rune de chasse", 324),
+            new DofusDbItem { Id = 7508, TypeId = 78 });
+
+        await _handler.UpgradeAsync(new Version(1, 2, 3));
+        await _handler.UpgradeAsync(new Version(1, 2, 3));
+
+        using var persisted = _testDatabase.CreateContext();
+        var runes = await persisted.Runes.ToDictionaryAsync(rune => rune.DofusDbId, rune => rune.Characteristic);
+        runes.Should().BeEquivalentTo(new Dictionary<long, Characteristic>
+        {
+            [1525] = Characteristic.Chance, [1550] = Characteristic.Chance,
+            [30695] = Characteristic.ResistanceFlatEarth, [10057] = Characteristic.Hunting
+        });
+        (await persisted.MarketPriceObservations.SingleAsync()).Price.Should().Be(900);
+        _dofusDbItemsClientMock.Verify(client => client.SearchAsync(
+            It.Is<DofusDbSearchQuery>(query => IsEquipmentQuery(query)), It.IsAny<CancellationToken>()), Times.Never);
+        _dofusDbItemsClientMock.Verify(client => client.SearchAsync(
+            It.IsAny<DofusDbSearchQuery>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task UnrecognizedBetaCatalogDoesNotEraseKnownRunesOrMarkRepairComplete()
+    {
+        _context.Upgrades.Add(new Upgrade { Kind = UpgradeKind.DofusDb, NewVersion = "1.2.3", UpgradeDate = DateTime.Now });
+        _context.Runes.Add(new Rune(1525) { Name = "Rune Cha", Characteristic = Characteristic.Chance });
+        await _context.SaveChangesAsync();
+        _context.ChangeTracker.Clear();
+        SetDofusDbRunes(BetaRune(1525, "Rune Cha", 9999), BetaRune(10057, "Rune de chasse", 324));
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => _handler.UpgradeAsync(new Version(1, 2, 3)));
+
+        using var persisted = _testDatabase.CreateContext();
+        (await persisted.Runes.SingleAsync()).DofusDbId.Should().Be(1525);
+        (await persisted.Upgrades.AnyAsync(upgrade => upgrade.Kind == UpgradeKind.RuneCatalog)).Should().BeFalse();
+    }
+
+    private static DofusDbItem BetaRune(long id, string name, long baseEffectId) => new()
+    {
+        Id = id, TypeId = 78, Name = new DofusDbMultiLangString { Fr = name },
+        Effects = [], PossibleEffects = [new DofusDbItemRawEffect { BaseEffectId = baseEffectId }]
+    };
 
     [Fact]
     public async Task ShouldKeepSingleRuneCatalogMarker_WhenGameVersionChangesAgain()

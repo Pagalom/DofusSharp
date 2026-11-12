@@ -1,0 +1,38 @@
+.workspace-sidebar { position:sticky; top:1rem; min-width:0; padding:.25rem .65rem .5rem 0; border-right:1px solid #d6cbb6; z-index:10; }
+.workspace-navigation { display:flex; flex-direction:column; gap:.75rem; }
+.workspace-nav-group { display:flex; flex-direction:column; align-items:center; gap:.25rem; }
+/* Section names remain accessible; separators structure the rail. */
+.workspace-nav-group h2 { position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.workspace-nav-group + .workspace-nav-group { border-top:1px solid #d6cbb6; padding-top:.75rem; }
+.workspace-nav-item { position:relative; display:flex; align-items:center; justify-content:center; flex-shrink:0; width:44px; height:44px; padding:0; border:1px solid transparent; border-radius:.5rem; background:transparent; color:#47515e; text-decoration:none; cursor:pointer; transition:background-color 100ms ease; }
+.workspace-nav-item ::deep .bi { display:inline-flex; align-items:center; justify-content:center; font-size:1.35rem; line-height:1; }
+.workspace-nav-item:hover { color:#202a36; background:#e5dac480; }
+.workspace-nav-item.active,.workspace-nav-item.active:hover { color:#fff; background:#1f2937; }
+.workspace-nav-item:focus-visible,.workspace-menu-toggle:focus-visible { outline:2px solid #2563a6; outline-offset:2px; }
+.workspace-nav-label { display:none; }
+.workspace-nav-hint { position:absolute; left:calc(100% + .65rem); top:50%; transform:translateY(-50%); z-index:1; padding:.45rem .7rem; border-radius:.35rem; background:#1f2937; color:#fff; font-size:.85rem; line-height:1.4; white-space:nowrap; box-shadow:0 3px 10px #0002; opacity:0; visibility:hidden; pointer-events:none; transition:opacity 100ms ease,visibility 0s linear 100ms; }
+/* The bridge lets the pointer enter the hint without dismissing it. */
+.workspace-nav-hint::before { content:""; position:absolute; top:0; right:100%; width:.7rem; height:100%; }
+.workspace-menu-toggle { display:none; }
+@media(min-width:992px) {
+    .workspace-nav-item:focus-visible .workspace-nav-hint { opacity:1; visibility:visible; pointer-events:auto; transition-delay:0s; }
+    .tooltips-dismissed .workspace-nav-item .workspace-nav-hint { opacity:0; visibility:hidden; pointer-events:none; transition-delay:0s; }
+}
+@media(min-width:992px) and (hover:hover) {
+    .workspace-nav-item:hover .workspace-nav-hint { opacity:1; visibility:visible; pointer-events:auto; transition-delay:800ms; }
+    .tooltips-dismissed .workspace-nav-item:hover .workspace-nav-hint { opacity:0; visibility:hidden; pointer-events:none; transition-delay:0s; }
+}
+/* Short windows scroll the page so that no service or hint is clipped. */
+@media(min-width:992px) and (max-height:680px) { .workspace-sidebar { position:static; } }
+@media(max-width:991.98px) {
+    .workspace-sidebar { position:static; padding:0; border:0; }
+    .workspace-menu-toggle { display:flex; align-items:center; justify-content:space-between; width:100%; min-height:2.75rem; padding:.6rem .8rem; border:1px solid #cfc4ae; border-radius:.4rem; color:#303945; background:#f0e8d7; font-weight:600; }
+    .workspace-navigation { display:none; margin-top:.5rem; border:1px solid #d6cbb6; border-radius:.4rem; padding:.75rem; }
+    .workspace-sidebar.expanded .workspace-navigation { display:flex; }
+    .workspace-nav-group { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.25rem; }
+    .workspace-nav-item { justify-content:flex-start; gap:.65rem; width:100%; height:auto; min-height:44px; padding:.5rem .75rem; text-align:left; }
+    .workspace-nav-label { display:inline; font-size:.875rem; }
+    .workspace-nav-hint { display:none; }
+}
+@media(max-width:420px) { .workspace-nav-group { grid-template-columns:minmax(0,1fr); } }
+@media(prefers-reduced-motion:reduce) { .workspace-nav-item { transition:none; }.workspace-nav-hint { transition-property:visibility; transition-duration:0s; } }

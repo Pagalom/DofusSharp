@@ -1,0 +1,13 @@
+.stock-status { display:flex; align-items:center; justify-content:center; gap:2px; height:18px; }
+.stock-status-slot { display:block; width:18px; height:18px; }
+.stock-warning { position:relative; display:flex; align-items:center; justify-content:center; width:18px; height:18px; cursor:help; border-radius:50%; }
+.stock-warning { color:#c43d42; font-size:14px; }
+.stock-warning:focus-visible { outline:2px solid #2563a6; outline-offset:1px; }
+.stock-hint { position:absolute; top:calc(100% + 5px); right:0; z-index:1100; padding:.4rem .6rem; border-radius:.35rem; background:#1f2937; color:#fff; font-size:.8rem; line-height:1.4; white-space:nowrap; box-shadow:0 3px 10px #0002; opacity:0; visibility:hidden; pointer-events:none; transition:opacity 100ms ease,visibility 0s linear 100ms; }
+.stock-hint::before { content:""; position:absolute; bottom:100%; left:0; width:100%; height:6px; }
+.stock-warning:focus-visible .stock-hint { opacity:1; visibility:visible; pointer-events:auto; transition-delay:0s; }
+@media(hover:hover) {
+    .stock-warning:hover .stock-hint { opacity:1; visibility:visible; pointer-events:auto; transition-delay:800ms; }
+}
+.hints-dismissed .stock-warning .stock-hint { opacity:0; visibility:hidden; pointer-events:none; transition-delay:0s; }
+@media(prefers-reduced-motion:reduce) { .stock-hint { transition-property:visibility; transition-duration:0s; } }

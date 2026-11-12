@@ -1,0 +1,20 @@
+@using BestCrush.Services
+
+@if (Quota is { } quota && ListedUnits is { } listed && DateTimeOffset.UtcNow <= quota.ValidUntilUtc)
+{
+    long remaining = quota.Remaining(listed);
+    string label = remaining > 0 ? $"Encore {remaining:N0} à mettre en vente" : "Ne plus mettre en vente pour le moment";
+    string tooltip = $"{label}\nMarché : {quota.UsualDailySales:N1} ventes / jour en moyenne sur 7 j\nRepère conseillé : {quota.SuggestedUnits:N0} sur 24 h\nVos mises en vente détectées sur 24 h : {listed:N0}";
+    <span class="resale-quota @(remaining == 0 ? "resale-quota-stop" : "")" tabindex="0" aria-label="@label"
+          data-bs-toggle="tooltip" data-bs-title="@tooltip" data-bs-custom-class="multiline-tooltip">
+        @if (remaining > 0)
+        { <text>× @remaining.ToString("N0")</text> }
+        else
+        { <i class="bi bi-x-circle" aria-hidden="true"></i> }
+    </span>
+}
+
+@code {
+    [Parameter] public ResaleQuota? Quota { get; set; }
+    [Parameter] public long? ListedUnits { get; set; }
+}

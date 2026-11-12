@@ -1,0 +1,7 @@
+.visual-filter-choice { display:inline-flex; align-items:center; justify-content:flex-start; gap:.5rem; min-height:38px; padding:.4rem .65rem; border:1px solid #d4c9b4; border-radius:.45rem; background:#fff9e9; color:#394351; text-align:left; font-size:.85rem; line-height:1.3; }
+.visual-filter-choice:hover { background:#e8e0ce; border-color:#aba28f; }
+.visual-filter-choice.selected { background:#dbe9f5; border-color:#4d88b7; color:#164f7c; box-shadow:inset 0 0 0 1px #4d88b7; }
+.visual-filter-choice:focus-visible { outline:2px solid #2563a6; outline-offset:2px; }
+.visual-filter-choice:disabled { opacity:.6; cursor:default; }
+.visual-filter-choice img { object-fit:contain; flex-shrink:0; }
+.visual-filter-choice .bi { margin-left:auto; font-size:.75rem; }

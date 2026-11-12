@@ -8,8 +8,9 @@
 @inject CurrentDofusClientsState CurrentDofusClientsState
 @inject WindowServerAttributionState WindowServerAttributionState
 @inject ServerViewFilterState ViewFilter
+@inject NavigationManager Navigation
 
-<div class="character-profile-page container-fluid px-1 px-md-3 py-4">
+<div class="character-profile-page container-fluid px-1 px-md-3 workspace-page">
     @{
         // The local title is only a conservative UI visibility hint:
         // selection-screen windows must never display an active character
@@ -17,13 +18,7 @@
         var visibleCandidateSheets = VisibleCandidateSheets;
         var serverLinkedWithoutRoster = ServerLinkedWithoutRoster(visibleCandidateSheets);
     }
-    <div class="profile-page-intro">
-        <h1>Personnages</h1>
-        <p>
-            Vos personnages actifs, leurs richesses et leurs métiers.
-            Les informations non encore recueillies restent indiquées comme telles.
-        </p>
-    </div>
+    <PageHeading Title="Personnages" Description="Vos personnages actifs, leurs richesses et leurs métiers. Les informations non encore recueillies restent indiquées comme telles." />
 
     @if (WindowServerAttributionState.DiagnosticsEnabled)
     {
@@ -63,7 +58,8 @@
                                         IsExperimental="true"
                                         IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
                                         IsBrowsingManually="@ViewFilter.IsBrowsingManually"
-                                        OnSelect="@(() => SelectDofusClient(client.Key))" />
+                                        OnSelect="@(() => SelectDofusClient(client.Key))"
+                                        OnViewStocks="@(() => OpenStocks(client.Key))" />
                 }
                 @foreach (DofusClientWindow client in serverLinkedWithoutRoster)
                 {
@@ -78,7 +74,8 @@
                                         IsExperimental="true"
                                         IsSelected="@(CurrentDofusClientsState.SelectedClient?.Key == client.Key)"
                                         IsBrowsingManually="@ViewFilter.IsBrowsingManually"
-                                        OnSelect="@(() => SelectDofusClient(client.Key))" />
+                                        OnSelect="@(() => SelectDofusClient(client.Key))"
+                                        OnViewStocks="@(() => OpenStocks(client.Key))" />
                 }
             </div>
         </section>
@@ -103,13 +100,13 @@
                                         ClassName="@DofusClassDisplayNames.ForId(character.ClassId)"
                                         Level="@character.Level"
                                         ServerName="@character.Key.ServerName"
-                                        PocketKamas="@character.PocketKamas"
-                                        BankKamas="@character.BankKamas"
                                         Professions="@(CurrentAccountProfessionsState.ForCharacter(character)?.Professions ?? CurrentWindowProfessionsState.ForWindow(CurrentCharacterState.WindowForCharacter(character.Key)))"
                                         ProfessionsAreProvisional="@(CurrentAccountProfessionsState.ForCharacter(character) is null)"
                                         IsSelected="@(CurrentCharacterState.ActiveCharacterKey == character.Key)"
                                         IsBrowsingManually="@ViewFilter.IsBrowsingManually"
-                                        OnSelect="@(() => SelectCharacter(character.Key))" />
+                                        OnSelect="@(() => SelectCharacter(character.Key))"
+                                        CanViewStocks="@CanOpenStocks(character.Key)"
+                                        OnViewStocks="@(() => OpenCharacterStocks(character.Key))" />
                 }
             </div>
         </section>
@@ -182,6 +179,21 @@
     private void SelectCharacter(CharacterKey key)
     {
         CurrentCharacterState.SelectCharacter(key);
+    }
+
+    private bool CanOpenStocks(CharacterKey key) => CurrentCharacterState.WindowForCharacter(key) is { } window &&
+        CurrentDofusClientsState.Clients.Any(client => client.Key == window && client.HasCharacterTitle);
+
+    private void OpenCharacterStocks(CharacterKey key)
+    {
+        if (CurrentCharacterState.WindowForCharacter(key) is { } window) OpenStocks(window);
+    }
+
+    private void OpenStocks(DofusClientWindowKey window)
+    {
+        if (!CurrentDofusClientsState.Clients.Any(client => client.Key == window && client.HasCharacterTitle)) return;
+        CurrentDofusClientsState.SelectWindow(window);
+        Navigation.NavigateTo("/stocks");
     }
 
     private void OnCharacterChanged() =>

@@ -1,4 +1,4 @@
-using BestCrush.Domain.Models;
+﻿using BestCrush.Domain.Models;
 
 namespace BestCrush.Domain.Services;
 
@@ -25,7 +25,8 @@ public sealed partial class EquipmentProfitabilityService
                     long DofusDbId,
                     int Quantity
                 ),
-                MarketPriceObservation> runePrices)
+                MarketPriceObservation> runePrices,
+            bool includeThresholds = true)
     {
         double runeValue =
             runeValues.Values.Sum(value =>
@@ -115,7 +116,7 @@ public sealed partial class EquipmentProfitabilityService
                 : null;
 
         double? purchaseMinimumCoefficient =
-            hasCompleteRuneValues &&
+            includeThresholds && hasCompleteRuneValues &&
             itemCost is not null
                 ? FindMinimumCoefficientPercent(
                     equipment,
@@ -129,7 +130,7 @@ public sealed partial class EquipmentProfitabilityService
                 : null;
 
                 double? craftMinimumCoefficient =
-                    hasCompleteRuneValues &&
+                    includeThresholds && hasCompleteRuneValues &&
                     craftCost.TotalCost is long craftThresholdCost
                         ? FindMinimumCoefficientPercent(
                             equipment,

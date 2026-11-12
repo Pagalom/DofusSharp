@@ -1,0 +1,47 @@
+@if (Inline)
+{
+    <div class="visual-choices" role="group" aria-label="Métiers de fabrication">
+        @foreach (var option in Options)
+        {
+            <VisualFilterChoice Label="@option.Label" Selected="@(SelectedValue == option.Value)" Disabled="Disabled"
+                                Pressed="() => Toggle(option.Value, new ChangeEventArgs { Value = SelectedValue != option.Value })" />
+        }
+    </div>
+}
+else
+{
+<details class="job-filter" name="@DisclosureGroup">
+    <summary class="btn btn-outline-secondary">Métier : @SelectedLabel</summary>
+    <div class="border rounded bg-body text-body p-3 mt-2">
+        <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+            <span class="small text-body-secondary">@(SelectedValue.Length == 0 ? "Tous les métiers inclus" : "Métier sélectionné")</span>
+            <button class="btn btn-sm btn-outline-secondary" type="button" disabled="@(Disabled || SelectedValue.Length == 0)" @onclick="Reset">Tous les métiers</button>
+        </div>
+        <div class="row row-cols-2 row-cols-sm-3 g-2">
+            @foreach (var option in Options)
+            {
+                <div class="col"><label class="d-flex align-items-center gap-2">
+                    <input class="form-check-input mt-0" type="checkbox" checked="@(SelectedValue == option.Value)" disabled="@Disabled"
+                           @onchange="args => Toggle(option.Value, args)" />
+                    <span>@option.Label</span>
+                </label></div>
+            }
+        </div>
+    </div>
+</details>
+
+}
+@code {
+    public sealed record Option(string Value, string Label);
+    [Parameter] public IReadOnlyList<Option> Options { get; set; } = Array.Empty<Option>();
+    [Parameter] public string SelectedValue { get; set; } = "";
+    [Parameter] public EventCallback<string> SelectedValueChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool Inline { get; set; }
+    [Parameter] public string? DisclosureGroup { get; set; }
+    private string SelectedLabel => SelectedValue.Length == 0 ? "Tous" :
+        Options.FirstOrDefault(x => x.Value == SelectedValue)?.Label ?? "Indisponible";
+    private Task Reset() => Disabled ? Task.CompletedTask : SelectedValueChanged.InvokeAsync("");
+    private Task Toggle(string value, ChangeEventArgs args) => Disabled ? Task.CompletedTask :
+        SelectedValueChanged.InvokeAsync(args.Value is true ? value : "");
+}

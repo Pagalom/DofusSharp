@@ -1,0 +1,20 @@
+@if (Busy)
+{
+    <div class="d-flex align-items-center gap-2 text-secondary small py-2" role="status" aria-live="polite">
+        <span class="spinner-border spinner-border-sm" aria-hidden="true"></span>
+        <span>@Label</span>
+    </div>
+}
+@if (Failed)
+{
+    <div class="alert alert-warning d-flex align-items-center gap-3 py-2" role="status">
+        <span>Le chargement n’a pas abouti.</span>
+        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="Retry">Réessayer</button>
+    </div>
+}
+@code {
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool Failed { get; set; }
+    [Parameter] public string Label { get; set; } = "Chargement des données…";
+    [Parameter] public EventCallback Retry { get; set; }
+}

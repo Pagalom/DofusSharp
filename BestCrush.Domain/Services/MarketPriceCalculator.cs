@@ -10,8 +10,11 @@ internal static class MarketPriceCalculator
         double quantity,
         IReadOnlyDictionary<
             (long DofusDbId, int Quantity),
-            MarketPriceObservation> observations)
+            MarketPriceObservation> observations,
+        long lotPriceReduction)
     {
+        long ResalePrice(MarketPriceObservation lot) => Math.Max(1L, lot.Price - lotPriceReduction);
+
         if (quantity <= 0)
         {
             return new MarketValueResult(
@@ -86,8 +89,8 @@ internal static class MarketPriceCalculator
             }
 
             value +=
-                numberOfLots *
-                lot.Price;
+                (double)numberOfLots *
+                ResalePrice(lot);
 
             remainingWhole -=
                 numberOfLots *
@@ -118,7 +121,7 @@ internal static class MarketPriceCalculator
                     .First();
 
             double unitPrice =
-                (double)fallback.Price /
+                (double)ResalePrice(fallback) /
                 fallback.Quantity;
 
             value +=
@@ -152,7 +155,7 @@ internal static class MarketPriceCalculator
                     .First();
 
             double unitPrice =
-                (double)fractionalPrice.Price /
+                (double)ResalePrice(fractionalPrice) /
                 fractionalPrice.Quantity;
 
             value +=

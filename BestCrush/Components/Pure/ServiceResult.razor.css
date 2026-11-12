@@ -1,0 +1,14 @@
+ .service-result { border:1px solid #d6cbb6; border-radius:.55rem; margin-bottom:.6rem; }
+.service-result > summary { display:flex; align-items:center; gap:1rem; list-style:none; padding:.85rem 1rem; cursor:pointer; border-radius:.55rem; }
+.service-result > summary::-webkit-details-marker { display:none; }
+.service-result > summary:hover { background:#e5dac433; }
+.service-result > summary:focus-visible { outline:2px solid #2563a6; outline-offset:2px; }
+.service-result-summary { flex:1; min-width:0; display:flex; align-items:center; flex-wrap:wrap; gap:.75rem 1.25rem; }
+.service-result-summary ::deep .result-identity { display:flex; align-items:center; gap:.75rem; flex:1 1 230px; min-width:0; }
+.service-result-summary ::deep .result-stat { display:flex; flex-direction:column; align-items:flex-end; min-width:110px; }
+.service-result-summary ::deep small { display:block; color:#777365; font-size:.8rem; }
+.service-result-summary ::deep .result-name { font-weight:600; }
+.service-result-chevron { color:#777365; font-size:.8rem; }
+.service-result-detail { padding:1rem; border-top:1px solid #d6cbb6; }
+
+.service-result-focus { flex:0 0 auto; padding:.3rem .45rem; line-height:1; }

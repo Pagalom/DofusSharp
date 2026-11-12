@@ -1,0 +1,13 @@
+.network-capture-off {
+    display:inline-grid;
+    place-items:center;
+    flex:none;
+    width:36px;
+    height:38px;
+    border:1px solid #dfb0a4;
+    border-radius:.4rem;
+    background:#f9e9dc;
+    color:#9e3038;
+    cursor:help;
+}
+.network-capture-off:focus-visible { outline:2px solid currentColor; outline-offset:2px; }

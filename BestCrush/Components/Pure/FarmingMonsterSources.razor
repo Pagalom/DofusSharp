@@ -1,0 +1,92 @@
+@using BestCrush.Services
+@inject ActivityCatalogService Catalog
+@implements IDisposable
+
+@if (_loading)
+{
+    <span class="small text-secondary" role="status"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Chargement des sources…</span>
+}
+else if (_failed)
+{
+    <div class="small" role="status">
+        Sources indisponibles. <button type="button" class="btn btn-link btn-sm p-0" @onclick="LoadAsync">Réessayer</button>
+    </div>
+}
+else if (_sources.Count == 0)
+{
+    <span class="small text-secondary">Noms des monstres indisponibles.</span>
+}
+else
+{
+    <div class="d-flex flex-wrap gap-1">
+        @foreach (var monster in _sources)
+        {
+            <CopyTextButton Value="@monster.Name" Tooltip="Copier le nom du monstre" Class="btn btn-outline-secondary btn-sm">
+                @monster.Name @if (monster.Level is { } level) { <small class="text-secondary">· Niv. @level</small> }
+            </CopyTextButton>
+        }
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<long> MonsterIds { get; set; } = [];
+    [Parameter] public FarmingCombatCatalog? CombatCatalog { get; set; }
+    private long[] _ids = [];
+    private FarmingCombatCatalog? _previousCatalog;
+    private IReadOnlyList<CombatSource> _sources = [];
+    private CancellationTokenSource? _lookup;
+    private bool _loading, _failed;
+
+    protected override Task OnParametersSetAsync()
+    {
+        if (ReferenceEquals(_previousCatalog, CombatCatalog) && MonsterIds.SequenceEqual(_ids))
+            return Task.CompletedTask;
+        _previousCatalog = CombatCatalog;
+        _ids = MonsterIds.ToArray();
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _lookup?.Cancel();
+        _lookup = null;
+        _failed = _loading = false;
+        _sources = [];
+        var known = _ids.Select(id => CombatCatalog?.Monster(id)).OfType<CombatSource>().ToArray();
+        if (known.Length == _ids.Length)
+        {
+            _sources = known.OrderBy(monster => monster.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
+            return;
+        }
+
+        using var lookup = new CancellationTokenSource();
+        _lookup = lookup;
+        _loading = true;
+        try
+        {
+            var sources = await Catalog.GetFarmingCombatSourcesAsync(_ids, lookup.Token);
+            if (ReferenceEquals(_lookup, lookup))
+                _sources = sources;
+        }
+        catch (OperationCanceledException) when (lookup.IsCancellationRequested) { }
+        catch
+        {
+            if (ReferenceEquals(_lookup, lookup))
+                _failed = true;
+        }
+        finally
+        {
+            if (ReferenceEquals(_lookup, lookup))
+            {
+                _loading = false;
+                _lookup = null;
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        _lookup?.Cancel();
+        _lookup = null;
+    }
+}

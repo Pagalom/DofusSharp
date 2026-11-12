@@ -1,0 +1,3 @@
+.craft-stock-list { display:flex; flex-wrap:wrap; gap:.65rem 1.5rem; margin-top:.65rem; }
+.craft-stock-entry { display:flex; align-items:center; gap:.6rem; }
+.craft-stock-entry > div { display:flex; flex-direction:column; gap:.15rem; }

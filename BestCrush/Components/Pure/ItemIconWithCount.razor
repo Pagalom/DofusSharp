@@ -1,11 +1,11 @@
-﻿@using BestCrush.Domain.Models
+@using BestCrush.Domain.Models
 @using BestCrush.Models
-<div class="position-relative">
+<span class="position-relative d-inline-flex">
     <ItemIcon Item="Item" Size="Size" Background="IconBackground.Slot" Tooltip="@Tooltip" TooltipIsHtml="@TooltipIsHtml"></ItemIcon>
-    <div class="position-absolute text-bg-dark bg-opacity-25 fw-semibold px-1 @SizeClass" style="left: 2px; top: 2px;">
+    <span class="position-absolute text-bg-dark bg-opacity-25 fw-semibold px-1 @SizeClass" style="right: 2px; bottom: 2px; pointer-events: none;">
         @Count.ToString("0.##")
-    </div>
-</div>
+    </span>
+</span>
 
 @code {
 

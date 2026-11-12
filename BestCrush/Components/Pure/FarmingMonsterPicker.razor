@@ -1,0 +1,132 @@
+@using System.Globalization
+@using BestCrush.Services
+
+<div class="farm-monster-picker">
+    <button type="button" class="btn btn-outline-secondary btn-sm" aria-expanded="@_open"
+            aria-controls="@_panelId" @onclick="TogglePanelAsync">
+        <i class="bi bi-list-check me-1" aria-hidden="true"></i> Monstres et zones
+        @if (Selection.Count > 0) { <span class="badge text-bg-secondary ms-1">@Selection.Count</span> }
+        <i class="bi @(_open ? "bi-chevron-up" : "bi-chevron-down") ms-1" aria-hidden="true"></i>
+    </button>
+    @if (_open)
+    {
+        <div class="farm-monster-panel" id="@_panelId">
+            <div class="farm-monster-tabs" role="group" aria-label="Parcourir le catalogue de combat">
+                <VisualFilterChoice Label="Monstres" Selected="@(!_zoneView)" Pressed="() => SelectView(false)" />
+                <VisualFilterChoice Label="Zones" Selected="@_zoneView" Pressed="() => SelectView(true)" />
+            </div>
+            <ServiceSearch Value="@_query" ValueChanged="Search" Label="Chercher un monstre ou une zone"
+                           Placeholder="Chercher un monstre ou une zone…" Disabled="@(Catalog is null)" />
+            @if (Loading)
+            {
+                <span class="small text-secondary" role="status"><span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> Chargement du catalogue…</span>
+            }
+            @if (Error is not null)
+            {
+                <div class="small" role="status">@Error
+                    <button type="button" class="btn btn-link btn-sm p-0" @onclick="Load">Réessayer</button>
+                </div>
+            }
+            @if (Catalog is { } catalog)
+            {
+                <div class="farm-monster-options" role="group" aria-label="@(_zoneView ? "Zones et monstres" : "Monstres")">
+                    @if (_zoneView)
+                    {
+                        var zones = catalog.Zones.Where(zone => MatchesZone(zone) || MonstersIn(zone).Any(MatchesMonster)).Take(_limit + 1).ToArray();
+                        @foreach (var zone in zones.Take(_limit))
+                        {
+                            var open = _expandedZones.Contains(zone.Id);
+                            var zoneMonsters = MonstersIn(zone).Where(monster => MatchesZone(zone) || MatchesMonster(monster)).ToArray();
+                            <div class="farm-zone" @key="zone.Id">
+                                <div class="farm-zone-heading">
+                                    <input type="checkbox" class="form-check-input" checked="@Selection.Zones.Any(selected => selected.Id == zone.Id)"
+                                           aria-label="@($"Sélectionner toute la zone {zone.Name}")" @onchange="() => ToggleZone.InvokeAsync(zone)" />
+                                    <button type="button" class="farm-zone-toggle" aria-expanded="@open" @onclick="() => ToggleDetails(zone.Id)">
+                                        <span>@zone.Name @if (zone.Region is { } region && region != zone.Name) { <small>· @region</small> }</span>
+                                        <i class="bi @(open ? "bi-chevron-up" : "bi-chevron-down")" aria-hidden="true"></i>
+                                    </button>
+                                </div>
+                                @if (open)
+                                {
+                                    <div class="farm-zone-monsters" role="group" aria-label="@($"Monstres de {zone.Name}")">
+                                        @foreach (var monster in zoneMonsters) { @MonsterChoice(monster, false) }
+                                    </div>
+                                }
+                            </div>
+                        }
+                        @if (zones.Length == 0) { <span class="small text-secondary">Aucune zone correspondante.</span> }
+                        @if (zones.Length > _limit) { @MoreResults }
+                    }
+                    else
+                    {
+                        var monsters = catalog.Monsters.Where(monster => MatchesMonster(monster) ||
+                            catalog.ZonesFor(monster.Id).Any(MatchesZone)).Take(_limit + 1).ToArray();
+                        @foreach (var monster in monsters.Take(_limit)) { @MonsterChoice(monster, true) }
+                        @if (monsters.Length == 0) { <span class="small text-secondary">Aucun monstre correspondant.</span> }
+                        @if (monsters.Length > _limit) { @MoreResults }
+                    }
+                </div>
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public FarmingCombatSelection Selection { get; set; } = FarmingCombatSelection.Empty;
+    [Parameter] public FarmingCombatCatalog? Catalog { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public string? Error { get; set; }
+    [Parameter] public EventCallback Load { get; set; }
+    [Parameter] public EventCallback<CombatSource> ToggleMonster { get; set; }
+    [Parameter] public EventCallback<FarmingZone> ToggleZone { get; set; }
+
+    private const int PageSize = 24;
+    private readonly string _panelId = $"farm-monster-{Guid.NewGuid():N}";
+    private readonly HashSet<long> _expandedZones = [];
+    private string _query = "";
+    private bool _open, _zoneView;
+    private int _limit = PageSize;
+
+    private async Task TogglePanelAsync()
+    {
+        _open = !_open;
+        if (_open && Catalog is null) await Load.InvokeAsync();
+    }
+
+    private void SelectView(bool zones)
+    {
+        if (_zoneView != zones) _limit = PageSize;
+        _zoneView = zones;
+    }
+
+    private void Search(string query)
+    {
+        _query = query.Trim();
+        _limit = PageSize;
+    }
+
+    private void ToggleDetails(long id)
+    {
+        if (!_expandedZones.Add(id)) _expandedZones.Remove(id);
+    }
+
+    private bool Matches(string? value) => value is not null && CultureInfo.CurrentCulture.CompareInfo
+        .IndexOf(value, _query, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0;
+    private bool MatchesMonster(CombatSource monster) => Matches(monster.Name);
+    private bool MatchesZone(FarmingZone zone) => Matches(zone.Name) || Matches(zone.Region);
+    private IEnumerable<CombatSource> MonstersIn(FarmingZone zone) =>
+        zone.MonsterIds.Select(id => Catalog?.Monster(id)).OfType<CombatSource>()
+            .OrderBy(monster => monster.Name, StringComparer.CurrentCultureIgnoreCase);
+
+    private RenderFragment MoreResults => @<button type="button" class="btn btn-sm btn-outline-secondary mt-1"
+        @onclick="() => _limit += PageSize">Afficher plus</button>;
+
+    private RenderFragment MonsterChoice(CombatSource monster, bool showZone) => @<label class="farm-monster-choice" @key="monster.Id">
+        <input type="checkbox" class="form-check-input" checked="@Selection.Monsters.Any(selected => selected.Id == monster.Id)"
+               @onchange="() => ToggleMonster.InvokeAsync(monster)" />
+        <span>@monster.Name @if (monster.Level is { } level) { <small>· Niv. @level</small> }
+            @if (showZone && Catalog?.ZonesFor(monster.Id).FirstOrDefault(zone => MatchesZone(zone)) is { } zone)
+            { <small class="farm-monster-location">@zone.Name</small> }
+        </span>
+    </label>;
+}

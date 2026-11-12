@@ -1,0 +1,378 @@
+@using Microsoft.Extensions.Logging
+@using System.Globalization
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+@inject StockOpportunityService OpportunityService
+@inject LiveStockService Stocks
+@inject CurrentDofusClientsState Clients
+@inject ServerViewFilterState ViewFilter
+@inject MarketDataChangeNotifier MarketChanges
+@inject ActivityCatalogService Catalog
+@inject CurrentWindowProfessionsState Professions
+@inject Microsoft.Extensions.Logging.ILogger<StockOpportunities> Logger
+@implements IDisposable
+
+<ItemCopyScope>
+<section class="craft-workspace" aria-busy="@((_busy || _marketRefreshPending) ? "true" : "false")">
+    <PageHeading Title="@Title" Description="@Description" />
+    <div class="craft-search-toolbar">
+        <ServiceSearch @bind-Value="_search" Placeholder="Rechercher parmi les recettes…" />
+        <button type="button" class="btn btn-primary" @onclick="RefreshAsync"
+                disabled="@(_busy || _marketRefreshPending || !StockOpportunityService.CanUse(Stocks.Selected, Server))">
+            @if (_busy || _marketRefreshPending) { <span class="spinner-border spinner-border-sm me-1" aria-hidden="true"></span> }
+            Analyser
+        </button>
+        @if (_busy) { <button type="button" class="btn btn-outline-secondary" @onclick="Cancel">Annuler</button> }
+    </div>
+    <ServiceFilters Label="Filtres avancés" Count="ViewFilterCount" Reset="ResetViewFilters"
+                    Expanded="_filtersOpen" ExpandedChanged="open => _filtersOpen = open">
+        <Chips>
+            @if (_craftJob.Length > 0) { <FilterChip Label="@_craftJob" Removed="() => SelectCraftJob(string.Empty)" /> }
+            @foreach (var type in CraftTypeOptions.Where(option => _craftTypes.Contains(option.Id)))
+            { <FilterChip @key="type.Id" Label="@type.Label" Removed="() => ToggleCraftType(type.Id)" /> }
+            @if (_origin.Length > 0) { <FilterChip Label="@_origin" Removed="() => _origin = string.Empty" /> }
+            @if (_minimumGain > 0) { <FilterChip Label="@($"Gain ≥ {_minimumGain:N0} K")" Removed="() => _minimumGain = 0" /> }
+            @if (_minimumRoi > 0) { <FilterChip Label="@($"ROI ≥ {_minimumRoi:N0} %")" Removed="() => _minimumRoi = 0" /> }
+            @if (_budget is { } budget) { <FilterChip Label="@($"Budget ≤ {budget:N0} K")" Removed="() => _budget = null" /> }
+            @if (_readyOnly) { <FilterChip Label="Sans achat" Removed="() => _readyOnly = false" /> }
+            @if (_excludeStale) { <FilterChip Label="Prix de moins de 12 h" Removed="() => _excludeStale = false" /> }
+            @if (_positiveOnly) { <FilterChip Label="Complets et positifs" Removed="() => _positiveOnly = false" /> }
+            @if (_respectCraftJobs) { <FilterChip Label="Mes niveaux de métier" Removed="() => _respectCraftJobs = false" /> }
+        </Chips>
+        <ChildContent>
+            <div class="filter-grid craft-recipe-filters">
+                @if (OriginFilter == "craft")
+                {
+                    <div><span class="d-block mb-1">Métier de fabrication</span>
+                        <JobFilter Options="@(CraftJobOptions.Select(job => new JobFilter.Option(job, job)).ToArray())"
+                            SelectedValue="@_craftJob" SelectedValueChanged="SelectCraftJob" Inline="true" />
+                    </div>
+                    <div><span class="d-block mb-1">Types d’objet</span>
+                        <div class="visual-choices" role="group" aria-label="Types d’objet">
+                            @foreach (var type in CraftTypeOptions.Where(type => type.IsEquipment))
+                            {
+                                <VisualFilterChoice @key="type.Id" Label="@type.Label" Image="@type.Image" Selected="@_craftTypes.Contains(type.Id)"
+                                                    Pressed="() => ToggleCraftType(type.Id)" />
+                            }
+                        </div>
+                        @if (CraftTypeOptions.Any(type => !type.IsEquipment))
+                        {
+                            <button type="button" class="craft-type-disclosure"
+                                    aria-expanded="@(_showOtherCraftTypes ? "true" : "false")"
+                                    @onclick="() => _showOtherCraftTypes = !_showOtherCraftTypes">
+                                @(_showOtherCraftTypes ? "Voir moins" : "Voir plus…")
+                            </button>
+                            @if (_showOtherCraftTypes)
+                            {
+                                <div class="visual-choices" role="group" aria-label="Autres types d’objet">
+                                    @foreach (var type in CraftTypeOptions.Where(type => !type.IsEquipment))
+                                    {
+                                        <VisualFilterChoice @key="type.Id" Label="@type.Label" Image="@type.Image" Selected="@_craftTypes.Contains(type.Id)"
+                                                            Pressed="() => ToggleCraftType(type.Id)" />
+                                    }
+                                </div>
+                            }
+                        }
+                    </div>
+                }
+                @if (OriginFilter.Length == 0)
+                {
+                    <label>Origine<select class="form-select" @bind="_origin"><option value="">Toutes</option><option value="craft">Craft</option><option value="concassage">Concassage</option></select></label>
+                }
+            </div>
+            <div class="filter-grid craft-amount-filters">
+                <label data-bs-toggle="tooltip" data-bs-title="Quantité analysée par recette : les stocks utilisés et les lots à acheter sont recalculés pour cette quantité." data-bs-custom-class="multiline-tooltip">Quantité à fabriquer<input class="form-control" type="number" min="1" max="1000" @bind="_quantity" /></label>
+                <label>Gain minimum (K)<input class="form-control" type="number" min="0" @bind="_minimumGain" /></label>
+                <label data-bs-toggle="tooltip" data-bs-title="Affiche uniquement les recettes atteignant ce rendement. Ce filtre ne modifie pas les prix limites d’achat des autres modules." data-bs-custom-class="multiline-tooltip">ROI minimum (%)<input class="form-control" type="number" min="0" @bind="_minimumRoi" /></label>
+                <label>Budget achats (K)<input class="form-control" type="number" min="0" @bind="_budget" placeholder="Sans limite" /></label>
+            </div>
+            <div class="filter-checks">
+                @if (OriginFilter == "craft")
+                {
+                    <label class="form-check form-switch mb-0">
+                        <input class="form-check-input" type="checkbox" role="switch" @bind="_respectCraftJobs"
+                               disabled="@(CraftJobLevels is not { Count: > 0 })" />
+                        <span class="form-check-label">Tenir compte de mes niveaux de métier</span>
+                    </label>
+                }
+                <label class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" @bind="_readyOnly" /><span class="form-check-label">Sans achat</span></label>
+                <label class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" @bind="_excludeStale" /><span class="form-check-label">Exclure les prix de plus de 12 h</span></label>
+                @if (OriginFilter.Length > 0)
+                { <label class="form-check form-switch mb-0"><input class="form-check-input" type="checkbox" role="switch" @bind="_positiveOnly" /><span class="form-check-label">Résultats complets et positifs uniquement</span></label> }
+            </div>
+        </ChildContent>
+    </ServiceFilters>
+    @if (_error is not null) { <div class="alert alert-warning" role="status">@_error</div> }
+    @if (Server is null)
+    {
+        <div class="alert alert-info">Pas de serveur sélectionné. Veuillez sélectionner un serveur</div>
+    }
+    else if (!StockOpportunityService.CanUse(Stocks.Selected, Server))
+    {
+        <div class="alert alert-info" role="status">Le calcul nécessite un inventaire synchronisé. Reconnectez votre personnage avec BestCrush ouvert.</div>
+    }
+    else if (CanDisplayReport && _report is { } report)
+    {
+        var visibleRows = VisibleRows;
+        var displayedRows = visibleRows.Take(OriginFilter == "craft" ? CraftResultLimit : _limit).ToArray();
+        @if (report.ProductCatalogUnavailable)
+        {
+            <div class="alert alert-warning py-2 small" role="status">Catalogue des produits fabriqués indisponible. Clique sur « Analyser » pour réessayer.</div>
+        }
+        @if (OriginFilter == "craft" && _recipeMetadataBusy)
+        {
+            <p class="craft-loading" role="status"><span class="spinner-border spinner-border-sm" aria-hidden="true"></span>Chargement des métiers…</p>
+        }
+        @if (OriginFilter == "craft" && _recipeMetadataError is not null)
+        {
+            <div class="alert alert-warning py-2 small" role="status">@_recipeMetadataError
+                <button type="button" class="btn btn-sm btn-outline-secondary ms-2" @onclick="RetryCraftMetadataAsync" disabled="@_recipeMetadataBusy">Réessayer</button>
+            </div>
+        }
+        @if (OriginFilter == "craft" && _respectCraftJobs && CraftJobLevels is null)
+        {
+            <p class="small text-warning" role="status">Niveaux de métier non synchronisés pour ce personnage. Décochez cette option pour voir toutes les recettes.</p>
+        }
+        @if (ItemId is not null)
+        {
+            <p class="small"><a href="@AllUrl"><i class="bi bi-arrow-left me-1" aria-hidden="true"></i>Toutes les recettes</a></p>
+        }
+        <div class="craft-results-toolbar">
+            <span class="small text-secondary" tabindex="0" data-bs-toggle="tooltip"
+                  data-bs-title="@($"{report.RecipeCount:N0} recettes liées à vos stocks · {CraftResultLimit} résultats au maximum après filtrage et tri")"
+                  data-bs-custom-class="multiline-tooltip">@displayedRows.Length / @visibleRows.Count résultats</span>
+            <div class="craft-sort">
+                @if (!IsCurrentReport && !_busy && !_marketRefreshPending)
+                { <span class="craft-update-warning" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Résultats précédents : actualisation nécessaire" data-bs-custom-class="multiline-tooltip"><i class="bi bi-clock" aria-hidden="true"></i></span> }
+                <span tabindex="0" data-bs-toggle="tooltip" data-bs-custom-class="multiline-tooltip"
+                      data-bs-title="Chaque recette utilise vos stocks indépendamment. Le gain déduit les achats et la valeur des ingrédients possédés, avant taxes."
+                      aria-label="Comprendre les résultats"><i class="bi bi-info-circle" aria-hidden="true"></i></span>
+                <label>Trier par
+                    <select class="form-select" @bind="_sort"><option value="gain">Gain estimé</option><option value="roi">Rentabilité</option><option value="cash">Coût croissant</option></select>
+                </label>
+            </div>
+        </div>
+        @if (visibleRows.Count == 0)
+        {
+            <div class="alert alert-info">Aucune recette ne correspond aux filtres et aux stocks disponibles.</div>
+        }
+        else if (OriginFilter == "craft")
+        {
+            <div class="craft-results" aria-label="Recettes avec mes stocks">
+                @foreach (var row in displayedRows)
+                {
+                    <CraftOpportunityResult @key="(row.Origin,row.Plan.Product.DofusDbId)" Opportunity="row" ServerName="@Server"
+                        Stock="@report.StockSnapshot" Profession="@ProfessionFor(row.Plan.Product)"
+                        InitiallyExpanded="@(ItemId == row.Plan.Product.DofusDbId)" />
+                }
+            </div>
+        }
+        else
+        {
+            <div class="table-responsive"><table class="table table-striped align-middle">
+                <thead><tr><th>Équipement / origine</th><th>Fabricable sans achat</th><th>Kamas à prévoir</th><th>Valeur du stock utilisé</th><th>Recette estimée</th><th>Gain estimé / ROI</th><th>Données</th></tr></thead>
+                <tbody>
+                    @foreach (var row in displayedRows)
+                    {
+                        <StockOpportunityRow @key="(row.Origin,row.Plan.Product.DofusDbId)" Opportunity="row"
+                            ShowSourceLink="@(OriginFilter.Length == 0)" InitiallyExpanded="@(ItemId == row.Plan.Product.DofusDbId)" />
+                    }
+                </tbody>
+            </table></div>
+            @if (visibleRows.Count > _limit)
+            { <button type="button" class="btn btn-outline-secondary" @onclick="() => _limit += 100">Afficher 100 résultats de plus</button> }
+        }
+    }
+</section>
+</ItemCopyScope>
+
+@code {
+    [Parameter] public string OriginFilter {get;set;}="";
+    [Parameter] public string? ExplicitServer {get;set;}
+    [Parameter] public long? ItemId {get;set;}
+    [Parameter] public int InitialQuantity {get;set;}=1;
+    private string? Server=>ExplicitServer ?? ViewFilter.ServerName;
+    private string Title=>OriginFilter switch {"craft"=>"Craft","concassage"=>"Concassage à partir de mes stocks",_=>"Opportunités"};
+    private string Description=>OriginFilter.Length==0 ? "Les pistes intéressantes des autres onglets, regroupées et classées." :
+        OriginFilter=="craft" ? "Fabriquer puis revendre : disponibilité des matières, achats nécessaires et gain estimé." :
+        "Fabriquer puis concasser : meilleur focus entièrement valorisé parmi les estimations disponibles.";
+    private string CrushingUrl=>Server is null ? "/modules/concassage" : $"/servers/{Uri.EscapeDataString(Server)}?stocks=true";
+    private string AllUrl=>OriginFilter=="craft" ? "/modules/craft" : CrushingUrl;
+    private StockOpportunityReport? _report;
+    private sealed record CalculationInputs(DofusClientWindowKey? Client, LiveStockSource? Stock,
+        string? Server, int Quantity, string Origin);
+    private CalculationInputs? _lastInputs;
+    private string _search="",_origin="",_sort="gain";
+    private string? _lastOrigin,_error;
+    private int ViewFilterCount => _craftTypes.Count + new[] { _craftJob.Length > 0, _origin.Length > 0,
+        _minimumGain > 0, _minimumRoi > 0, _budget is not null, _readyOnly, _excludeStale, _positiveOnly, _respectCraftJobs }.Count(x => x);
+    private void ResetViewFilters()
+    {
+        SelectCraftJob(string.Empty); _origin = ""; _minimumGain = _minimumRoi = 0; _budget = null;
+        _readyOnly = _excludeStale = _positiveOnly = _respectCraftJobs = false;
+        _showOtherCraftTypes = false;
+    }
+    private const int CraftResultLimit = 100;
+    private int _quantity=1,_lastQuantity,_limit=100;
+    private double _minimumGain,_minimumRoi;
+    private double? _budget;
+    private bool _marketRefreshPending;
+    private int _marketRefreshVersion;
+    private bool _readyOnly,_positiveOnly,_excludeStale,_busy,_disposed,_filtersOpen;
+    private CancellationTokenSource? _scanCancel;
+    private readonly CancellationTokenSource _stop=new();
+    private readonly PeriodicTimer _freshnessTimer=new(TimeSpan.FromMinutes(1));
+    private readonly SemaphoreSlim _gate=new(1,1);
+    private bool CanDisplayReport=>_report is { } r && Stocks.Selected is { } source &&
+        r.SourceId==source.Id && r.OriginFilter==OriginFilter &&
+        string.Equals(r.Server,Server,StringComparison.OrdinalIgnoreCase) && StockOpportunityService.CanUse(source,Server);
+    private bool IsCurrentReport=>CanDisplayReport && _report!.StockSnapshot==Stocks.Selected && _report.Quantity==_quantity && OpportunityService.IsMarketCurrent(_report);
+    private sealed record ViewInputs(StockOpportunityReport Report,string OriginFilter,string Origin,long? Item,
+        string Search,string Sort,double MinimumGain,double MinimumRoi,double? Budget,bool Ready,bool Positive,bool ExcludeStale,long Minute,
+        string CraftJob,string CraftTypes,bool RespectJobs,long RecipeVersion,string JobLevels);
+    private ViewInputs? _lastViewInputs;
+    private IReadOnlyList<EconomicOpportunity> _visibleRows=[];
+    private IReadOnlyList<EconomicOpportunity> VisibleRows
+    {
+        get
+        {
+            if (!CanDisplayReport) return [];
+            var inputs=new ViewInputs(_report!,OriginFilter,_origin,ItemId,_search,_sort,_minimumGain,_minimumRoi,_budget,
+                _readyOnly,_positiveOnly,_excludeStale,_excludeStale ? DateTime.UtcNow.Ticks/TimeSpan.TicksPerMinute : 0,
+                _craftJob,string.Join(',',_craftTypes.Order()),_respectCraftJobs,_recipeMetadataVersion,CraftLevelsKey);
+            if (inputs!=_lastViewInputs) { _visibleRows=SelectVisibleRows();_lastViewInputs=inputs; }
+            return _visibleRows;
+        }
+    }
+    private IReadOnlyList<EconomicOpportunity> SelectVisibleRows()
+    {
+            var levels = OriginFilter == "craft" ? CraftJobLevels : null;
+            var candidates=_report!.Candidates.Where(x=>(OriginFilter.Length==0 || x.Origin==OriginFilter) &&
+                (_origin.Length==0 || x.Origin==_origin) && (ItemId is null || x.Plan.Product.DofusDbId==ItemId) &&
+                CultureInfo.CurrentCulture.CompareInfo.IndexOf(x.Plan.Product.Name, _search, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0 &&
+                (!_readyOnly || x.Plan.CraftableNow>=x.Plan.Quantity) &&
+                (OriginFilter != "craft" || MatchesCraftFilters(x,levels)));
+            if (OriginFilter.Length==0 || _positiveOnly)
+                return OpportunityRanking.Select(candidates,DateTime.UtcNow,_minimumGain,_minimumRoi,_budget,_excludeStale,_sort);
+            candidates=candidates.Where(x=>(!_excludeStale || !x.Evidence.IsStale(DateTime.UtcNow)) &&
+                (_budget is null || x.Plan.CashRequired<=_budget) &&
+                (_minimumGain<=0 || x.Benefit>=_minimumGain) && (_minimumRoi<=0 || x.RoiPercent>=_minimumRoi));
+            return (_sort switch {"roi"=>candidates.OrderByDescending(x=>x.RoiPercent),"cash"=>candidates.OrderBy(x=>x.Plan.CashRequired),
+                _=>candidates.OrderByDescending(x=>x.Benefit)}).ThenBy(x=>x.Plan.Product.Name).ToArray();
+    }
+    private static string Money(double? amount)=>amount is null ? "—" : $"{amount:N0} k";
+    protected override void OnInitialized()
+    {
+        Stocks.Changed+=Changed;Clients.Changed+=Changed;ViewFilter.Changed+=Changed;MarketChanges.Changed+=MarketChanged;
+        Professions.Changed+=JobsChanged;
+        _ = RefreshFreshnessAsync();
+    }
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_lastOrigin!=OriginFilter) {_lastOrigin=OriginFilter;_positiveOnly=OriginFilter.Length==0;_excludeStale=OriginFilter.Length==0;}
+        if (_lastQuantity!=InitialQuantity) {_lastQuantity=InitialQuantity;_quantity=InitialQuantity;}
+        await ReloadAsync(false);
+    }
+    private async Task RefreshFreshnessAsync()
+    {
+        try
+        {
+            while(await _freshnessTimer.WaitForNextTickAsync(_stop.Token))
+                if(!_disposed) await InvokeAsync(StateHasChanged);
+        }
+        catch(OperationCanceledException) when(_stop.IsCancellationRequested) { }
+    }
+    private void Changed()=>_ = InvokeAsync(()=>ReloadAsync(true));
+    private void MarketChanged(object? sender,MarketDataChangedEventArgs e)
+    {
+        // Also invalidates dormant server caches when this view constructed the service without a notifier.
+        OpportunityService.InvalidateMarket(e.ServerName,e.ObjectType);
+        if (OriginFilter=="craft" && e.ObjectType==MarketObjectType.Rune && !OpportunityService.CraftUsesRunePrices) return;
+        if(string.Equals(e.ServerName,Server,StringComparison.OrdinalIgnoreCase))
+            _ = InvokeAsync(()=>RefreshMarketBatchAsync(e.ServerName));
+    }
+    private async Task RefreshMarketBatchAsync(string server)
+    {
+        if (_disposed) return;
+        _marketRefreshVersion++;
+        if (_marketRefreshPending) return;
+        _marketRefreshPending=true;
+        StateHasChanged();
+        try
+        {
+            do
+            {
+                await Task.Delay(350,_stop.Token);
+                int version=_marketRefreshVersion;
+                if (_disposed || !string.Equals(server,Server,StringComparison.OrdinalIgnoreCase)) break;
+                await ReloadAsync(false,force:true);
+                // A price arriving during the worker schedules one trailing batch.
+                if (version==_marketRefreshVersion) break;
+            } while (!_disposed);
+        }
+        catch(OperationCanceledException) when(_stop.IsCancellationRequested) { }
+        finally
+        {
+            _marketRefreshPending=false;
+            if(!_disposed)StateHasChanged();
+        }
+    }
+    private Task RefreshAsync()
+    {
+        _filtersOpen=false;
+        return ReloadAsync(false,force:true,refreshInputs:true);
+    }
+    private void Cancel()=>_scanCancel?.Cancel();
+    private async Task ReloadAsync(bool debounce, bool force=false, bool refreshInputs=false)
+    {
+        if (_disposed) return;
+        var source=Stocks.Selected;var server=Server;
+        var inputs=new CalculationInputs(Clients.SelectedClient?.Key,source,server?.ToUpperInvariant(),_quantity,OriginFilter);
+        // Client notifications also describe foreground/title changes. Keep
+        // the report (or active scan) when its actual inputs did not change.
+        // A new stock source includes its container snapshots, so updates with
+        // the same timestamp still invalidate the calculation.
+        if(!force && inputs==_lastInputs) return;
+        _lastInputs=inputs;
+        _scanCancel?.Cancel();
+        using var cancellation=new CancellationTokenSource();
+        _scanCancel=cancellation;
+        var token=cancellation.Token;
+        if (!CanDisplayReport) _report=null;
+        _error=null;_busy=true;StateHasChanged();
+        bool entered=false;
+        try
+        {
+            if(debounce) await Task.Delay(600,token);
+            await _gate.WaitAsync(token); entered=true;
+            if (_quantity is <1 or >1000) {_error="Choisissez un lot de 1 à 1 000 objets.";return;}
+            if (!StockOpportunityService.CanUse(source,server)) return;
+            var report=await OpportunityService.ScanAsync(source!,server!,_quantity,token,OriginFilter,useCache:true,forceRefresh:refreshInputs);
+            token.ThrowIfCancellationRequested();
+            if (!_disposed && report.OriginFilter==OriginFilter && ReferenceEquals(_scanCancel,cancellation) &&
+                report.StockSnapshot==Stocks.Selected &&
+                string.Equals(Server,report.Server,StringComparison.OrdinalIgnoreCase))
+            {
+                _report=report;_limit=100;
+                await LoadCraftMetadataAsync(report,token);
+            }
+        }
+        catch(OperationCanceledException) when(token.IsCancellationRequested) { }
+        catch(Exception ex)
+        {
+            Logger.LogError(ex,"Calcul des opportunités locales indisponible.");
+            if(!_disposed && !token.IsCancellationRequested) _error="Calcul indisponible. Réduisez le lot ou actualisez les données, puis réessayez.";
+        }
+        finally
+        {
+            if(entered)_gate.Release();
+            if(ReferenceEquals(_scanCancel,cancellation)) {_scanCancel=null;_busy=false;}
+            if(!_disposed)StateHasChanged();
+        }
+    }
+    public void Dispose()
+    {
+        _disposed=true;_scanCancel?.Cancel();_stop.Cancel();_freshnessTimer.Dispose();Stocks.Changed-=Changed;Clients.Changed-=Changed;
+        ViewFilter.Changed-=Changed;MarketChanges.Changed-=MarketChanged;Professions.Changed-=JobsChanged;
+    }
+}

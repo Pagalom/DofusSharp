@@ -1,0 +1,9 @@
+@using BestCrush.Services
+<CascadingValue Value="_feedback" IsFixed="true">
+    @ChildContent
+</CascadingValue>
+<CopyNotice Feedback="_feedback" />
+@code {
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    private readonly ItemCopyFeedback _feedback = new();
+}

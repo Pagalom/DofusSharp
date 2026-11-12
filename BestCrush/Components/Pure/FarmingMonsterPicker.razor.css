@@ -1,0 +1,18 @@
+.farm-monster-picker { display:grid; justify-items:start; gap:.55rem; margin-top:.55rem; }
+.farm-monster-panel { display:grid; gap:.55rem; width:100%; min-width:0; }
+.farm-monster-panel ::deep .service-search { width:100%; }
+.farm-monster-tabs { display:flex; flex-wrap:wrap; gap:.35rem; }
+.farm-monster-options { max-height:19rem; overflow:auto; padding:.25rem; border:1px solid var(--bc-control-border); border-radius:.35rem; }
+.farm-zone { border-bottom:1px solid var(--bc-border); }
+.farm-zone:last-child { border-bottom:0; }
+.farm-zone-heading,.farm-monster-choice { display:flex; align-items:center; gap:.55rem; padding:.35rem .45rem; }
+.farm-monster-choice { width:100%; cursor:pointer; border-radius:.3rem; }
+.farm-monster-choice:hover,.farm-zone-toggle:hover { background:var(--bc-hover); }
+.farm-monster-options .form-check-input { flex:0 0 auto; margin:0; cursor:pointer; }
+.farm-zone-toggle {
+    display:flex; flex:1; align-items:center; justify-content:space-between; gap:.6rem; min-width:0;
+    padding:.2rem .25rem; border:0; border-radius:.3rem; background:transparent; color:inherit; text-align:left;
+}
+.farm-monster-options small { color:var(--bc-muted); }
+.farm-zone-monsters { margin:0 .4rem .4rem 1rem; padding-left:.55rem; border-left:1px solid var(--bc-border); }
+.farm-monster-location { display:block; }

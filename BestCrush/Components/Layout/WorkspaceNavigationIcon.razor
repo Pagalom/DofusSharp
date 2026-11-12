@@ -1,0 +1,27 @@
+<i class="bi bi-@Symbol" aria-hidden="true"></i>
+
+@code {
+    [Parameter, EditorRequired] public string IconKey { get; set; } = "";
+
+    // Reuse the icon font bundled with BestCrush: no remote assets.
+    private string Symbol => IconKey switch
+    {
+        "routine" => "calendar-check",
+        "opportunites" => "stars",
+        "concassage" => "hammer",
+        "achat-vente" => "arrow-left-right",
+        "pierres-ame" => "gem",
+        "craft" => "tools",
+        "familiers-xp" => "heart",
+        "elevage" => "egg",
+        "farming" => "flower1",
+        "forgemagie" => "magic",
+        "analyses" => "graph-up",
+        "Equipment" => "shield",
+        "Runes" => "hexagon",
+        "Resources" => "box-seam",
+        "Coefficients" => "percent",
+        "History" => "clock-history",
+        _ => "circle"
+    };
+}

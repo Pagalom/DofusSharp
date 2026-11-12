@@ -1,0 +1,142 @@
+@using BestCrush.Services
+@if (Row.HistoricalPrice is not null)
+{
+    <div class="trade-thresholds">
+        <small><i class="bi bi-cart" aria-hidden="true"></i> Acheter au plus à <span class="trade-reference" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@MedianTooltip" data-bs-custom-class="multiline-tooltip">Médiane 7 j</span></small>
+        <small><i class="bi bi-shop" aria-hidden="true"></i> Revendre à partir de <span class="trade-reference" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Rendement minimum fixé dans les paramètres" data-bs-custom-class="multiline-tooltip">Objectif @TargetRoiPercent.ToString("N0") %</span></small>
+        @foreach (var historical in (HistoricalLots ?? [Row]).OrderBy(lot => lot.Quantity))
+        {
+            if (historical.TradingLots is not { BuyQuantity: int size, BuyPrice: double purchase, SellPrice: double estimatedResale })
+                continue;
+            var targets = TradingPriceTargets.Calculate(purchase, estimatedResale, TargetRoiPercent);
+            var targetColor = historical.MeetsTradingTarget(TargetRoiPercent) ? null : "var(--bs-danger-text-emphasis, #f5a5a5)";
+
+            <div class="trade-threshold-cell" @key="historical.Id">
+                <TradeItemImage Name="@Row.Name" IconId="Row.IconId" Quantity="size" />
+                <div>
+                    <strong>Lot ×@size.ToString("N0") ≤ <CopyAmount Value="targets.MaximumPurchase" Tooltip="Prix d’achat maximum pour atteindre l’objectif au prix de revente estimé, avant taxes" /></strong>
+                    <small>Offre relevée à <CopyAmount Value="purchase" Color="@targetColor" Tooltip="Prix d’achat relevé pour ce lot" /></small>
+                </div>
+            </div>
+            <div class="trade-threshold-cell">
+                <div>
+                    <strong>Lot ×@size.ToString("N0") ≥ <CopyAmount Value="targets.MinimumResale" Tooltip="Prix de revente minimum pour atteindre l’objectif au prix d’achat relevé, avant taxes" /></strong>
+                    <small>Gain estimé <CopyAmount Value="historical.Profitability.Gain" Plus="true" Tooltip="Gain à la médiane sur 7 jours moins 1 K, avant taxes" /></small>
+                </div>
+            </div>
+        }
+    </div>
+}
+else if (IsStock)
+{
+    <div class="trade-thresholds">
+        <small><i class="bi bi-backpack" aria-hidden="true"></i> Stock</small>
+        <small><i class="bi bi-shop" aria-hidden="true"></i> Revendre à partir de</small>
+        <div class="trade-threshold-cell">
+            <TradeItemImage Name="@Row.Name" IconId="Row.IconId" Quantity="Row.Quantity" ItemId="Row.ItemId" Stock="Stock" />
+            <div><strong>@Row.Quantity.ToString("N0") disponibles</strong></div>
+        </div>
+        <div class="trade-stock-targets">
+            @foreach (var target in Row.StockResaleTargets)
+            {
+                <div class="trade-threshold-cell" @key="target.LotSize">
+                    <div>
+                        <strong>Lot ×@target.LotSize.ToString("N0") ≥ <CopyAmount Value="target.MinimumPrice" Tooltip="Seuil de revente par lot" /></strong>
+                        <small>@Lots(Row.Quantity / target.LotSize, target.LotSize) · @(target.UsesMedian ? "Médiane 7 j" : "Prix HDV relevé")</small>
+                    </div>
+                </div>
+            }
+            @if (Row.StockResaleTargets.Count == 0)
+            {
+                <span class="trade-note">Seuil de revente indisponible pour ce stock.</span>
+            }
+        </div>
+    </div>
+    <span class="trade-note" data-bs-toggle="tooltip" data-bs-title="Le coût de votre acquisition passée n’est pas connu." data-bs-custom-class="multiline-tooltip">Valeur de revente · coût d’acquisition inconnu</span>
+}
+else if (Row.TradingLots is { BuyQuantity: > 0 } buy)
+{
+    <div class="trade-route">
+        <div class="trade-step">
+            <small><i class="bi bi-cart" aria-hidden="true"></i> Acheter</small>
+            <div><TradeItemImage Name="@Row.Name" IconId="Row.IconId" Quantity="buy.BuyQuantity" /><strong>@Lots(Row.Quantity / buy.BuyQuantity.Value, buy.BuyQuantity.Value)</strong></div>
+            <span><CopyAmount Value="buy.BuyPrice" Tooltip="Prix d’un lot à acheter" /> <small>/ lot</small></span>
+        </div>
+        <i class="bi bi-arrow-right trade-route-arrow" aria-hidden="true"></i>
+        <div class="trade-step">
+            <small><i class="bi bi-shop" aria-hidden="true"></i> Revendre</small>
+            <div><TradeItemImage Name="@Row.Name" IconId="Row.IconId" Quantity="buy.SellQuantity ?? Row.Quantity" />
+                <strong>@(buy.SellQuantity is int size ? Lots(Row.Quantity / size, size) : $"{Row.Quantity:N0} à revendre")</strong></div>
+            <span><CopyAmount Value="buy.SellPrice" Tooltip="Prix de revente estimé d’un lot" /> <small>/ lot</small></span>
+        </div>
+    </div>
+}
+@if (Row.TradingLots is null && !IsStock)
+{
+    @foreach (string line in Row.Details) { <p class="small mb-1">@line</p> }
+}
+@if (Crafts.Count > 0)
+{
+    <div class="trade-crafts">
+        <strong class="trade-section-title" data-bs-toggle="tooltip" data-bs-title="Cette ressource peut rapporter plus dans ces crafts. Le gain concerne le craft entier, après valorisation de tous ses ingrédients. Les propositions peuvent utiliser les mêmes ressources et ne s’additionnent pas." data-bs-custom-class="multiline-tooltip"><i class="bi bi-tools" aria-hidden="true"></i> À comparer en craft</strong>
+        @foreach (var craft in Crafts)
+        {
+            <div class="trade-craft">
+                <TradeItemImage Name="@craft.Name" IconId="craft.IconId" Tooltip="@($"{craft.Name}\n{craft.Recipe}")" />
+                <div class="trade-craft-name"><CopyTextButton Value="@craft.Name" Tooltip="@craft.Recipe">@craft.Name</CopyTextButton>
+                    @if (craft.Job is not null) { <small>@craft.Job · @craft.RequiredLevel</small> }
+                </div>
+                <div class="trade-recipe">
+                    @foreach (var ingredient in craft.Ingredients)
+                    {
+                        <TradeItemImage Name="@ingredient.Name" IconId="ingredient.IconId" Quantity="ingredient.Quantity" Size="36"
+                                        ItemId="ingredient.ItemId" Stock="Stock" Tooltip="@IngredientTooltip(ingredient)" />
+                    }
+                </div>
+                <div class="trade-craft-gain"><small>Gain du craft</small><CopyAmount Value="craft.AdditionalGain" Color="#91cba6" Tooltip="Gain potentiel par craft entier, après valorisation de tous ses ingrédients" /></div>
+                <a class="trade-open-craft" href="@($"/modules/craft?item={craft.ItemId}")" data-bs-toggle="tooltip" data-bs-title="@($"Ouvrir {craft.Name} dans Craft")" data-bs-custom-class="multiline-tooltip" aria-label="@($"Ouvrir {craft.Name} dans Craft")"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+            </div>
+        }
+    </div>
+}
+@if (Row.MissingData.Count > 0 || IsOld)
+{
+    <div class="trade-missing">
+        <strong class="trade-section-title"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Données à compléter</strong>
+        <div>
+            @foreach (string missing in Row.MissingData)
+            { <span class="trade-missing-tag" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@missing" data-bs-custom-class="multiline-tooltip"><i class="bi @MissingIcon(missing)" aria-hidden="true"></i>@MissingLabel(missing)</span> }
+            @if (IsOld) { <span class="trade-missing-tag" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@($"Prix relevé le {Row.PriceUpdatedUtc?.ToLocalTime():g}. Consultez les offres de cet objet dans Dofus pour l’actualiser.")" data-bs-custom-class="multiline-tooltip"><i class="bi bi-clock" aria-hidden="true"></i>Prix à actualiser</span> }
+        </div>
+    </div>
+}
+@code {
+    [Parameter, EditorRequired] public ActivityRecommendation Row { get; set; } = default!;
+    [Parameter] public LiveStockSource? Stock { get; set; }
+    [Parameter] public IReadOnlyList<CraftAlternative> Crafts { get; set; } = [];
+    [Parameter] public IEnumerable<ActivityRecommendation>? HistoricalLots { get; set; }
+    [Parameter] public double TargetRoiPercent { get; set; }
+    private bool IsStock => Row.Strategy == "Revendre mon stock";
+    private const string MedianTooltip = "Médiane des ventes sur 7 jours, avec 1 K déduit par lot.";
+    private bool IsOld => Row.PriceUpdatedUtc is { } at && DateTime.UtcNow - at > TimeSpan.FromHours(12);
+    private string IngredientTooltip(TradeRecipeIngredient ingredient)
+    {
+        string text = $"{ingredient.Name}\nQuantité requise : {ingredient.Quantity:N0}";
+        if (Stock?.QuantityIn(ingredient.ItemId, "inventory") is { } inventory && inventory > 0)
+            text += $"\nInventaire : {inventory:N0}";
+        if (Stock?.QuantityIn(ingredient.ItemId, "bank") is { } bank && bank > 0)
+            text += $"\nBanque : {bank:N0}";
+        return text;
+    }
+    private static string Lots(long count, int quantity) => $"{count:N0} {(count == 1 ? "lot" : "lots")} × {quantity:N0}";
+    private static string MissingIcon(string missing) => missing.StartsWith("Historique", StringComparison.Ordinal) || missing.StartsWith("Aucune vente", StringComparison.Ordinal) ? "bi-clock-history" : "bi-tag";
+    private static string MissingLabel(string missing) => missing switch
+    {
+        var text when text.StartsWith("Historique global trop ancien", StringComparison.Ordinal) => "Historique à actualiser",
+        var text when text.StartsWith("Historique", StringComparison.Ordinal) => "Historique à relever",
+        var text when text.StartsWith("Aucune vente", StringComparison.Ordinal) => "Aucune vente sur 7 j",
+        "Prix de revente manquant." => "Prix de revente",
+        "Prix d’achat manquant." => "Prix d’achat",
+        _ => missing
+    };
+}

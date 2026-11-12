@@ -1,0 +1,24 @@
+.craft-identity { min-width:0; }
+.craft-identity ::deep .craft-name { color:var(--bc-gold,#e4c27a); font-weight:700; text-align:left; }
+.craft-stat { display:flex; flex-direction:column; align-items:flex-end; min-width:115px; font-weight:650; }
+.craft-status { display:flex; align-items:center; gap:.6rem; color:var(--bc-muted,#b9c4c2); cursor:help; }
+.craft-warning,.craft-section-title { color:var(--bc-gold,#e4c27a); }
+.craft-without-purchase { cursor:help; }
+.craft-without-purchase i { color:var(--bc-gold,#e4c27a); margin-right:.25rem; }
+.craft-recipe { padding:.8rem 1rem; border-radius:.45rem; background:var(--bc-raised,#2b3a3e); }
+.craft-section-title { display:block; font-size:.85rem; margin-bottom:.75rem; }
+.craft-ingredients { display:flex; align-items:flex-start; flex-wrap:wrap; gap:.85rem 1.25rem; }
+.craft-ingredient { display:flex; align-items:center; gap:.65rem; min-width:145px; }
+.craft-ingredient > span { font-size:.85rem; }
+.craft-ingredient small { display:block; margin-top:.2rem; color:var(--bc-gold,#e4c27a); }
+.craft-available { color:#91cba6; }
+.craft-muted { color:var(--bc-muted,#b9c4c2); }
+.craft-detail-values { display:flex; align-items:center; flex-wrap:wrap; gap:.75rem 2rem; margin-top:1rem; }
+.craft-detail-values > span:not(.craft-calculation) { display:flex; flex-direction:column; gap:.2rem; }
+.craft-detail-values small,.craft-missing > small { color:var(--bc-muted,#b9c4c2); font-size:.8rem; }
+.craft-calculation { margin-left:auto; color:var(--bc-muted,#b9c4c2); cursor:help; }
+.craft-missing { margin-top:1rem; padding-top:.8rem; border-top:1px solid var(--bc-border,#51635f); }
+.craft-missing-images { display:flex; flex-wrap:wrap; gap:.45rem; margin:.4rem 0 .7rem; }
+@media(max-width:760px) {
+    .craft-stat { min-width:95px; align-items:flex-start; }
+}

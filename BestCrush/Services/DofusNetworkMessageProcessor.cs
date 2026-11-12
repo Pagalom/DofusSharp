@@ -1,4 +1,4 @@
-using BestCrush.Network.Protocol;
+﻿using BestCrush.Network.Protocol;
 
 namespace BestCrush.Services;
 
@@ -24,7 +24,14 @@ internal sealed class DofusNetworkMessageProcessor(
         internal readonly RecentItemDetailsCache ItemDetails = new();
         internal PurchaseRequestObservation? PendingPurchaseRequest;
         internal DateTime PendingPurchaseRequestAtUtc;
+        internal MarketListingRequestObservation? PendingListing;
+        internal DateTime PendingListingAtUtc;
+        internal NetworkCaptureLease? PendingListingLease;
+        internal string? PendingListingCreatedKey;
         internal DateTime LastSeenUtc;
+        internal long? PendingGlobalHistoryItem;
+        internal DateTime PendingGlobalHistoryAtUtc;
+        internal NetworkCaptureLease? PendingGlobalHistoryLease;
     }
 
     private readonly Dictionary<long, FlowCorrelation> _correlations = [];
@@ -139,6 +146,29 @@ internal sealed class DofusNetworkMessageProcessor(
         // Translate active wire fields to the canonical decoder schema.
         // Wire debug above intentionally retains original captured bytes.
         byte[] body = map.NormalizeBody(message.Key, message.Body);
+
+        if (map.GlobalMarketHistoryRequest is not null && message.Key == map.GlobalMarketHistoryRequest)
+        {
+            if (message.Direction == "C→S")
+            {
+                correlation.PendingGlobalHistoryItem = GlobalMarketHistoryDecoder.DecodeRequest(body);
+                correlation.PendingGlobalHistoryAtUtc = message.ObservedAtUtc;
+                correlation.PendingGlobalHistoryLease = lease;
+            }
+            return;
+        }
+        if (map.GlobalMarketHistoryResponse is not null && message.Key == map.GlobalMarketHistoryResponse)
+        {
+            long? expected = correlation.PendingGlobalHistoryItem;
+            bool inTime = message.ObservedAtUtc >= correlation.PendingGlobalHistoryAtUtc &&
+                message.ObservedAtUtc - correlation.PendingGlobalHistoryAtUtc <= TimeSpan.FromSeconds(15);
+            if (message.Direction != "S→C") return;
+            correlation.PendingGlobalHistoryItem = null;
+            if (expected is { } id && inTime && correlation.PendingGlobalHistoryLease == lease &&
+                GlobalMarketHistoryDecoder.DecodeResponse(body, id, new DateTimeOffset(message.ObservedAtUtc)) is { } history)
+                await observationWriter.PersistGlobalHistoryAsync(history, message.ObservedAtUtc, lease, cancellationToken);
+            return;
+        }
 
         if ((map.ItemDetail is not null &&
              string.Equals(
@@ -344,6 +374,7 @@ internal sealed class DofusNetworkMessageProcessor(
                         lease,
                         cancellationToken,
                         allowEquipmentPriceRefresh: false,
+                        requireStackable: offer.Ladder.Count == 4 && offer.Ladder.All(price => price <= long.MaxValue),
                         verifiedWindow: message.CandidateWindow,
                         captureEpoch: message.CaptureEpoch);
                 }
@@ -379,6 +410,39 @@ internal sealed class DofusNetworkMessageProcessor(
             return;
         }
 
+        if ((map.CurrentMarketListingRequest is not null && message.Key == map.CurrentMarketListingRequest) ||
+            (map.MarketListingRequest is not null && message.Key == map.MarketListingRequest))
+        {
+            if (message.Direction == "C→S")
+            {
+                correlation.PendingListing = MarketListingDecoder.DecodeRequest(body);
+                correlation.PendingListingAtUtc = message.ObservedAtUtc;
+                correlation.PendingListingLease = lease;
+                correlation.PendingListingCreatedKey = message.Key == map.CurrentMarketListingRequest
+                    ? map.CurrentMarketListingCreated : map.MarketListingCreated;
+            }
+            return;
+        }
+        if (map.CurrentMarketListingCreated is not null && message.Key == map.CurrentMarketListingCreated)
+        {
+            if (message.Direction != "S→C") return;
+            var request = correlation.PendingListing;
+            bool inTime = message.ObservedAtUtc >= correlation.PendingListingAtUtc &&
+                message.ObservedAtUtc - correlation.PendingListingAtUtc <= TimeSpan.FromSeconds(15);
+            correlation.PendingListing = null;
+            if (request is not null && inTime && correlation.PendingListingLease == lease &&
+                correlation.PendingListingCreatedKey == message.Key &&
+                MarketListingDecoder.DecodeCreated(body) is { } confirmed &&
+                request.Quantity == confirmed.Quantity && request.Price == confirmed.Price)
+            {
+                observationWriter.PersistMarketListing(confirmed, message.ObservedAtUtc, lease);
+                await debugWriter.WriteEventDebugAsync(message.ObservedAtUtc,
+                    $"[LISTING-CURRENT-CONFIRMED] MarketUid={confirmed.MarketListingUid} ItemId={confirmed.ItemId} x{confirmed.Quantity} price={confirmed.Price} K",
+                    cancellationToken);
+            }
+            return;
+        }
+
         if (map.MarketListingCreated is not null &&
             string.Equals(
                 message.Key,
@@ -389,8 +453,16 @@ internal sealed class DofusNetworkMessageProcessor(
                 SemanticDecoders.TryDecodeMarketListingCreated(
                     body);
 
-            if (listing is not null)
+            if (message.Direction == "S→C" && listing is not null)
             {
+                var request = correlation.PendingListing;
+                bool inTime = message.ObservedAtUtc >= correlation.PendingListingAtUtc &&
+                    message.ObservedAtUtc - correlation.PendingListingAtUtc <= TimeSpan.FromSeconds(15);
+                correlation.PendingListing = null;
+                if (request is not null && inTime && correlation.PendingListingLease == lease &&
+                    correlation.PendingListingCreatedKey == message.Key &&
+                    request.Quantity == listing.Quantity && request.Price == listing.Price)
+                    observationWriter.PersistMarketListing(listing, message.ObservedAtUtc, lease);
                 await observationWriter.RememberLastEquipmentAsync(
                     listing.ItemId,
                     message.ObservedAtUtc,
@@ -417,6 +489,14 @@ internal sealed class DofusNetworkMessageProcessor(
             ulong? itemId =
                 SemanticDecoders.TryDecodeMarketSelectionItemId(
                     body);
+
+            if (SoulMarketDecoder.IsBossSoulSelection(body))
+            {
+                // Dedicated boss/loot-slot offers must never flow into generic item minima.
+                if (message.Direction == "S→C" && SoulMarketDecoder.Decode(body) is { } souls)
+                    await observationWriter.PersistSoulMarketAsync(souls, message.ObservedAtUtc, lease, cancellationToken);
+                return;
+            }
 
             if (itemId is not null)
             {

@@ -2,41 +2,62 @@
 @using BestCrush.Components
 @using BestCrush.Services
 @inject ServerViewFilterState ServerViewFilter
+@implements IDisposable
 
-<div class="container py-4">
+<div class="@(_module?.Slug == "analyses" ? "container-fluid workspace-page" : "container workspace-page")">
     @if (_module is null)
     {
-        <h1>Module introuvable</h1>
-        <p>Ce module n'est pas défini dans BestCrush.</p>
+        <PageHeading Title="Module introuvable" Description="Ce module n’est pas défini dans BestCrush." />
+    }
+    else if (_module.Slug == "routine")
+    {
+        <RoutineWorkspace ServerName="@ServerViewFilter.ServerName" />
+    }
+    else if (_module.Slug == "analyses")
+    {
+        @if (ServerViewFilter.ServerName is { } analysisServer)
+        {
+            <AnalyticsWorkspace ServerName="@analysisServer" />
+        }
+        else
+        {
+            <PageHeading Title="Analyses" Description="Comparez l’évolution des prix d’objets et de groupes, en kamas ou en base 100." />
+            <p class="text-secondary">Choisissez un serveur en haut pour consulter vos analyses.</p>
+        }
     }
     else if (_module.Slug == "concassage")
     {
-        <h1>Concassage</h1>
+        <PageHeading Title="Concassage" Description="Comparez les équipements à briser selon leur coût d’achat ou de craft et la valeur estimée des runes." />
         @if (ServerViewFilter.ServerName is { } viewServer)
         {
-            <div class="alert alert-info mt-4" role="status">
-                Le serveur <strong>@viewServer</strong> est sélectionné pour
-                consulter les prix et les historiques déjà enregistrés.
-                Ce filtre ne change pas le serveur des personnages ni celui
-                des nouvelles observations réseau.
-            </div>
             <a href="@KnownRoutes.Server(viewServer)">Voir les données du serveur</a>
         }
         else
         {
             <div class="alert alert-info mt-4" role="status">
-                Aucun serveur de consultation défini. Choisissez un serveur
-                dans le filtre en haut à droite pour consulter son historique,
-                ou ciblez un personnage dont le serveur a été identifié.
-                Les captures réseau restent associées automatiquement au
-                serveur réel de chaque connexion Dofus.
+                Pas de serveur sélectionné. Veuillez sélectionner un serveur
             </div>
-            <a href="@KnownRoutes.Profile()">Consulter les fiches des personnages</a>
         }
+    }
+    else if (_module.Slug == "forgemagie")
+    {
+        <ForgemagingWorkspace ServerName="@ServerViewFilter.ServerName" />
+    }
+    else if (_module.Slug == "craft")
+    {
+        <StockOpportunities OriginFilter="craft" ItemId="ItemId" InitialQuantity="@(Quantity ?? 1)" />
+    }
+    else if (_module.Slug == "opportunites")
+    {
+        <ActivityOpportunities @key="_module.Slug" ItemId="ItemId" />
+    }
+    else if (_module.Slug is "achat-vente" or "pierres-ame" or "farming")
+    {
+        <ActivityOpportunities @key="_module.Slug" Module="@_module.Slug" ItemId="ItemId" />
     }
     else
     {
-        <h1>@_module.Name</h1>
+        <PageHeading Title="@_module.Name" Description="Service en préparation." />
         <div class="alert alert-secondary mt-4" role="status">
             <strong>Module en préparation.</strong>
             Son interface est disponible dans la nouvelle navigation.
@@ -53,7 +74,15 @@
     [Parameter]
     public string Slug { get; set; } = string.Empty;
 
+    [SupplyParameterFromQuery(Name="item")] public long? ItemId {get;set;}
+    [SupplyParameterFromQuery(Name="quantity")] public int? Quantity {get;set;}
     private WorkspaceModule? _module;
+
+    protected override void OnInitialized() => ServerViewFilter.Changed += ServerChanged;
+
+    private void ServerChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose() => ServerViewFilter.Changed -= ServerChanged;
 
     protected override void OnParametersSet()
     {

@@ -37,8 +37,7 @@ public partial class Server
 
                 SortOrder.CraftYield =>
                     result =>
-                        result.CraftYield ??
-                            double.MinValue,
+                        result.CraftRankingYield,
 
                 SortOrder.HighestTargetMargin =>
                     GetEffectiveTargetMargin,
@@ -91,8 +90,7 @@ public partial class Server
             SortOrder.CraftYield =>
                 results.OrderByDescending(
                     result =>
-                        result.CraftYield ??
-                            double.MinValue
+                        result.CraftRankingYield
                 ),
 
             SortOrder.HighestTargetMargin =>
@@ -153,9 +151,12 @@ public partial class Server
         };
     }
 
-    IEnumerable<Equipment> FilterItems(IReadOnlyCollection<Equipment> items)
+    IEnumerable<Equipment> FilterItemsCore(IReadOnlyCollection<Equipment> items)
     {
         IEnumerable<Equipment> result = items;
+        if (Model?.CraftJobId is { } job)
+            result = result.Where(item => _crushingJobCatalog?.Matches(item, job) == true);
+        if (StockItemId is { } id) result = result.Where(x => x.DofusDbId == id);
 
         if (!string.IsNullOrWhiteSpace(
             Model?.SearchText))
@@ -229,112 +230,7 @@ public partial class Server
         return result;
     }
 
-    HashSet<EquipmentType> ComputeEquipmentTypes()
-    {
-        HashSet<EquipmentType> equipmentTypes = new();
-
-        if (Model?.EquipmentType.Amulet is true)
-        {
-            equipmentTypes.Add(EquipmentType.Amulet);
-        }
-
-        if (Model?.EquipmentType.Ring is true)
-        {
-            equipmentTypes.Add(EquipmentType.Ring);
-        }
-
-        if (Model?.EquipmentType.Belt is true)
-        {
-            equipmentTypes.Add(EquipmentType.Belt);
-        }
-
-        if (Model?.EquipmentType.Boots is true)
-        {
-            equipmentTypes.Add(EquipmentType.Boots);
-        }
-
-        if (Model?.EquipmentType.Hat is true)
-        {
-            equipmentTypes.Add(EquipmentType.Hat);
-        }
-
-        if (Model?.EquipmentType.Cloak is true)
-        {
-            equipmentTypes.Add(EquipmentType.Cloak);
-        }
-
-        if (Model?.EquipmentType.Shield is true)
-        {
-            equipmentTypes.Add(EquipmentType.Shield);
-        }
-
-        if (Model?.EquipmentType.Trophy is true)
-        {
-            equipmentTypes.Add(EquipmentType.Trophy);
-        }
-
-        if (Model?.EquipmentType.Bow is true)
-        {
-            equipmentTypes.Add(EquipmentType.Bow);
-        }
-
-        if (Model?.EquipmentType.Lance is true)
-        {
-            equipmentTypes.Add(EquipmentType.Lance);
-        }
-
-        if (Model?.EquipmentType.Scythe is true)
-        {
-            equipmentTypes.Add(EquipmentType.Scythe);
-        }
-
-        if (Model?.EquipmentType.Axe is true)
-        {
-            equipmentTypes.Add(EquipmentType.Axe);
-        }
-
-        if (Model?.EquipmentType.Tool is true)
-        {
-            equipmentTypes.Add(EquipmentType.Tool);
-        }
-
-        if (Model?.EquipmentType.Pickaxe is true)
-        {
-            equipmentTypes.Add(EquipmentType.Pickaxe);
-        }
-
-        if (Model?.EquipmentType.Wand is true)
-        {
-            equipmentTypes.Add(EquipmentType.Wand);
-        }
-
-        if (Model?.EquipmentType.Staff is true)
-        {
-            equipmentTypes.Add(EquipmentType.Staff);
-        }
-
-        if (Model?.EquipmentType.Dagger is true)
-        {
-            equipmentTypes.Add(EquipmentType.Dagger);
-        }
-
-        if (Model?.EquipmentType.Sword is true)
-        {
-            equipmentTypes.Add(EquipmentType.Sword);
-        }
-
-        if (Model?.EquipmentType.Hammer is true)
-        {
-            equipmentTypes.Add(EquipmentType.Hammer);
-        }
-
-        if (Model?.EquipmentType.Shovel is true)
-        {
-            equipmentTypes.Add(EquipmentType.Shovel);
-        }
-
-        return equipmentTypes;
-    }
+    HashSet<EquipmentType> ComputeEquipmentTypes() => Model?.EquipmentType.GetSelectedTypes().ToHashSet() ?? [];
 
     private static ItemCrushResult ToItemCrushResult(
         EquipmentProfitabilityScenario scenario)
@@ -385,6 +281,10 @@ public partial class Server
         ProfitabilityState PurchaseState,
         ProfitabilityState CraftState)
     {
+        public StockCraftPlan? StockPlan { get; init; }
+        public double CraftRankingYield => StockPlan is not null && CraftCost.TotalCost == 0 && CraftBenefit > 0
+            ? double.PositiveInfinity : CraftYield ?? double.MinValue;
+
         public double Benefits =>
             PurchaseBenefit is null
                 ? CraftBenefit ?? double.MinValue
@@ -395,15 +295,7 @@ public partial class Server
                         CraftBenefit.Value
                     );
 
-        public double Yield =>
-            PurchaseYield is null
-                ? CraftYield ?? double.MinValue
-                : CraftYield is null
-                    ? PurchaseYield.Value
-                    : Math.Max(
-                        PurchaseYield.Value,
-                        CraftYield.Value
-                    );
+        public double Yield => Math.Max(PurchaseYield ?? double.MinValue, CraftRankingYield);
     }
 
 }

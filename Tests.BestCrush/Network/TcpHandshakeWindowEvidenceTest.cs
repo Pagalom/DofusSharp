@@ -1,4 +1,4 @@
-using System.Net;
+﻿using System.Net;
 using BestCrush.Network.Protocol;
 using BestCrush.Services;
 using FluentAssertions;
@@ -105,12 +105,26 @@ public sealed class TcpHandshakeWindowEvidenceTest
     }
 
     [Fact]
+    public void WaitingInServerPickerDoesNotDiscardExactHandshakeOwner()
+    {
+        TcpHandshakeWindowEvidence state = Start();
+        state.Remember(1, 11, Socket, First, At);
+
+        state.Resolve(1, 11, Socket, At.AddSeconds(90), () => [First])
+            .Should().Be(First);
+        state.Resolve(1, 12, Socket, At.AddSeconds(90), () => [First])
+            .Should().BeNull();
+        state.ConflictsWith(1, 11, Socket, Second, At.AddSeconds(90))
+            .Should().BeTrue();
+    }
+
+    [Fact]
     public void ExpiredOwnerIsNotValidAtServerSelectionFrame()
     {
         TcpHandshakeWindowEvidence state = Start();
         state.Remember(1, 11, Socket, First, At);
 
-        state.Resolve(1, 11, Socket, At.AddSeconds(11), () => [First])
+        state.Resolve(1, 11, Socket, At.AddSeconds(121), () => [First])
             .Should().BeNull();
         state.Resolve(1, 11, Socket, At.AddSeconds(-1), () => [First])
             .Should().BeNull();

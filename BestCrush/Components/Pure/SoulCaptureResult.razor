@@ -1,0 +1,110 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Services
+
+<ServiceResult InitiallyExpanded="InitiallyExpanded">
+    <Summary>
+        <span class="result-identity">
+            <SoulStonePicture Filled="true" />
+            <span>
+                <CopyTextButton Value="@Row.Name" Class="soul-boss" Tooltip="Copier le nom du boss">@Row.Name</CopyTextButton>
+                <small>@(Capture?.Dungeon)@if (Row.Level > 0) { <text> · Niv. @Row.Level</text> }</small>
+            </span>
+        </span>
+        <span class="soul-stat"><small>Pierre vide</small><CopyAmount Value="Row.Cost" ShowFraction="true" Tooltip="@StoneCostTooltip" /></span>
+        <span class="soul-stat"><small>Revente estimée</small><CopyAmount Value="Row.Revenue" ShowFraction="true" Tooltip="@ResaleTooltip" /></span>
+        <span class="soul-stat"><small>Gain estimé</small><CopyAmount Value="Row.Profitability.Gain" Color="@GainColor" Plus="true" ShowFraction="true" Tooltip="@GainTooltip" /></span>
+        <ResaleQuotaIndicator Quota="Row.ResaleQuota" ListedUnits="ListedUnits" />
+        @if (HasMissingData)
+        {
+            <span class="soul-warning" tabindex="0" aria-label="Données à compléter" data-bs-toggle="tooltip"
+                  data-bs-title="@string.Join("\n", Row.MissingData)" data-bs-custom-class="multiline-tooltip">
+                <i class="bi bi-exclamation-triangle" aria-hidden="true"></i>
+            </span>
+        }
+    </Summary>
+    <ChildContent>
+        <div class="soul-route">
+            <div class="soul-step">
+                <small><i class="bi bi-crosshair" aria-hidden="true"></i> Capturer</small>
+                <div class="soul-step-item">
+                    @if (Capture?.Stone is { } stone)
+                    {
+                        <StockItemArtwork ItemId="stone.Id" Stock="Stock">
+                            <CopyTextButton Value="@stone.Name" Tooltip="@stone.Name"><SoulStonePicture /></CopyTextButton>
+                        </StockItemArtwork>
+                        <span><CopyTextButton Value="@stone.Name" Class="fw-semibold">@stone.Name</CopyTextButton><small>Capacité @stone.Capacity</small></span>
+                    }
+                    else
+                    {
+                        <SoulStonePicture /><span>Pierre adaptée à vérifier</span>
+                    }
+                </div>
+                <CopyAmount Value="Row.Cost" ShowFraction="true" Tooltip="@StoneCostTooltip" />
+                @if (Row.CashRequired is { } cash && cash != Row.Cost)
+                {
+                    <small>À débourser <CopyAmount Value="cash" Tooltip="@(cash == 0 ? "Pierre disponible dans votre stock" : "Coût du lot entier à acheter")" /></small>
+                }
+            </div>
+            <i class="bi bi-arrow-right soul-route-arrow" aria-hidden="true"></i>
+            <div class="soul-step">
+                <small><i class="bi bi-shop" aria-hidden="true"></i> Revendre</small>
+                <div class="soul-step-item">
+                    <CopyTextButton Value="@Row.Name" Tooltip="Copier le nom du boss"><SoulStonePicture Filled="true" /></CopyTextButton>
+                    <span><CopyTextButton Value="@Row.Name" Class="fw-semibold">@Row.Name</CopyTextButton><small>Pierre pleine</small></span>
+                </div>
+                <CopyAmount Value="Row.Revenue" ShowFraction="true" Tooltip="@ResaleTooltip" />
+            </div>
+        </div>
+        @if (Row.Profitability.MarketDailyGainCapacity is { } index)
+        {
+            <span class="soul-index" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@IndexCalculation"
+                  data-bs-custom-class="multiline-tooltip">Indice : @index.ToString("N1")</span>
+        }
+        @if (HasMissingData)
+        {
+            <div class="soul-missing">
+                <strong>Données à compléter</strong>
+                <div class="soul-tags">
+                    @if (Row.Revenue is null)
+                    {
+                        <span class="soul-tag" tabindex="0" data-bs-toggle="tooltip" data-bs-custom-class="multiline-tooltip"
+                              data-bs-title="Consultez les offres de ce boss à l’HDV des pierres d’âme.">Prix de la pierre pleine</span>
+                    }
+                    @if (Row.Cost is null)
+                    {
+                        <span class="soul-tag" tabindex="0" data-bs-toggle="tooltip" data-bs-custom-class="multiline-tooltip"
+                              data-bs-title="@(Capture?.Stone is { } missingStone ? $"Consultez les offres de {missingStone.Name}." : "Consultez les offres d’une pierre adaptée à ce boss.")">Prix de la pierre vide</span>
+                    }
+                    @if (!Row.Profitability.Kinetics.HasMeasuredDemand)
+                    {
+                        <span class="soul-tag" tabindex="0" data-bs-toggle="tooltip" data-bs-custom-class="multiline-tooltip"
+                              data-bs-title="Ouvrez le Cours du marché de cette âme dans Dofus."><i class="bi bi-clock-history" aria-hidden="true"></i> @HistoryLabel</span>
+                    }
+                </div>
+            </div>
+        }
+    </ChildContent>
+</ServiceResult>
+
+@code {
+    [Parameter, EditorRequired] public ActivityRecommendation Row { get; set; } = default!;
+    [Parameter] public LiveStockSource? Stock { get; set; }
+    [Parameter] public long? ListedUnits { get; set; }
+    [Parameter] public bool InitiallyExpanded { get; set; }
+
+    private SoulCapturePresentation? Capture => Row.SoulCapture;
+    private bool HasMissingData => Row.MissingData.Count > 0;
+    private string? GainColor => Row.Profitability.Gain is { } gain ? CrushingGainColor.For(gain, Row.Cost) : null;
+    private string GainTooltip => $"{Row.Revenue:#,0.##} K (revente) − {Row.Cost:#,0.##} K (pierre vide) · avant taxes";
+    private string StoneCostTooltip => Capture?.EstimatedStoneCost == true
+        ? "Coût unitaire estimé d’après un lot de pierres vides." : "Coût d’une pierre vide.";
+    private string ResaleTooltip => Capture?.EstimatedResale == true
+        ? "Prix unitaire estimé d’après le prix du lot relevé." : "Prix de revente estimé de cette âme.";
+    private string IndexCalculation => $"{Row.Profitability.Gain:#,0.##} (Gain) × {Row.Profitability.Kinetics.UnitsPerDay:#,0.##} (ventes globales par jour) ÷ {Row.Quantity:N0} (quantité mise en vente)";
+    private string HistoryLabel => Row.Profitability.Kinetics.Status switch
+    {
+        SalesKineticsStatus.Outdated => "Historique à actualiser",
+        SalesKineticsStatus.NoObservedSales => "Aucune vente sur 7 j",
+        _ => "Historique à relever"
+    };
+}

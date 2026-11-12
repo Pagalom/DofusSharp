@@ -32,6 +32,12 @@ public static class AnkamaFrameDecoder
                 f.WireType == ProtoWireType.LengthDelimited &&
                 f.Bytes is not null);
 
+            // Observed on 3.7.12.12: a bank with no items and no kamas
+            // serializes Any with only its irp type_url. Preserve this exact
+            // default-value form; an absent/invalid arbitrary body is not stock.
+            if (typeUrl == Prefix + "irp" && fields.Count == 1)
+                return new AnkamaAny(typeUrl, "irp", []);
+
             if (body?.Bytes is not null)
             {
                 string key = typeUrl[Prefix.Length..];

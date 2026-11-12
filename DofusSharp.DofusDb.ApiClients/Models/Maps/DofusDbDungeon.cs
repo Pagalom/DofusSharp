@@ -42,6 +42,8 @@ public class DofusDbDungeon : DofusDbResource
     /// </summary>
     public IReadOnlyCollection<long>? Monsters { get; init; }
 
+    public IReadOnlyCollection<long>? Bosses { get; init; }
+
     /// <summary>
     ///     The unique identifier of the subarea that the dungeon belongs to.
     /// </summary>

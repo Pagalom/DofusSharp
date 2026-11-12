@@ -1,0 +1,18 @@
+<div class="trading-strategies" role="group" aria-label="Approche d’achat et de revente">
+    @foreach (var strategy in Strategies)
+    {
+        <VisualFilterChoice Label="@strategy.Label" Icon="@strategy.Icon" Selected="@(Value == strategy.Value)"
+            Pressed="() => SelectAsync(strategy.Value)" />
+    }
+</div>
+@code {
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    private static readonly (string Value, string Label, string Icon)[] Strategies =
+    [
+        ("Recomposer des lots", "Écarts entre lots", "bi-boxes"),
+        ("Prix sous l’historique", "Prix sous l’historique", "bi-graph-down-arrow"),
+        ("Revendre mon stock", "Revendre mon stock", "bi-backpack")
+    ];
+    private Task SelectAsync(string value) => ValueChanged.InvokeAsync(Value == value ? "" : value);
+}

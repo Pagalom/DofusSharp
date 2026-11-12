@@ -12,7 +12,22 @@ public class ItemsService(BestCrushDbContext context, IDofusDbClientsFactory dof
 {
     readonly ConcurrentDictionary<long, DofocusItem> _cachedItems = [];
 
-    public async Task<IReadOnlyCollection<Equipment>> GetEquipmentsAsync() =>
+    // Tables and history need names and levels, not the complete recipe graph.
+    public async Task<IReadOnlyCollection<Equipment>> GetEquipmentValueCatalogAsync(
+        bool craftableOnly = true, CancellationToken cancellationToken = default)
+    {
+        var query = context.Equipments.AsNoTracking();
+        if (craftableOnly)
+            query = query.Where(item => item.Recipe.Any() || item.EquipmentRecipe.Any());
+        return await query.OrderBy(item => item.Name)
+            .Select(item => new Equipment(item.DofusDbId)
+            {
+                Name = item.Name, Level = item.Level, Type = item.Type,
+                DofusDbIconId = item.DofusDbIconId
+            }).ToArrayAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<Equipment>> GetEquipmentsAsync(CancellationToken cancellationToken = default) =>
         await context.Equipments
             .Include(i => i.Characteristics)
             .Include(i => i.Recipe)
@@ -23,7 +38,7 @@ public class ItemsService(BestCrushDbContext context, IDofusDbClientsFactory dof
                 i.Recipe.Count > 0 ||
                 i.EquipmentRecipe.Count > 0)
             .AsNoTracking()
-            .ToArrayAsync();
+            .ToArrayAsync(cancellationToken);
     public async Task<IReadOnlyCollection<Equipment>>
         GetAllEquipmentsAsync(
             CancellationToken cancellationToken = default)

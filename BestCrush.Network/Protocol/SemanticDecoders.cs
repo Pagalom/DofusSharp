@@ -30,11 +30,18 @@ public sealed record ProtocolMap(
     public ProtocolWireNormalizer WireNormalizer { get; init; } =
         ProtocolWireNormalizer.Empty;
 
+    public string? GlobalMarketHistoryRequest { get; init; }
+    public string? GlobalMarketHistoryResponse { get; init; }
+    public string? CurrentMarketListingRequest { get; init; }
+    public string? CurrentMarketListingCreated { get; init; }
+
     public byte[] NormalizeBody(string key, byte[] body) =>
         WireNormalizer.Normalize(key, body);
 
     private string? ResolveKey(string semantic) => semantic switch
     {
+        "global_market_history_request" => GlobalMarketHistoryRequest,
+        "global_market_history_response" => GlobalMarketHistoryResponse,
         "price_list" => PriceList,
         "market_selection_response" => MarketSelectionResponse,
         "crush_result" => CrushResult,
@@ -56,6 +63,8 @@ public sealed record ProtocolMap(
         "smithmagic_aux" => SmithmagicAux,
         "market_listing_request" => MarketListingRequest,
         "market_listing_created" => MarketListingCreated,
+        "market_listing_request_current" => CurrentMarketListingRequest,
+        "market_listing_created_current" => CurrentMarketListingCreated,
         _ => null
     };
 
@@ -155,6 +164,13 @@ public sealed record ProtocolMap(
             currentCrush,
             currentItemDetail);
 
+        map = map with
+        {
+            CurrentMarketListingRequest = root.TryGetProperty("market_listing_request_current", out var mlrc) ? mlrc.GetString() : null,
+            CurrentMarketListingCreated = root.TryGetProperty("market_listing_created_current", out var mlcc) ? mlcc.GetString() : null,
+            GlobalMarketHistoryRequest = root.TryGetProperty("global_market_history_request", out var gmr) ? gmr.GetString() : null,
+            GlobalMarketHistoryResponse = root.TryGetProperty("global_market_history_response", out var gms) ? gms.GetString() : null
+        };
         return map with
         {
             WireNormalizer = ProtocolWireNormalizer.Read(
@@ -249,19 +265,22 @@ public static class SemanticDecoders
     //
     // The focus decoder above remains independent. These two market
     // decoders deliberately preserve the same strict wire structure but
-    // enforce different price-ladder rules according to the object type.
+    // project equipment prices to x1 while preserving stackable price lots.
     // The database writer independently checks whether the item really
     // is an equipment, rune or resource before persisting a price.
     public static MarketObservation? TryDecodeJzsEquipmentPrices(byte[] body)
     {
         MarketObservation? market = TryDecodeJzsPriceLadders(body);
 
-        return market is not null &&
-               market.Offers.All(offer =>
-                   offer.Ladder[0] > 0 &&
-                   offer.Ladder.Skip(1).All(value => value == 0))
-            ? market
-            : null;
+        if (market is null) return null;
+
+        // Verified on 2026-11-06 (Dofus 3.7.13.17): Ceinture de l’aventurier
+        // can contain [45, 50, 0, 0] on one valid offer. The additional slots
+        // must not invalidate the unit price or be persisted as equipment lots.
+        var units = market.Offers.Where(offer => offer.Ladder[0] > 0)
+            .Select(offer => new MarketOffer(offer.OfferId, offer.ItemId, [offer.Ladder[0]]))
+            .ToArray();
+        return units.Length > 0 ? new MarketObservation(market.ItemId, units) : null;
     }
 
     public static MarketObservation? TryDecodeJzsStackablePrices(byte[] body) =>

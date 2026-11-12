@@ -5,6 +5,12 @@ using SharpPcap;
 
 Console.OutputEncoding = System.Text.Encoding.UTF8;
 
+if (args.Contains("--stock-report", StringComparer.Ordinal))
+{
+    await StockReportCommand.RunAsync(args);
+    return;
+}
+
 ProbeOptions options = ProbeOptions.Parse(args);
 CaptureDeviceList devices = CaptureDeviceList.Instance;
 
@@ -35,6 +41,7 @@ if (options.ListDevices || options.DeviceIndex is null)
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --item-effects-dofusdb-study");
     Console.WriteLine("Pour analyser les snapshots irl/irp d'inventaire/banque (champs candidats, sans valeurs) :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --stock-snapshot-study");
+    Console.WriteLine("  --stock-db stock-captures.db : conserve les snapshots candidats en SQLite locale, sans attribution compte/serveur");
     Console.WriteLine("  (option explicite) --stock-identify-blockers : affiche seulement les ItemId candidats des types bloquants");
     Console.WriteLine("Pour voir les structures de champs des messages de connexion :");
     Console.WriteLine("  dotnet run --project BestCrush.NetworkProbe -- --device 3 --character-shape");
@@ -854,6 +861,9 @@ else if (options.CharacterScan)
         options.ProfessionXpStudy || options.ProfessionJobStudy
             ? new ProfessionXpWireStudy(options.CheckPublicJobIds) : null;
 
+    using StockCaptureDatabase? stockDatabase = options.StockDatabasePath is null
+        ? null : new StockCaptureDatabase(options.StockDatabasePath);
+
     // P2a and P2b accept the same local input, but only one diagnostic
     // receives it. Never supply both character identity references.
     CharacterIdentityDiagnosticReferences diagnosticReferences =
@@ -884,7 +894,9 @@ else if (options.CharacterScan)
         effectTypeStudy: effectTypeStudy,
         effectCatalogStudy: effectCatalogStudy,
         stockSnapshotStudy: options.StockSnapshotStudy,
-        stockIdentifyBlockers: options.StockIdentifyBlockers);
+        stockIdentifyBlockers: options.StockIdentifyBlockers,
+        stockSnapshotObserver: stockDatabase is null ? null : stockDatabase.Save,
+        stockEventObserver: stockDatabase is null ? null : stockDatabase.SaveEvent);
 
     probe.Start();
     if (options.IdentityPair)
@@ -1058,7 +1070,8 @@ internal sealed record ProbeOptions(
     bool ItemEffectsTypeStudy,
     bool ItemEffectsDofusDbStudy,
     bool StockSnapshotStudy,
-    bool StockIdentifyBlockers)
+    bool StockIdentifyBlockers,
+    string? StockDatabasePath)
 {
     public static IReadOnlySet<string> IdentityNameOpCodes { get; } =
         new HashSet<string>(StringComparer.Ordinal)
@@ -1087,6 +1100,7 @@ internal sealed record ProbeOptions(
         bool itemEffectsDofusDbStudy = false;
         bool stockSnapshotStudy = false;
         bool stockIdentifyBlockers = false;
+        string? stockDatabasePath = null;
         bool professionMatch = false;
         bool professionDecode = false;
         bool professionStudy = false;
@@ -1153,6 +1167,9 @@ internal sealed record ProbeOptions(
                     break;
                 case "--stock-snapshot-study":
                     stockSnapshotStudy = true;
+                    break;
+                case "--stock-db" when i + 1 < args.Length:
+                    stockDatabasePath = args[++i];
                     break;
                 case "--stock-identify-blockers":
                     stockIdentifyBlockers = true;
@@ -1296,6 +1313,10 @@ internal sealed record ProbeOptions(
             throw new ArgumentException(
                 "Use only one character diagnostic mode at a time.");
 
+        if (stockDatabasePath is not null &&
+            (!stockSnapshotStudy || string.IsNullOrWhiteSpace(stockDatabasePath)))
+            throw new ArgumentException("--stock-db requires --stock-snapshot-study and a file path.");
+
         if (stockIdentifyBlockers && !stockSnapshotStudy)
             throw new ArgumentException(
                 "--stock-identify-blockers requires --stock-snapshot-study.");
@@ -1333,6 +1354,6 @@ internal sealed record ProbeOptions(
             accountRosterStudy, concurrentRosterStudy,
             concurrentRosterWindowStudy, itemEffectsShape,
             itemEffectsCompare, itemEffectsTypeStudy,
-            itemEffectsDofusDbStudy, stockSnapshotStudy, stockIdentifyBlockers);
+            itemEffectsDofusDbStudy, stockSnapshotStudy, stockIdentifyBlockers, stockDatabasePath);
     }
 }

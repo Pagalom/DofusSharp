@@ -559,6 +559,31 @@ public sealed class DofusNetworkRoutingTest
     }
 
     [Fact]
+    public async Task JzsStackableRefreshWithdrawsMissingLotsAndKeepsTheirHistory()
+    {
+        await using RoutingHarness harness =
+            await RoutingHarness.CreateAsync();
+
+        await harness.ReplayAsync("jzs", JzsMarket(200, 104,
+            JzsOffer(200, 100, 104, 11_183, 121_111, 0, 2_500_000)), ObservedAt);
+        await harness.ReplayAsync("jzs", JzsMarket(200, 104,
+            JzsOffer(200, 101, 104, 8_884, 164_998, 0, 0)), ObservedAt.AddSeconds(1));
+
+        (await harness.ReadCurrentPricesAsync(MarketObjectType.Resource, 200))
+            .Select(quote => quote.Quantity).Order().Should().Equal(1, 10);
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200))
+            .Should().Contain(quote => quote.Quantity == 1000 && quote.Price == 2_500_000);
+        harness.Notifications.Select(change => change.Quantity)
+            .Should().Equal(1, 10, 1000, 1, 10, 1000);
+
+        await harness.ReplayAsync("jzs", JzsMarket(200, 104,
+            JzsOffer(200, 102, 104, 8_884, 164_998, 0, 3_000_000)), ObservedAt.AddSeconds(2));
+
+        (await harness.ReadCurrentPricesAsync(MarketObjectType.Resource, 200))
+            .Should().Contain(quote => quote.Quantity == 1000 && quote.Price == 3_000_000);
+    }
+
+    [Fact]
     public async Task JzsEmptyStackableFollowUpNeverOverwritesPrices()
     {
         await using RoutingHarness harness =
@@ -733,7 +758,7 @@ public sealed class DofusNetworkRoutingTest
     }
 
     [Fact]
-    public async Task JzsMalformedOrUnverifiedAdditionalLotCannotWriteSqlite()
+    public async Task JzsAdditionalEquipmentSlotsDoNotRejectOrCreateOtherPriceLots()
     {
         await using RoutingHarness harness =
             await RoutingHarness.CreateAsync();
@@ -745,9 +770,10 @@ public sealed class DofusNetworkRoutingTest
                 JzsOffer(42, 101, 11, 4900, 10, 0, 0)),
             ObservedAt);
 
-        (await harness.ReadPricesAsync(MarketObjectType.Equipment, 42))
-            .Should().BeEmpty();
-        harness.Notifications.Should().BeEmpty();
+        var prices = await harness.ReadPricesAsync(MarketObjectType.Equipment, 42);
+        prices.Should().ContainSingle().Which.Price.Should().Be(4899);
+        prices.Single().Quantity.Should().Be(1);
+        harness.Notifications.Should().ContainSingle().Which.Quantity.Should().Be(1);
     }
 
     [Fact]
@@ -1485,6 +1511,23 @@ public sealed class DofusNetworkRoutingTest
             .Equal(
                 (1, 15L),
                 (10, 140L));
+    }
+
+    [Fact]
+    public async Task PurchaseRefreshUpdatesTheNextPriceAndWithdrawsAnExhaustedLot()
+    {
+        await using RoutingHarness harness = await RoutingHarness.CreateAsync();
+        await harness.ReplayAsync("jzs", JzsMarket(200, 104,
+            JzsOffer(200, 501, 104, 9997, 269_885, 0, 2_500_000)), ObservedAt);
+        await harness.ReplayAsync("kei", PurchaseRequest(9997, 1, 501), ObservedAt.AddSeconds(1));
+        await harness.ReplayAsync("kef", PurchaseOffer(200, 501, 10_000, 269_885, 0, 0), ObservedAt.AddSeconds(2));
+        await harness.ReplayAsync("kbd", PurchaseReceipt(1, 501), ObservedAt.AddSeconds(3));
+
+        var prices = await harness.ReadCurrentPricesAsync(MarketObjectType.Resource, 200);
+        prices.OrderBy(quote => quote.Quantity).Select(quote => (quote.Quantity, quote.Price))
+            .Should().Equal((1, 10_000L), (10, 269_885L));
+        harness.Notifications.Select(change => change.Quantity)
+            .Should().Equal(1, 10, 1000, 1, 10, 1000);
     }
 
     [Fact]
@@ -2626,6 +2669,15 @@ public sealed class DofusNetworkRoutingTest
                 observedAtUtc,
                 connectionId: connectionId,
                 candidateWindow: candidateWindow);
+
+        public async Task<IReadOnlyList<MarketPriceObservation>> ReadCurrentPricesAsync(
+            MarketObjectType objectType, long itemId)
+        {
+            using var context = database.CreateContext();
+            var service = new MarketPriceService(context, new TestDataPriorityProvider());
+            var prices = await service.GetLatestObservationsForServerAsync(objectType, Server);
+            return prices.Values.Where(quote => quote.DofusDbId == itemId).ToArray();
+        }
 
         public async Task<
             IReadOnlyList<

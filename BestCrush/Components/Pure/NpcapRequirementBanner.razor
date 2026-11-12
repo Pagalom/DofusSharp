@@ -52,6 +52,11 @@
         }
     }
 
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender && NpcapPrerequisite.IsInstalled) NetworkCapture.Start();
+    }
+
     private async Task OpenNpcapDownloadAsync()
     {
         await Microsoft.Maui.ApplicationModel

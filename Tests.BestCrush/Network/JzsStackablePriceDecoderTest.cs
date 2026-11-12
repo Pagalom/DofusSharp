@@ -28,8 +28,10 @@ public sealed class JzsStackablePriceDecoderTest
             .Should().Equal(one, ten, hundred, thousand);
 
         // Equipment prices must still refuse any unverified non-x1 slot.
-        SemanticDecoders.TryDecodeJzsEquipmentPrices(body)
-            .Should().BeNull();
+        // The wire shape is shared. Database classification in the writer
+        // decides whether x1 equipment or all stackable lots may be persisted.
+        SemanticDecoders.TryDecodeJzsEquipmentPrices(body)!
+            .Offers.Single().Ladder.Should().Equal(one);
     }
 
     [Fact]

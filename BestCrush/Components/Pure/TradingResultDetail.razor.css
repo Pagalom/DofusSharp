@@ -1,0 +1,26 @@
+.trade-route { display:flex; align-items:center; gap:1.5rem; flex-wrap:wrap; padding:.8rem 1rem; background:var(--bc-raised,#2b3a3e); border-radius:.45rem; }
+.trade-thresholds { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:.45rem 1.5rem; padding:.8rem 1rem; background:var(--bc-raised,#2b3a3e); border-radius:.45rem; }
+.trade-thresholds > small { color:var(--bc-muted,#b9c4c2); }
+.trade-thresholds > small i { margin-right:.3rem; }
+.trade-threshold-cell { display:flex; align-items:center; gap:.6rem; padding:.5rem 0; border-top:1px solid var(--bc-border,#51635f); }
+.trade-threshold-cell > div { min-width:0; }
+.trade-threshold-cell small { display:block; margin-top:.2rem; color:var(--bc-muted,#b9c4c2); }
+.trade-step { display:flex; flex:1; flex-direction:column; gap:.6rem; min-width:180px; }
+.trade-step > div { display:flex; align-items:center; gap:.7rem; }
+.trade-step > span { font-weight:600; }
+.trade-step small,.trade-craft small,.trade-note { color:var(--bc-muted,#b9c4c2); font-size:.8rem; }
+.trade-step small i { margin-right:.3rem; }
+.trade-route-arrow { color:var(--bc-gold,#e4c27a); font-size:1.4rem; }
+.trade-reference { margin-left:.3rem; border-bottom:1px dotted; cursor:help; }
+.trade-note { display:block; margin-top:.6rem; }
+.trade-crafts,.trade-missing { margin-top:1rem; padding-top:.8rem; border-top:1px solid var(--bc-border,#51635f); }
+.trade-section-title { display:flex; align-items:center; gap:.4rem; margin-bottom:.65rem; font-size:.85rem; color:var(--bc-gold,#e4c27a); }
+.trade-craft { display:flex; align-items:center; flex-wrap:wrap; gap:.65rem; padding:.45rem 0; }
+.trade-craft-name { display:flex; flex-direction:column; min-width:140px; color:#fff; }
+.trade-recipe { display:flex; flex-wrap:wrap; align-items:center; gap:.3rem; flex:1; }
+.trade-craft-gain { display:flex; flex-direction:column; align-items:flex-end; margin-left:auto; font-weight:600; }
+.trade-craft-gain small { font-weight:400; }
+.trade-open-craft { padding:.4rem; color:var(--bc-gold,#e4c27a); }
+.trade-missing > div { display:flex; flex-wrap:wrap; gap:.5rem; }
+.trade-missing-tag { display:inline-flex; align-items:center; gap:.4rem; padding:.3rem .55rem; border:1px solid var(--bc-border,#51635f); border-radius:.3rem; color:var(--bc-gold,#e4c27a); font-size:.8rem; cursor:help; }
+@media(max-width:650px) { .trade-route { gap:.8rem; }.trade-step { min-width:120px; }.trade-route-arrow { font-size:1rem; }.trade-recipe { flex-basis:100%; order:2; } }

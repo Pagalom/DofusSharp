@@ -1,0 +1,19 @@
+.farm-identity { min-width:0; }
+.farm-identity ::deep .farm-name { color:var(--bc-gold); font-weight:700; text-align:left; }
+.farm-stat { display:flex; flex-direction:column; align-items:flex-end; min-width:106px; font-weight:650; }
+.farm-stat strong[tabindex],.farm-warning { cursor:help; }
+.farm-status { display:flex; align-items:center; gap:.45rem; }
+.farm-warning,.farm-label,.farm-open-craft { color:var(--bc-gold); }
+.farm-detail { display:grid; gap:.75rem; padding:.8rem 1rem; border-radius:.45rem; background:var(--bc-raised); }
+.farm-detail-line,.farm-recipes { display:grid; gap:.45rem; }
+.farm-label { font-size:.85rem; }
+.farm-label i { margin-right:.2rem; }
+.farm-recipes { margin-top:.9rem; }
+.farm-recipe { display:flex; align-items:center; flex-wrap:wrap; gap:.6rem; }
+.farm-ingredients { display:flex; align-items:center; flex-wrap:wrap; gap:.25rem; }
+.farm-open-craft { margin-left:auto; }
+.farm-missing { display:grid; gap:.3rem; margin-top:.85rem; color:var(--bc-gold); }
+@media(max-width:760px) {
+    .result-identity { flex-basis:100%; }
+    .farm-stat { align-items:flex-start; min-width:0; }
+}

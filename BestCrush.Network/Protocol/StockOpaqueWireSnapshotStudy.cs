@@ -10,7 +10,7 @@ namespace BestCrush.Network.Protocol;
 /// </summary>
 public sealed class StockOpaqueWireSnapshotStudy
 {
-    private const int MaxEffectCount = 64;
+    private const int MaxEffectCount = InventoryBankSnapshotDecoder.MaxPreservedEffectEntries;
     private const int MaxEffectBytes = 1024;
 
     internal sealed record WireGroups(

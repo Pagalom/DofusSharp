@@ -1,616 +1,107 @@
-﻿@using BestCrush.Domain.Models
+@using BestCrush.Domain.Models
 @using BestCrush.Models
-@using DofusSharp.Dofocus.ApiClients.Models.Items
-@using Rune = BestCrush.Domain.Models.Rune
+@using BestCrush.Services
 @using System.Globalization
 
 @if (Equipment is not null)
 {
-    <div class="row align-items-stretch">
+    <div class="crush-detail">
         @if (!NoImage)
         {
-            <div class="col-auto d-flex flex-column">
-                <ItemIcon Item="Equipment" Background="IconBackground.Slot" Size="Size.Medium"></ItemIcon>
+            <div class="crush-detail-image">
+                <StockItemArtwork ItemId="Equipment.DofusDbId" Stock="Stock"><ItemIcon Item="Equipment" Background="IconBackground.Slot" Size="Size.Medium" /></StockItemArtwork>
                 @if (_focusedRune is not null)
                 {
-                    <div class="d-flex align-items-center">
-                        <div class="flex-grow-1 d-flex align-items-center justify-content-center" data-bs-toggle="tooltip" data-bs-title="Focus">
-                            <i class="bi bi-bullseye text-secondary"></i>
-                        </div>
-                        <div>
-                            <ItemIcon Item="_focusedRune" Background="IconBackground.Slot" Size="Size.Tiny"></ItemIcon>
-                        </div>
-                    </div>
+                    <StockItemArtwork ItemId="_focusedRune.DofusDbId" Stock="Stock"><ItemIcon Item="_focusedRune" Background="IconBackground.Slot" Size="Size.Tiny" Tooltip="Rune ciblée" /></StockItemArtwork>
                 }
             </div>
         }
-
-        <div class="col d-flex flex-column align-items-stretch">
-            <div class="d-flex align-items-center gap-2" style="height: 64px">
-                <div>
-                    <div class="fw-bold text-nowrap">
-                        <span role="button"
-                              class="text-decoration-underline"
-                              title="Cliquer pour copier le nom"
-                              @onclick="() => CopyTextAsync(Equipment.Name)">
-                            @Equipment.Name
-                        </span>
-                    </div>
-                    <div class="text-nowrap">@Equipment.Type.ToDisplayName() Niv.@Equipment.Level</div>
+        <div class="crush-detail-main">
+            <div class="crush-detail-top">
+                <div class="crush-detail-identity"><strong role="button" class="text-decoration-underline" title="Cliquer pour copier le nom" @onclick="() => CopyTextAsync(Equipment.Name)">@Equipment.Name</strong>
                 </div>
-                <div class="flex-grow-1 d-flex flex-wrap align-items-center gap-1">
-                    @if (Equipment.Recipe.Any())
-                    {
-                        @if (!NoImage)
+                @if (!NoImage)
+                {
+                    <div class="crush-recipe-icons">
+                        @foreach (var input in RecipeInputs)
                         {
-                            @foreach (RecipeEntry entry in Equipment.Recipe)
-                            {
-                                <div role="button"
-                                     title="Cliquer pour copier @entry.Resource.Name"
-                                     @onclick="() => CopyTextAsync(entry.Resource.Name)">
-                                    <ItemIconWithCount Item="entry.Resource"
-                                                       Count="entry.Count"
-                                                       Size="Size.Tiny"
-                                                       Tooltip="@GetResourceTooltip(entry)"
-                                                       TooltipIsHtml="true">
-                                    </ItemIconWithCount>
-                                </div>
-                            }
+                            <StockItemArtwork ItemId="input.Item.DofusDbId" Stock="Stock">
+                                <ItemIconWithCount Item="input.Item" Count="input.Count" Size="Size.Tiny" Tooltip="@ResourceTooltip(input.Item.DofusDbId, input.Item.Name)" TooltipIsHtml="true" />
+                            </StockItemArtwork>
                         }
-                    }
-                </div>
+                    </div>
+                }
                 @if (Cost is not null)
                 {
-                    <div class="d-flex flex-column align-items-end">
-                        <span role="button"
-                              title="Cliquer pour copier le prix d'achat"
-                              @onclick="() => CopyNumberAsync(Cost.Price)">
-                            <Kamas Amount="Cost.Price" Size="Size.Medium"/>
-                        </span>
-                        <span class="small text-secondary text-nowrap">@Cost.ObservedAtUtc.ToLocalTime().ToString("G")</span>
-                    </div>
+                    <div class="crush-detail-price"><span class="small text-secondary">Prix d’achat</span><span role="button" title="Prix d’achat" @onclick="() => CopyNumberAsync(Cost.Price)"><Kamas Amount="Cost.Price" Size="Size.Medium" /></span></div>
                 }
             </div>
-            <div class="d-flex gap-4">
-                <div class="flex-grow-1 d-flex flex-wrap column-gap-4 row-gap-2">
-                    <div>
-                        <div class="fw-semibold">Runes</div>
-                        @if (Coefficient is not null)
-                        {
-                            <div class="text-nowrap">
-                                Coeff.
-                                <span role="button"
-                                      class="fw-semibold text-decoration-underline"
-                                      title="Cliquer pour copier le coefficient"
-                                      @onclick="() => CopyPercentAsync(Coefficient.CoefficientPercent)">
-                                    @Coefficient.CoefficientPercent.ToString("N0")%
-                                </span>
-                            </div>
-                        }
-                    </div>
+            <div class="crush-detail-runes">
+                <div class="crush-rune-list">@if (Runes is { Count: > 0 }) { <strong>Runes</strong> }
                     @if (!NoImage && Runes is not null)
                     {
-                        <div class="d-flex flex-wrap gap-2">
-                            @foreach ((Rune rune, double yield) in Runes)
-                            {
-                                MarketValueResult? marketValue =
-                                    RuneValues?.GetValueOrDefault(rune);
-
-                                double price =
-                                    marketValue?.Value ?? 0;
-
-                                <div>
-                                    <div role="button"
-                                         title="Cliquer pour copier @rune.Name"
-                                         @onclick="() => CopyTextAsync(rune.Name)">
-                                        <ItemIconWithCount Item="rune" Count="yield" Size="Size.Small"></ItemIconWithCount>
-                                    </div>
-                                    <div class="d-flex justify-content-center"
-                                         role="button"
-                                         title="Cliquer pour copier la valeur"
-                                         @onclick="() => CopyNumberAsync(price)">
-                                        <Kamas Amount="price" Size="Size.Tiny"/>
-                                    </div>
-                                    @if (marketValue?.IsEstimated == true)
-                                    {
-                                        <div class="small text-secondary text-center"
-                                            title="Une partie de la valeur est estimée car certains lots n'ont pas de prix renseigné.">
-                                            ≈
-                                        </div>
-                                    }
-                                </div>
-                            }
-                        </div>
-                    }
-                </div>
-                @if (_estimatedPrice.HasValue)
-                {
-                    <div class="d-flex flex-column align-items-end">
-                        <span class="small text-secondary text-nowrap">Valeur ajustée</span>
-                        <span role="button"
-                              title="Cliquer pour copier la valeur ajustée des runes"
-                              @onclick="() => CopyNumberAsync(_estimatedPrice.Value)">
-                            <Kamas Amount="_estimatedPrice" Size="Size.Medium"/>
-                        </span>
-                        @if (Coefficient is not null)
+                        @foreach (var (rune, yield) in Runes)
                         {
-                            <span class="small text-secondary text-nowrap">@Coefficient.ObservedAtUtc.ToLocalTime().ToString("G")</span>
+                            var value = RuneValues?.GetValueOrDefault(rune);
+                            <div class="crush-rune">
+                                <StockItemArtwork ItemId="rune.DofusDbId" Stock="Stock"><ItemIconWithCount Item="rune" Count="yield" Size="Size.Small" /></StockItemArtwork>
+                                @if (value is { } known) { <span role="button" title="Cliquer pour copier la valeur" @onclick="() => CopyNumberAsync(known.Value)"><Kamas Amount="known.Value" Size="Size.Tiny" /></span> }
+                                else { <span class="small text-secondary" title="Prix de rune manquant">—</span> }
+                                @if (value?.IsEstimated == true) { <span class="small text-secondary" title="Une partie de la valeur utilise des lots de vente estimés.">≈</span> }
+                            </div>
                         }
-                    </div>
-                }
-            </div>
-        </div>
-
-        <div class="col-3">
-            <div class="h-100 d-flex flex-column justify-content-center">
-
-                <div class="border border-1 border-secondary rounded overflow-hidden
-                            d-flex flex-column align-items-stretch">
-
-                    <div class="fw-bold px-3 py-2 text-center">
-                        Bénéfice
-                    </div>
-
-                    @if (_purchaseBenefit.HasValue)
-                    {
-                        <div class="px-3 py-2 border-top">
-
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="small fw-semibold">
-                                    Achat
-                                </span>
-
-                                <div class="d-flex align-items-center gap-1">
-                                    @if (ShowProfitabilityStateBadges)
-                                    {
-                                        <span class="badge @GetStateBadgeClass(PurchaseState)">
-                                            @GetStateLabel(PurchaseState)
-                                        </span>
-                                    }
-
-                                    @if (IsPurchaseBest)
-                                    {
-                                        <span class="badge text-bg-success">
-                                            Meilleur
-                                        </span>
-                                    }
-                                </div>
-                            </div>
-
-                            <div class="d-flex justify-content-between align-items-center mt-1">
-
-                                <span role="button"
-                                      title="Cliquer pour copier le bénéfice achat"
-                                      @onclick="() => CopyNumberAsync(_purchaseBenefit.Value)">
-                                    <Kamas Amount="_purchaseBenefit"
-                                           Size="Size.Small"
-                                           Color="@GetBenefitColor(_purchaseYield, PurchaseState)" />
-                                </span>
-
-                                <span role="button"
-                                      class="@GetBenefitCssClass(_purchaseYield, PurchaseState)"
-                                      title="Cliquer pour copier le ROI achat"
-                                      @onclick="() => CopyPercentAsync(_purchaseYield.Value * 100.0)">
-                                    @(_purchaseYield >= 0 ? "+" : "")
-                                    @_purchaseYield.Value.ToString("P0")
-                                </span>
-
-                            </div>
-
-                        </div>
                     }
-
-                    @if (_craftBenefit.HasValue)
-                    {
-                        <div class="px-3 py-2 border-top">
-
-                            <div class="d-flex justify-content-between align-items-center">
-                                <span class="small fw-semibold">
-                                    Craft
-                                </span>
-
-                                <div class="d-flex align-items-center gap-1">
-                                    @if (ShowProfitabilityStateBadges)
-                                    {
-                                        <span class="badge @GetStateBadgeClass(CraftState)">
-                                            @GetStateLabel(CraftState)
-                                        </span>
-                                    }
-
-                                    @if (IsCraftBest)
-                                    {
-                                        <span class="badge text-bg-success">
-                                            Meilleur
-                                        </span>
-                                    }
-                                </div>
-                            </div>
-
-                            <div class="d-flex justify-content-between align-items-center mt-1">
-
-                                <span role="button"
-                                      title="Cliquer pour copier le bénéfice craft"
-                                      @onclick="() => CopyNumberAsync(_craftBenefit.Value)">
-                                    <Kamas Amount="_craftBenefit"
-                                           Size="Size.Small"
-                                           Color="@GetBenefitColor(_craftYield, CraftState)" />
-                                </span>
-
-                                <span role="button"
-                                      class="@GetBenefitCssClass(_craftYield, CraftState)"
-                                      title="Cliquer pour copier le ROI craft"
-                                      @onclick="() => CopyPercentAsync(_craftYield.Value * 100.0)">
-                                    @(_craftYield >= 0 ? "+" : "")
-                                    @_craftYield.Value.ToString("P0")
-                                </span>
-
-                            </div>
-
-                        </div>
-                    }
-
-                    <div class="d-flex border-top">
-
-                        <button class="btn btn-light rounded-0 border-0 flex-grow-1"
-                                @onclick="async () => await Refresh.InvokeAsync()">
-                            Rafraîchir
-                        </button>
-
-                        <button class="btn btn-light rounded-0 border-0 border-start px-3"
-                                title="Mettre cet équipement en focus dans l'overlay"
-                                aria-label="Mettre cet équipement en focus dans l'overlay"
-                                @onclick="async () => await Focus.InvokeAsync()">
-
-                            <i class="bi bi-bullseye"></i>
-
-                        </button>
-
-                    </div>
-
                 </div>
-
+                @if (_estimatedPrice is { } price)
+                {
+                    <div class="crush-detail-price"><span class="small text-secondary">Valeur de revente</span><span role="button" title="Valeur de revente" @onclick="() => CopyNumberAsync(price)"><Kamas Amount="price" Size="Size.Medium" /></span></div>
+                }
             </div>
         </div>
     </div>
 }
 
 @code {
-
-    double? _estimatedPrice;
-
-    double? _purchaseBenefit;
-    double? _purchaseYield;
-
-    double? _craftBenefit;
-    double? _craftYield;
-
-    Rune? _focusedRune;
-
-    [Parameter]
-    public Equipment? Equipment { get; init; }
-    
-    [Parameter]
-    public CraftCostResult? CraftCost { get; init; }
-
-    [Parameter]
-    public MarketPriceObservation? Cost { get; init; }
-
-    [Parameter]
-    public CoefficientObservation? Coefficient { get; init; }
-
-    [Parameter]
-    public Characteristic? FocusedCharacteristic { get; init; }
-
-    [Parameter]
-    public IReadOnlyDictionary<Rune, double>? Runes { get; init; }
-
-    [Parameter]
-    public IReadOnlyDictionary<Rune, MarketValueResult>? RuneValues { get; init; }
-
-    [Parameter]
-    public double? AdjustedRuneValue { get; init; }
-
-    [Parameter]
-    public double? CalculatedPurchaseBenefit { get; init; }
-
-    [Parameter]
-    public double? CalculatedPurchaseYield { get; init; }
-
-    [Parameter]
-    public double? CalculatedCraftBenefit { get; init; }
-
-    [Parameter]
-    public double? CalculatedCraftYield { get; init; }
-
-    [Parameter]
-    public double TargetRoiPercent { get; init; }
-
-    [Parameter]
-    public ProfitabilityState PurchaseState { get; init; } =
-        ProfitabilityState.Unavailable;
-
-    [Parameter]
-    public ProfitabilityState CraftState { get; init; } =
-        ProfitabilityState.Unavailable;
-
-    [Parameter]
-    public SortOrder SortOrder { get; init; }
-
-    [Parameter]
-    public bool NoImage { get; init; }
-
-    [Parameter]
-    public EventCallback Refresh { get; init; }
-    
-    [Parameter]
-    public EventCallback Focus { get; init; }
-
-    TextColor GetBenefitColor(
-        double? yield,
-        ProfitabilityState state)
-    {
-        if (TargetRoiPercent > 0)
-        {
-            return state switch
-            {
-                ProfitabilityState.TargetReached =>
-                    TextColor.Success,
-
-                ProfitabilityState.PositiveBelowTarget =>
-                    TextColor.Success,
-
-                ProfitabilityState.NonProfitable =>
-                    TextColor.Danger,
-
-                _ => yield >= 0
-                    ? TextColor.Success
-                    : TextColor.Danger
-            };
-        }
-
-        return yield >= 0
-            ? TextColor.Success
-            : TextColor.Danger;
-    }
-
-    string GetBenefitCssClass(
-        double? yield,
-        ProfitabilityState state)
-    {
-        if (TargetRoiPercent > 0 &&
-            state ==
-                ProfitabilityState.PositiveBelowTarget)
-        {
-            return
-                "text-warning text-decoration-underline";
-        }
-
-        return
-            $"{GetBenefitColor(yield, state).ToClass()} " +
-            "text-decoration-underline";
-    }
-
-    bool ShowProfitabilityStateBadges =>
-        TargetRoiPercent > 0;
-
-    static string GetStateBadgeClass(
-        ProfitabilityState state)
-    {
-        return state switch
-        {
-            ProfitabilityState.TargetReached =>
-                "text-bg-success",
-
-            ProfitabilityState.PositiveBelowTarget =>
-                "text-bg-warning",
-
-            ProfitabilityState.NonProfitable =>
-                "text-bg-danger",
-
-            _ => "text-bg-secondary"
-        };
-    }
-
-    static string GetStateLabel(
-        ProfitabilityState state)
-    {
-        return state switch
-        {
-            ProfitabilityState.TargetReached =>
-                "Rentable",
-
-            ProfitabilityState.PositiveBelowTarget =>
-                "Faible marge",
-
-            ProfitabilityState.NonProfitable =>
-                "Non rentable",
-
-            _ => "Indisponible"
-        };
-    }
-
-    bool SortUsesYield =>
-        SortOrder == SortOrder.BestYield ||
-        SortOrder == SortOrder.PurchaseYield ||
-        SortOrder == SortOrder.CraftYield;
-
-    bool IsPurchaseBest
-    {
-        get
-        {
-            if (!_purchaseBenefit.HasValue)
-            {
-                return false;
-            }
-
-            if (!_craftBenefit.HasValue)
-            {
-                return true;
-            }
-
-            return SortUsesYield
-                ? _purchaseYield >= _craftYield
-                : _purchaseBenefit >= _craftBenefit;
-        }
-    }
-
-    bool IsCraftBest
-    {
-        get
-        {
-            if (!_craftBenefit.HasValue)
-            {
-                return false;
-            }
-
-            if (!_purchaseBenefit.HasValue)
-            {
-                return true;
-            }
-
-            return SortUsesYield
-                ? _craftYield > _purchaseYield
-                : _craftBenefit > _purchaseBenefit;
-        }
-    }
-
+    [CascadingParameter] public BestCrush.Services.ItemCopyFeedback? CopyFeedback { get; set; }
+    [Parameter] public Equipment? Equipment { get; set; }
+    [Parameter] public CraftCostResult? CraftCost { get; set; }
+    [Parameter] public MarketPriceObservation? Cost { get; set; }
+    [Parameter] public Characteristic? FocusedCharacteristic { get; set; }
+    [Parameter] public IReadOnlyDictionary<Rune, double>? Runes { get; set; }
+    [Parameter] public IReadOnlyDictionary<Rune, MarketValueResult>? RuneValues { get; set; }
+    [Parameter] public double? AdjustedRuneValue { get; set; }
+    [Parameter] public bool NoImage { get; set; }
+    [Parameter] public LiveStockSource? Stock { get; set; }
+    private double? _estimatedPrice;
+    private Rune? _focusedRune;
+    private IEnumerable<(IItem Item, int Count)> RecipeInputs => Equipment is null ? [] : Equipment.Recipe.Select(x => ((IItem)x.Resource, x.Count))
+        .Concat(Equipment.EquipmentRecipe.Select(x => ((IItem)x.IngredientEquipment, x.Count)));
     protected override void OnParametersSet()
     {
-        if (Runes is null ||
-            RuneValues is null)
-        {
-            _estimatedPrice = null;
-
-            _purchaseBenefit = null;
-            _purchaseYield = null;
-
-            _craftBenefit = null;
-            _craftYield = null;
-
-            _focusedRune = null;
-
-            return;
-        }
-
-        _estimatedPrice =
-            AdjustedRuneValue ??
-            RuneValues.Values.Sum(value =>
-                value.Value);
-
-        if (CalculatedPurchaseBenefit.HasValue ||
-            CalculatedPurchaseYield.HasValue)
-        {
-            _purchaseBenefit =
-                CalculatedPurchaseBenefit;
-
-            _purchaseYield =
-                CalculatedPurchaseYield;
-        }
-        else if (Cost is not null)
-        {
-            _purchaseBenefit =
-                _estimatedPrice -
-                Cost.Price;
-
-            _purchaseYield =
-                Cost.Price == 0
-                    ? 0
-                    : _purchaseBenefit /
-                    Cost.Price;
-        }
-        else
-        {
-            _purchaseBenefit = null;
-            _purchaseYield = null;
-        }
-
-        if (CalculatedCraftBenefit.HasValue ||
-            CalculatedCraftYield.HasValue)
-        {
-            _craftBenefit =
-                CalculatedCraftBenefit;
-
-            _craftYield =
-                CalculatedCraftYield;
-        }
-        else if (CraftCost?.TotalCost is long craftCost)
-        {
-            _craftBenefit =
-                _estimatedPrice -
-                craftCost;
-
-            _craftYield =
-                craftCost == 0
-                    ? 0
-                    : _craftBenefit /
-                    craftCost;
-        }
-        else
-        {
-            _craftBenefit = null;
-            _craftYield = null;
-        }
-
-        _focusedRune =
-            Runes.Keys.SingleOrDefault(
-                rune =>
-                    rune.Characteristic ==
-                    FocusedCharacteristic
-            );
+        _estimatedPrice = AdjustedRuneValue ?? RuneValues?.Values.Sum(x => x.Value);
+        _focusedRune = Runes?.Keys.FirstOrDefault(r => r.Characteristic == FocusedCharacteristic);
     }
-    private static Task CopyTextAsync(
-        string? value)
+    private Task CopyTextAsync(string? value)
     {
-        if (string.IsNullOrWhiteSpace(
-            value))
-        {
-            return Task.CompletedTask;
-        }
-
-        return Microsoft.Maui.ApplicationModel.DataTransfer
-            .Clipboard
-            .Default
-            .SetTextAsync(
-                value.Trim()
-            );
+        if (string.IsNullOrWhiteSpace(value)) return Task.CompletedTask;
+        return CopyFeedback is not null ? CopyFeedback.CopyAsync(value)
+            : Microsoft.Maui.ApplicationModel.DataTransfer.Clipboard.Default.SetTextAsync(value.Trim());
     }
 
-    private static Task CopyNumberAsync(
-        double value)
-    {
-        return CopyTextAsync(
-            Math.Round(value)
-                .ToString(
-                    "0",
-                    CultureInfo.InvariantCulture
-                )
-        );
-    }
+    private Task CopyNumberAsync(double value) => CopyTextAsync(Math.Round(value).ToString("0", CultureInfo.InvariantCulture));
 
-    private static Task CopyPercentAsync(
-        double value)
-    {
-        return CopyTextAsync(
-            value.ToString(
-                "0.##",
-                CultureInfo.CurrentCulture
-            )
-        );
-    }
-
-    private string GetResourceTooltip(
-        RecipeEntry entry)
+    private string ResourceTooltip(long id, string itemName)
     {
         CraftResourceCostLine? resourceCost =
             CraftCost?
                 .Resources
                 .FirstOrDefault(resource =>
                     resource.DofusDbId ==
-                    entry.Resource.DofusDbId);
+                    id);
 
         string name =
             System.Net.WebUtility.HtmlEncode(
-                entry.Resource.Name
+                itemName
             );
 
         if (resourceCost?.Purchase is null)

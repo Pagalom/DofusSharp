@@ -1,0 +1,32 @@
+<section class="service-filters">
+    <div class="service-filters-toolbar">
+        <button type="button" class="btn btn-outline-secondary service-filters-toggle" aria-expanded="@(IsOpen ? "true" : "false")"
+                aria-controls="@_id" @onclick="ToggleAsync" disabled="@Disabled">
+            <i class="bi bi-sliders" aria-hidden="true"></i> @Label
+            @if (Count > 0) { <span class="badge text-bg-secondary">@Count</span> }
+            <i class="bi @(IsOpen ? "bi-chevron-up" : "bi-chevron-down") small" aria-hidden="true"></i>
+        </button>
+        @if (Count > 0 && Reset.HasDelegate)
+        { <button type="button" class="btn btn-link btn-sm" @onclick="Reset" disabled="@Disabled"><i class="bi bi-arrow-counterclockwise me-1" aria-hidden="true"></i>Réinitialiser</button> }
+        @Toolbar
+    </div>
+    @if (IsOpen)
+    { <div id="@_id" class="service-filters-body">@ChildContent</div> }
+    @if (Count > 0 && Chips is not null)
+    { <div class="service-filter-chips" aria-label="Filtres actifs">@Chips</div> }
+</section>
+@code {
+    [Parameter] public string Label { get; set; } = "Filtres";
+    [Parameter] public int Count { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public EventCallback Reset { get; set; }
+    [Parameter] public RenderFragment? Toolbar { get; set; }
+    [Parameter] public RenderFragment? Chips { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public bool? Expanded { get; set; }
+    [Parameter] public EventCallback<bool> ExpandedChanged { get; set; }
+    private bool _open;
+    private bool IsOpen => Expanded ?? _open;
+    private async Task ToggleAsync() { _open = !IsOpen; await ExpandedChanged.InvokeAsync(_open); }
+    private readonly string _id = $"service-filters-{Guid.NewGuid():N}";
+}

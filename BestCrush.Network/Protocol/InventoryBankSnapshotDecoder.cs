@@ -34,7 +34,11 @@ public sealed record StockItemWireCandidate(
     // Schema only (field numbers/wire types), not contents; diagnostic only.
     public string? EffectDecodeShape { get; internal init; }
 
-    // RAM-only, exact protobuf effect entries (including unrecognized
+    /// <summary>Explicit copy for opt-in local research persistence; never log these bytes.</summary>
+    public byte[][]? CopyExactEffectWireEntries() =>
+        ExactEffectWireEntries?.Select(x => x.ToArray()).ToArray();
+
+    // By default RAM-only, exact protobuf effect entries (including unrecognized
     // f6/f7/f8/f9 variants). Never emitted to logs, UI or persistent state.
     internal IReadOnlyList<byte[]>? ExactEffectWireEntries { get; init; }
 }
@@ -185,6 +189,7 @@ public static class InventoryBankSnapshotDecoder
     private const int MaxBodyBytes = 256 * 1024;
     private const int MaxRows = 4096;
     private const int MaxRowBytes = 8192;
+    internal const int MaxPreservedEffectEntries = 1024;
 
     public static StockSnapshotWireCandidate? Decode(
         string opcode, ReadOnlySpan<byte> body)
@@ -201,6 +206,12 @@ public static class InventoryBankSnapshotDecoder
         static StockSnapshotWireCandidate Failed(string name) =>
             new(name, StockSnapshotCandidateStatus.Malformed, []);
 
+        // An explicitly received irp envelope can legitimately have no
+        // body: both the repeated item list and zero kamas are omitted by
+        // protobuf. This does not infer stock from a missing network message.
+        if (opcode == "irp" && body.IsEmpty)
+            return new StockSnapshotWireCandidate(container,
+                StockSnapshotCandidateStatus.EmptyCandidate, []);
         if (body.IsEmpty || body.Length > MaxBodyBytes)
             return Failed(container);
 
@@ -230,7 +241,9 @@ public static class InventoryBankSnapshotDecoder
                     hasMarker ? StockSnapshotCandidateStatus.EmptyCandidate :
                         StockSnapshotCandidateStatus.Incomplete, []);
 
-            bool incomplete = !hasMarker;
+            // A nonempty bank may omit the balance when it is zero.
+            bool bankOmitsBalance = opcode == "irp" && !root.Any(f => f.Number == marker);
+            bool incomplete = !hasMarker && !bankOmitsBalance;
             List<StockItemWireCandidate> items = new(rows.Length);
             foreach (ProtoField row in rows)
             {
@@ -281,7 +294,7 @@ public static class InventoryBankSnapshotDecoder
                 // numeric-only f5 parser cannot read them. Never guess a
                 // number, truncate a list or silently drop an effect.
                 IReadOnlyList<byte[]>? wireEntries =
-                    allEffectFields.Length <= 64 &&
+                    allEffectFields.Length <= MaxPreservedEffectEntries &&
                     allEffectFields.All(field =>
                         field.WireType == ProtoWireType.LengthDelimited &&
                         field.Bytes is { Length: > 0 and <= 1024 })

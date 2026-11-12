@@ -1,3 +1,5 @@
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceScopeFactory DataScopes
 @page "/servers/{ServerName}/coefficients"
 
 @using BestCrush.Domain.Models
@@ -11,27 +13,22 @@
 @inject ServerViewFilterState ServerViewFilter
 @implements IDisposable
 
-<div class="container-fluid py-4 px-5">
+<div class="container-fluid workspace-page px-3 px-lg-4">
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h2>Coefficients de brisage</h2>
+    <PageHeading Title="@(IsEmbedded ? "Coefficients" : "Coefficients de brisage")" Description="Les coefficients sont enregistrés automatiquement lorsque vous quittez une case. Une valeur manuelle remplace la valeur initiale provenant de DoFocus.">
+        <ChildContent>@if (!IsEmbedded) { <p class="small text-secondary mb-0">Serveur : <strong>@ServerName</strong></p> }</ChildContent>
+        <Actions>
+        @if (!IsEmbedded)
+        {
 
-            <p class="text-secondary mb-0">
-                Serveur : <strong>@ServerName</strong>
-            </p>
-        </div>
 
         <a class="btn btn-outline-secondary"
            href="@($"/servers/{ServerName}")">
             Retour
         </a>
-    </div>
-
-    <p class="text-secondary">
-        Les coefficients sont enregistrés automatiquement lorsque vous quittez une case.
-        Une valeur manuelle remplace la valeur initiale provenant de DoFocus.
-    </p>
+        }
+        </Actions>
+    </PageHeading>
 
     <div class="mb-3">
         <input type="text"
@@ -53,12 +50,12 @@
         </div>
     }
 
-    @if (_rows is null)
+    <DataLoadingIndicator Busy="@_background.IsLoading" Failed="@(_background.Error is not null)"
+                          Label="@(_rows is null ? "Chargement des données…" : "Actualisation des données…")" Retry="ReloadFromMarketAsync" />
+    @if (_rows is not null)
     {
-        <p>Chargement des équipements...</p>
-    }
-    else
-    {
+        <PagedDataTable Items="@FilteredRows" ResetKey="@($"{ServerName}|{_searchText}")">
+            <RowContent Context="pageRows">
         <div class="table-responsive">
 
             <table class="table table-dark table-striped table-hover align-middle">
@@ -74,11 +71,17 @@
 
                 <tbody>
 
-                    @foreach (CoefficientRow row in FilteredRows)
+                    @foreach (CoefficientRow row in pageRows)
                     {
-                        <tr>
+                        <tr @key="row.DofusDbId">
                             <td>
-                                <strong>@row.Name</strong>
+                                @if (Workspace is not null)
+                                {
+                                    <button type="button" class="btn btn-link text-info p-0 text-start fw-bold"
+                                            title="Voir l’historique de @row.Name"
+                                            @onclick="() => Workspace.ShowHistory(MarketObjectType.Equipment, row.DofusDbId, row.Name)">@row.Name</button>
+                                }
+                                else { <strong>@row.Name</strong> }
                             </td>
 
                             <td>
@@ -107,12 +110,23 @@
             </table>
 
         </div>
+            </RowContent>
+        </PagedDataTable>
     }
 
 </div>
 
 @code
 {
+    [Parameter] public bool IsEmbedded { get; set; }
+    [Parameter] public DataPriority Priority { get; set; }
+    private DataPriority? _loadedPriority;
+    [Parameter] public bool IsActive { get; set; } = true;
+    private readonly BackgroundDataLoad<List<CoefficientRow>> _background = new();
+    private bool _disposed, _reloadPending;
+    private int _reloadCycle;
+    [CascadingParameter] public WorkspaceNavigation? Workspace { get; set; }
+
     [Parameter]
     public required string ServerName { get; set; }
 
@@ -142,58 +156,90 @@
                     ));
             }
 
-            return result.Take(200);
+            return result;
         }
     }
 
     private string? _loadedServerName;
-
-    protected override void OnInitialized() =>
+    protected override void OnInitialized()
+    {
+        MarketDataChangeNotifier.Changed += OnMarketDataChanged;
         ServerViewFilter.Changed += OnBrowseModeChanged;
-
-    private void OnBrowseModeChanged() =>
-        _ = InvokeAsync(StateHasChanged);
-
-    public void Dispose() =>
-        ServerViewFilter.Changed -= OnBrowseModeChanged;
-
+    }
     protected override async Task OnParametersSetAsync()
     {
-        if (string.Equals(_loadedServerName, ServerName,
-                StringComparison.OrdinalIgnoreCase))
+        if (!IsActive)
+        {
+            _reloadPending |= _background.IsLoading;
+            _background.Cancel();
             return;
-
-        _loadedServerName = ServerName;
-        _rows = null;
-        _lastSavedMessage = null;
-        await LoadRowsAsync();
+        }
+        if (_loadedPriority != Priority || !string.Equals(_loadedServerName, ServerName, StringComparison.OrdinalIgnoreCase))
+        {
+            _background.Cancel();
+            _loadedServerName = ServerName;
+            _loadedPriority = Priority;
+            _rows = null;
+            _lastSavedMessage = null;
+            _reloadPending = true;
+        }
+        if (_rows is null || _reloadPending) await ReloadFromMarketAsync();
+    }
+    private Task RefreshAsync() => ReloadFromMarketAsync();
+    private void OnMarketDataChanged(object? sender, MarketDataChangedEventArgs args)
+    {
+        if (args.ObjectType != MarketObjectType.Equipment ||
+            !string.Equals(args.ServerName, ServerName, StringComparison.OrdinalIgnoreCase)) return;
+        _ = InvokeAsync(ReloadFromMarketAsync);
+    }
+    private async Task ReloadFromMarketAsync()
+    {
+        if (_disposed || !IsActive || _background.IsLoading) { _reloadPending = true; return; }
+        int cycle = ++_reloadCycle;
+        do
+        {
+            _reloadPending = false;
+            string server = ServerName;
+            var pending = _background.RunAsync(token => ReadRowsAsync(server, token));
+            StateHasChanged();
+            bool loaded = await pending;
+            if (_disposed || cycle != _reloadCycle) return;
+            if (loaded && IsActive && string.Equals(server, ServerName, StringComparison.OrdinalIgnoreCase))
+                _rows = _background.Value;
+        } while (_reloadPending && IsActive && !_disposed);
+        if (!_disposed) StateHasChanged();
+    }
+    private void OnBrowseModeChanged() { if (!_disposed) _ = InvokeAsync(StateHasChanged); }
+    public void Dispose()
+    {
+        _disposed = true;
+        _reloadCycle++;
+        _background.Dispose();
+        ServerViewFilter.Changed -= OnBrowseModeChanged;
+        MarketDataChangeNotifier.Changed -= OnMarketDataChanged;
     }
 
-    private async Task LoadRowsAsync()
+    private async Task<List<CoefficientRow>> ReadRowsAsync(string loadedFromServer, CancellationToken cancellationToken)
     {
-        string loadedFromServer = ServerName;
+        using var scope = DataScopes.CreateScope();
+        var itemsService = scope.ServiceProvider.GetRequiredService<ItemsService>();
+        var coefficientService = scope.ServiceProvider.GetRequiredService<CoefficientService>();
         IReadOnlyCollection<Equipment> equipments =
-            await ItemsService.GetEquipmentsAsync();
+            await itemsService.GetEquipmentValueCatalogAsync(cancellationToken: cancellationToken);
 
         IReadOnlyDictionary<long, CoefficientObservation> coefficients =
-            await CoefficientService.GetLatestObservationsForServerAsync(
-                loadedFromServer
-            );
+            await coefficientService.GetLatestObservationsForServerAsync(
+                loadedFromServer, cancellationToken);
         
         IReadOnlyDictionary<
             (long DofusDbId, CoefficientSource Source),
             CoefficientObservation>
             sourceObservations =
-                await CoefficientService
+                await coefficientService
                     .GetLatestLocalSourceObservationsForServerAsync(
-                        loadedFromServer
-                    );
+                        loadedFromServer, cancellationToken);
 
-        if (!string.Equals(loadedFromServer, ServerName,
-                StringComparison.OrdinalIgnoreCase))
-            return;
-
-        _rows = equipments
+        return equipments
             .OrderBy(e => e.Name)
             .Select(equipment =>
             {

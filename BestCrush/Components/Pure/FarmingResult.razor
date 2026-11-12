@@ -1,0 +1,162 @@
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+
+<ServiceResult InitiallyExpanded="InitiallyExpanded">
+    <Summary>
+        <span class="result-identity">
+            <TradeItemImage Name="@ResourceName" ItemId="Row.ItemId" IconId="Row.IconId" Size="40" />
+            <span class="farm-identity">
+                <CopyTextButton Value="@ResourceName" Class="farm-name" Tooltip="Copier le nom de la ressource"><strong>@ResourceName</strong></CopyTextButton>
+                <small><i class="bi @(IsHarvest ? "bi-flower1" : "bi-crosshair")" aria-hidden="true"></i> @RouteLabel · × @Row.Quantity.ToString("N0")</small>
+                @if (Transformation is not null && Row.Crafts.FirstOrDefault() is { } output)
+                { <small><i class="bi bi-arrow-right" aria-hidden="true"></i> @output.Name</small> }
+            </span>
+        </span>
+        @if (Transformation is not null)
+        {
+            <span class="farm-stat"><small>À débourser</small><CopyAmount Value="Row.Spending" Tooltip="Achats nécessaires pour fabriquer cette série" /></span>
+            <span class="farm-stat"><small>Gain estimé</small><CopyAmount Value="Row.Profitability.Gain" Color="@GainColor" Plus="true" Tooltip="@GainTooltip" /></span>
+        }
+        else
+        {
+            <span class="farm-stat"><small>Valeur de revente</small><CopyAmount Value="Row.Revenue" Tooltip="@($"Revente de {Row.Quantity:N0} × {ResourceName}, avant taxes")" /></span>
+        }
+        <span class="farm-stat">
+            <small>Ventes / jour</small>
+            <strong tabindex="0" data-bs-toggle="tooltip" data-bs-title="@DemandTooltip" data-bs-custom-class="multiline-tooltip">
+                @(Row.Profitability.Kinetics.UnitsPerDay is { } daily ? daily.ToString("N1") : "—")
+            </strong>
+        </span>
+        <span class="farm-status">
+            @if (Transformation is null)
+            { <ResaleQuotaIndicator Quota="Row.ResaleQuota" ListedUnits="ListedUnits" /> }
+            @if (!Row.Complete)
+            {
+                <span class="farm-warning" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@string.Join("\n", Row.MissingData)"
+                      data-bs-custom-class="multiline-tooltip" aria-label="Données à compléter"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i></span>
+            }
+            @if (Row.PriceUpdatedUtc is { } at && DateTime.UtcNow - at > TimeSpan.FromHours(12))
+            {
+                <span class="farm-warning" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Prix à actualiser"
+                      data-bs-custom-class="multiline-tooltip" aria-label="Prix à actualiser"><i class="bi bi-clock" aria-hidden="true"></i></span>
+            }
+        </span>
+    </Summary>
+    <ChildContent>
+        <div class="farm-detail">
+            @if (IsHarvest)
+            {
+                <div class="farm-detail-line"><strong class="farm-label"><i class="bi bi-flower1" aria-hidden="true"></i> Récolte</strong>
+                    <span>@Row.Job @if (Row.RequiredJobLevel is { } required) { <text>· Niv. @required</text> }
+                        @if (Row.Job is { } job && JobLevels?.TryGetValue(job, out int currentLevel) == true)
+                        { <small class="text-secondary ms-2">Votre niveau : @currentLevel</small> }
+                    </span>
+                </div>
+            }
+            else
+            {
+                <div class="farm-detail-line">
+                    <strong class="farm-label"><i class="bi bi-crosshair" aria-hidden="true"></i> Monstres qui lâchent ce loot</strong>
+                    <FarmingMonsterSources MonsterIds="MatchingMonsterIds" CombatCatalog="CombatCatalog" />
+                    @if (CombatSelection.Zones.Length > 0)
+                    {
+                        var zones = CombatSelection.Zones.Where(zone => zone.MonsterIds.Any(Row.MonsterIds.Contains));
+                        var names = string.Join(" · ", zones.Select(zone => zone.Name));
+                        @if (names.Length > 0)
+                        { <small class="text-secondary"><i class="bi bi-geo-alt" aria-hidden="true"></i> @names</small> }
+                    }
+                </div>
+            }
+            @if (Transformation is { } transformation)
+            {
+                <div class="farm-detail-line">
+                    <strong class="farm-label"><i class="bi bi-arrow-right" aria-hidden="true"></i> Transformation</strong>
+                    <span>@transformation.ResourcesUsed.ToString("N0") × @ResourceName → @transformation.OutputQuantity.ToString("N0") × @Row.Crafts.FirstOrDefault()?.Name
+                        @if (Row.CraftJob is { } craftJob) { <small class="text-secondary ms-2">@craftJob · Niv. @(Row.RequiredCraftLevel?.ToString() ?? "—")</small> }
+                    </span>
+                </div>
+            }
+        </div>
+        @{ var availableCrafts = Row.Crafts.Where(IsAccessible).ToArray(); }
+        @if (availableCrafts.Length > 0)
+        {
+            <div class="farm-recipes">
+                <strong class="farm-label"><i class="bi bi-tools" aria-hidden="true"></i> @(Transformation is null ? "À comparer en craft" : "Recette")</strong>
+                @foreach (var craft in availableCrafts)
+                {
+                    <div class="farm-recipe">
+                        <TradeItemImage Name="@craft.Name" ItemId="craft.ItemId" IconId="craft.IconId" Size="40" Tooltip="@($"{craft.Name}\n{craft.Recipe}")" />
+                        <CopyTextButton Value="@craft.Name" Tooltip="Copier le nom de l’équipement">@craft.Name</CopyTextButton>
+                        <div class="farm-ingredients">
+                            @foreach (var ingredient in craft.Ingredients)
+                            {
+                                <TradeItemImage Name="@ingredient.Name" ItemId="ingredient.ItemId" Stock="Stock" IconId="ingredient.IconId"
+                                                Quantity="ingredient.Quantity" Size="36" Tooltip="@IngredientTooltip(ingredient)" />
+                            }
+                        </div>
+                        @if (Transformation is null)
+                        {
+                            <CopyAmount Value="craft.AdditionalGain" Color="#91cba6"
+                                        Tooltip="Gain potentiel par objet fabriqué, après valorisation de tous les ingrédients" />
+                        }
+                        <a class="farm-open-craft" href="@($"/modules/craft?item={craft.ItemId}")" aria-label="@($"Ouvrir {craft.Name} dans Craft")"
+                           data-bs-toggle="tooltip" data-bs-title="Ouvrir dans Craft" data-bs-custom-class="multiline-tooltip"><i class="bi bi-box-arrow-up-right" aria-hidden="true"></i></a>
+                    </div>
+                }
+            </div>
+        }
+        @if (!Row.Complete)
+        {
+            <div class="farm-missing">
+                @foreach (string missing in Row.MissingData)
+                { <small><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> @missing</small> }
+            </div>
+        }
+    </ChildContent>
+</ServiceResult>
+
+@code {
+    [Parameter, EditorRequired] public ActivityRecommendation Row { get; set; } = default!;
+    [Parameter] public LiveStockSource? Stock { get; set; }
+    [Parameter] public FarmingCombatSelection CombatSelection { get; set; } = FarmingCombatSelection.Empty;
+    [Parameter] public FarmingCombatCatalog? CombatCatalog { get; set; }
+    [Parameter] public string? Sort { get; set; }
+    [Parameter] public long? ListedUnits { get; set; }
+    [Parameter] public IReadOnlyDictionary<string, int>? JobLevels { get; set; }
+    [Parameter] public bool InitiallyExpanded { get; set; }
+
+    private bool IsHarvest => Row.Job is not null;
+    private FarmingTransformation? Transformation => Row.FarmingCraft;
+    private string ResourceName => Transformation?.ResourceName ?? Row.Name;
+    private IReadOnlyList<long> MatchingMonsterIds => CombatSelection.Count == 0
+        ? Row.MonsterIds : Row.MonsterIds.Where(CombatSelection.IncludesMonster).ToArray();
+    private string RouteLabel => IsHarvest
+        ? Row.RequiredJobLevel is { } required ? $"{Row.Job} · Niv. {required}" : Row.Job!
+        : CombatLabel ?? $"Loot de combat · Niv. {Row.Level}";
+    private string? CombatLabel => Sort switch
+    {
+        "zone" => CombatCatalog?.ZoneNameFor(Row.MonsterIds, CombatSelection),
+        "monster" => CombatCatalog?.MonsterNameFor(Row.MonsterIds, CombatSelection),
+        _ => CombatSelection.Zones.FirstOrDefault(zone => zone.MonsterIds.Any(Row.MonsterIds.Contains))?.Name
+            ?? (CombatSelection.Monsters.Length == 1 && Row.MonsterIds.Contains(CombatSelection.Monsters[0].Id)
+                ? CombatSelection.Monsters[0].Name : null)
+    };
+    private string GainColor => CrushingGainColor.For(Row.Profitability.Gain ?? 0, Row.Cost);
+    private string GainTooltip => $"{Row.Revenue:N0} K de revente (objets fabriqués et ressources restantes) − {Row.Cost:N0} K pour les autres ingrédients · avant taxes";
+    private string DemandTooltip => Row.Profitability.Kinetics.UnitsPerDay is null
+        ? "Consultez le Cours du marché dans Dofus pour vérifier l’historique des ventes."
+        : "Ventes du marché par jour, calculées à partir des 7 derniers jours relevés.";
+
+    private bool IsAccessible(CraftAlternative craft) => JobLevels is null || craft.Job is null || craft.RequiredLevel is null ||
+        !JobLevels.TryGetValue(craft.Job, out int level) || level >= craft.RequiredLevel;
+
+    private string IngredientTooltip(TradeRecipeIngredient ingredient)
+    {
+        string label = $"{ingredient.Name}\nQuantité requise : {ingredient.Quantity:N0}";
+        if (Stock?.QuantityIn(ingredient.ItemId, "inventory") is { } inventory && inventory > 0)
+            label += $"\nInventaire : {inventory:N0}";
+        if (Stock?.QuantityIn(ingredient.ItemId, "bank") is { } bank && bank > 0)
+            label += $"\nBanque : {bank:N0}";
+        return label;
+    }
+}

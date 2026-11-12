@@ -1,0 +1,24 @@
+<label class="service-search" for="@Id">
+    <span class="visually-hidden">@Label</span>
+    <span class="service-search-field">
+        <i class="bi bi-search" aria-hidden="true"></i>
+        <input id="@Id" class="form-control" type="search" placeholder="@Placeholder" value="@Value"
+               @oninput="UpdateAsync" disabled="@Disabled" autocomplete="off" />
+        @if (!string.IsNullOrEmpty(Value))
+        {
+            <button type="button" class="service-search-clear" aria-label="Effacer la recherche" disabled="@Disabled" @onclick="ClearAsync"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+        }
+    </span>
+</label>
+@code {
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public EventCallback Changed { get; set; }
+    [Parameter] public string Label { get; set; } = "Rechercher";
+    [Parameter] public string Placeholder { get; set; } = "Rechercher un objet…";
+    [Parameter] public bool Disabled { get; set; }
+    private string Id { get; } = $"service-search-{Guid.NewGuid():N}";
+    private Task UpdateAsync(ChangeEventArgs args) => SetAsync(args.Value?.ToString() ?? "");
+    private Task ClearAsync() => SetAsync("");
+    private async Task SetAsync(string value) { if (Disabled) return; await ValueChanged.InvokeAsync(value); await Changed.InvokeAsync(); }
+}

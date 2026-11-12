@@ -7,6 +7,28 @@ namespace Tests.BestCrush.Network;
 public sealed class JzsEquipmentPriceDecoderTest
 {
     [Fact]
+    public void RealAdventurerBeltCaptureKeepsTheVisible45KUnitMinimum()
+    {
+        var body = File.ReadAllBytes(Path.Combine(AppContext.BaseDirectory, "NetworkFixtures", "jzs-adventurer-belt-2477.bin"));
+        var result = SemanticDecoders.TryDecodeJzsEquipmentPrices(body);
+        result.Should().NotBeNull(); result!.ItemId.Should().Be(2477);
+        result.Offers.Should().HaveCount(16);
+        result.Offers.Min(x => x.Ladder[0]).Should().Be(45UL);
+        result.Offers.Should().OnlyContain(x => x.Ladder.Count == 1);
+    }
+
+    [Fact]
+    public void AdditionalPriceSlotsNeverBecomeUnitPricesOrEquipmentLots()
+    {
+        var result = SemanticDecoders.TryDecodeJzsEquipmentPrices(JzsMarket(42, 11,
+            JzsOffer(42, 1, 11, 100, 1, 2, 3),
+            JzsOffer(42, 2, 11, 0, 1, 0, 0),
+            JzsOffer(42, 3, 11, 45, 50, 0, 0)));
+        result.Should().NotBeNull(); result!.Offers.Should().HaveCount(2);
+        result.Offers.Select(x => x.Ladder.Single()).Should().Equal(100UL, 45UL);
+    }
+
+    [Fact]
     public void TonguesWabbitsOfferPricesMatchVisibleX1Minimum()
     {
         // Independent synthetic encoding of the 34 values observed for
@@ -39,8 +61,7 @@ public sealed class JzsEquipmentPriceDecoderTest
         result.Offers.Select(offer => offer.Ladder[0])
             .Should().Contain(5000UL);
         result.Offers.Should().OnlyContain(offer =>
-            offer.Ladder.Count == 4 &&
-            offer.Ladder.Skip(1).All(value => value == 0));
+            offer.Ladder.Count == 1);
     }
 
     [Fact]
@@ -79,11 +100,8 @@ public sealed class JzsEquipmentPriceDecoderTest
 
     [Theory]
     [InlineData(0UL, 0UL, 0UL, 0UL)]
-    [InlineData(4899UL, 10UL, 0UL, 0UL)]
-    [InlineData(4899UL, 0UL, 10UL, 0UL)]
-    [InlineData(4899UL, 0UL, 0UL, 10UL)]
     [InlineData(ulong.MaxValue, 0UL, 0UL, 0UL)]
-    public void RejectsUnverifiedOrOverflowLadderSlots(
+    public void RejectsEmptyOrOverflowLadderSlots(
         ulong a, ulong b, ulong c, ulong d)
     {
         SemanticDecoders.TryDecodeJzsEquipmentPrices(

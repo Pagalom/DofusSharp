@@ -1,3 +1,5 @@
+using BestCrush.Services;
+using Microsoft.Extensions.DependencyInjection;
 using BestCrush.Components.Pure;
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
@@ -13,16 +15,45 @@ public partial class History
 
     protected override async Task OnInitializedAsync()
     {
-        LoadAnalyticsPresets();
         await LoadCatalogsAsync();
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        if (string.Equals(_loadedServerName, ServerName,
-                StringComparison.OrdinalIgnoreCase))
+        bool becameActive = IsActive && !_wasActive;
+        _wasActive = IsActive;
+        if (!IsActive)
+        {
+            _searchDelay?.Cancel();
+            _reloadPending |= _historyLoad.IsLoading;
+            _historyLoad.Cancel();
+            _loading = false;
             return;
+        }
+        bool selectionChanged = !ReferenceEquals(_lastSelection, InitialSelection);
+        if (selectionChanged)
+        {
+            _lastSelection = InitialSelection;
+            _historyItemId = InitialSelection?.ItemId;
+            if (InitialSelection is { } target)
+            {
+                _tab = target.ObjectType switch
+                {
+                    MarketObjectType.Equipment => HistoryTab.Items,
+                    MarketObjectType.Rune => HistoryTab.Runes,
+                    _ => HistoryTab.Resources
+                };
+                _searchText = null;
+                ClearAdvancedFilters();
+                _period = "all";
+                _page = 0;
+                _take = InitialTake;
+            }
+        }
+        if (!selectionChanged && !becameActive && !_reloadPending && string.Equals(_loadedServerName, ServerName,
+                StringComparison.OrdinalIgnoreCase)) return;
 
+        if (_loadedServerName != ServerName) _page = 0;
         _loadedServerName = ServerName;
         // Never leave old-server history rows visible under a new server
         // label while an asynchronous query loads the new SQL filter.
@@ -32,91 +63,90 @@ public partial class History
         await LoadCurrentAsync();
     }
 
+    private bool _catalogsLoading, _disposed, _reloadPending, _wasActive;
+    private readonly BackgroundDataLoad<HistoryCatalogs> _catalogLoad = new();
+    private readonly BackgroundDataLoad<HistoryRead> _historyLoad = new();
+    private sealed record HistoryCatalogs(IReadOnlyCollection<Resource> Resources, IReadOnlyCollection<Equipment> Equipment, IReadOnlyCollection<Rune> Runes);
+    private sealed record HistoryRead(HistoryPage<MarketHistoryRow>? Market = null, HistoryPage<ItemHistoryRow>? Items = null,
+        HistoryPage<CrushHistoryEntry>? Crushes = null);
+
     private async Task LoadCatalogsAsync()
     {
-        IReadOnlyCollection<Resource> resources =
-            await ItemsService.GetResourcesAsync();
-
-        IReadOnlyCollection<Equipment> equipments =
-            await ItemsService.GetAllEquipmentsAsync();
-
-        IReadOnlyCollection<Rune> runes =
-            await RunesService.GetLocalRunesAsync();
-
-        _resources = resources.ToDictionary(item => item.DofusDbId);
-        _equipments = equipments.ToDictionary(item => item.DofusDbId);
-        _runes = runes.OrderBy(rune => rune.Name).ToList();
-        _runesById = _runes.ToDictionary(rune => rune.DofusDbId);
+        _catalogsLoading = true;
+        bool loaded = await _catalogLoad.RunAsync(async token =>
+        {
+            using var scope = DataScopes.CreateScope();
+            var items = scope.ServiceProvider.GetRequiredService<ItemsService>();
+            var runes = scope.ServiceProvider.GetRequiredService<RunesService>();
+            return new HistoryCatalogs(await items.GetResourcesAsync(token),
+                await items.GetEquipmentValueCatalogAsync(craftableOnly: false, cancellationToken: token),
+                await runes.GetLocalRunesAsync(token));
+        });
+        if (_disposed) return;
+        if (loaded && _catalogLoad.Value is { } catalog)
+        {
+            _resources = catalog.Resources.ToDictionary(item => item.DofusDbId);
+            _equipments = catalog.Equipment.ToDictionary(item => item.DofusDbId);
+            _runes = catalog.Runes.OrderBy(rune => rune.Name).ToList();
+            _runesById = _runes.ToDictionary(rune => rune.DofusDbId);
+            _historyItems = catalog.Resources.Cast<IItem>().Concat(catalog.Equipment).Concat(catalog.Runes)
+                .GroupBy(item => item.DofusDbId).ToDictionary(group => group.Key, group => group.First());
+        }
+        _catalogsLoading = false;
     }
-
-    private int _loadVersion;
 
     private async Task LoadCurrentAsync()
     {
-        int request = ++_loadVersion;
-        string serverName = ServerName;
+        if (_disposed || !IsActive) { _reloadPending = true; return; }
+        _reloadPending = false;
+        string server = ServerName;
+        var tab = _tab;
+        string? search = _searchText;
+        int? min = _levelMin, max = _levelMax;
+        long? itemRune = _itemRuneFilterId, crushRune = _crushRuneFilterId, itemId = _historyItemId;
+        var sort = _sortColumn; var direction = _sortDirection; int take = _take;
+        var options = QueryOptions();
         _loading = true;
         _errorMessage = null;
-
-        try
+        bool loaded = await _historyLoad.RunAsync(async token =>
         {
-            // Commit SQL results only if their originating server still
-            // matches this page. Out-of-order async queries must never
-            // display another server's prices under the current heading.
-            HistoryPage<MarketHistoryRow>? marketResult = null;
-            HistoryPage<ItemHistoryRow>? itemResult = null;
-            HistoryPage<CrushHistorySession>? crushResult = null;
-
-            switch (_tab)
+            using var scope = DataScopes.CreateScope();
+            var history = scope.ServiceProvider.GetRequiredService<HistoryService>();
+            switch (tab)
             {
                 case HistoryTab.Resources:
-                    marketResult = await HistoryService.GetMarketHistoryAsync(
-                        MarketObjectType.Resource, serverName, _searchText,
-                        _levelMin, _levelMax, _sortColumn, _sortDirection, _take);
-                    break;
+                    return new HistoryRead(Market: await history.GetMarketHistoryAsync(MarketObjectType.Resource,
+                        server, search, min, max, sort, direction, take, token, itemId, options));
                 case HistoryTab.Runes:
-                    marketResult = await HistoryService.GetMarketHistoryAsync(
-                        MarketObjectType.Rune, serverName, _searchText,
-                        _levelMin, _levelMax, _sortColumn, _sortDirection, _take);
-                    break;
+                    return new HistoryRead(Market: await history.GetMarketHistoryAsync(MarketObjectType.Rune,
+                        server, search, min, max, sort, direction, take, token, itemId, options));
                 case HistoryTab.Items:
-                    itemResult = await HistoryService.GetItemHistoryAsync(
-                        serverName, _searchText, _levelMin, _levelMax,
-                        _equipmentType, _itemRuneFilterId, _sortColumn,
-                        _sortDirection, _take);
-                    break;
+                    return new HistoryRead(Items: await history.GetItemHistoryAsync(server, search, min, max,
+                        null, itemRune, sort, direction, take, token, itemId, options));
                 case HistoryTab.Crushes:
-                    crushResult = await HistoryService.GetCrushHistoryAsync(
-                        serverName, _searchText, _crushRuneFilterId, _sortColumn,
-                        _sortDirection, _take);
-                    break;
-                case HistoryTab.Analytics:
-                    await BuildAnalyticsResultsAsync();
-                    break;
+                    return new HistoryRead(Crushes: await history.GetCrushingFeedAsync(server, search, crushRune,
+                        sort, direction, take, options, token));
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(tab));
             }
-
-            if (request != _loadVersion ||
-                !string.Equals(serverName, ServerName,
-                    StringComparison.OrdinalIgnoreCase))
-                return;
-
-            if (_tab == HistoryTab.Resources || _tab == HistoryTab.Runes)
-                _marketHistory = marketResult;
-            else if (_tab == HistoryTab.Items)
-                _itemHistory = itemResult;
-            else if (_tab == HistoryTab.Crushes)
-                _crushHistory = crushResult;
-        }
-        catch (Exception ex)
+        });
+        if (_disposed) return;
+        _loading = _historyLoad.IsLoading;
+        if (loaded && IsActive && server == ServerName && _historyLoad.Value is { } result)
         {
-            if (request == _loadVersion)
-                _errorMessage = ex.Message;
+            _marketHistory = result.Market;
+            _itemHistory = result.Items;
+            _crushHistory = result.Crushes;
         }
-        finally
-        {
-            if (request == _loadVersion)
-                _loading = false;
-        }
+        if (_historyLoad.Error is not null) _errorMessage = "L’historique n’a pas pu être chargé. Rafraîchissez pour réessayer.";
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _searchDelay?.Cancel();
+        _catalogLoad.Dispose();
+        _historyLoad.Dispose();
     }
 
     private async Task SelectTabAsync(HistoryTab tab)
@@ -126,85 +156,62 @@ public partial class History
             return;
         }
 
+        _historyItemId = null;
+        _searchDelay?.Cancel();
         _tab = tab;
+        ClearAdvancedFilters();
+        _page = 0;
+        _filterVersion++;
         _take = InitialTake;
         _sortColumn = HistorySortColumn.Date;
         _sortDirection = HistorySortDirection.Descending;
-        _runePickerOpen = false;
-        _expandedSessions.Clear();
 
         await LoadCurrentAsync();
     }
 
+    private async Task ClearItemSelectionAsync()
+    {
+        _historyItemId = null;
+        await ResetFiltersAsync();
+    }
+
     private async Task RefreshAsync()
     {
+        _searchDelay?.Cancel();
+        if (_catalogLoad.Error is not null) await LoadCatalogsAsync();
         await LoadCurrentAsync();
     }
 
     private async Task ApplyFiltersAsync()
     {
+        _searchDelay?.Cancel();
         NormalizeLevels();
+        if (_dateFrom > _dateTo) (_dateFrom, _dateTo) = (_dateTo, _dateFrom);
+        _page = 0;
+        _filterVersion++;
         _take = InitialTake;
-        _runePickerOpen = false;
         await LoadCurrentAsync();
     }
 
     private async Task ResetFiltersAsync()
     {
+        _searchDelay?.Cancel();
+        _historyItemId = null;
         _searchText = null;
-        _levelMin = null;
-        _levelMax = null;
-        _equipmentType = null;
-
-        if (_tab == HistoryTab.Items)
-        {
-            _itemRuneFilterId = null;
-        }
-        else if (_tab == HistoryTab.Crushes)
-        {
-            _crushRuneFilterId = null;
-        }
-
+        _period = "7d";
+        _dateFrom = DateTime.Today.AddDays(-6); _dateTo = DateTime.Today;
+        ClearAdvancedFilters();
+        _page = 0;
+        _filterVersion++;
         _take = InitialTake;
-        _runePickerOpen = false;
         await LoadCurrentAsync();
     }
 
     private void NormalizeLevels()
     {
-        if (_levelMin is < 0)
-        {
-            _levelMin = 0;
-        }
-
-        if (_levelMax is > 200)
-        {
-            _levelMax = 200;
-        }
-
-        if (_levelMin is int min &&
-            _levelMax is int max &&
-            min > max)
-        {
-            (_levelMin, _levelMax) = (_levelMax, _levelMin);
-        }
-    }
-
-    private void OnEquipmentTypeChanged(ChangeEventArgs args)
-    {
-        string? value = args.Value?.ToString();
-
-        _equipmentType = Enum.TryParse(
-            value,
-            ignoreCase: true,
-            out EquipmentType parsed)
-                ? parsed
-                : null;
-    }
-
-    private void ToggleRunePicker()
-    {
-        _runePickerOpen = !_runePickerOpen;
+        if (_levelMin is int min) _levelMin = Math.Clamp(min, 1, 200);
+        if (_levelMax is int max) _levelMax = Math.Clamp(max, 1, 200);
+        if (_levelMin > _levelMax) (_levelMin, _levelMax) = (_levelMax, _levelMin);
     }
 
     private async Task SelectRuneFilterAsync(long? dofusDbId)
@@ -218,9 +225,7 @@ public partial class History
             _crushRuneFilterId = dofusDbId;
         }
 
-        _runePickerOpen = false;
-        _take = InitialTake;
-        await LoadCurrentAsync();
+        await ApplyFiltersAsync();
     }
 
     private Rune? SelectedFilterRune
@@ -251,6 +256,7 @@ public partial class History
             _sortDirection = DefaultDirection(column);
         }
 
+        _page = 0;
         _take = InitialTake;
         await LoadCurrentAsync();
     }
@@ -285,12 +291,6 @@ public partial class History
             ? "history-sort active"
             : "history-sort";
 
-    private async Task LoadMoreAsync()
-    {
-        _take += PageIncrement;
-        await LoadCurrentAsync();
-    }
-
     private bool CurrentHasMore =>
         _tab switch
         {
@@ -304,12 +304,5 @@ public partial class History
         tab == _tab
             ? "btn btn-primary"
             : "btn btn-outline-secondary";
-
-    private IItem? GetMarketItem(MarketHistoryRow row)
-    {
-        return _tab == HistoryTab.Resources
-            ? _resources.GetValueOrDefault(row.DofusDbId)
-            : _runesById.GetValueOrDefault(row.DofusDbId);
-    }
 
 }

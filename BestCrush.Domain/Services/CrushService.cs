@@ -193,7 +193,7 @@ public class CrushService(
             );
     }
 
-    private static double GetCrushWeight(
+    internal static double GetCrushWeight(
         Characteristic characteristic,
         double lineValue,
         int itemLevel) =>

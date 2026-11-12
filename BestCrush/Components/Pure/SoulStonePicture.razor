@@ -1,0 +1,10 @@
+<span class="soul-picture @(Filled ? "soul-picture-filled" : "")" aria-hidden="true">
+    <svg viewBox="0 0 32 32" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round">
+        <path class="soul-stone-body" d="M16 2 26 10 24 22 16 30 8 22 6 10Z" />
+        <path d="M6 10 16 13 26 10M16 2v11m0 0-8 9m8-9 8 9m-8-9v17" />
+    </svg>
+</span>
+
+@code {
+    [Parameter] public bool Filled { get; set; }
+}

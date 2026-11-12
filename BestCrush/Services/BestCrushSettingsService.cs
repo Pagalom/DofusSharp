@@ -150,6 +150,8 @@ public sealed class BestCrushSettingsService
             );
     }
 
+    public event Action? TargetRoiChanged;
+
     public double TargetRoiPercent
     {
         get =>
@@ -158,15 +160,18 @@ public sealed class BestCrushSettingsService
                 15.0
             );
 
-        set =>
+        set
+        {
+            double target = Math.Clamp(value, 0.0, 1000.0);
+            if (target == TargetRoiPercent)
+                return;
+
             Preferences.Set(
                 TargetRoiKey,
-                Math.Clamp(
-                    value,
-                    0.0,
-                    1000.0
-                )
+                target
             );
+            TargetRoiChanged?.Invoke();
+        }
     }
 
     public double CrushValueDiscountPercent

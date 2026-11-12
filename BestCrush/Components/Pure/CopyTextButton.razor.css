@@ -1,0 +1,3 @@
+.copy-text { display:inline-flex; align-items:center; gap:.3rem; padding:0; margin:0; border:0; background:transparent; color:inherit; font:inherit; text-align:inherit; border-radius:.2rem; cursor:pointer; }
+.copy-text:hover { text-decoration:underline; text-underline-offset:.2em; }
+.copy-text:focus-visible { outline:2px solid var(--bc-gold,#e4c27a); outline-offset:3px; }

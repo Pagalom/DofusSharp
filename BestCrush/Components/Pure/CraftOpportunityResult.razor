@@ -1,0 +1,137 @@
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+
+<ServiceResult InitiallyExpanded="InitiallyExpanded" Focus="FocusAction" FocusItemName="@Item.Name">
+    <Summary>
+        <span class="result-identity">
+            <TradeItemImage Name="@Item.Name" ItemId="Item.DofusDbId" IconId="Item.DofusDbIconId" Size="40" Stock="Stock" />
+            <span class="craft-identity">
+                <CopyTextButton Value="@Item.Name" Class="craft-name" Tooltip="Copier le nom de l’objet"><strong data-result-name>@Item.Name</strong></CopyTextButton>
+                <small>@TypeName · Niv. @Item.Level@if (Opportunity.Plan.Quantity > 1) { <text> · ×@Opportunity.Plan.Quantity</text> }</small>
+                @if (Profession?.Job is { } job)
+                { <small>@job · @(Profession.Level?.ToString() ?? "—")</small> }
+            </span>
+        </span>
+        <span class="craft-stat"><small>À débourser</small><CopyAmount Value="Opportunity.Plan.CashRequired" Tooltip="Coût des lots à acheter pour compléter la recette" /></span>
+        <span class="craft-stat"><small>Revente estimée</small><CopyAmount Value="Opportunity.Revenue" Tooltip="Prix de revente estimé des objets fabriqués, avant taxes" /></span>
+        <span class="craft-stat"><small>Gain estimé</small><CopyAmount Value="Opportunity.Benefit" Color="@GainColor" Plus="true" Tooltip="@GainCalculation" /></span>
+        <span class="craft-status">
+            @if (!Opportunity.IsComplete)
+            { <span class="craft-warning" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@MissingTooltip" data-bs-custom-class="multiline-tooltip" aria-label="Données à compléter"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i></span> }
+            @if (_stale)
+            { <span class="craft-warning" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Prix à actualiser : relevé de plus de 12 heures ou date inconnue" data-bs-custom-class="multiline-tooltip" aria-label="Prix à actualiser"><i class="bi bi-clock" aria-hidden="true"></i></span> }
+            @if (Opportunity.UsesEstimatedPrices)
+            { <span tabindex="0" data-bs-toggle="tooltip" data-bs-title="Certains prix unitaires sont estimés à partir des lots relevés" data-bs-custom-class="multiline-tooltip" aria-label="Prix estimés"><i class="bi bi-info-circle" aria-hidden="true"></i></span> }
+        </span>
+    </Summary>
+    <ChildContent>
+        <div class="craft-recipe">
+            <strong class="craft-section-title">Recette</strong>
+            <div class="craft-ingredients">
+                @foreach (var ingredient in Opportunity.Plan.Ingredients)
+                {
+                    <div class="craft-ingredient" @key="ingredient.ItemId">
+                        <TradeItemImage Name="@ingredient.Name" ItemId="ingredient.ItemId" IconId="ingredient.IconId"
+                            Stock="Stock" Quantity="ingredient.Required" Size="48" Tooltip="@IngredientTooltip(ingredient)" />
+                        <span>
+                            <span class="@(ingredient.Available >= ingredient.Required ? "craft-available" : "craft-muted")">@AvailableLabel(ingredient)</span>
+                            @if (ingredient.Missing > 0)
+                            { <small><i class="bi bi-cart" aria-hidden="true"></i> @ingredient.Missing à acheter</small> }
+                        </span>
+                    </div>
+                }
+            </div>
+        </div>
+        <div class="craft-detail-values">
+            <span class="craft-without-purchase" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Nombre d’objets fabricables avec les stocks synchronisés, sans achat" data-bs-custom-class="multiline-tooltip">
+                <small>Sans achat</small><strong><i class="bi bi-tools" aria-hidden="true"></i> × @Opportunity.Plan.CraftableNow.ToString("N0")</strong>
+            </span>
+            <span><small>Stock utilisé</small><CopyAmount Value="Opportunity.Plan.OwnedValue" Tooltip="Valeur de revente des ingrédients déjà possédés et utilisés dans cette recette" /></span>
+            @if (Opportunity.Plan.SurplusCredit is > 0)
+            { <span><small>Surplus conservé</small><CopyAmount Value="Opportunity.Plan.SurplusCredit" Tooltip="Valeur conservée des ingrédients achetés en trop, plafonnée à leur coût d’achat" /></span> }
+            <span><small>Rentabilité</small><strong>@(Opportunity.RoiPercent is { } roi ? $"{roi:N1} %" : "—")</strong></span>
+            <span class="craft-calculation" tabindex="0" data-bs-toggle="tooltip" data-bs-title="@GainCalculation" data-bs-custom-class="multiline-tooltip" aria-label="Calcul du gain"><i class="bi bi-info-circle" aria-hidden="true"></i></span>
+        </div>
+        @if (!Opportunity.IsComplete)
+        {
+            <div class="craft-missing">
+                <strong class="craft-section-title"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Données à compléter</strong>
+                @if (Opportunity.Plan.Ingredients.Any(x => !x.HasValuation))
+                {
+                    <small>Ingrédients</small>
+                    <div class="craft-missing-images">
+                        @foreach (var ingredient in Opportunity.Plan.Ingredients.Where(x => !x.HasValuation))
+                        {
+                            <TradeItemImage Name="@ingredient.Name" ItemId="ingredient.ItemId" IconId="ingredient.IconId"
+                                Stock="Stock" Tooltip="@($"{ingredient.Name}\nPrix manquant")" />
+                        }
+                    </div>
+                }
+                @if (Opportunity.Revenue is null)
+                {
+                    <small>Revente</small>
+                    <div class="craft-missing-images"><TradeItemImage Name="@Item.Name" ItemId="Item.DofusDbId" IconId="Item.DofusDbIconId" Stock="Stock" Tooltip="@($"{Item.Name}\nPrix de revente manquant")" /></div>
+                }
+            </div>
+        }
+    </ChildContent>
+</ServiceResult>
+
+@code {
+    [Parameter, EditorRequired] public EconomicOpportunity Opportunity { get; set; } = default!;
+    [Parameter] public string? ServerName { get; set; }
+    [Parameter] public LiveStockSource? Stock { get; set; }
+    [Parameter] public RecipeProfession? Profession { get; set; }
+    [Parameter] public bool InitiallyExpanded { get; set; }
+    private EconomicOpportunity? _previous;
+    private LiveStockSource? _previousStock;
+    private RecipeProfession? _previousProfession;
+    private bool _initialized, _previousInitial, _stale, _shouldRender = true;
+    private IItem Item => Opportunity.Plan.Product;
+    private string TypeName => Item switch
+    {
+        Equipment equipment => equipment.Type.ToDisplayName(),
+        CraftedProduct product => product.TypeName,
+        _ => "Produit"
+    };
+    private EventCallback FocusAction => Item is Equipment equipment
+        ? EventCallback.Factory.Create(this, () => Services.GetRequiredService<OverlayService>().FocusEquipmentAndCopyNameAsync(equipment, ServerName))
+        : default;
+    private string? GainColor => Opportunity.Benefit is { } gain ? CrushingGainColor.For(gain, Opportunity.Plan.EconomicCost) : null;
+    private string MissingTooltip => Opportunity.MissingData.Count > 0
+        ? string.Join("\n", Opportunity.MissingData) : "Certains prix nécessaires au calcul sont manquants.";
+    private string GainCalculation => Opportunity.Benefit is null
+        ? "Complétez les prix des ingrédients et de l’objet fabriqué pour calculer le gain."
+        : $"{Opportunity.Revenue:N0} (revente) − {Opportunity.Plan.OwnedValue:N0} (stock utilisé) − {Opportunity.Plan.CashRequired:N0} (achats) + {Opportunity.Plan.SurplusCredit:N0} (surplus conservé) · avant taxes";
+
+    private string AvailableLabel(StockIngredientPlan ingredient) =>
+        $"{(StockOpportunityService.HasSynchronizedBank(Stock) ? "" : "≥ ")}{ingredient.Available:N0} disponibles";
+
+    private string IngredientTooltip(StockIngredientPlan ingredient)
+    {
+        string text = $"{ingredient.Name}\nQuantité requise : {ingredient.Required:N0}";
+        text += $"\nInventaire : {Stock?.QuantityIn(ingredient.ItemId, "inventory")?.ToString("N0") ?? "non synchronisé"}";
+        text += $"\nBanque : {Stock?.QuantityIn(ingredient.ItemId, "bank")?.ToString("N0") ?? "non synchronisée"}";
+        text += $"\nÀ acheter : {ingredient.Missing:N0}";
+        if (ingredient.Purchase is { } purchase && ingredient.Missing > 0)
+        {
+            text += $"\nCoût : {purchase.TotalCost:N0} K pour {purchase.PurchasedQuantity:N0}";
+            if (purchase.SurplusQuantity > 0) text += $"\nSurplus conservé : {purchase.SurplusQuantity:N0}";
+        }
+        if (!ingredient.HasValuation) text += "\nPrix manquant";
+        return text;
+    }
+
+    protected override void OnParametersSet()
+    {
+        bool stale = Opportunity.Evidence.IsStale(DateTime.UtcNow);
+        bool changed = !ReferenceEquals(_previous, Opportunity);
+        _shouldRender = !_initialized || changed || !ReferenceEquals(_previousStock, Stock) ||
+            _previousProfession != Profession || _previousInitial != InitiallyExpanded || _stale != stale;
+        _previous = Opportunity; _previousStock = Stock; _previousProfession = Profession;
+        _previousInitial = InitiallyExpanded; _stale = stale; _initialized = true;
+    }
+    protected override bool ShouldRender() => _shouldRender;
+}

@@ -1,0 +1,144 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using BestCrush.Services
+@using Microsoft.Extensions.DependencyInjection
+@using Microsoft.Extensions.Logging
+@inject IServiceScopeFactory DataScopes
+@inject ForgemagingSessionStore Store
+@inject MarketDataChangeNotifier PriceChanges
+@inject ILogger<ForgemagingWorkspace> Logger
+
+<section class="fm-workspace" aria-busy="@(Busy ? "true" : "false")">
+    <PageHeading Title="Forgemagie" Description="Définissez votre jet, comparez le coût des runes et ajustez les conseils après chaque tentative." />
+    <p><a class="btn btn-outline-secondary" href="https://dofocus.fr/forgemagie/" target="_blank" rel="noopener noreferrer" title="Ouvrir le simulateur de DoFocus dans le navigateur">Simulateur FM DoFocus ↗</a></p>
+    @if (string.IsNullOrWhiteSpace(ServerName))
+    {
+        <p class="alert alert-info">Choisissez un serveur en haut pour utiliser ses prix de runes.</p>
+    }
+    else
+    {
+        <div class="fm-tracking" role="group" aria-label="Mode de suivi">
+            <label class="me-3 @(!CanTrackManually ? "fm-tracking-unavailable" : null)"><input type="radio" id="fm-tracking-manual" name="fm-tracking" checked="@(!_gameTracking)" disabled="@(!CanTrackManually)" @onchange="() => SelectTrackingModeAsync(false)" /> Suivi manuel</label>
+            <label class="@(!_canGameTrack ? "fm-tracking-unavailable" : null)" title="@(!_canGameTrack ? _liveStatus : null)"><input type="radio" id="fm-tracking-game" name="fm-tracking" checked="@_gameTracking" disabled="@(!_canGameTrack)" @onchange="() => SelectTrackingModeAsync(true)" /> Suivi en jeu</label>
+        </div>
+        @if (_gameTracking) { <p class="small text-secondary" role="status">@_liveStatus</p> }
+        @if (!_gameTracking) {
+        <div class="my-3">
+            <EquipmentSearch @bind-Value="_search" Selected="SelectFromCatalogueAsync" CraftableOnly="false" Accept="CanForgeEquipment" Disabled="@(Busy || _pending is not null)" />
+        </div>
+        }
+        @if (Busy) { <div role="status" class="my-3"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Chargement de l’équipement et des prix…</div> }
+        @if (_error is not null) { <p class="alert alert-warning" role="alert">@_error <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="SelectItemAsync">Réessayer</button></p> }
+        @if (_saveError is not null) { <p class="alert alert-warning" role="alert">@_saveError</p> }
+        @if (_session is { } session)
+        {
+            <div class="fm-session-heading"><div><h2>@session.ItemName <small class="text-secondary">Niv. @session.Level</small></h2><span class="small text-secondary">@ServerName · Session enregistrée localement · @(_gameTracking ? "Jet reçu de Dofus" : "Jet saisi manuellement")</span></div><button type="button" class="btn btn-outline-secondary" disabled="@(Busy || _pending is not null)" @onclick="RefreshPricesAsync">@(_pricesDirty ? "Nouvelles données disponibles" : "Actualiser les données")</button></div>
+            <div class="fm-intent" role="group" aria-label="Objectif de la FM">
+                <label><input type="radio" name="fm-intent" checked="@(!_prepareCrushing)" @onchange="() => { _prepareCrushing = false; Recalculate(); }" /> Atteindre un jet</label>
+                <label><input type="radio" name="fm-intent" checked="@_prepareCrushing" @onchange="() => { _prepareCrushing = true; Recalculate(); }" /> Préparer un concassage</label>
+            </div>
+            <div class="fm-columns">
+                <div class="fm-card">
+                    <div class="fm-card-heading"><h3>Jet et objectif</h3><details hidden="@_gameTracking"><summary class="small">Modèles de saisie</summary><div class="fm-roll-actions"><button class="btn btn-sm btn-outline-secondary" type="button" disabled="@(Busy || _pending is not null)" @onclick="() => FillRollAsync(false)">Partir du jet minimum</button><button class="btn btn-sm btn-outline-secondary" type="button" disabled="@(Busy || _pending is not null)" @onclick="() => FillRollAsync(true)">Partir du jet maximum</button></div></details></div>
+                    <div class="table-responsive"><table class="table table-sm align-middle fm-stats"><thead><tr><th>Caractéristique</th><th>Naturel</th><th>Actuel</th><th>Objectif minimum</th></tr></thead><tbody>
+                        @foreach (var line in session.Lines)
+                        {
+                            <tr @key="line.Characteristic"><td>@StatName(line.Characteristic)</td><td class="text-nowrap">@(line.IsNative ? $"{line.Minimum} à {line.Maximum}" : "Exo")</td><td><input type="number" class="form-control form-control-sm" aria-label="@($"Jet actuel : {StatName(line.Characteristic)}")" @bind="line.Current" @bind:after="EditedAsync" disabled="@(Busy || _pending is not null || _gameTracking)" /></td><td><input type="number" class="form-control form-control-sm" aria-label="@($"Objectif : {StatName(line.Characteristic)}")" @bind="line.Target" @bind:after="EditedAsync" disabled="@(Busy || _pending is not null)" /></td></tr>
+                        }
+                    </tbody></table></div>
+                    <div class="fm-extra"><label>Ajouter un exo<select class="form-select form-select-sm" @bind="_extraStat" disabled="@(Busy || _pending is not null)"><option value="">Caractéristique</option>@foreach (var stat in _runes.Select(r => r.Characteristic).Distinct().Where(c => session.Lines.All(l => l.Characteristic != c)).OrderBy(StatName)) { <option value="@stat">@StatName(stat)</option> }</select></label><button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_extraStat is null || Busy || _pending is not null)" @onclick="AddExtraAsync">Ajouter</button></div>
+                </div>
+                <div class="fm-card">
+                    <h3>Suivi de la session</h3>
+                    <div class="fm-well-budget"><label>Puits disponible<input class="form-control" type="number" min="0" step="0.01" placeholder="Non renseigné" @bind="session.Sink" @bind:after="EditedAsync" disabled="@(Busy || _pending is not null || _gameTracking)" /></label><label>Budget de runes (K)<input class="form-control" type="number" min="0" step="1" placeholder="Sans limite" @bind="session.Budget" @bind:after="EditedAsync" disabled="@(Busy || _pending is not null)" /></label></div>
+                    <div class="fm-spent"><strong>@Money(session.KnownSpent)</strong><span>Coût suivi · @session.Attempts.Count tentative(s) · @session.Attempts.Sum(a => a.RuneCount) rune(s) consommée(s)</span></div>
+                    @if (session.UnpricedAttempts > 0) { <p class="small text-warning">@session.UnpricedAttempts tentative(s) sans prix : total incomplet.</p> }
+                    @if (session.Budget is { } budget) { <p class="small">Budget restant connu : @Money(budget - session.KnownSpent)@(session.UnpricedAttempts > 0 ? " au maximum" : "")</p> }
+                    @if (session.Budget is { } cap && session.KnownSpent >= cap) { <p class="alert alert-warning">Budget atteint. Vérifiez-le avant de poursuivre.</p> }
+                    @if (session.Sink is null) { <p class="small text-secondary">Le puits n’est pas déductible du jet seul. Renseignez-le si vous le connaissez.</p> }
+                    <details class="fm-model"><summary>Comprendre les conseils</summary><p class="small mt-2">Le conseil est réévalué après chaque résultat et chaque modification du jet. Il remonte les lignes naturelles avant les overs/exos et utilise le puits avant les repassages lourds lorsque d’autres lignes naturelles restent à remonter. Sans puits disponible connu, les lignes lourdes sont prioritaires.</p><p class="small">Normale, Pa et Ra sont comparées selon le gain utile, les chances estimées, le puits et les prix connus. Le coût comparatif sert à choisir la prochaine rune ; il ne prévoit ni les pertes futures ni le coût total du jet. Les variantes sans prix restent visibles.</p><a class="small" href="https://www.youtube.com/watch?v=39Sx0dJGaJ4" target="_blank" rel="noopener noreferrer">Vidéo de référence</a></details>
+                </div>
+            </div>
+            @if (_prepareCrushing && _crushComparison is { } comparison)
+            {
+                <section class="fm-card my-3" aria-label="Préparation au concassage">
+                    <div class="fm-card-heading"><h3>Intérêt de la préparation</h3><span class="small text-secondary">Comparaison des jets · coefficient identique</span></div>
+                    <p class="small text-secondary">Le jet visé utilise exactement les valeurs « Objectif minimum ». Cette comparaison ne prédit pas le jet que vous obtiendrez.</p>
+                    <div class="fm-crush-values">
+                        <div><span>Concassage actuel</span><strong>@(comparison.Current is { } current ? Money(current.Value) : "Indisponible")</strong>@if (comparison.Current is { } currentValue) { <span class="small">@FocusName(currentValue)</span> }</div>
+                        <div><span>Au jet visé</span><strong>@(comparison.Target is { } target ? Money(target.Value) : "Indisponible")</strong>@if (comparison.Target is { } targetValue) { <span class="small">@FocusName(targetValue)</span> }</div>
+                        <div><span>Marge disponible pour la FM</span><strong>@(comparison.PreparationCeiling is { } margin ? Money(Math.Max(0, margin)) : "Données incomplètes")</strong></div>
+                    </div>
+                    @if (comparison.PreparationCeiling is > 0) { <p class="small mt-3 mb-0">Pour que cette préparation apporte un supplément de valeur, son coût doit rester inférieur à @Money(comparison.PreparationCeiling). Ce seuil suppose le jet visé atteint ; les tentatives et pertes peuvent absorber la marge. Les runes de votre stock ont aussi une valeur.</p> }
+                    else if (comparison.PreparationCeiling is <= 0) { <p class="mt-3 mb-0">Ce jet visé n’améliore pas la valeur du concassage actuel : conservez le jet actuel ou choisissez un autre objectif.</p> }
+                    @if (_crushContext?.CoefficientPercent is { } coefficient) { <p class="small text-secondary mt-2 mb-0">Coefficient utilisé : @coefficient.ToString("N1") % · relevé @(_crushContext.ObservedAtUtc?.ToLocalTime().ToString("dd/MM HH:mm") ?? "non daté"). Le coefficient peut évoluer. Valeurs avant frais de vente, avec la décote des paramètres de concassage.</p> }
+                    @if (!comparison.IsComplete) { <p class="small text-secondary mt-2">Seuls les scénarios chiffrables sont affichés ; la meilleure option globale et la marge ne sont pas déterminées.</p> }
+                    @foreach (var missing in comparison.Missing) { <p class="small text-warning mb-1">@missing</p> }
+                </section>
+            }
+            @if (_validation is null && !Complete && _pending is null)
+            {
+                <section class="fm-card fm-next my-3" aria-label="Conseil adaptatif">
+                    @if (_coaching.Next is { } next)
+                    {
+                        <div class="fm-card-heading"><h3>Prochaine action · @next.Advice.Rune.Name</h3><span class="small text-secondary">@next.Stage</span></div>
+                        <p>@next.Reason</p>
+                        <div class="fm-card-heading"><span class="small">+@next.Advice.Rune.Gain @StatName(next.Advice.Rune.Characteristic) nominal · @Money(next.Advice.Rune.UnitPrice)</span><button type="button" class="btn btn-primary" disabled="@(Busy || _gameTracking || !CanPrepare(next.Advice))" @onclick="() => Prepare(next.Advice)">@(_gameTracking ? "À passer dans Dofus" : "Suivre cette rune")</button></div>
+                        <details><summary class="small">Ordre conseillé pour le jet actuel</summary><ol class="small mt-2">@foreach (var step in _coaching.Steps) { <li><strong>@StatName(step.Advice.Rune.Characteristic)</strong> · @step.Advice.Rune.Name · @step.Stage</li> }</ol><p class="small text-secondary mb-0">Une prochaine rune par ligne, pas une série à appliquer automatiquement. L’ordre est réévalué après chaque résultat.</p></details>
+                    }
+                    else { <p class="mb-0">@_coaching.StopReason</p> }
+                    @foreach (var notice in _coaching.Notices) { <p class="small text-secondary mt-2 mb-0">@notice</p> }
+                </section>
+            }
+            @if (_pending is { } pending)
+            {
+                <section class="fm-card fm-result my-3" aria-label="Résultat de la tentative">
+                    <h3>Tentative : @pending.Rune.Name</h3>
+                    <p class="small text-secondary">Après avoir passé cette rune dans Dofus, indiquez le résultat obtenu.</p>
+                    <div class="fm-result-controls"><label>Résultat<select class="form-select" @bind="_outcome" @bind:after="SetOutcome"><option value="">Choisir le résultat</option>@foreach (var outcome in Enum.GetValues<ForgemagingOutcome>().Where(o => o != ForgemagingOutcome.Unconfirmed)) { <option value="@outcome">@OutcomeName(outcome)</option> }</select></label><label>Coût de cette rune (K)<input type="number" class="form-control" min="0.01" step="0.01" placeholder="Prix inconnu" @bind="_attemptPrice" /></label></div>
+                    @if (_outcome is ForgemagingOutcome.Neutral or ForgemagingOutcome.Failure)
+                    {
+                        <p class="small mt-3">Renseignez toutes les pertes observées sur l’objet. Le jet affiché ci-dessous est un point de départ à vérifier.</p>
+                        <div class="fm-observed-grid">@foreach (var line in _actual) { <label>@StatName(line.Characteristic)<input type="number" class="form-control form-control-sm" @bind="line.Current" @bind:after="() => _confirmedAfter = false" /></label> }</div>
+                        <label class="d-flex gap-2 my-3"><input type="checkbox" class="form-check-input" @bind="_confirmedAfter" />J’ai vérifié le jet obtenu dans Dofus</label>
+                    }
+                    else if (_outcome == ForgemagingOutcome.Critical) { <p class="small my-3">Le succès critique ajoute @pending.Rune.Gain en @StatName(pending.Rune.Characteristic), sans modifier les autres lignes ni le puits.</p> }
+                    @if (_attemptError is not null) { <p class="text-danger" role="alert">@_attemptError</p> }
+                    <div class="fm-actions"><button type="button" class="btn btn-outline-secondary" @onclick="CancelAttempt">Annuler</button><button type="button" class="btn btn-primary" @onclick="RecordAttemptAsync">Enregistrer le résultat</button></div>
+                </section>
+            }
+            else if (_validation is not null) { <p class="alert alert-info mt-3">@_validation</p> }
+            else if (Complete) { <p class="alert alert-success mt-3">Le jet actuel atteint tous vos objectifs.</p> }
+            else
+            {
+                <section class="fm-card my-3">
+                    <div class="fm-card-heading"><h3>Comparer les variantes</h3><span class="small text-secondary">Chances par tentative estimées</span></div>
+                    @if (_advice.Any(a => a.Rune.UnitPrice is null)) { <p class="small text-warning">Certains prix de runes manquent. Consultez leurs offres en HDV puis actualisez les prix pour compléter la comparaison.</p> }
+                    @if (_advice.Count == 0) { <p>Aucune rune utilisable pour ce jet avec les données disponibles. Vérifiez les objectifs et les limites des overs/exos.</p> }
+                    <div class="table-responsive"><table class="table table-sm align-middle"><thead><tr><th>Rune</th><th class="text-end">Prix</th><th class="text-end" title="Succès critique / succès neutre / échec">SC / SN / EC</th><th class="text-end" title="Prix ÷ (gain nominal utile × probabilité estimée SC + SN). Indicateur local : hors gains partiels et réparation des autres lignes, ce n’est pas un coût moyen d’atteinte du jet.">Coût comparatif / pt</th><th>Puits</th><th></th></tr></thead><tbody>
+                        @foreach (var candidate in _advice)
+                        {
+                            <tr><td><strong>@candidate.Rune.Name</strong>@if (BestByLine.Any(a => a.Rune.Id == candidate.Rune.Id)) { <span class="badge bg-secondary ms-2">Conseillée</span> }<div class="small text-secondary">+@candidate.Rune.Gain · @candidate.Odds.Regime</div></td><td class="text-end text-nowrap">@Money(candidate.Rune.UnitPrice)</td><td class="text-end text-nowrap">@candidate.Odds.Critical.ToString("N1") / @candidate.Odds.Neutral.ToString("N1") / @candidate.Odds.Failure.ToString("N1") %</td><td class="text-end text-nowrap">@Money(candidate.CostPerUsefulPoint)</td><td class="small">@(candidate.SinkCovers is true ? "Suffisant pour son poids" : candidate.SinkCovers is false ? "Insuffisant pour son poids" : "Inconnu")</td><td><button type="button" class="btn btn-sm btn-primary" disabled="@(Busy || _gameTracking || !CanPrepare(candidate))" @onclick="() => Prepare(candidate)">@(_gameTracking ? "Dans Dofus" : "Suivre cet essai")</button></td></tr>
+                        }
+                    </tbody></table></div>
+
+                </section>
+            }
+            @if (session.Attempts.Count > 0)
+            {
+                <details class="fm-card my-3"><summary>Historique de la session · @session.Attempts.Count tentative(s)</summary><button type="button" class="btn btn-sm btn-outline-secondary my-3" disabled="@(_pending is not null || Busy || _gameTracking)" @onclick="UndoAsync">Annuler la dernière saisie</button><PagedDataTable TItem="ForgemagingAttempt" Items="session.Attempts.AsEnumerable().Reverse()" PageSize="20" ResetKey="session.Attempts.Count"><RowContent Context="rows"><div class="table-responsive"><table class="table table-sm"><thead><tr><th>Heure</th><th>Rune</th><th>Résultat</th><th>Gains et pertes</th><th>Coût</th><th>Puits après</th></tr></thead><tbody>@foreach (var attempt in rows) { <tr><td>@attempt.AtUtc.ToLocalTime().ToString("dd/MM HH:mm:ss")</td><td>@attempt.Rune.Name × @attempt.RuneCount</td><td>@OutcomeName(attempt.Outcome)<div class="small text-secondary">@(attempt.FromGame ? "Reçu du jeu" : "Saisie manuelle")</div>@if (attempt.PredictedOdds is { } predicted) { <div class="small text-secondary" title="Estimations avant cette tentative">Prévu SC/SN/EC : @predicted.Critical.ToString("N1") / @predicted.Neutral.ToString("N1") / @predicted.Failure.ToString("N1") %</div> }</td><td>@foreach (var delta in Deltas(attempt)) { <div>@(delta.Delta > 0 ? "+" : "")@delta.Delta @StatName(delta.Stat)</div> }@if (!Deltas(attempt).Any()) { <span class="text-secondary">Jet inchangé</span> }</td><td>@Money(attempt.Rune.UnitPrice * attempt.RuneCount)</td><td title="@($"Puits avant : {attempt.SinkBefore?.ToString("N2") ?? "Inconnu"}")">@(attempt.SinkAfter?.ToString("N2") ?? "Inconnu")</td></tr> }</tbody></table></div></RowContent></PagedDataTable></details>
+            }
+        }
+    }
+</section>
+
+@code {
+    private static bool CanForgeEquipment(Equipment equipment) => equipment.Type is not
+        (EquipmentType.Pet or EquipmentType.Petsmount or EquipmentType.Mount or EquipmentType.Trophy);
+    private async Task SelectFromCatalogueAsync(Equipment equipment)
+    {
+        if (Busy || _pending is not null) return;
+        _selectedItem = equipment.DofusDbId;
+        await SelectItemAsync();
+    }
+}

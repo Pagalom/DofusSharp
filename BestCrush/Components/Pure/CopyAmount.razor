@@ -1,0 +1,18 @@
+@using System.Globalization
+@if (Value is { } amount)
+{
+    string copyValue = ShowFraction
+        ? amount.ToString("0.#", CultureInfo.InvariantCulture)
+        : Math.Round(amount).ToString("0", CultureInfo.InvariantCulture);
+    <CopyTextButton Value="@copyValue" Tooltip="@Tooltip" Style="@($"color:{Color ?? "inherit"}")">
+        <span class="copy-amount">@(Plus && amount > 0 ? "+" : "")@amount.ToString(ShowFraction ? "#,0.#" : "N0") <b>K</b></span>
+    </CopyTextButton>
+}
+else { <span class="text-secondary" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Prix manquant" data-bs-custom-class="multiline-tooltip">—</span> }
+@code {
+    [Parameter] public double? Value { get; set; }
+    [Parameter] public string? Tooltip { get; set; }
+    [Parameter] public string? Color { get; set; }
+    [Parameter] public bool Plus { get; set; }
+    [Parameter] public bool ShowFraction { get; set; }
+}

@@ -9,7 +9,7 @@ using ProgressMessage = BestCrush.Domain.Models.ProgressMessage;
 
 namespace BestCrush.Domain.Services.Upgrades;
 
-public class GameDataUpgradeHandler(
+public partial class GameDataUpgradeHandler(
     BestCrushDbContext dbContext,
     IDofusDbQueryProvider dofusDbQueryProvider,
     ILogger<GameDataUpgradeHandler> logger
@@ -17,7 +17,7 @@ public class GameDataUpgradeHandler(
 {
     private const string
         RuneCatalogUpgradeVersion =
-            "dofusdb-only-v2";
+            "dofusdb-base-effects-v3";
 
     public async Task UpgradeAsync(
         Version newVersion,
@@ -87,14 +87,6 @@ public class GameDataUpgradeHandler(
                 cancellationToken
             );
 
-            await EnsureRuneCatalogUpgradeMarkerAsync(
-                cancellationToken
-            );
-
-            await dbContext.SaveChangesAsync(
-                cancellationToken
-            );
-
             progress?.Report(
                 "Les ingrédients de recettes ont été mis à jour.",
                 100,
@@ -104,42 +96,28 @@ public class GameDataUpgradeHandler(
             return;
         }
 
-        // Une installation déjà à jour côté DofusDB peut encore
-        // posséder l'ancien catalogue tronqué par DoFocus.
-        //
-        // Dans ce cas on ne reconstruit QUE la table Runes.
-        if (oldVersion == newVersion &&
-            !runeCatalogUpgradeApplied)
-        {
-            logger.LogInformation(
-                "Migrating rune catalog to DofusDB-only source."
-            );
-
-            progress?.Report(
-                "Mise à jour du catalogue des runes."
-            );
-
-            await RebuildRuneCatalogAsync(
-                progress,
-                cancellationToken
-            );
-
-            progress?.Report(
-                "Le catalogue des runes a été mis à jour.",
-                100,
-                true
-            );
-
-            return;
-        }
-
         if (oldVersion == newVersion)
         {
-            logger.LogInformation(
-                "DofusDB data is up to date. Version: {Version}.",
-                newVersion
-            );
+            bool missingEquipmentStats = await dbContext.Equipments.AnyAsync(cancellationToken) &&
+                !await dbContext.Set<ItemCharacteristicLine>().AnyAsync(cancellationToken);
+            if (missingEquipmentStats)
+            {
+                progress?.Report("Réparation des caractéristiques des équipements.");
+                var statsProgress = runeCatalogUpgradeApplied ? progress : progress?.DeriveSubtask(0, 80);
+                await RestoreEquipmentCharacteristicsAsync(statsProgress, cancellationToken);
+            }
 
+            if (!runeCatalogUpgradeApplied)
+            {
+                progress?.Report("Mise à jour du catalogue des runes.");
+                var runeProgress = missingEquipmentStats ? progress?.DeriveSubtask(80, 100) : progress;
+                await RebuildRuneCatalogAsync(runeProgress, cancellationToken);
+            }
+
+            if (missingEquipmentStats || !runeCatalogUpgradeApplied)
+                progress?.Report("Les données du jeu ont été mises à jour.", 100, true);
+            else
+                logger.LogInformation("DofusDB data is up to date. Version: {Version}.", newVersion);
             return;
         }
 
@@ -175,10 +153,6 @@ public class GameDataUpgradeHandler(
             newUpgrade
         );
 
-        await EnsureRuneCatalogUpgradeMarkerAsync(
-            cancellationToken
-        );
-
         await dbContext.SaveChangesAsync(
             cancellationToken
         );
@@ -199,14 +173,6 @@ public class GameDataUpgradeHandler(
         ProgressSync<ProgressMessage>? progress,
         CancellationToken cancellationToken)
     {
-        await ClearTables(
-            progress?.DeriveSubtask(
-                0,
-                25
-            ),
-            cancellationToken
-        );
-
         (
             Dictionary<long, DofusDbCharacteristic>
                 characteristicsDict,
@@ -215,13 +181,14 @@ public class GameDataUpgradeHandler(
             DofusDbItem[] equipments,
             DofusDbItem[] ingredients
         ) =
-            await FetchDataAsync(
-                progress?.DeriveSubtask(
-                    25,
-                    50
-                ),
-                cancellationToken
-            );
+            await FetchDataAsync(progress?.DeriveSubtask(0, 40), cancellationToken);
+
+        if (equipments.Any(item => item.PossibleEffects?.Any(effect => effect.BaseEffectId is > 0) == true) &&
+            !equipments.Any(item => ReadCharacteristicRanges(item, characteristicsDict).Any()) &&
+            await dbContext.Set<ItemCharacteristicLine>().AnyAsync(cancellationToken))
+            throw new InvalidDataException("Le catalogue reçu ne contient aucune caractéristique d’équipement reconnue.");
+
+        await ClearTables(progress?.DeriveSubtask(40, 50), cancellationToken);
 
         HashSet<long> equipmentIds =
             equipments
@@ -272,16 +239,12 @@ public class GameDataUpgradeHandler(
             cancellationToken
         );
 
-        await CreateRunesAsync(
+        await RefreshRunesAsync(
             characteristicsDict,
             progress?.DeriveSubtask(
                 85,
                 100
             ),
-            cancellationToken
-        );
-
-        await dbContext.SaveChangesAsync(
             cancellationToken
         );
     }
@@ -290,10 +253,6 @@ public class GameDataUpgradeHandler(
         ProgressSync<ProgressMessage>? progress,
         CancellationToken cancellationToken)
     {
-        await ClearTableAsync<Rune>(
-            cancellationToken
-        );
-
         IDofusDbQuery<DofusDbCharacteristic>
             characteristicsQuery =
                 dofusDbQueryProvider
@@ -333,24 +292,12 @@ public class GameDataUpgradeHandler(
                             characteristic
                     );
 
-        await CreateRunesAsync(
+        await RefreshRunesAsync(
             characteristicsDict,
             progress?.DeriveSubtask(
                 35,
                 95
             ),
-            cancellationToken
-        );
-
-        await dbContext.SaveChangesAsync(
-            cancellationToken
-        );
-
-        await EnsureRuneCatalogUpgradeMarkerAsync(
-            cancellationToken
-        );
-
-        await dbContext.SaveChangesAsync(
             cancellationToken
         );
     }
@@ -392,19 +339,17 @@ public class GameDataUpgradeHandler(
 
     async Task ClearTables(ProgressSync<ProgressMessage>? progress, CancellationToken cancellationToken)
     {
-        progress?.ReportStep("Suppression des anciennes données", 1, 7);
+        progress?.ReportStep("Suppression des anciennes données", 1, 6);
         await ClearTableAsync<ItemCharacteristicLine>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 2, 7);
+        progress?.ReportStep("Suppression des anciennes données", 2, 6);
         await ClearTableAsync<RecipeEntry>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 3, 7);
+        progress?.ReportStep("Suppression des anciennes données", 3, 6);
         await ClearTableAsync<EquipmentRecipeEntry>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 4, 7);
+        progress?.ReportStep("Suppression des anciennes données", 4, 6);
         await ClearTableAsync<Resource>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 5, 7);
+        progress?.ReportStep("Suppression des anciennes données", 5, 6);
         await ClearTableAsync<Equipment>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 6, 7);
-        await ClearTableAsync<Rune>(cancellationToken);
-        progress?.ReportStep("Suppression des anciennes données", 7, 7);
+        progress?.ReportStep("Suppression des anciennes données", 6, 6);
     }
 
     async Task ClearTableAsync<T>(CancellationToken cancellationToken = default)
@@ -436,12 +381,7 @@ public class GameDataUpgradeHandler(
             .ToArrayAsync(cancellationToken);
         Dictionary<long, DofusDbRecipe> recipesDict = recipes.Where(r => r.ResultId.HasValue).ToDictionary(c => c.ResultId!.Value, c => c);
 
-        long[] equipmentTypes = Enum.GetValues<EquipmentType>().Select(t => t.ToDofusDbItemTypeId()).ToArray();
-        DofusDbItem[] equipments = await dofusDbQueryProvider
-            .Items()
-            .Where(i => equipmentTypes.Contains(i.TypeId!.Value))
-            .ExecuteAsync(progress?.DeriveSubtask(60, 100).ToMultiSearchProgress("Récupération des équipements"), cancellationToken)
-            .ToArrayAsync(cancellationToken);
+        DofusDbItem[] equipments = await FetchEquipmentAsync(progress?.DeriveSubtask(60, 100), cancellationToken);
 
         DofusDbItem[] ingredients = equipments
             .Select(e => recipesDict.GetValueOrDefault(e.Id!.Value))
@@ -546,28 +486,6 @@ public class GameDataUpgradeHandler(
         );
 
         return equipment;
-    }
-
-    static void CreateCharacteristicLines(DofusDbItem dofusDbItem, Equipment equipment, Dictionary<long, DofusDbCharacteristic> characteristics)
-    {
-        if (dofusDbItem.Effects is null)
-        {
-            return;
-        }
-
-        Dictionary<Characteristic, DofusDbItemEffect> itemCharacteristics = dofusDbItem
-            .Effects.Select(e => e.Characteristic.HasValue ? (Characteristic: characteristics.GetValueOrDefault(e.Characteristic.Value), Effect: e) : (null, e))
-            .Where(x => x.Characteristic?.Keyword is not null)
-            .Select((Characteristic? Characteristic, DofusDbItemEffect Effect) (x) =>
-                        (Characteristic: CharacteristicExtensions.CharacteristicFromDofusDbKeyword(x.Characteristic!.Keyword!), x.Effect)
-            )
-            .Where(x => x.Characteristic is not null)
-            .ToDictionary(x => x.Characteristic!.Value, x => x.Effect);
-
-        foreach ((Characteristic characteristic, DofusDbItemEffect effect) in itemCharacteristics)
-        {
-            equipment.Characteristics.Add(new ItemCharacteristicLine(equipment, characteristic, effect.From ?? 0, effect.To is null or 0 ? effect.From ?? 0 : effect.To.Value));
-        }
     }
 
     async Task CreateRecipesAsync(
@@ -708,7 +626,7 @@ public class GameDataUpgradeHandler(
         return resource;
     }
 
-    async Task CreateRunesAsync(
+    async Task RefreshRunesAsync(
         Dictionary<long, DofusDbCharacteristic>
             characteristicsDict,
         ProgressSync<ProgressMessage>? progress = null,
@@ -744,8 +662,8 @@ public class GameDataUpgradeHandler(
                     100
                 );
 
-        int createdCount =
-            0;
+        List<Rune> runes = [];
+        bool hasUnrecognizedBaseEffects = false;
 
         int skippedCount =
             0;
@@ -773,6 +691,7 @@ public class GameDataUpgradeHandler(
 
             if (characteristic is null)
             {
+                hasUnrecognizedBaseEffects |= dofusDbRune.PossibleEffects?.Any(effect => effect.BaseEffectId is > 0) == true;
                 skippedCount++;
 
                 logger.LogInformation(
@@ -802,12 +721,18 @@ public class GameDataUpgradeHandler(
             rune.Characteristic =
                 characteristic.Value;
 
-            dbContext.Runes.Add(
-                rune
-            );
-
-            createdCount++;
+            runes.Add(rune);
         }
+
+        if (hasUnrecognizedBaseEffects && runes.All(rune => rune.Characteristic == Characteristic.Hunting))
+            throw new InvalidDataException("Le format des effets du catalogue de runes n’a pas pu être reconnu.");
+
+        await using var transaction = await dbContext.Database.BeginTransactionAsync(cancellationToken);
+        await dbContext.Runes.ExecuteDeleteAsync(cancellationToken);
+        dbContext.Runes.AddRange(runes);
+        await EnsureRuneCatalogUpgradeMarkerAsync(cancellationToken);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         updateProgress?.ReportStep(
             $"Mise à jour des runes " +
@@ -818,7 +743,7 @@ public class GameDataUpgradeHandler(
 
         logger.LogInformation(
             "Rune catalog rebuilt from DofusDB: {CreatedCount} created, {SkippedCount} skipped, {TotalCount} type-78 items received.",
-            createdCount,
+            runes.Count,
             skippedCount,
             dofusDbRunes.Length
         );
@@ -846,43 +771,21 @@ public class GameDataUpgradeHandler(
             return Characteristic.Hunting;
         }
 
-        DofusDbItemEffect? effect =
-            dofusDbRune.Effects?
-                .FirstOrDefault(
-                    runeEffect =>
-                        runeEffect
-                            .Characteristic
-                            .HasValue
-                );
-
-        if (effect?.Characteristic is not
-            long characteristicId)
+        foreach (var effect in dofusDbRune.Effects ?? [])
         {
-            // Exemple actuel : Rune de Signature.
-            // Elle est de type 78 mais n'a aucun effet de
-            // caractéristique et n'intervient pas dans le
-            // concassage / la forgemagie de statistiques.
-            return null;
+            if (effect.Characteristic is { } id &&
+                characteristicsDict.GetValueOrDefault(id)?.Keyword is { } keyword &&
+                CharacteristicExtensions.CharacteristicFromDofusDbKeyword(keyword) is { } characteristic)
+                return characteristic;
         }
 
-        DofusDbCharacteristic?
-            dofusDbCharacteristic =
-                characteristicsDict
-                    .GetValueOrDefault(
-                        characteristicId
-                    );
-
-        if (dofusDbCharacteristic?
-                .Keyword is null)
+        foreach (var effect in dofusDbRune.PossibleEffects ?? [])
         {
-            return null;
+            if (RuneBaseEffects.Resolve(effect.BaseEffectId) is { } characteristic)
+                return characteristic;
         }
 
-        return CharacteristicExtensions
-            .CharacteristicFromDofusDbKeyword(
-                dofusDbCharacteristic
-                    .Keyword
-            );
+        return null;
     }
 
 

@@ -1,0 +1,19 @@
+@using BestCrush.Services
+
+<span class="trade-item-image" style="@($"--trade-image-size:{Size}px")">
+    <StockItemArtwork ItemId="ItemId" Stock="Stock">
+        <CopyTextButton Value="@Name" Tooltip="@(Tooltip ?? Name)">
+            <MarketItemPicture IconId="IconId" />
+            @if (Quantity is { } quantity) { <span class="trade-image-count">@quantity.ToString("N0")</span> }
+        </CopyTextButton>
+    </StockItemArtwork>
+</span>
+@code {
+    [Parameter] public string Name { get; set; } = "";
+    [Parameter] public string? Tooltip { get; set; }
+    [Parameter] public long? IconId { get; set; }
+    [Parameter] public long ItemId { get; set; }
+    [Parameter] public LiveStockSource? Stock { get; set; }
+    [Parameter] public long? Quantity { get; set; }
+    [Parameter] public int Size { get; set; } = 44;
+}

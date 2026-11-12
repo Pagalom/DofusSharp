@@ -16,25 +16,15 @@ La dernière version prête à l'emploi est disponible dans les **Releases GitHu
 
 **[Télécharger la dernière release](https://github.com/Pagalom/DofusSharp/releases/latest)**
 
-Pour une release Windows :
+L’archive est prévue pour un PC Windows 10 ou 11 avec processeur x64 (Intel ou AMD). Elle inclut .NET et le Windows App SDK.
 
-1. Télécharger l'archive `BestCrush-*-win-x64.zip`.
-2. Extraire **entièrement** l'archive dans un dossier.
-3. Lancer `BestCrush.exe`.
+1. Installez Dofus depuis le [site officiel](https://www.dofus.com/fr/mmorpg/telecharger).
+2. Installez [Npcap](https://npcap.com/#download) pour les relevés automatiques de l’hôtel des ventes. Si WebView2 est absent, installez le [runtime Evergreen de Microsoft](https://developer.microsoft.com/microsoft-edge/webview2/#download-section).
+3. Téléchargez `BestCrush-*-win-x64.zip` dans les fichiers de la release, puis faites un clic droit sur le ZIP et choisissez **Extraire tout**. Ouvrez `BestCrush.exe` dans le dossier extrait.
+4. Attendez la fin de la préparation du catalogue. Lancez Dofus en mode fenêtré, connectez votre personnage et sélectionnez son serveur dans BestCrush si nécessaire.
+5. Ouvrez la fiche d’un objet à l’hôtel des ventes. Vérifiez le relevé dans **Données**, dans la catégorie de l’objet.
 
-> Ne lancez pas directement `BestCrush.exe` depuis l'archive ZIP.
-
-### Prérequis
-
-- Windows 10 ou Windows 11 64 bits.
-- Microsoft Edge WebView2 Runtime.
-- **Npcap**, installé séparément par l'utilisateur depuis le site officiel.
-- Dofus lancé en mode fenêtré ou dans une configuration permettant à BestCrush de détecter sa fenêtre.
-
-BestCrush **n'intègre ni ne redistribue Npcap**. Au lancement, l'application vérifie sa présence ; s'il manque, un bandeau permet d'ouvrir la page officielle de téléchargement puis de revérifier l'installation.
-
-Les releases self-contained incluent le runtime .NET et les composants Windows App SDK nécessaires.  
-WebView2 est généralement déjà installé sur les versions récentes de Windows.
+La base locale est créée dans `%LOCALAPPDATA%\BestCrush`. Lors d’une mise à jour, fermez BestCrush et ouvrez la nouvelle version depuis son dossier extrait pour retrouver ces données.
 
 ---
 

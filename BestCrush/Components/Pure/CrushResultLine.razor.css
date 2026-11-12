@@ -1,0 +1,12 @@
+.crush-detail { display:flex; align-items:flex-start; gap:1rem; }
+.crush-detail-image { display:flex; flex-direction:column; align-items:center; gap:.4rem; }
+.crush-detail-main { flex:1; min-width:0; }
+.crush-detail-top,.crush-detail-runes { display:flex; gap:1rem; align-items:flex-start; flex-wrap:wrap; }
+.crush-detail-top { margin-bottom:1rem; }
+.crush-detail-identity { min-width:150px; }
+.crush-recipe-icons { display:flex; align-items:center; flex-wrap:wrap; gap:.3rem; flex:1; }
+.crush-detail-price { display:flex; flex-direction:column; align-items:flex-end; margin-left:auto; }
+.crush-rune-list { display:flex; flex-wrap:wrap; align-items:flex-start; gap:.6rem; flex:1; }
+.crush-rune-list > strong { flex-basis:100%; }
+.crush-rune { display:flex; flex-direction:column; align-items:center; }
+@media(max-width:600px) { .crush-detail { gap:.6rem; }.crush-detail-image { display:none; }.crush-detail-price { min-width:100px; } }

@@ -1,0 +1,106 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using BestCrush.Services
+@using BestCrush.Components
+@inject WeeklyRoutineStore Store
+@implements IDisposable
+
+<section class="routine-workspace" aria-busy="@(_loading || _saving ? "true" : "false")">
+    <PageHeading Title="Routine" Description="Vos priorités du jour pour valoriser vos stocks et préparer vos prochaines rentrées de kamas." />
+    @if (_loading) { <p role="status"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Chargement de votre routine…</p> }
+    @if (_error is not null) { <p class="alert alert-warning" role="alert">@_error @if (_routine is null) { <button class="btn btn-sm btn-outline-secondary" @onclick="LoadAsync">Réessayer</button> }</p> }
+    @if (_routine is { } routine)
+    {
+        <div class="routine-heading">
+            <strong>@routine.Name</strong>
+            <div class="routine-heading-tools">
+                <div class="routine-day"><button class="btn btn-outline-secondary" aria-label="Jour précédent" disabled="@(_saving || _day == DateOnly.MinValue)" @onclick="() => MoveDay(-1)">‹</button><strong>@(_day == _today ? "Aujourd’hui · " : "")@_day.ToString("dd/MM/yyyy")</strong><button class="btn btn-outline-secondary" aria-label="Jour suivant" disabled="@(_saving || _day >= _today)" @onclick="() => MoveDay(1)">›</button>@if (_day != _today) { <button class="btn btn-outline-secondary" disabled="@_saving" @onclick="() => _day = _today">Aujourd’hui</button> }</div>
+                <button type="button" class="btn btn-link btn-sm routine-personalize" aria-expanded="@(_settingsOpen ? "true" : "false")" aria-controls="routine-settings" @onclick="() => _settingsOpen = !_settingsOpen"><i class="bi bi-sliders me-1" aria-hidden="true"></i>Personnaliser ma routine</button>
+            </div>
+        </div>
+        @if (_settingsOpen)
+        {
+        <section class="routine-customize" id="routine-settings" aria-label="Personnaliser ma routine">
+            <div class="routine-settings-heading"><h2>Personnaliser ma routine</h2><button type="button" class="btn btn-outline-secondary btn-sm" aria-label="Fermer la personnalisation" @onclick="() => _settingsOpen = false"><i class="bi bi-x-lg" aria-hidden="true"></i></button></div>
+            <div class="routine-fields mt-3">
+                <label>Nom<input class="form-control" maxlength="80" @bind="routine.Name" @bind:after="SaveAsync" disabled="@_saving" /></label>
+            </div>
+            <p class="small text-secondary mt-2">Cette liste se renouvelle chaque jour. Choisissez les activités adaptées à votre personnage et vérifiez leurs disponibilités dans Dofus.</p>
+            <div class="routine-fields">
+                <label>Ajouter un objectif<input class="form-control" maxlength="120" @bind="_newTitle" placeholder="Ex. : préparer deux crafts pour la vente" disabled="@_saving" /></label>
+                <fieldset class="routine-priority-field" disabled="@_saving"><legend>Priorité</legend><div class="routine-priority-options">
+                    @foreach (var priority in new[] { 1, 2, 3 })
+                    {
+                        <button type="button" class="routine-priority routine-priority-@priority routine-priority-option" aria-label="@($"Priorité {priority} du nouvel objectif")" aria-pressed="@(_newPriority == priority ? "true" : "false")" @onclick="() => _newPriority = priority">@priority</button>
+                    }
+                </div></fieldset>
+                <button class="btn btn-outline-primary" disabled="@(_saving || string.IsNullOrWhiteSpace(_newTitle) || !HasRoom)" @onclick="AddAsync">Ajouter</button>
+            </div>
+        </section>
+        }
+        <div class="routine-summary">
+            <div><strong>@DoneCount / @GoalCount</strong></div>
+            <div><strong>@Money(RemainingEstimate)</strong>@if (HasMissingEstimates) { <span class="small">Total incomplet : certains gains ne sont pas renseignés.</span> }</div>
+        </div>
+        @if (_day != _today) { <p class="small text-secondary">Jour passé · historique des validations. Les estimations affichées utilisent votre configuration actuelle.</p> }
+        <div class="routine-toolbar"><label><input type="checkbox" @bind="_showAside" /> Afficher les activités mises de côté</label><a href="@KnownRoutes.Module("opportunites")">Voir les opportunités</a></div>
+        @if (_deletedId.HasValue)
+        {
+            <div class="routine-deleted-message" role="status">Activité supprimée. <button type="button" class="btn btn-link btn-sm" disabled="@(_saving || !HasRoom)" @onclick="UndoDeleteAsync">Annuler</button></div>
+        }
+        @foreach (var activity in DisplayedActivities)
+        {
+            bool eligible = WeeklyRoutinePlanner.Eligible(routine, activity);
+            bool editing = _editingId == activity.Id;
+            bool done = WeeklyRoutinePlanner.DoneOn(routine, activity, _day);
+            <article class="routine-card @(eligible ? "" : "routine-aside")" @key="activity.Id">
+                <div class="routine-card-body">
+                <div class="routine-card-heading"><div class="routine-identity"><span class="routine-priority routine-priority-@activity.Priority" aria-label="@($"Priorité {activity.Priority}")" title="@($"Priorité {activity.Priority}")">@activity.Priority</span>@if (editing) { <input class="form-control routine-title-input" aria-label="Titre de l’activité" maxlength="120" @bind="activity.Title" @bind:after="SaveAsync" disabled="@_saving" /> } else { <strong>@activity.Title</strong> }</div>@if (activity.EstimatedNetKamas is { } estimate) { <span class="routine-amount">@estimate.ToString("N0") <strong>K</strong></span> } else { <span class="small text-secondary">Gain à renseigner</span> }</div>
+                @if (editing) { <textarea class="form-control routine-description mt-2" aria-label="Description de l’activité" maxlength="1500" rows="3" @bind="activity.Notes" @bind:after="SaveAsync" disabled="@_saving"></textarea> }
+                else { <p class="small mt-2">@activity.Notes</p> }
+                @if (!eligible) { <p class="small text-secondary">@(activity.Deleted ? "Activité supprimée." : "Activité mise de côté.")</p> }
+                <div class="routine-card-actions">
+                    @if (activity.ModuleSlug is { } module && WorkspaceModules.Find(module) is { } workspace) { <a class="btn btn-outline-primary" href="@WorkspaceModules.Href(workspace, ServerName)">Ouvrir @workspace.Name</a> }
+                    @if (activity.GuideUrl is { } guide) { <a href="@guide" target="_blank" rel="noopener noreferrer">Guide</a> }
+                </div>
+                @if (!activity.Deleted)
+                {
+                <details class="mt-3" open="@editing"><summary class="small routine-adjust" aria-expanded="@(editing ? "true" : "false")" @onclick="() => ToggleEditorAsync(activity.Id)" @onclick:preventDefault="true">Ajuster cette activité</summary>
+                @if (editing)
+                {
+                <div class="routine-fields mt-2">
+                    <fieldset class="routine-priority-field" disabled="@_saving"><legend>Priorité</legend><div class="routine-priority-options">
+                        @foreach (var priority in new[] { 1, 2, 3 })
+                        {
+                            <button type="button" class="routine-priority routine-priority-@priority routine-priority-option" aria-label="@($"Priorité {priority} pour {activity.Title}")" aria-pressed="@(activity.Priority == priority ? "true" : "false")" @onclick="() => SetPriorityAsync(activity.Id, priority)">@priority</button>
+                        }
+                    </div></fieldset>
+                    <label>Gain net<input class="form-control" type="number" min="-1000000000" max="1000000000" placeholder="Non renseigné" @bind="activity.EstimatedNetKamas" @bind:after="SaveAsync" disabled="@_saving" /></label>
+                    <label><input type="checkbox" @bind="activity.Enabled" @bind:after="SaveAsync" disabled="@_saving" /> Inclure dans ma routine</label>
+                </div>
+                <button type="button" class="btn btn-link btn-sm routine-delete mt-3" disabled="@_saving" @onclick="() => DeleteActivityAsync(activity.Id)"><i class="bi bi-trash3 me-1" aria-hidden="true"></i>Supprimer cette activité</button>
+                }
+                </details>
+                }
+                </div>
+                <label class="routine-completion" title="@(done ? "Marquer comme non réalisée" : "Marquer comme réalisée")">
+                    <input type="checkbox" checked="@done" aria-label="@($"{activity.Title} : {_day:dd/MM/yyyy}")" disabled="@(_saving || !eligible || _day != _today)" @onchange="() => ToggleAsync(activity.Id, _day)" />
+                    <svg viewBox="0 0 32 32" aria-hidden="true" focusable="false"><path d="M6 17 L13 24 L27 8" /></svg>
+                </label>
+            </article>
+        }
+        @if (!routine.Activities.Any(a => WeeklyRoutinePlanner.Eligible(routine, a))) { <p class="alert alert-info">Aucune activité incluse. Affichez les activités mises de côté ou ajoutez un objectif personnel.</p> }
+        <div class="routine-reset-area">
+            <button type="button" class="btn btn-link btn-sm routine-reset" aria-label="Restaurer les activités par défaut" title="Restaurer les activités par défaut" aria-expanded="@(_resetOpen ? "true" : "false")" disabled="@_saving" @onclick="() => _resetOpen = !_resetOpen"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
+            @if (_resetOpen)
+            {
+                <div class="routine-reset-confirm" role="group" aria-label="Réinitialiser les activités">
+                    <p>Restaurer les activités d’origine ? Leurs notes, priorités et gains personnalisés seront remplacés. Les objectifs personnels seront mis de côté et l’historique sera conservé.</p>
+                    <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@_saving" @onclick="() => _resetOpen = false">Annuler</button>
+                    <button type="button" class="btn btn-sm btn-outline-primary" disabled="@_saving" @onclick="ResetActivitiesAsync">Restaurer</button>
+                </div>
+            }
+        </div>
+        <details class="small text-secondary mt-4"><summary>À propos de cette routine</summary><p class="mt-2">La structure économique reprend la vidéo <a href="https://www.youtube.com/watch?v=s1B8Oo2Pcow" target="_blank" rel="noopener noreferrer">La ROUTINE en MONOCOMPTE sur DOFUS · HUZ REPLAY</a>, avec les activités utiles à BestCrush. Les quêtes Dofus/Tour du monde et la coordination de groupe ne sont pas suivies automatiquement. Les achats et les échanges se font dans le jeu.</p></details>
+    }
+</section>

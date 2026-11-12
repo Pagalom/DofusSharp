@@ -1,3 +1,5 @@
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceScopeFactory DataScopes
 @page "/servers/{ServerName}/equipment-prices"
 @implements IDisposable
 
@@ -11,39 +13,31 @@
 
 @inject ServerViewFilterState ServerViewFilter
 
-<div class="container-fluid py-4 px-5">
+<div class="container-fluid workspace-page px-3 px-lg-4">
 
-    <div class="d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h2>Prix locaux des équipements</h2>
-            <p class="text-secondary mb-0">
-                Serveur : <strong>@ServerName</strong>
-            </p>
-        </div>
-
+    <PageHeading Title="@(IsEmbedded ? "Équipements" : "Prix locaux des équipements")" Description="Les prix sont enregistrés automatiquement lorsque vous quittez une case.">
+        <ChildContent>@if (!IsEmbedded) { <p class="small text-secondary mb-0">Serveur : <strong>@ServerName</strong></p> }</ChildContent>
+        <Actions>
         <div class="d-flex gap-2">
             <button class="btn btn-outline-primary"
                     type="button"
-                    @onclick="RefreshAsync">
+                    @onclick="RefreshAsync" disabled="@_background.IsLoading">
                 Rafraîchir
             </button>
+        @if (!IsEmbedded)
+        {
+
             <a class="btn btn-outline-secondary"
            href="@($"/servers/{ServerName}")">
             Retour
         </a>
+        }
         </div>
-    </div>
-
-    <p class="text-secondary">
-        Les prix sont enregistrés automatiquement lorsque vous quittez une case.
-    </p>
+        </Actions>
+    </PageHeading>
 
     <div class="mb-3">
-        <input type="text"
-               class="form-control"
-               placeholder="Rechercher un équipement..."
-               @bind="_searchText"
-               @bind:event="oninput" />
+        <ServiceSearch @bind-Value="_searchText" Placeholder="Rechercher un équipement…" />
     </div>
 
     @if (ServerViewFilter.IsBrowsingManually)
@@ -58,12 +52,12 @@
         </div>
     }
 
-    @if (_rows is null)
+    <DataLoadingIndicator Busy="@_background.IsLoading" Failed="@(_background.Error is not null)"
+                          Label="@(_rows is null ? "Chargement des données…" : "Actualisation des données…")" Retry="ReloadFromMarketAsync" />
+    @if (_rows is not null)
     {
-        <p>Chargement des équipements...</p>
-    }
-    else
-    {
+        <PagedDataTable Items="@FilteredRows" ResetKey="@($"{ServerName}|{_searchText}")">
+            <RowContent Context="pageRows">
         <div class="table-responsive">
 
             <table class="table table-dark table-striped table-hover align-middle">
@@ -78,11 +72,18 @@
                 </thead>
 
                 <tbody>
-                    @foreach (EquipmentPriceRow row in FilteredRows)
+                    @foreach (EquipmentPriceRow row in pageRows)
                     {
-                        <tr>
+                        <tr @key="row.DofusDbId">
                             <td>
-                                <strong>@row.Name</strong>
+                                @if (Workspace is not null)
+                                {
+                                    <button type="button" class="btn btn-link text-info p-0 text-start fw-bold"
+                                            title="Voir l’historique de @row.Name"
+                                            @onclick="() => Workspace.ShowHistory(MarketObjectType.Equipment, row.DofusDbId, row.Name)">@row.Name</button>
+                                }
+                                else { <strong>@row.Name</strong> }
+                                <StockQuantity ItemId="row.DofusDbId" ServerName="@ServerName" />
                             </td>
 
                             <td>
@@ -109,12 +110,23 @@
             </table>
 
         </div>
+            </RowContent>
+        </PagedDataTable>
     }
 
 </div>
 
 @code
 {
+    [Parameter] public bool IsEmbedded { get; set; }
+    [Parameter] public DataPriority Priority { get; set; }
+    private DataPriority? _loadedPriority;
+    [Parameter] public bool IsActive { get; set; } = true;
+    private readonly BackgroundDataLoad<List<EquipmentPriceRow>> _background = new();
+    private bool _disposed, _reloadPending;
+    private int _reloadCycle;
+    [CascadingParameter] public WorkspaceNavigation? Workspace { get; set; }
+
     [Parameter]
     public required string ServerName { get; set; }
 
@@ -144,57 +156,83 @@
                     ));
             }
 
-            return result.Take(200);
+            return result;
         }
     }
 
 
-    private readonly System.Threading.SemaphoreSlim
-        _refreshLock = new(1, 1);
-
     private string? _loadedServerName;
-
-    protected override Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         MarketDataChangeNotifier.Changed += OnMarketDataChanged;
         ServerViewFilter.Changed += OnBrowseModeChanged;
-        return Task.CompletedTask;
     }
-
     protected override async Task OnParametersSetAsync()
     {
-        if (string.Equals(_loadedServerName, ServerName,
-                StringComparison.OrdinalIgnoreCase))
+        if (!IsActive)
+        {
+            _reloadPending |= _background.IsLoading;
+            _background.Cancel();
             return;
-
-        _loadedServerName = ServerName;
-        _rows = null;
-        _lastSavedMessage = null;
-        // Serialise with background market refreshes; never display
-        // the old server's rows under the new route/SQL filter.
-        await _refreshLock.WaitAsync();
-        try
-        {
-            await LoadRowsAsync();
         }
-        finally
+        if (_loadedPriority != Priority || !string.Equals(_loadedServerName, ServerName, StringComparison.OrdinalIgnoreCase))
         {
-            _refreshLock.Release();
+            _background.Cancel();
+            _loadedServerName = ServerName;
+            _loadedPriority = Priority;
+            _rows = null;
+            _lastSavedMessage = null;
+            _reloadPending = true;
         }
+        if (_rows is null || _reloadPending) await ReloadFromMarketAsync();
+    }
+    private Task RefreshAsync() => ReloadFromMarketAsync();
+    private void OnMarketDataChanged(object? sender, MarketDataChangedEventArgs args)
+    {
+        if (args.ObjectType != MarketObjectType.Equipment ||
+            !string.Equals(args.ServerName, ServerName, StringComparison.OrdinalIgnoreCase)) return;
+        _ = InvokeAsync(ReloadFromMarketAsync);
+    }
+    private async Task ReloadFromMarketAsync()
+    {
+        if (_disposed || !IsActive || _background.IsLoading) { _reloadPending = true; return; }
+        int cycle = ++_reloadCycle;
+        do
+        {
+            _reloadPending = false;
+            string server = ServerName;
+            var pending = _background.RunAsync(token => ReadRowsAsync(server, token));
+            StateHasChanged();
+            bool loaded = await pending;
+            if (_disposed || cycle != _reloadCycle) return;
+            if (loaded && IsActive && string.Equals(server, ServerName, StringComparison.OrdinalIgnoreCase))
+                _rows = _background.Value;
+        } while (_reloadPending && IsActive && !_disposed);
+        if (!_disposed) StateHasChanged();
+    }
+    private void OnBrowseModeChanged() { if (!_disposed) _ = InvokeAsync(StateHasChanged); }
+    public void Dispose()
+    {
+        _disposed = true;
+        _reloadCycle++;
+        _background.Dispose();
+        ServerViewFilter.Changed -= OnBrowseModeChanged;
+        MarketDataChangeNotifier.Changed -= OnMarketDataChanged;
     }
 
-    private async Task LoadRowsAsync()
+    private async Task<List<EquipmentPriceRow>> ReadRowsAsync(string loadedFromServer, CancellationToken cancellationToken)
     {
-        string loadedFromServer = ServerName;
+        using var scope = DataScopes.CreateScope();
+        var itemsService = scope.ServiceProvider.GetRequiredService<ItemsService>();
+        var marketPriceService = scope.ServiceProvider.GetRequiredService<MarketPriceService>();
         IReadOnlyCollection<Equipment> equipments =
-            await ItemsService.GetEquipmentsAsync();
+            await itemsService.GetEquipmentValueCatalogAsync(cancellationToken: cancellationToken);
 
         IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation>
             observations =
-                await MarketPriceService.GetLatestObservationsForServerAsync(
+                await marketPriceService.GetLatestObservationsForServerAsync(
                     MarketObjectType.Equipment,
-                    loadedFromServer
-                );
+                    loadedFromServer, cancellationToken);
         IReadOnlyDictionary<
         (
             long DofusDbId,
@@ -203,17 +241,12 @@
         ),
         MarketPriceObservation>
         sourceObservations =
-            await MarketPriceService
+            await marketPriceService
                 .GetLatestLocalSourceObservationsForServerAsync(
                     MarketObjectType.Equipment,
-                    loadedFromServer
-                );
+                    loadedFromServer, cancellationToken);
 
-        if (!string.Equals(loadedFromServer, ServerName,
-                StringComparison.OrdinalIgnoreCase))
-            return;
-
-        _rows = equipments
+        return equipments
             .OrderBy(e => e.Name)
             .Select(equipment =>
             {
@@ -258,59 +291,6 @@
                 return row;
             })
             .ToList();
-        }
-
-    private Task RefreshAsync()
-    {
-        return ReloadFromMarketAsync();
-    }
-
-    private void OnMarketDataChanged(
-        object? sender,
-        MarketDataChangedEventArgs e)
-    {
-        if (e.ObjectType !=
-                MarketObjectType.Equipment ||
-            !string.Equals(
-                e.ServerName,
-                ServerName,
-                StringComparison.Ordinal))
-        {
-            return;
-        }
-
-        _ = InvokeAsync(
-            ReloadFromMarketAsync
-        );
-    }
-
-    private async Task ReloadFromMarketAsync()
-    {
-        if (!await _refreshLock.WaitAsync(0))
-        {
-            return;
-        }
-
-        try
-        {
-            await LoadRowsAsync();
-            StateHasChanged();
-        }
-        finally
-        {
-            _refreshLock.Release();
-        }
-    }
-
-    private void OnBrowseModeChanged() =>
-        _ = InvokeAsync(StateHasChanged);
-
-    public void Dispose()
-    {
-        ServerViewFilter.Changed -= OnBrowseModeChanged;
-        MarketDataChangeNotifier.Changed -=
-            OnMarketDataChanged;
-        _refreshLock.Dispose();
     }
 
     private async Task SavePriceAsync(

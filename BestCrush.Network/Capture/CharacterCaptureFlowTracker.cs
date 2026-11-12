@@ -144,7 +144,9 @@ public sealed class CharacterCaptureFlowTracker
         ItemEffectTypeStabilityStudy? effectTypeStudy = null,
         ItemEffectDofusDbCatalogStudy? effectCatalogStudy = null,
         bool stockSnapshotStudy = false,
-        bool stockIdentifyBlockers = false)
+        bool stockIdentifyBlockers = false,
+        Action<int, StockSnapshotWireCandidate>? stockSnapshotObserver = null,
+        Action<int, string, byte[]>? stockEventObserver = null)
     {
         if (maxFlows < 1)
             throw new ArgumentOutOfRangeException(nameof(maxFlows));
@@ -167,9 +169,11 @@ public sealed class CharacterCaptureFlowTracker
             throw new ArgumentException(
                 "Identifying blocked item types requires the stock snapshot study.",
                 nameof(stockIdentifyBlockers));
+        if (stockSnapshotObserver is not null && !stockSnapshotStudy)
+            throw new ArgumentException("Stock persistence requires the stock snapshot study.");
         _stockSnapshotStudy = stockSnapshotStudy;
         _stockDeltaStudy = stockSnapshotStudy
-            ? new StockSnapshotDeltaStudy(stockIdentifyBlockers) : null;
+            ? new StockSnapshotDeltaStudy(stockIdentifyBlockers, stockSnapshotObserver, stockEventObserver) : null;
         _itemEffectsShape = itemEffectsShape;
         if (expectedEffectValues is not null &&
             (!itemEffectsShape || expectedEffectValues.Count is < 1 or > 16))

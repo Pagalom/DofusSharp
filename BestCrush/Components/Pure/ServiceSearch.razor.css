@@ -1,0 +1,8 @@
+ .service-search { display:block; width:100%; min-width:0; margin:0; }
+.service-search-field { position:relative; display:flex; align-items:center; }
+.service-search-field > .bi-search { position:absolute; left:.9rem; color:#aeb8c1; pointer-events:none; z-index:1; }
+.service-search-field .form-control { min-height:44px; padding-left:2.6rem; padding-right:2.7rem; }
+.service-search-field input::-webkit-search-cancel-button { display:none; }
+.service-search-clear { position:absolute; right:.35rem; display:grid; place-items:center; width:34px; height:34px; border:0; border-radius:.3rem; color:#c2c9cf; background:transparent; }
+.service-search-clear:hover { background:#ffffff15; color:#fff; }
+.service-search-clear:focus-visible { outline:2px solid #6aaff0; }

@@ -6,10 +6,11 @@ namespace Tests.BestCrush;
 public sealed class ModularWorkspaceNavigationTest
 {
     [Fact]
-    public void AllNineModulesHaveStableOrderAndUniqueSlugs()
+    public void RoutineComesFirstAndTheAnalysisToolComesLast()
     {
         WorkspaceModules.All.Select(module => module.Name)
             .Should().Equal(
+                "Routine",
                 "Concassage",
                 "Achat / Vente",
                 "Pierres d'âme",
@@ -18,14 +19,19 @@ public sealed class ModularWorkspaceNavigationTest
                 "Élevage",
                 "Farming",
                 "Forgemagie",
-                "Opportunités");
+                "Opportunités",
+                "Analyses");
 
         WorkspaceModules.All.Select(module => module.Slug)
             .Should().OnlyHaveUniqueItems();
-        WorkspaceModules.All.Should().HaveCount(9);
+        WorkspaceModules.All.Should().HaveCount(11);
+        WorkspaceModules.All.Where(module => module.IsUtility)
+            .Should().ContainSingle().Which.Slug.Should().Be("analyses");
     }
 
     [Theory]
+    [InlineData("routine")]
+    [InlineData("analyses")]
     [InlineData("achat-vente")]
     [InlineData("pierres-ame")]
     [InlineData("craft")]
@@ -69,6 +75,8 @@ public sealed class ModularWorkspaceNavigationTest
     }
 
     [Theory]
+    [InlineData("routine")]
+    [InlineData("analyses")]
     [InlineData("achat-vente")]
     [InlineData("pierres-ame")]
     [InlineData("craft")]
@@ -131,7 +139,19 @@ public sealed class ModularWorkspaceNavigationTest
     {
         KnownRoutes.Profile().Should().Be("/profile");
         KnownRoutes.Settings("Kourial")
-            .Should().Be("/servers/Kourial?settings=1");
+            .Should().Be("/servers/Kourial?settings=true");
+    }
+
+    [Fact]
+    public void GlobalSettingsQueryCanBeBoundToABoolean()
+    {
+        string route = KnownRoutes.Settings("Tylezia");
+        var query = System.Web.HttpUtility.ParseQueryString(
+            new Uri(new Uri("https://bestcrush.local"), route).Query);
+
+        bool.TryParse(query["settings"], out bool openSettings)
+            .Should().BeTrue("the settings page binds this query to a bool");
+        openSettings.Should().BeTrue();
     }
 
     [Fact]

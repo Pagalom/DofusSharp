@@ -2,13 +2,12 @@
 
 @if (Result is not null)
 {
-    <div class="border rounded px-3 py-2 mt-2"
-         title="@BuildTooltip()">
+    <div class="border rounded px-3 py-2 mt-2">
 
         <div class="d-flex justify-content-between align-items-center gap-3">
 
             <span class="small text-secondary">
-                Coût craft
+                @(StockPlan is null ? "Coût craft" : "Reste à payer (craft)")
             </span>
 
             @if (Result.IsComplete)
@@ -36,75 +35,24 @@
             }
 
         </div>
+        @if (StockPlan is not null)
+        {
+            <div class="small text-secondary mt-1" title="Valeur indicative de revente des ingrédients utilisés. Les achats restants sont recalculés selon les lots disponibles.">
+                Valeur des ingrédients possédés utilisés : @(StockPlan.OwnedValue is { } owned ? $"{owned:N0} k" : "prix inconnu")
+            </div>
+        }
+        <CraftStockAvailability Result="Result" Equipment="Equipment" ServerName="@StockServerName" />
 
     </div>
 }
 
 @code
 {
+    [Parameter] public Equipment? Equipment { get; set; }
+    [Parameter] public StockCraftPlan? StockPlan { get; set; }
+    [Parameter] public string? StockServerName { get; set; }
+
     [Parameter]
     public CraftCostResult? Result { get; set; }
 
-    private string BuildTooltip()
-    {
-        if (Result is null ||
-            Result.Resources.Count == 0)
-        {
-            return "Aucune donnée disponible";
-        }
-
-        List<string> lines = [];
-
-        foreach (CraftResourceCostLine resource
-                 in Result.Resources)
-        {
-            lines.Add(
-                $"{resource.ResourceName} ×{resource.RequiredQuantity}"
-            );
-
-            if (resource.Purchase is null)
-            {
-                lines.Add(
-                    "Prix indisponible"
-                );
-            }
-            else
-            {
-                lines.Add(
-                    $"Achat : {BuildLots(resource.Purchase)}"
-                );
-
-                lines.Add(
-                    $"Coût : {resource.Purchase.TotalCost:N0} kamas"
-                );
-
-                if (resource.Purchase.SurplusQuantity > 0)
-                {
-                    lines.Add(
-                        $"Surplus : {resource.Purchase.SurplusQuantity}"
-                    );
-                }
-            }
-
-            lines.Add("");
-        }
-
-        return string.Join(
-            "\n",
-            lines
-        ).TrimEnd();
-    }
-
-    private static string BuildLots(
-        MarketPurchaseResult purchase)
-    {
-        return string.Join(
-            " + ",
-            purchase.Lots
-                .OrderByDescending(lot =>
-                    lot.Key)
-                .Select(lot =>
-                    $"x{lot.Key} ×{lot.Value}")
-        );
-    }
 }

@@ -20,15 +20,47 @@
 @inject BestCrush.Services.LiveDofusClientNetworkBindings LiveClientNetworkBindings
 @inject BestCrush.Services.WindowScopedNetworkEquipmentState WindowEquipmentState
 @inject BestCrush.Services.DofusWindowService DofusWindowService
+@inject DofusNetworkCaptureService NetworkCapture
 
-<div class="min-vh-100 container-fluid px-3 px-xl-4 d-flex flex-column" data-bs-theme="@_theme">
+@inject IDataPriorityProvider DataPriorityProvider
+@inject IJSRuntime JS
+
+<CascadingValue Value="_workspace" IsFixed="true">
+<div class="bestcrush-workspace min-vh-100 container-fluid px-3 px-xl-4 d-flex flex-column" data-bs-theme="@_theme">
+    <a class="workspace-skip-link" href="#workspace-main">Aller au contenu</a>
     <header class="d-flex align-items-center justify-content-between gap-3 py-2">
         <div class="d-flex align-items-center gap-2">
             <img src="img/logo-48.png" width="40" height="40" alt="Logo BestCrush"/>
             <span class="fw-semibold">BestCrush</span>
         </div>
 
-        <div class="d-flex align-items-center justify-content-end gap-2">
+        <div class="workspace-header-actions d-flex align-items-start justify-content-end gap-2">
+            <button type="button" class="btn workspace-data-button"
+                    aria-label="@(_workspace.DataOpen ? "Revenir aux activités" : "Ouvrir les données du marché")"
+                    aria-controls="@(_workspace.DataOpen ? "workspace-activity" : "workspace-data")"
+                    title="@(_workspace.DataOpen ? "Revenir aux activités" : "Prix, coefficients et historique")"
+                    @onclick="ToggleWorkspaceAsync">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="1.8" aria-hidden="true">
+                    @if (_workspace.DataOpen)
+                    {
+                        <rect x="3" y="3" width="7" height="7" rx="1" />
+                        <rect x="14" y="3" width="7" height="7" rx="1" />
+                        <rect x="3" y="14" width="7" height="7" rx="1" />
+                        <rect x="14" y="14" width="7" height="7" rx="1" />
+                    }
+                    else
+                    {
+                        <ellipse cx="12" cy="5" rx="8" ry="3" />
+                        <path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7" />
+                    }
+                </svg>
+                @(_workspace.DataOpen ? "Activités" : "Données")
+            </button>
+            @if (OperatingSystem.IsWindows())
+            {
+                <NetworkCaptureIndicator Status="_networkCaptureStatus" />
+            }
             <div class="dropdown">
                 <button type="button"
                         class="btn btn-outline-secondary dropdown-toggle"
@@ -72,14 +104,14 @@
                 </ul>
             </div>
 
-            <div class="d-flex align-items-center gap-1"
+            <div class="d-flex align-items-start gap-1"
                  role="group" aria-label="Fenêtres Dofus détectées cette session">
                 @if (CurrentDofusClientsState.Clients.Count > 0)
                 {
                     @foreach (DofusClientWindow client in CurrentDofusClientsState.Clients)
                     {
-                        <button @key="client.Key"
-                                type="button"
+                        <div class="character-context" @key="client.Key">
+                        <button type="button"
                                 class="character-avatar @(CurrentDofusClientsState.SelectedClient?.Key == client.Key ? "active" : "") @(LiveClientNetworkBindings.IsLinked(client.Key) ? "network-linked" : "") @(client.HasCharacterTitle && CurrentCandidateWindowCardsState.HasCandidateLink(client.Key) ? "candidate-roster-linked" : "")"
                                 title="@($"{client.DisplayName}{(client.ClassName is null ? "" : $" — {client.ClassName}")} — fenêtre Dofus (flux TCP {(LiveClientNetworkBindings.IsLinked(client.Key) ? "relié" : "non relié")}, groupe candidat {(client.HasCharacterTitle && CurrentCandidateWindowCardsState.HasCandidateLink(client.Key) ? "lié" : "non lié")}, compte non vérifié)")"
                                 aria-label="@($"Cibler la fenêtre de {client.DisplayName}")"
@@ -97,12 +129,15 @@
                                 @(client.HasCharacterTitle ? client.DisplayName[..1].ToUpperInvariant() : "?")
                             </span>
                         </button>
+                        <StockStatus Window="client.Key" />
+                        </div>
                     }
                 }
                 else
                 {
                     @foreach (CharacterSessionProfile character in CurrentCharacterState.Characters)
                     {
+                        <div class="character-context" @key="character.Key">
                         <button type="button"
                                 class="character-avatar @(CurrentCharacterState.ActiveCharacterKey == character.Key ? "active" : "")"
                                 title="@($"{character.Name} — {character.Key.ServerName}")"
@@ -122,6 +157,11 @@
                                 @(string.IsNullOrWhiteSpace(character.Name) ? "?" : character.Name[..1].ToUpperInvariant())
                             </span>
                         </button>
+                        @if (CurrentCharacterState.WindowForCharacter(character.Key) is { } window)
+                        {
+                            <StockStatus Window="window" />
+                        }
+                        </div>
                     }
                 }
             </div>
@@ -133,32 +173,19 @@
                 @(CurrentDofusClientsState.SelectedClient?.DisplayName ?? CurrentCharacterState.ActiveProfile?.Name ?? "Personnages")
             </a>
 
-            @if (_currentServer is not null)
-            {
-                <a class="btn btn-outline-secondary"
-                   href="@KnownRoutes.Settings(_currentServer.Name)"
-                   title="Paramètres"
-                   aria-label="Paramètres">
-                    ⚙
-                </a>
-            }
+            <button type="button" class="btn btn-outline-secondary"
+                    title="Paramètres" aria-label="Paramètres" @onclick="_workspace.OpenSettings">⚙</button>
         </div>
     </header>
 
-    <nav class="workspace-tabs mb-3" aria-label="Modules BestCrush">
-        @foreach (WorkspaceModule module in WorkspaceModules.All)
-        {
-            <a class="@TabClass(module)"
-               href="@WorkspaceModules.Href(module, _currentServer?.Name)"
-               aria-current="@(ActiveTab == module.Slug ? "page" : null)">
-                @module.Name
-            </a>
-        }
-    </nav>
-
+    <div class="workspace-frame flex-grow-1">
+        <WorkspaceSidebar ServerName="@_currentServer?.Name" ActiveModule="@ActiveTab"
+                          DataOpen="@_workspace.DataOpen" DataTab="@_workspace.DataTab"
+                          OnDataTabSelected="SelectDataTabAsync" />
+        <main class="workspace-main" id="workspace-main">
     <NpcapRequirementBanner />
 
-    <div class="flex-grow-1">
+    <div class="flex-grow-1" hidden="@_workspace.DataOpen">
         @if (_servers is null)
         {
             <div class="spinner-border spinner-border-sm text-primary" role="status">
@@ -167,14 +194,69 @@
         }
         else if (IsRouteCompatible)
         {
-            @Body
+            <div id="workspace-activity">
+                <PreservedActivity ChildContent="@Body" Route="@NavigationManager.Uri" />
+            </div>
         }
     </div>
 
+    <div id="workspace-data" class="flex-grow-1" hidden="@(!_workspace.DataOpen)">
+        @if (_dataVisited)
+        {
+            <DataWorkspace ServerName="@_currentServer?.Name" Tab="@_workspace.DataTab" IsActive="@_workspace.DataOpen" Priority="@DataPriorityProvider.Priority"
+                           HistorySelection="@_workspace.HistorySelection" />
+        }
+    </div>
+
+    <WorkspaceSettingsDialog Visible="@_workspace.SettingsOpen" OnClose="_workspace.CloseSettings"
+                             OnYieldChanged="_workspace.NotifyCrushSettingsChanged" />
+        </main>
+    </div>
     <Footer></Footer>
 </div>
+</CascadingValue>
 
 @code {
+    private readonly WorkspaceNavigation _workspace = new();
+    private bool _dataVisited;
+    private string? _pendingViewport;
+    private IJSObjectReference? _workspaceJs;
+    private async Task<IJSObjectReference> WorkspaceJsAsync() =>
+        _workspaceJs ??= await JS.InvokeAsync<IJSObjectReference>("import", "./js/workspace.js");
+
+    private Task ToggleWorkspaceAsync() => _workspace.DataOpen ? CloseDataAsync() : OpenDataAsync();
+
+    private async Task OpenDataAsync()
+    {
+        if (_workspace.DataOpen) return;
+        await (await WorkspaceJsAsync()).InvokeVoidAsync("capture", "activity");
+        _dataVisited = true;
+        _pendingViewport = "data";
+        _workspace.OpenData();
+    }
+    private async Task CloseDataAsync()
+    {
+        await (await WorkspaceJsAsync()).InvokeVoidAsync("capture", "data");
+        _pendingViewport = "activity";
+        _workspace.CloseData();
+    }
+    private async Task SelectDataTabAsync(WorkspaceDataTab tab)
+    {
+        if (_workspace.DataTab == tab) return;
+        _workspace.SelectDataTab(tab);
+        await (await WorkspaceJsAsync()).InvokeVoidAsync("scrollToTop");
+    }
+    private void OnWorkspaceChanged() => _ = InvokeAsync(() =>
+    {
+        if (_workspace.DataOpen) _dataVisited = true;
+        StateHasChanged();
+    });
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_pendingViewport is not { } viewport) return;
+        _pendingViewport = null;
+        await (await WorkspaceJsAsync()).InvokeVoidAsync("restore", viewport);
+    }
     private readonly HashSet<string> _missingAvatarArtwork = new(StringComparer.Ordinal);
     private void MarkAvatarArtworkMissing(string path) => _missingAvatarArtwork.Add(path);
 
@@ -186,15 +268,11 @@
 
     private CancellationTokenSource? _clientPollingCancellation;
     private Task? _clientPollingTask;
+    private NetworkCaptureStatus _networkCaptureStatus;
 
     private string? ActiveTab =>
         WorkspaceModules.ActiveSlug(
             NavigationManager.ToBaseRelativePath(NavigationManager.Uri));
-
-    private string TabClass(WorkspaceModule module) =>
-        ActiveTab == module.Slug
-            ? "workspace-tab active"
-            : "workspace-tab";
 
     // Never instantiate legacy pages scoped to another selected server.
     private bool IsRouteCompatible =>
@@ -220,6 +298,8 @@
 
     protected override async Task OnInitializedAsync()
     {
+        _networkCaptureStatus = NetworkCapture.Status;
+        _workspace.Changed += OnWorkspaceChanged;
         NavigationManager.LocationChanged += OnLocationChanged;
 
         IReadOnlyCollection<DofocusServer> catalog =
@@ -287,6 +367,9 @@
     {
         _ = InvokeAsync(() =>
         {
+            string path = NavigationManager.ToBaseRelativePath(args.Location);
+            if (WorkspaceModules.ServerFromRoute(path) is null && _workspace.DataOpen)
+                _workspace.CloseData();
             GuardLegacyRoute();
             StateHasChanged();
         });
@@ -446,6 +529,13 @@
             {
                 await InvokeAsync(() =>
                 {
+                    var captureStatus = NetworkCapture.Status;
+                    if (_networkCaptureStatus != captureStatus)
+                    {
+                        _networkCaptureStatus = captureStatus;
+                        StateHasChanged();
+                    }
+
                     IReadOnlyList<DofusWindowInfo> windows =
                         DofusWindowService.ListVisibleDofusWindows();
                     DofusWindowInfo? foreground =
@@ -488,6 +578,12 @@
 
     public async ValueTask DisposeAsync()
     {
+        _workspace.Changed -= OnWorkspaceChanged;
+        if (_workspaceJs is not null)
+        {
+            try { await _workspaceJs.DisposeAsync(); }
+            catch (JSDisconnectedException) { }
+        }
         NavigationManager.LocationChanged -= OnLocationChanged;
         CurrentCharacterState.Changed -= OnCharacterChanged;
         CurrentCharacterState.TargetRequested -= OnVerifiedCharacterTargetRequested;

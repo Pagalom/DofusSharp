@@ -1,0 +1,66 @@
+@using BestCrush.Domain.Models
+@if (Inline)
+{
+    <div class="visual-choices" role="group" aria-label="Types d’objet">
+        @foreach (var type in AvailableTypes.Concat(SelectedTypes).Distinct().OrderBy(x => x.ToDisplayName()))
+        {
+            <VisualFilterChoice Label="@type.ToDisplayName()" Image="@TypeImage(type)" Selected="@SelectedTypes.Contains(type)" Disabled="Disabled"
+                                Pressed="() => Toggle(type, new ChangeEventArgs { Value = !SelectedTypes.Contains(type) })" />
+        }
+    </div>
+}
+else
+{
+<details class="equipment-type-filter" name="@DisclosureGroup">
+    <summary class="btn btn-outline-secondary">Types d’objet : @SelectionLabel</summary>
+    <div class="border rounded bg-body text-body p-3 mt-2">
+        <div class="d-flex justify-content-between align-items-center gap-3 mb-2">
+            <span class="small text-body-secondary">@SelectionDescription</span>
+            <button class="btn btn-sm btn-outline-secondary" type="button" disabled="@(Disabled || SelectedTypes.Count == 0)" @onclick="Reset">Tous les types</button>
+        </div>
+        <div class="row row-cols-2 row-cols-sm-3 g-2">
+            @foreach (var type in AvailableTypes.Concat(SelectedTypes).Distinct().OrderBy(x => x.ToDisplayName()))
+            {
+                <div class="col"><label class="d-flex align-items-center gap-2">
+                    <input class="form-check-input mt-0" type="checkbox" checked="@SelectedTypes.Contains(type)" disabled="@Disabled"
+                           @onchange="args => Toggle(type, args)" />
+                    <span>@type.ToDisplayName()</span>
+                </label></div>
+            }
+        </div>
+    </div>
+</details>
+
+}
+@code {
+    [Parameter] public IReadOnlyCollection<EquipmentType> AvailableTypes { get; set; } = Array.Empty<EquipmentType>();
+    [Parameter] public IReadOnlyCollection<EquipmentType> SelectedTypes { get; set; } = Array.Empty<EquipmentType>();
+    [Parameter] public EventCallback<IReadOnlyCollection<EquipmentType>> SelectedTypesChanged { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool Inline { get; set; }
+    [Parameter] public string? DisclosureGroup { get; set; }
+    [Parameter] public string AllTypesLabel { get; set; } = "Tous";
+    [Parameter] public string AllTypesDescription { get; set; } = "Tous les types inclus";
+    internal static string TypeImage(EquipmentType type) => "img/" + (type switch {
+        EquipmentType.Amulet => "necklace", EquipmentType.Ring => "ring", EquipmentType.Belt => "belt",
+        EquipmentType.Boots => "boots", EquipmentType.Hat => "hat", EquipmentType.Cloak => "cape",
+        EquipmentType.Shield => "shield", EquipmentType.Trophy => "trophy", EquipmentType.Bow => "bow",
+        EquipmentType.Lance => "lance", EquipmentType.Scythe => "scythe", EquipmentType.Axe => "axe",
+        EquipmentType.Tool => "tool", EquipmentType.Pickaxe => "pickaxe", EquipmentType.Wand => "wand",
+        EquipmentType.Staff => "staff", EquipmentType.Dagger => "dagger", EquipmentType.Sword => "sword",
+        EquipmentType.Hammer => "hammer", EquipmentType.Shovel => "shovel", _ => "tool"
+    }) + ".svg";
+    private string SelectionLabel => SelectedTypes.Count == 0 ? AllTypesLabel :
+        string.Join(", ", SelectedTypes.OrderBy(x => x.ToDisplayName()).Take(2).Select(x => x.ToDisplayName())) +
+        (SelectedTypes.Count > 2 ? $" +{SelectedTypes.Count - 2}" : "");
+    private string SelectionDescription => SelectedTypes.Count == 0 ? AllTypesDescription :
+        $"{SelectedTypes.Count} type(s) sélectionné(s)";
+    private Task Reset() => Disabled ? Task.CompletedTask : SelectedTypesChanged.InvokeAsync(Array.Empty<EquipmentType>());
+    private Task Toggle(EquipmentType type, ChangeEventArgs args)
+    {
+        if (Disabled) return Task.CompletedTask;
+        var selection = SelectedTypes.ToHashSet();
+        if (args.Value is true) selection.Add(type); else selection.Remove(type);
+        return SelectedTypesChanged.InvokeAsync(selection.Order().ToArray());
+    }
+}
