@@ -3478,3 +3478,101 @@ de banque ou payload ne doit apparaître
 dans les logs partagés. La preuve
 d'appartenance compte+serveur reste
 distincte et non validée.
+
+## P3d.15 — Comparaison réelle sur banque de 560 lignes validée
+
+### Checkpoint Windows du 25/10/2026
+
+L'utilisateur a validé `dotnet test` après P3d.14 :
+
+```text
+Récapitulatif du test : total : 1340; échec : 0; réussi : 1340; ignoré : 0; durée : 10,9s
+```
+
+### Capture du 25/10/2026, 11:44–11:45 UTC
+
+Un seul client Dofus, banque ouverte,
+un retrait partiel de **trois ressources**
+vers l'inventaire, puis banque refermée/
+rouverte sur la **même session TCP**.
+
+```text
+11:44:57 irp : rows=560 fields345=560 effects-present=157 duplicate-f5=0
+ grouping=not-ready snapshot-change=not-comparable
+ wire-grouping=candidate groups=560 source-rows=560 rows-with-structured-effects=60
+ wire-snapshot-change=no-prior-snapshot
+ grouping-blockers=...undecodable-effects:60...missing-value:60
+
+11:45:01 iqx : uid-candidate-not-found same-type-rows=1 same-type-quantity-rows=0
+ exact-effects-status=unrecognized
+11:45:01 iqz : uid-candidate-found itemId-candidate=same quantity-candidate=different
+ exact-effects=unrecognized
+11:45:01 iqq : short=scalar-candidates
+
+11:45:12 irp : rows=560 fields345=560 effects-present=157 duplicate-f5=0
+ grouping=not-ready snapshot-change=not-comparable
+ wire-grouping=candidate groups=560 source-rows=560 rows-with-structured-effects=60
+ wire-snapshot-change=compared increased-groups=0 decreased-groups=1 new-groups=0 removed-groups=0 unchanged-groups=559
+```
+
+**Résultat réel validé** : le nouvel algorithme
+reconnaît une variation négative sur **un seul
+groupe**, les **559 autres restent identiques**
+au sens du contenu wire complet des effets,
+malgré les 60 lignes comportant des variantes
+non décodables par f5. Aucun groupe apparu,
+supprimé ou augmenté.
+
+Ne pas confondre le nombre de groupes diminués
+(`1`) avec l'**amplitude** de la variation :
+le rapport partagé **ne prouve pas** à lui seul
+que f3 a effectivement baissé de **trois**.
+C'est la quantité de transfert réalisée en jeu
+par l'utilisateur. Ne pas affirmer
+un contrôle numérique déjà effectué.
+
+Les deux `irp` ont même nombre de lignes
+et longueur en octets (11700), mais les
+signatures/quantités de contenu sont
+différentes — leur taille identique
+ne prouve pas l'égalité de contenu.
+
+### Protection par test synthétique
+
+`Tests.BestCrush/Network/StockRealBankPatternRegressionTest.cs`
+caractérise **en synthétique uniquement**
+la structure 560 lignes, 157 avec
+effets, les 60 variantes réparties
+36 f9, 9 f7, 7 f10, 6 f8, 2 f6, et
+un groupe diminué parmi 559 inchangés
+malgré changement des UIDs techniques.
+Il utilise des IDs de test fictifs,
+aucune donnée de la banque réelle.
+
+Ce nouveau test est **à valider** sous Windows ;
+la suite déjà confirmée reste à 1340.
+
+### Étape suivante
+
+Priorité : préserver la comparaison
+structurelle validée, puis établir une
+**source indépendante d'identité
+compte/serveur** pour la banque ainsi
+que la sémantique des champs f3/f4.
+Il n'est pas utile de faire
+rejouer le même transfert pour
+simplement re-confirmer `decreased-groups=1`.
+Les 60 effets spéciaux peuvent être
+caractérisés progressivement, sans
+bloquer les observations de quantités
+en laboratoire ; ils ne sont pas
+interprétés comme des effets numériques
+dans la production.
+
+Checkpoint Windows simple :
+
+```powershell
+git fetch origin feature/modular-workspace
+git merge --ff-only FETCH_HEAD
+dotnet test .\Tests.BestCrush\Tests.BestCrush.csproj
+```
