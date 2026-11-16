@@ -1,0 +1,18 @@
+.fm-stat {
+    display: inline;
+    font-variant-numeric: tabular-nums;
+}
+
+.fm-stat i {
+    display: inline-block;
+    width: 1em;
+    color: var(--bc-gold);
+    text-align: center;
+    margin-inline-end: .2rem;
+}
+
+.fm-stat i.fire { color: #ffad65; }
+.fm-stat i.water { color: #84d1e9; }
+.fm-stat i.earth { color: #dabc83; }
+.fm-stat i.air { color: #a9d3ae; }
+.fm-stat i.health { color: #ec939b; }

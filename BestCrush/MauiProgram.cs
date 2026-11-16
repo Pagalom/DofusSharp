@@ -105,6 +105,7 @@ public static class MauiProgram
             builder.Services.AddScoped<MarketAnalyticsService>();
             builder.Services.AddScoped<ForgemagingDataService>();
             builder.Services.AddSingleton<LiveForgemagingService>();
+            builder.Services.AddSingleton<LiveBreedingService>();
             builder.Services.AddSingleton(new ForgemagingSessionStore(Path.Combine(dataDirectory, "Data", "fm-sessions.json")));
             builder.Services.AddScoped<CoefficientService>();
             builder.Services.AddScoped<CraftCostService>();

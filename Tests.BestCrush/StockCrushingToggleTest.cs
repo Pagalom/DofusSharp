@@ -44,7 +44,7 @@ public sealed class StockCrushingToggleTest
         var plan=new StockCraftPlanner(prices).Calculate(item,1,new Dictionary<long,BigInteger>{{1,6}},market);
         var original=Scenario(item,full);var adjusted=StockCrushingProjection.Apply(original,plan);
         Assert.Equal(1000,original.CraftCost.TotalCost);Assert.Equal(-100,original.CraftBenefit);
-        Assert.Equal(400,adjusted.CraftCost.TotalCost);Assert.Equal(600,plan.OwnedValue);
+        Assert.Equal(400,adjusted.CraftCost.TotalCost);Assert.Equal(594,plan.OwnedValue);
         Assert.Equal(500,adjusted.CraftBenefit);Assert.Equal(1.25,adjusted.CraftYield);
         Assert.Equal(original.AdjustedRuneValue,adjusted.AdjustedRuneValue);
         Assert.Same(original.Runes,adjusted.Runes);Assert.Same(original.RuneValues,adjusted.RuneValues);
@@ -58,7 +58,7 @@ public sealed class StockCrushingToggleTest
         var market=Market(Price(1,10,1000));var item=Recipe();
         var plan=new StockCraftPlanner(prices).Calculate(item,1,new Dictionary<long,BigInteger>{{1,6}},market);
         var cost=StockCrushingProjection.RemainingCost(plan);
-        Assert.Equal(600,plan.OwnedValue);Assert.Equal(1000,cost.TotalCost);
+        Assert.Null(plan.OwnedValue);Assert.Equal(1000,cost.TotalCost);
         Assert.Equal(10,cost.Resources.Single().PurchasedQuantity);
         Assert.Equal(6,cost.Resources.Single().SurplusQuantity);
     }

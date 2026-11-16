@@ -1,0 +1,14 @@
+.rune-exo-picker { position:relative; display:inline-block; }
+.rune-exo-menu {
+    position:absolute; top:calc(100% + .4rem); z-index:3; display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(7.5rem,1fr)); gap:.5rem;
+    width:min(34rem,60vw); max-height:19rem; overflow:auto; padding:.6rem;
+    border:1px solid var(--bc-border); border-radius:.4rem; box-shadow:0 .3rem .9rem #0006; background:var(--bc-panel);
+}
+.rune-exo-menu.above { top:auto; bottom:calc(100% + .4rem); }
+.rune-exo-menu h4 { color:var(--bc-gold); font-size:.73rem; margin:.2rem 0; }
+.rune-exo-menu button {
+    display:flex; align-items:center; gap:.3rem; width:100%; padding:.25rem;
+    border:0; border-radius:.25rem; font-size:.77rem; text-align:left; background:transparent; color:var(--bc-text);
+}
+.rune-exo-menu button:hover,.rune-exo-menu button:focus-visible { background:var(--bc-hover); }

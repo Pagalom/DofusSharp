@@ -1,0 +1,73 @@
+@using BestCrush.Components.Pages
+@using BestCrush.Domain.Models
+
+<div class="rune-exo-picker" @onkeydown="CloseOnEscape">
+    <button type="button" class="btn btn-sm btn-outline-secondary" aria-expanded="@(_open ? "true" : "false")"
+            disabled="@(Disabled || _groups.Count == 0)" @onclick="() => _open = !_open">+ Exo</button>
+    @if (_open && !Disabled)
+    {
+        <div class="rune-exo-menu @(OpenUp ? "above" : null)" role="group" aria-label="Ajouter un exo">
+            @foreach (var family in Families)
+            {
+                @if (_groups.TryGetValue(family, out var runes))
+                {
+                    <div>
+                        <h4>@family</h4>
+                        @foreach (var rune in runes)
+                        {
+                            <button type="button" @onclick="() => SelectAsync(rune.Characteristic)">
+                                <img src="@(rune.IconId is > 0 ? $"img/runes/{rune.IconId}.png" : "img/runes/unknown.svg")"
+                                     alt="" width="22" height="22" /> @ForgemagingWorkspace.StatName(rune.Characteristic)
+                            </button>
+                        }
+                    </div>
+                }
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ForgemagingRune> Runes { get; set; } = [];
+    [Parameter] public IReadOnlyList<ForgemagingLine> Lines { get; set; } = [];
+    [Parameter] public EventCallback<Characteristic> Selected { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public bool OpenUp { get; set; }
+
+    private static readonly string[] Families = ["Dommages", "Résistances", "Caractéristiques", "Secondaires"];
+    private Dictionary<string, ForgemagingRune[]> _groups = [];
+    private bool _open;
+
+    protected override void OnParametersSet()
+    {
+        var present = Lines.Select(line => line.Characteristic).ToHashSet();
+        _groups = Runes.Where(rune => rune.Gain > 0 && !present.Contains(rune.Characteristic) &&
+                !rune.Name.StartsWith("Rune Pa ", StringComparison.OrdinalIgnoreCase) &&
+                !rune.Name.StartsWith("Rune Ra ", StringComparison.OrdinalIgnoreCase))
+            .DistinctBy(rune => rune.Characteristic).OrderBy(rune => ForgemagingWorkspace.StatName(rune.Characteristic))
+            .GroupBy(rune => Family(rune.Characteristic)).ToDictionary(group => group.Key, group => group.ToArray());
+        if (Disabled || _groups.Count == 0) _open = false;
+    }
+
+    private async Task SelectAsync(Characteristic stat)
+    {
+        _open = false;
+        await Selected.InvokeAsync(stat);
+    }
+
+    private void CloseOnEscape(KeyboardEventArgs args)
+    {
+        if (args.Key == "Escape") _open = false;
+    }
+
+    private static string Family(Characteristic stat) => stat switch
+    {
+        Characteristic.DamageReflection => "Secondaires",
+        Characteristic.Strength or Characteristic.Intelligence or Characteristic.Chance or Characteristic.Agility or
+        Characteristic.Vitality or Characteristic.Wisdom or Characteristic.Ap or Characteristic.Mp or Characteristic.Range or
+        Characteristic.Critical or Characteristic.Summons or Characteristic.Power => "Caractéristiques",
+        _ when stat.ToString().StartsWith("Damage", StringComparison.Ordinal) => "Dommages",
+        _ when stat.ToString().StartsWith("Resistance", StringComparison.Ordinal) => "Résistances",
+        _ => "Secondaires"
+    };
+}

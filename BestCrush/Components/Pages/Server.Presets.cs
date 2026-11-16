@@ -297,6 +297,7 @@ public partial class Server
         Model = CloneSearchModel(
             preset.Filters
         );
+        Model.ProfitabilityMode = ProfitabilityFilterMode.Best;
         _sortOrder = preset.SortOrder;
         _presetEditorMode = null;
         _confirmDeletePreset = false;

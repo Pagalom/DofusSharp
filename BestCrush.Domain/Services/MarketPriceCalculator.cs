@@ -8,170 +8,55 @@ internal static class MarketPriceCalculator
     internal static MarketValueResult? CalculateValue(
         long dofusDbId,
         double quantity,
-        IReadOnlyDictionary<
-            (long DofusDbId, int Quantity),
-            MarketPriceObservation> observations,
-        long lotPriceReduction)
+        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> observations)
     {
-        long ResalePrice(MarketPriceObservation lot) => Math.Max(1L, lot.Price - lotPriceReduction);
-
         if (quantity <= 0)
-        {
-            return new MarketValueResult(
-                0,
-                false
-            );
-        }
-
-        MarketPriceObservation[] prices =
-            observations
-                .Where(entry =>
-                    entry.Key.DofusDbId ==
-                        dofusDbId)
-                .Select(entry =>
-                    entry.Value)
-                .Where(observation =>
-                    observation.Quantity > 0 &&
-                    observation.Price > 0)
-                .OrderByDescending(observation =>
-                    observation.Quantity)
-                .ToArray();
-
-        if (prices.Length == 0)
-        {
+            return new MarketValueResult(0, false);
+        if (!double.IsFinite(quantity) || quantity >= (double)long.MaxValue)
             return null;
-        }
 
-        long wholeQuantity =
-            (long)Math.Floor(
-                quantity
-            );
+        var prices = observations.Values.Where(lot => lot.DofusDbId == dofusDbId &&
+                lot.Quantity > 0 && lot.Price > 0 && !lot.IsCleared)
+            .OrderByDescending(lot => lot.Price).ThenByDescending(lot => lot.Quantity).ToArray();
+        if (prices.Length == 0)
+            return null;
 
-        double fractionalQuantity =
-            quantity -
-            wholeQuantity;
-
-        long remainingWhole =
-            wholeQuantity;
-
+        long remaining = (long)Math.Floor(quantity);
+        double fraction = quantity - remaining;
+        bool isEstimated = fraction > 0.000001;
         double value = 0;
-
-        bool isEstimated =
-            fractionalQuantity > 0.000001;
-
-        HashSet<MarketPriceObservation>
-            usedObservations = [];
-
-        // On vend les runes entières comme
-        // un joueur le ferait réellement :
-        //
-        // x1000 → x100 → x10 → x1
-        //
-        // On privilégie donc toujours le
-        // plus gros lot disponible.
-        foreach (
-            MarketPriceObservation lot
-            in prices)
+        List<MarketResaleLot> lots = [];
+        HashSet<MarketPriceObservation> used = [];
+        foreach (var lot in prices)
         {
-            if (remainingWhole <
-                lot.Quantity)
-            {
+            long count = remaining / lot.Quantity;
+            if (count == 0)
                 continue;
-            }
 
-            long numberOfLots =
-                remainingWhole /
-                lot.Quantity;
-
-            if (numberOfLots <= 0)
-            {
-                continue;
-            }
-
-            value +=
-                (double)numberOfLots *
-                ResalePrice(lot);
-
-            remainingWhole -=
-                numberOfLots *
-                lot.Quantity;
-
-            usedObservations.Add(
-                lot
-            );
-
-            if (remainingWhole == 0)
-            {
+            long price = MarketPriceService.ResaleLotPrice(lot.Price);
+            value += (double)count * price;
+            remaining -= count * lot.Quantity;
+            lots.Add(new(count, price, lot));
+            used.Add(lot);
+            if (remaining == 0)
                 break;
-            }
         }
 
-        // Normalement, avec un prix x1,
-        // remainingWhole vaut toujours 0.
-        //
-        // Si un type de lot manque, on conserve
-        // malgré tout une estimation en utilisant
-        // le plus petit lot disponible.
-        if (remainingWhole > 0)
+        if (remaining > 0)
+            return null;
+
+        if (isEstimated)
         {
-            MarketPriceObservation fallback =
-                prices
-                    .OrderBy(observation =>
-                        observation.Quantity)
-                    .First();
+            // A fractional expected rune can only contribute towards a single sale.
+            var single = Array.Find(prices, lot => lot.Quantity == 1);
+            if (single is null)
+                return null;
 
-            double unitPrice =
-                (double)ResalePrice(fallback) /
-                fallback.Quantity;
-
-            value +=
-                remainingWhole *
-                unitPrice;
-
-            usedObservations.Add(
-                fallback
-            );
-
-            isEstimated = true;
+            value += fraction * MarketPriceService.ResaleLotPrice(single.Price);
+            used.Add(single);
         }
 
-        // Le résultat du concassage est une
-        // espérance mathématique et peut donc
-        // produire une fraction de rune.
-        //
-        // Cette fraction est valorisée au prix
-        // unitaire x1 lorsqu'il existe.
-        if (fractionalQuantity >
-            0.000001)
-        {
-            MarketPriceObservation fractionalPrice =
-                prices.FirstOrDefault(
-                    observation =>
-                        observation.Quantity == 1
-                )
-                ?? prices
-                    .OrderBy(observation =>
-                        observation.Quantity)
-                    .First();
-
-            double unitPrice =
-                (double)ResalePrice(fractionalPrice) /
-                fractionalPrice.Quantity;
-
-            value +=
-                fractionalQuantity *
-                unitPrice;
-
-            usedObservations.Add(
-                fractionalPrice
-            );
-        }
-
-        return new MarketValueResult(
-            value,
-            isEstimated,
-            usedObservations.ToArray()
-        );
+        return new MarketValueResult(value, isEstimated, used.ToArray()) { Lots = lots };
     }
 
     internal static MarketPurchaseResult?
@@ -201,7 +86,7 @@ internal static class MarketPriceCalculator
                     entry.Value)
                 .Where(observation =>
                     observation.Quantity > 0 &&
-                    observation.Price > 0)
+                    observation.Price > 0 && !observation.IsCleared)
                 .OrderBy(observation =>
                     observation.Quantity)
                 .ToArray();

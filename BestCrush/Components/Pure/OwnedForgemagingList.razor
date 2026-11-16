@@ -1,6 +1,5 @@
 @using BestCrush.Domain.Models
 @using BestCrush.Domain.Services
-@using BestCrush.Components.Pages
 @using BestCrush.Models
 @using BestCrush.Services
 @using Microsoft.Extensions.DependencyInjection
@@ -19,7 +18,7 @@
                 <ServiceSearch @bind-Value="_search" Label="Chercher dans mes équipements" Placeholder="Chercher dans mes équipements…" />
             </div>
         }
-        @if (Source is null)
+        @if (Source is null && TargetItemId is null)
         {
             <p class="text-secondary small">Synchronisez l’inventaire ou la banque du personnage ciblé sur ce serveur.</p>
         }
@@ -33,105 +32,54 @@
         }
         else if (VisibleRows is { Length: > 0 } rows)
         {
-            <PagedDataTable TItem="OwnedForgemagingEquipment" Items="rows" PageSize="20" ResetKey="@($"{_sourceId}:{_search}:{Filters?.SearchText}")">
+            <PagedDataTable TItem="OwnedForgemagingEquipment" Items="rows" PageSize="20" ResetKey="@($"{_sourceId}:{_search}:{Filters?.SearchText}:{TargetItemId}:{TargetInstanceKey}")">
                 <RowContent Context="page">
                     @foreach (var row in page)
                     {
-                        <ServiceResult @key="row.Key">
-                            <Summary>
-                                <span class="result-identity">
+                        RenderFragment identity = @<span class="result-identity">
                                     <span class="owned-fm-picture">
                                         <MarketItemPicture IconId="row.Equipment.DofusDbIconId" />
                                         <span class="owned-fm-origin" tabindex="0" role="img" aria-label="@Origin(row)"
-                                              data-bs-toggle="tooltip" data-bs-title="@Origin(row)" data-bs-custom-class="multiline-tooltip"><StockContainerIcon Bank="@(row.Container == "bank")" /></span>
+                                              data-bs-toggle="tooltip" data-bs-title="@Origin(row)" data-bs-custom-class="multiline-tooltip">@if (row.Container == "workshop") { <i class="bi bi-tools" aria-hidden="true"></i> }
+                                            else { <StockContainerIcon Bank="@(row.Container == "bank")" /> }</span>
                                     </span>
                                     <span><span class="result-name"><CopyTextButton Value="@row.Equipment.Name" Tooltip="Copier le nom de l’équipement">@row.Equipment.Name</CopyTextButton></span>
-                                        <small>@row.Equipment.Type.ToDisplayName() · Niv. @row.Equipment.Level</small></span>
-                                </span>
-                                @if (Filters is not null)
-                                {
-                                    <span class="result-stat"><small>Valeur des runes</small><strong>@ValueText(row.Crushing?.Target, row.Crushing?.IsComplete)</strong></span>
-                                    <span class="result-stat"><small>Gain FM</small><strong style="@GainStyle(row)">@Money(row.Gain, signed: true)</strong></span>
-                                }
-                                else if (row.RuneCount > 0)
-                                {
-                                    <span class="result-stat"><small>Runes passées</small><strong>@row.RuneCount</strong></span>
-                                    <span class="result-stat"><small>Coût des runes</small><strong>@CostText(row)</strong></span>
-                                }
-                            </Summary>
-                            <ChildContent>
-                                @if (row.Crushing is { } assessment)
-                                {
-                                    <div class="d-flex flex-wrap gap-4 mb-3">
-                                        <div><small class="d-block text-secondary">Avant FM</small><strong>@ValueText(assessment.Current, assessment.IsComplete)</strong></div>
-                                        <div><small class="d-block text-secondary">Après FM</small><strong>@ValueText(assessment.Target, assessment.IsComplete)</strong></div>
-                                        <div><small class="d-block text-secondary">Coût des runes</small><strong>@CostText(row)</strong></div>
-                                        @if (assessment.Target is { } result)
-                                        {
-                                            <div><small class="d-block text-secondary">Scénario estimé</small><strong>@(result.Focus is { } stat ? $"Focus {stat.ToDisplayName()}" : "Sans focus")</strong></div>
-                                        }
-                                    </div>
-                                    @foreach (var reason in assessment.Missing)
+                                        <small>@row.Equipment.Type.ToDisplayName() · Niv. @row.Equipment.Level@if (row.HasOver) { <text> · Over</text> }@if (row.HasExo) { <text> · Exo</text> }</small></span>
+                                </span>;
+                        @if (Filters is not null && ServerName is { } server)
+                        {
+                            <CrushingResultCard @key="row.Key" Equipment="row.Equipment" ServerName="@server" Owned="row"
+                                                InitiallyExpanded="@(TargetItemId is not null)" Identity="identity"
+                                                GainLabel="Gain net" RankedSummary="@OwnedCrushingSummary(row)">
+                                <ChildContent>
+                                    <OwnedForgemagingDetail Item="row" RuneIcons="_runeIcons" IsCrushing="true" ShowRoll="false"
+                                                            SaveAcquisition="@(row.Quantity == 1 && row.Container != "workshop"
+                                                                ? EventCallback.Factory.Create<EquipmentAcquisition>(this, acquisition => SaveAcquisition(row, acquisition))
+                                                                : default)" />
+                                </ChildContent>
+                            </CrushingResultCard>
+                        }
+                        else
+                        {
+                            <ServiceResult @key="row.Key">
+                                <Summary>
+                                    @identity
+                                    @if (row.RuneCount > 0)
                                     {
-                                        <p class="small text-warning mb-1">@reason</p>
+                                        <span class="result-stat"><small>Runes passées</small><strong>@row.RuneCount</strong></span>
+                                        <span class="result-stat"><small>Coût FM</small><strong>@OwnedForgemagingDetail.FormatCost(row)</strong></span>
                                     }
-                                    @if (row.UnpricedRunes > 0) { <p class="small text-warning mb-1">Prix manquant pour @row.UnpricedRunes rune(s) consommée(s).</p> }
-                                    @if (row.UnobservedChanges) { <p class="small text-warning mb-1">Des changements de jet n’ont pas été suivis. Gain FM indisponible.</p> }
-                                }
-                                <h3 class="h6 mt-2">@(row.RollFromWorkshop ? "Dernier jet relevé à l’atelier" : "Jet dans le stock")</h3>
-                                @if (row.Roll is { } roll)
-                                {
-                                    <ul class="list-unstyled d-flex flex-wrap gap-2 mb-2">
-                                        @foreach (var line in roll.Where(line => line.Current != 0))
-                                        {
-                                            <li class="owned-fm-stat">@line.Current @ForgemagingWorkspace.StatName(line.Characteristic)</li>
-                                        }
-                                    </ul>
-                                }
-                                else { <p class="small text-secondary">Jet indisponible.</p> }
-                                @if (Prepare.HasDelegate && row.Roll is not null)
-                                {
-                                    <button type="button" class="btn btn-sm btn-outline-secondary mb-2" @onclick="() => Prepare.InvokeAsync(row)">Essayer ce jet dans l’assistant</button>
-                                }
-                                @if (row.Attempts.Count > 0)
-                                {
-                                    <details class="mt-2"><summary>Historique des runes · @row.RuneCount</summary>
-                                        <PagedDataTable TItem="ForgemagingAttempt" Items="row.Attempts.Reverse()" PageSize="15">
-                                            <RowContent Context="attempts">
-                                                <div class="table-responsive mt-2"><table class="table table-sm align-middle">
-                                                    <thead><tr><th>Heure</th><th>Rune</th><th>Résultat</th><th>Gains et pertes</th><th>Coût</th></tr></thead>
-                                                    <tbody>
-                                                        @foreach (var attempt in attempts)
-                                                        {
-                                                            <tr>
-                                                                <td>@attempt.AtUtc.ToLocalTime().ToString("dd/MM HH:mm")</td>
-                                                                <td><CopyTextButton Value="@attempt.Rune.Name" Tooltip="Copier le nom de la rune">@attempt.Rune.Name</CopyTextButton> × @attempt.RuneCount</td>
-                                                                <td>@ForgemagingWorkspace.OutcomeName(attempt.Outcome)</td>
-                                                                <td>
-                                                                    @foreach (var delta in ForgemagingWorkspace.Deltas(attempt))
-                                                                    {
-                                                                        <span class="me-2">@(delta.Delta.ToString("+0;-0")) @ForgemagingWorkspace.StatName(delta.Stat)</span>
-                                                                    }
-                                                                </td>
-                                                                <td>@Money(attempt.Rune.UnitPrice * attempt.RuneCount)</td>
-                                                            </tr>
-                                                        }
-                                                    </tbody>
-                                                </table></div>
-                                            </RowContent>
-                                        </PagedDataTable>
-                                    </details>
-                                }
-                                else { <p class="small text-secondary mb-0">Déposez l’objet à l’atelier pour suivre les prochaines runes.</p> }
-                            </ChildContent>
-                        </ServiceResult>
+                                </Summary>
+                                <ChildContent><OwnedForgemagingDetail Item="row" RuneIcons="_runeIcons" /></ChildContent>
+                            </ServiceResult>
+                        }
                     }
                 </RowContent>
             </PagedDataTable>
         }
         else
         {
-            <p class="small text-secondary">@(Filters is null ? "Aucun équipement à afficher." : "Aucun objet forgemagé ne correspond aux filtres dans les stocks synchronisés.")</p>
+            <p class="small text-secondary">@(Filters is null ? "Aucun équipement à afficher." : "Aucun équipement possédé ne correspond aux filtres dans les stocks synchronisés.")</p>
         }
     </section>
 }
@@ -142,14 +90,20 @@
     [Parameter] public int RefreshVersion { get; set; }
     [Parameter] public Func<IReadOnlyCollection<Equipment>, IEnumerable<Equipment>>? FilterEquipment { get; set; }
     [Parameter] public EventCallback<IReadOnlyCollection<Equipment>> EquipmentLoaded { get; set; }
-    [Parameter] public EventCallback<OwnedForgemagingEquipment> Prepare { get; set; }
+    [Parameter] public long? TargetItemId { get; set; }
+    [Parameter] public string? TargetInstanceKey { get; set; }
 
-    private readonly BackgroundDataLoad<OwnedForgemagingEquipment[]> _load = new();
+    private sealed record EquipmentRead(OwnedForgemagingEquipment[] Rows, IReadOnlyDictionary<long, long> RuneIcons);
+
+    private readonly BackgroundDataLoad<EquipmentRead> _load = new();
     private LiveStockService? _stock;
     private CurrentDofusClientsState? _clients;
     private ForgemagingSessionStore? _store;
+    private LiveForgemagingService? _live;
+    private (long? Item, string? Key) _target;
     private MarketDataChangeNotifier? _market;
     private OwnedForgemagingEquipment[] _rows = [];
+    private IReadOnlyDictionary<long, long> _runeIcons = new Dictionary<long, long>();
     private string? _sourceId, _server;
     private string _search = "";
     private int _version, _reloadQueued;
@@ -162,6 +116,9 @@
         get
         {
             if (_sourceId != Source?.Id) return [];
+            if (TargetItemId is { } id)
+                return _rows.Where(row => row.Equipment.DofusDbId == id &&
+                    (TargetInstanceKey is null || row.Key.Equals(TargetInstanceKey, StringComparison.OrdinalIgnoreCase))).ToArray();
             if (Filters is not { } filters)
                 return _rows.Where(row => row.Equipment.Name.Contains(_search.Trim(), StringComparison.CurrentCultureIgnoreCase))
                     .OrderBy(row => row.Equipment.Name, StringComparer.CurrentCultureIgnoreCase).ToArray();
@@ -183,6 +140,7 @@
         _clients = Services.GetService<CurrentDofusClientsState>();
         _store = Services.GetService<ForgemagingSessionStore>();
         _market = Services.GetService<MarketDataChangeNotifier>();
+        _live = Services.GetService<LiveForgemagingService>();
         if (_stock is not null) _stock.Changed += QueueRefresh;
         if (_clients is not null) _clients.Changed += QueueRefresh;
         if (_store is not null) _store.GameHistoryChanged += HistoryChanged;
@@ -191,7 +149,8 @@
 
     protected override Task OnParametersSetAsync()
     {
-        if (_server == ServerName && _version == RefreshVersion) return Task.CompletedTask;
+        if (_server == ServerName && _version == RefreshVersion && _target == (TargetItemId, TargetInstanceKey)) return Task.CompletedTask;
+        _target = (TargetItemId, TargetInstanceKey);
         _server = ServerName;
         _version = RefreshVersion;
         return RefreshAsync();
@@ -204,24 +163,52 @@
         if (_sourceId != source?.Id) _rows = [];
         _sourceId = source?.Id;
         _preparationError = false;
-        if (source is null || ServerName is not { } server) { _load.Cancel(); return; }
+        if (ServerName is not { } server || (source is null && TargetItemId is null)) { _load.Cancel(); return; }
         bool crushing = Filters is not null;
+        var (targetId, targetKey) = _target;
         bool loaded = await _load.RunAsync(async token =>
         {
             using var scope = Scopes.CreateScope();
             var services = scope.ServiceProvider;
-            return await ForgemagedEquipmentStock.LoadAsync(source, server, store,
-                services.GetRequiredService<ForgemagingDataService>(), services.GetService<ActivityCatalogService>(),
-                services.GetService<CoefficientService>(), services.GetService<IBestCrushSettingsProvider>(), crushing, token);
+            var data = services.GetRequiredService<ForgemagingDataService>();
+            var rows = source is null ? [] : await ForgemagedEquipmentStock.LoadAsync(source, server, store,
+                data, services.GetService<ActivityCatalogService>(),
+                services.GetService<CoefficientService>(), services.GetService<IBestCrushSettingsProvider>(), crushing, token, targetId);
+            if (targetId is { } id && targetKey is not null && rows.All(row => row.Key != targetKey) &&
+                _live?.View(server) is { StockKey: { } key, Session: { } observed, Crushing: { } context, Runes: var runes } &&
+                key == targetKey && observed.ItemId == id &&
+                (await data.GetOwnedEquipmentAsync([id], token, forCrushing: true)).FirstOrDefault() is { } equipment)
+            {
+                var acquisition = store.GetAcquisitions(server, [(id, key)]).GetValueOrDefault(key);
+                var craft = acquisition?.Kind == EquipmentAcquisitionKind.Craft
+                    ? (await data.GetEquipmentCraftCostsAsync(server, [id], token)).GetValueOrDefault(id) : null;
+                rows = [.. rows, ForgemagedEquipmentStock.Project(key, equipment, "workshop", 1, DateTime.MinValue,
+                    null, observed, new(runes, context.ResalePrices), context, acquisition, craft)];
+            }
+            var runeIds = rows.SelectMany(row => row.Attempts).Select(attempt => attempt.Rune.Id).Distinct().ToArray();
+            var runeIcons = runeIds.Length > 0 ? await data.GetRuneIconIdsAsync(runeIds, token) : new Dictionary<long, long>();
+            return new EquipmentRead(rows, runeIcons);
         });
-        if (_disposed || source.Id != Source?.Id) return;
-        if (loaded)
+        if (_disposed || source?.Id != Source?.Id || _target != (targetId, targetKey)) return;
+        if (loaded && _load.Value is { } result)
         {
-            _rows = _load.Value ?? [];
+            _rows = result.Rows;
+            _runeIcons = result.RuneIcons;
             try { await EquipmentLoaded.InvokeAsync(_rows.Select(row => row.Equipment).DistinctBy(item => item.DofusDbId).ToArray()); }
             catch (Exception error) { _preparationError = true; Logger.LogWarning(error, "Could not prepare owned equipment filters"); }
         }
         else if (_load.Error is { } error) Logger.LogWarning(error, "Could not load owned equipment");
+    }
+
+    private void SaveAcquisition(OwnedForgemagingEquipment row, EquipmentAcquisition acquisition)
+    {
+        if (_store is null || row.Quantity != 1 || ServerName is not { } server || Source is not { } source ||
+            !source.Containers.Any(container => container.Complete && !container.Stale &&
+                container.Items.Any(item => item.Quantity == 1 && item.ItemId == (ulong)row.Equipment.DofusDbId &&
+                    ForgemagedEquipmentStock.InstanceKey(server, row.Equipment.DofusDbId, item.Uid) == row.Key)))
+            throw new InvalidOperationException("Cet équipement n’est plus disponible dans le stock synchronisé.");
+
+        _store.RecordAcquisition(server, row.Equipment.DofusDbId, row.Key, acquisition);
     }
 
     private void QueueRefresh()
@@ -248,7 +235,9 @@
     {
         if (Filters is null || !string.Equals(change.ServerName, ServerName, StringComparison.OrdinalIgnoreCase)) return;
         if (change.ObjectType == MarketObjectType.Rune ||
-            (change.ObjectType == MarketObjectType.Equipment && _rows.Any(row => row.Equipment.DofusDbId == change.DofusDbId)))
+            (change.ObjectType == MarketObjectType.Equipment && _rows.Any(row => row.Equipment.DofusDbId == change.DofusDbId)) ||
+            ((change.ObjectType is MarketObjectType.Resource or MarketObjectType.Equipment) &&
+                _rows.Any(row => row.Acquisition?.Kind == EquipmentAcquisitionKind.Craft)))
             QueueRefresh();
     }
 
@@ -258,15 +247,12 @@
         bool Matches(RuneFilterCriterion rune) => row.Roll?.Any(line => line.Characteristic == rune.Characteristic && line.Current > 0) == true;
         return filters.RuneMatchMode == RuneFilterMatchMode.All ? filters.RuneFilters.All(Matches) : filters.RuneFilters.Any(Matches);
     }
-    private static string Origin(OwnedForgemagingEquipment row) => $"{(row.Container == "bank" ? "Banque" : "Inventaire")} : {row.Quantity:N0}";
-    private static string Money(double? value, bool signed = false) => value is { } amount
-        ? $"{amount.ToString(signed ? "+#,0;-#,0;0" : "N0")} K" : "—";
-    private static string ValueText(ForgemagingCrushValue? value, bool? complete) =>
-        value is null ? "—" : $"{(complete == false ? "≈ " : "")}{Money(value.Value)}";
-    private static string CostText(OwnedForgemagingEquipment row) => row.UnpricedRunes == row.RuneCount
-        ? "—" : $"{(row.UnpricedRunes > 0 ? "≥ " : "")}{Money(row.KnownRuneCost)}";
-    private static string? GainStyle(OwnedForgemagingEquipment row) => row.Gain is { } gain
-        ? $"color:{CrushingGainColor.For(gain, row.KnownRuneCost + row.Crushing?.Current?.Value)}" : null;
+    private static string Origin(OwnedForgemagingEquipment row) => $"{(row.Container switch { "bank" => "Banque", "workshop" => "Atelier", _ => "Inventaire" })} : {row.Quantity:N0}";
+    private static CrushingResultSummary OwnedCrushingSummary(OwnedForgemagingEquipment row)
+    {
+        double? value = row.Crushing?.Target?.Value;
+        return new(value, row.Gain, value - row.Gain);
+    }
 
     public void Dispose()
     {

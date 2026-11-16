@@ -423,6 +423,10 @@ Le projet utilise notamment :
 
 Le projet BestCrush cible actuellement Windows pour les fonctionnalités d'overlay et de hooks clavier/souris.
 
+## Vérifier une mise à jour de Dofus
+
+Le dossier [BestCrush.Network](BestCrush.Network/) rassemble le [profil réseau](BestCrush.Network/protocol-map.json) et la [checklist de validation](BestCrush.Network/VALIDATION.md) pour contrôler les relevés en une seule passe.
+
 ## Compiler sous Windows
 
 Depuis la racine du dépôt :

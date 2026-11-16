@@ -197,7 +197,7 @@ public sealed class MarketPriceServiceTest : IDisposable
 
         MarketValueResult result = _service.CalculateValue(1, 1111, prices)!.Value;
 
-        result.Value.Should().Be(8060);
+        result.Value.Should().Be(8056);
         result.IsEstimated.Should().BeFalse();
         result.UsedObservations.Should().BeEquivalentTo(prices.Values);
     }
@@ -212,7 +212,7 @@ public sealed class MarketPriceServiceTest : IDisposable
         MarketValueResult sale = _service.CalculateValue(1, 10, prices)!.Value;
         MarketPurchaseResult purchase = _service.CalculateMinimumPurchaseCost(1, 10, prices)!;
 
-        sale.Value.Should().Be(80);
+        sale.Value.Should().Be(79);
         sale.UsedObservations.Should().ContainSingle().Which.Should().BeSameAs(ten);
         purchase.TotalCost.Should().Be(50);
         purchase.Lots.Should().BeEquivalentTo(new Dictionary<int, int> { [1] = 10 });
@@ -226,27 +226,40 @@ public sealed class MarketPriceServiceTest : IDisposable
 
         MarketValueResult result = _service.CalculateValue(1, 12.5, prices)!.Value;
 
-        result.Value.Should().Be(105);
+        result.Value.Should().Be(101.5);
         result.IsEstimated.Should().BeTrue();
         result.UsedObservations.Should().BeEquivalentTo(prices.Values);
     }
 
     [Fact]
-    public void SaleEstimatesRemainderAndFractionFromSmallestLotWhenSingleIsMissing()
+    public void SaleUsesOnlyReachableLotsAndUndercutsTheWholeLotByOneKama()
     {
-        MarketPriceObservation ten = Price(1, 10, 80);
-        var prices = Prices(ten, Price(1, 100, 650));
+        MarketPriceObservation single = Price(1, 1, 105);
+        MarketPriceObservation ten = Price(1, 10, 930);
+        var prices = Prices(single, ten, Price(1, 1000, 79_998));
 
-        MarketValueResult result = _service.CalculateValue(1, 12.5, prices)!.Value;
+        var nine = _service.CalculateValue(1, 9, prices)!.Value;
+        nine.Value.Should().Be(936);
+        nine.Lots.Should().ContainSingle().Which.Should().Be(new MarketResaleLot(9, 104, single));
 
-        result.Value.Should().Be(100);
-        result.IsEstimated.Should().BeTrue();
-        result.UsedObservations.Should().ContainSingle().Which.Should().BeSameAs(ten);
+        var tenAndOne = _service.CalculateValue(1, 11, prices)!.Value;
+        tenAndOne.Value.Should().Be(1_033);
+        tenAndOne.Lots.Should().Equal(new MarketResaleLot(1, 929, ten), new MarketResaleLot(1, 104, single));
+    }
+
+    [Fact]
+    public void SaleKeepsValueUnknownWhenTheRemainingUnitsHaveNoReachablePrice()
+    {
+        var prices = Prices(Price(1, 10, 80), Price(1, 100, 650));
+
+        _service.CalculateValue(1, 9, prices).Should().BeNull();
+        _service.CalculateValue(1, 12.5, prices).Should().BeNull();
+        _service.CalculateValue(1, 10, prices)!.Value.Value.Should().Be(79);
     }
 
     [Theory]
-    [InlineData(1.0000005, 10, false)]
-    [InlineData(1.000002, 10.00002, true)]
+    [InlineData(1.0000005, 9, false)]
+    [InlineData(1.000002, 9.000018, true)]
     public void SaleKeepsCurrentFractionalTolerance(double quantity, double expected, bool estimated)
     {
         MarketValueResult result = _service.CalculateValue(1, quantity, Prices(Price(1, 1, 10)))!.Value;

@@ -12,20 +12,24 @@ internal static class CrushOperationAssessment
         IReadOnlyDictionary<long, Equipment?> equipment, IReadOnlyDictionary<long, Rune> runes,
         IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> observations)
     {
-        var quotes = observations.Values.Where(quote => !quote.IsCleared && quote.Price > 0 && quote.Quantity > 0)
-            .GroupBy(quote => quote.DofusDbId).ToDictionary(group => group.Key, group => group.Min(q => q.Price / (double)q.Quantity));
         var runeMarket = runes.Values.Where(rune => Enum.IsDefined(rune.Characteristic))
             .Select(rune => new ForgemagingRune(rune.DofusDbId, rune.Name, rune.Characteristic,
-                ForgemagingDataService.RuneGain(rune.Name, rune.Characteristic),
-                quotes.TryGetValue(rune.DofusDbId, out double price) ? price : null)).ToArray();
+                ForgemagingDataService.RuneGain(rune.Name, rune.Characteristic), null)).ToArray();
+        var resale = services.GetRequiredService<MarketPriceService>();
         var store = services.GetService<ForgemagingSessionStore>();
         var keys = lines.Select(line => line.ObservedItem is { } item
             ? ForgemagedEquipmentStock.InstanceKey(history.ServerName, line.EquipmentDofusDbId, item.ItemUid) : null).ToArray();
-        Dictionary<string, ForgemagingSession> sessions;
+        Dictionary<string, ForgemagingSession> sessions = [];
+        Dictionary<string, EquipmentAcquisition> acquisitions = [];
+        var instances = lines.Select((line, index) => (line.EquipmentDofusDbId, Key: keys[index]))
+            .Where(row => row.Key is not null).Select(row => (row.EquipmentDofusDbId, row.Key!)).ToArray();
         try
         {
-            sessions = store?.GetObserved(history.ServerName, lines.Select((line, index) => (line.EquipmentDofusDbId, Key: keys[index]))
-                .Where(row => row.Key is not null).Select(row => (row.EquipmentDofusDbId, row.Key!))) ?? [];
+            if (store is not null && instances.Length > 0)
+            {
+                sessions = store.GetObserved(history.ServerName, instances);
+                acquisitions = store.GetAcquisitions(history.ServerName, instances);
+            }
         }
         catch (InvalidDataException error)
         {
@@ -39,8 +43,8 @@ internal static class CrushOperationAssessment
         {
             var prices = services.GetRequiredService<MarketPriceService>();
             var craft = services.GetRequiredService<CraftCostService>();
-            var resourcePrices = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Resource, history.ServerName);
-            var equipmentPrices = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Equipment, history.ServerName);
+            var resourcePrices = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Resource, history.ServerName, excludeUnavailableLots: true);
+            var equipmentPrices = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Equipment, history.ServerName, excludeUnavailableLots: true);
             foreach (var item in recipeEquipment)
                 costs[item.DofusDbId] = craft.Calculate(item, resourcePrices, equipmentPrices).TotalCost;
         }
@@ -61,10 +65,14 @@ internal static class CrushOperationAssessment
             var line = lines[index];
             var item = equipment.GetValueOrDefault(line.EquipmentDofusDbId);
             var session = keys[index] is { } key ? sessions.GetValueOrDefault(key) : null;
+            var acquisition = keys[index] is { } acquisitionKey ? acquisitions.GetValueOrDefault(acquisitionKey) : null;
+            var paid = acquisition is { Kind: EquipmentAcquisitionKind.Purchase } && acquisition.RecordedAtUtc <= history.StartedAtUtc
+                ? acquisition.PricePaid : null;
             var roll = ResolveRoll(line, item, session, effects, history.StartedAtUtc);
-            return row with { Comparison = Compare(line, item?.Level ?? session?.Level, roll,
+            var comparison = Compare(line, item?.Level ?? session?.Level, roll,
                 session?.Attempts.Where(attempt => attempt.FromGame && attempt.AtUtc <= history.StartedAtUtc).ToArray() ?? [],
-                runeMarket, quotes, costs.GetValueOrDefault(line.EquipmentDofusDbId), multiplier) };
+                runeMarket, observations, resale, costs.GetValueOrDefault(line.EquipmentDofusDbId), multiplier);
+            return row with { Comparison = comparison with { RecordedAcquisitionCost = paid } };
         }).ToArray();
         return history with { Equipments = assessed };
     }
@@ -90,16 +98,18 @@ internal static class CrushOperationAssessment
 
     internal static CrushEquipmentComparison Compare(NetworkCrushResultLine line, int? level, IReadOnlyList<ForgemagingLine>? roll,
         IReadOnlyList<ForgemagingAttempt> attempts, IReadOnlyList<ForgemagingRune> market,
-        IReadOnlyDictionary<long, double> unitPrices, long? craftCost, double multiplier)
+        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> observations,
+        MarketPriceService resale, long? craftCost, double multiplier)
     {
+        var context = new ForgemagingCrushContext(line.CoefficientPercent, null, multiplier) { ResalePrices = observations };
         var comparison = level is { } itemLevel && roll is not null
-            ? ForgemagingCrushAssessment.CompareRolls(itemLevel, roll, roll, market, new(line.CoefficientPercent, null, multiplier),
-                includeRuneQuantities: true) : null;
+            ? ForgemagingCrushAssessment.CompareRolls(itemLevel, roll, roll, market, context, includeRuneQuantities: true) : null;
         var expected = comparison is { IsComplete: true } ? comparison.Target : null;
         var expectedQuantities = expected?.RuneQuantities ?? new Dictionary<long, double>();
         var obtained = line.Runes.GroupBy(rune => rune.DofusDbId).ToDictionary(g => g.Key, g => g.Sum(rune => rune.Quantity));
-        double? obtainedValue = obtained.Keys.All(unitPrices.ContainsKey)
-            ? obtained.Sum(rune => rune.Value * unitPrices[rune.Key]) * multiplier : null;
+        var obtainedPrices = obtained.Select(rune => resale.CalculateValue(rune.Key, rune.Value, observations)).ToArray();
+        double? obtainedValue = obtainedPrices.All(price => price.HasValue)
+            ? obtainedPrices.Sum(price => price!.Value.Value) * multiplier : null;
         var names = market.ToDictionary(rune => rune.Id, rune => rune.Name);
         var rows = obtained.Keys.Union(expectedQuantities.Keys).Select(id => new CrushRuneComparison(
             names.GetValueOrDefault(id, $"Rune #{id}"), expected is null ? null : expectedQuantities.GetValueOrDefault(id),

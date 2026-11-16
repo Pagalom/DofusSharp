@@ -46,8 +46,8 @@ public sealed class StockOpportunityScanTest
             product.Job.Should().Be("Mineur");
             candidate.Plan.CraftableNow.Should().Be(System.Numerics.BigInteger.Zero);
             candidate.Plan.CashRequired.Should().Be(8783);
-            candidate.Revenue.Should().Be(6783);
-            candidate.Benefit.Should().Be(-2000);
+            candidate.Revenue.Should().Be(6782);
+            candidate.Benefit.Should().Be(-2001);
         }
         finally
         {
@@ -102,7 +102,7 @@ public sealed class StockOpportunityScanTest
         report.Candidates.Should().HaveCount(2);
         var craft=report.Candidates.Single(x=>x.Origin=="craft");
         craft.Plan.Ingredients.Single().Available.Should().Be(new System.Numerics.BigInteger(6));
-        craft.Plan.CashRequired.Should().Be(0);craft.Plan.OwnedValue.Should().Be(60);craft.Benefit.Should().Be(140);
+        craft.Plan.CashRequired.Should().Be(0);craft.Plan.OwnedValue.Should().Be(54);craft.Benefit.Should().Be(144);
         report.Candidates.Single(x=>x.Origin=="concassage").Revenue.Should().BeNull();
         db.MarketPriceObservations.Count().Should().Be(2);db.CoefficientObservations.Count().Should().Be(0);
     }
@@ -133,7 +133,7 @@ public sealed class StockOpportunityScanTest
         var craft=report.Candidates.Single();
         craft.Plan.Ingredients.Single().Available.Should().Be(new System.Numerics.BigInteger(3));
         craft.Plan.Ingredients.Single().Missing.Should().Be(3);
-        craft.Plan.CashRequired.Should().Be(30);craft.Plan.OwnedValue.Should().Be(30);craft.Benefit.Should().Be(140);
+        craft.Plan.CashRequired.Should().Be(30);craft.Plan.OwnedValue.Should().Be(27);craft.Benefit.Should().Be(141);
         if(bankState!=0) source.Containers.Single(x=>x.Container=="bank").Items.Should().HaveCount(2);
     }
 

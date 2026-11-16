@@ -47,6 +47,10 @@
     {
         <StockOpportunities OriginFilter="craft" ItemId="ItemId" InitialQuantity="@(Quantity ?? 1)" />
     }
+    else if (_module.Slug == "elevage")
+    {
+        <BreedingWorkspace TargetWindow="@ServerViewFilter.TargetWindow" />
+    }
     else if (_module.Slug == "opportunites")
     {
         <ActivityOpportunities @key="_module.Slug" ItemId="ItemId" />

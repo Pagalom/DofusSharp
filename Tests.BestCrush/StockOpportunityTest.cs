@@ -42,11 +42,11 @@ public sealed class StockOpportunityTest : IDisposable
         var plan=Plan();
         plan.CraftableNow.Should().Be(new BigInteger(1));
         plan.CashRequired.Should().Be(0);
-        plan.OwnedValue.Should().Be(30);
-        plan.EconomicCost.Should().Be(30);
+        plan.OwnedValue.Should().Be(27);
+        plan.EconomicCost.Should().Be(27);
         var rows=await new CraftOpportunityProvider(_prices).EvaluateAsync(new(Server,[plan],Market(Price(1,1,10,at:Now))),default);
-        rows.Single().Benefit.Should().Be(70);
-        rows.Single().RoiPercent.Should().BeApproximately(233.3333333,0.0001);
+        rows.Single().Benefit.Should().Be(72);
+        rows.Single().RoiPercent.Should().BeApproximately(266.6666667,0.0001);
     }
     [Fact]
     public void GroupsDuplicateIngredientsAndScalesBatchBeforeConsumingStock()
@@ -57,15 +57,15 @@ public sealed class StockOpportunityTest : IDisposable
         plan.CraftableNow.Should().Be(new BigInteger(2));
         var line=plan.Ingredients.Single();
         line.Required.Should().Be(15);line.Used.Should().Be(11);line.Missing.Should().Be(4);
-        plan.CashRequired.Should().Be(40);plan.OwnedValue.Should().Be(110);plan.EconomicCost.Should().Be(150);
+        plan.CashRequired.Should().Be(40);plan.OwnedValue.Should().Be(99);plan.EconomicCost.Should().Be(139);
     }
     [Fact]
-    public void FullLotsAreInCashAndTheirLeftoversRetainConservativeValue()
+    public void FullLotsAreInCashEvenWhenStockAndRemainderHaveNoReachableSalePrice()
     {
         var plan=_planner.Calculate(Recipe(2),1,new Dictionary<long,BigInteger>{{1,1}},Market(Price(1,10,100,at:Now)));
-        plan.CashRequired.Should().Be(100);plan.OwnedValue.Should().Be(10);
+        plan.CashRequired.Should().Be(100);plan.OwnedValue.Should().BeNull();
         plan.Ingredients.Single().Purchase!.SurplusQuantity.Should().Be(9);
-        plan.SurplusCredit.Should().Be(90);plan.EconomicCost.Should().Be(20);
+        plan.SurplusCredit.Should().BeNull();plan.EconomicCost.Should().BeNull();
     }
     [Fact]
     public void ExpensiveSinglesCannotTurnCheapLotLeftoversIntoArtificialProfit()
@@ -80,7 +80,7 @@ public sealed class StockOpportunityTest : IDisposable
         var plan=_planner.Calculate(Recipe(),1,new Dictionary<long,BigInteger>{{1,3}},Market());
         plan.CashRequired.Should().Be(0);plan.EconomicCost.Should().BeNull();
         var rows=await new CraftOpportunityProvider(_prices).EvaluateAsync(new(Server,[plan],Market()),default);
-        rows.Single().Revenue.Should().Be(100);rows.Single().Benefit.Should().BeNull();
+        rows.Single().Revenue.Should().Be(99);rows.Single().Benefit.Should().BeNull();
         OpportunityRanking.Select(rows,Now,0,0,null,false,"gain").Should().BeEmpty();
     }
     [Fact]

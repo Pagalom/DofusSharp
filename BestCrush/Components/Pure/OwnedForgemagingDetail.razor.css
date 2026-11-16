@@ -1,0 +1,111 @@
+.owned-fm-values {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: start;
+    gap: .6rem 1.65rem;
+    margin: 0 0 1rem;
+}
+
+.owned-fm-values dl { margin: 0; }
+
+.owned-fm-comparison { display: flex; }
+
+.owned-fm-before {
+    padding-inline-end: .55rem;
+    border-inline-end: 1px solid var(--bc-text);
+    text-align: end;
+}
+
+.owned-fm-after {
+    padding-inline-start: .55rem;
+    text-align: start;
+}
+
+.owned-fm-values dt {
+    font-size: .8rem;
+    font-weight: 400;
+    color: var(--bc-muted);
+}
+
+.owned-fm-values dd {
+    margin: .125rem 0 0;
+    font-weight: 700;
+}
+
+.owned-fm-values .owned-fm-acquisition-source {
+    color: var(--bc-muted);
+    font-size: .75rem;
+    font-weight: 400;
+}
+
+.owned-fm-acquisition-edit {
+    margin-inline-start: .2rem;
+    padding: 0 .2rem;
+    border: 0;
+    border-radius: .2rem;
+    background: transparent;
+    color: var(--bc-gold);
+}
+
+.owned-fm-acquisition-edit:hover { background: var(--bc-hover); }
+.owned-fm-acquisition-form input { width: 8rem; }
+
+.owned-fm-roll {
+    display: grid;
+    justify-items: start;
+    gap: .1rem;
+}
+
+.owned-fm-roll-line {
+    display: flex;
+    align-items: center;
+    width: fit-content;
+    padding: .05rem .35rem;
+    border: 1px solid transparent;
+    border-radius: .25rem;
+    color: var(--bc-text);
+}
+
+.owned-fm-roll-line.over { border-color: currentColor; }
+.owned-fm-roll-line.exo { color: var(--bc-gold); }
+
+.owned-fm-history :is(th, td):first-child {
+    width: 1%;
+    white-space: nowrap;
+    padding-inline: .5rem .8rem;
+}
+
+.owned-fm-history :is(th, td):last-child {
+    width: 1%;
+    white-space: nowrap;
+    text-align: end;
+    padding-inline: .8rem .6rem;
+}
+
+.owned-fm-history td {
+    border-bottom-color: color-mix(in srgb, var(--bc-border) 62%, transparent);
+}
+
+.owned-fm-rune {
+    display: inline-flex;
+    align-items: center;
+}
+
+.owned-fm-rune ::deep .copy-text {
+    display: inline-flex;
+    align-items: center;
+    gap: .25rem;
+    border-radius: .25rem;
+    padding: .12rem;
+}
+
+.owned-fm-rune ::deep img { object-fit: contain; }
+
+.owned-fm-changes {
+    display: grid;
+    gap: .08rem;
+}
+
+.owned-fm-changes li { color: var(--bc-text); }
+.owned-fm-changes .critical { color: rgb(var(--bs-success-rgb)); }
+.owned-fm-outcome { color: var(--bc-text); }

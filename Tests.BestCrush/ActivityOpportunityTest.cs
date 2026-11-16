@@ -91,7 +91,37 @@ public sealed class ActivityOpportunityTest
     }
 
     [Fact]
-    public async Task TradingKeepsOldQuotesAsIndicationsAndExcludesWithdrawnLots()    {        using var h = new Harness();        await h.SeedAsync();        const long itemId = 8383;        var now = DateTime.UtcNow;        var oldQuote = now.AddHours(-13);        using (var db = h.Database.CreateContext())        {            db.Resources.Add(new Resource(itemId) { Name = "Peau de Moon" });            db.MarketPriceObservations.AddRange(                Price(itemId, 1, 8_884, server: "Tylezia", at: oldQuote),                Price(itemId, 10, 164_998, server: "Tylezia", at: oldQuote),                Price(itemId, 1000, 2_500_000, server: "Tylezia", at: now.AddDays(-3)),                Price(itemId, 1000, 0, server: "Tylezia", at: oldQuote, cleared: true),                Price(itemId, 100, 300_000, source: MarketPriceSource.Manual, server: "Tylezia", at: now.AddMinutes(-2)),                Price(itemId, 100, 0, server: "Tylezia", at: now.AddMinutes(-1), cleared: true));            await db.SaveChangesAsync();        }        var report = await h.Scanner.ScanAsync("achat-vente", "Tylezia", null, 1, default);        var offer = Assert.Single(report.Candidates, row => row.ItemId == itemId);        Assert.Equal("lots-Resource-8383-1-10", offer.Id);        Assert.Equal(76_157d, offer.Profitability.Gain);        Assert.Equal(oldQuote, offer.PriceUpdatedUtc);        Assert.Single(ActivityRanking.Select([offer], new(), now));        Assert.Empty(ActivityRanking.Select([offer], new(ExcludeOldPrices: true), now));        Assert.Contains(offer.MissingData, detail => detail.StartsWith("Historique global"));    }    [Fact]
+    public async Task TradingKeepsOldQuotesAsIndicationsAndExcludesWithdrawnLots()
+    {
+        using var h = new Harness();
+        await h.SeedAsync();
+        const long itemId = 8383;
+        var now = DateTime.UtcNow;
+        var oldQuote = now.AddHours(-13);
+        using (var db = h.Database.CreateContext())
+        {
+            db.Resources.Add(new Resource(itemId) { Name = "Peau de Moon" });
+            db.MarketPriceObservations.AddRange(
+                Price(itemId, 1, 8_884, server: "Tylezia", at: oldQuote),
+                Price(itemId, 10, 164_998, server: "Tylezia", at: oldQuote),
+                Price(itemId, 1000, 2_500_000, server: "Tylezia", at: now.AddDays(-3)),
+                Price(itemId, 1000, 0, server: "Tylezia", at: oldQuote, cleared: true),
+                Price(itemId, 100, 300_000, source: MarketPriceSource.Manual, server: "Tylezia", at: now.AddMinutes(-2)),
+                Price(itemId, 100, 0, server: "Tylezia", at: now.AddMinutes(-1), cleared: true));
+            await db.SaveChangesAsync();
+        }
+
+        var report = await h.Scanner.ScanAsync("achat-vente", "Tylezia", null, 1, default);
+        var offer = Assert.Single(report.Candidates, row => row.ItemId == itemId);
+        Assert.Equal("lots-Resource-8383-1-10", offer.Id);
+        Assert.Equal(76_157d, offer.Profitability.Gain);
+        Assert.Equal(oldQuote, offer.PriceUpdatedUtc);
+        Assert.Single(ActivityRanking.Select([offer], new(), now));
+        Assert.Empty(ActivityRanking.Select([offer], new(ExcludeOldPrices: true), now));
+        Assert.Contains(offer.MissingData, detail => detail.StartsWith("Historique global"));
+    }
+
+    [Fact]
     public async Task EquipmentOffersAreExcludedFromLotRecomposition()
     {
         using var h = new Harness();
@@ -113,7 +143,8 @@ public sealed class ActivityOpportunityTest
         Assert.Contains(report.Candidates, row => row.Id.StartsWith("lots-Resource-"));
     }
 
-    [Fact]    public async Task HistoricalTradeComparesIdenticalLotSizesAndUsesLatestDetailedSale()
+    [Fact]
+    public async Task HistoricalTradeComparesIdenticalLotSizesAndUsesLatestDetailedSale()
     {
         using var h = new Harness();
         await h.SeedAsync();
@@ -282,7 +313,7 @@ public sealed class ActivityOpportunityTest
         Assert.Equal(9100,craft.IconId);
         Assert.Equal(new long?[]{9001,9002},craft.Ingredients.OrderBy(x=>x.ItemId).Select(x=>x.IconId));
         Assert.Equal(new[]{2,1},craft.Ingredients.OrderBy(x=>x.ItemId).Select(x=>x.Quantity));
-        Assert.Equal(970d,craft.AdditionalGain);Assert.Equal("Sculpteur",craft.Job);Assert.Equal(20,craft.RequiredLevel);
+        Assert.Equal(971d,craft.AdditionalGain);Assert.Equal("Sculpteur",craft.Job);Assert.Equal(20,craft.RequiredLevel);
         int calls=h.Http.Calls;
         Assert.Same(report,await h.Scanner.ScanAsync("achat-vente","Tylezia",stock,100,default));Assert.Equal(calls,h.Http.Calls);
         h.Changes.Notify(MarketObjectType.Resource,1,"Kourial");
@@ -332,15 +363,15 @@ public sealed class ActivityOpportunityTest
         var report=await h.Scanner.ScanAsync("farming","Tylezia",Harness.Stock(),100,default);
         Assert.DoesNotContain(report.Notices,x=>x.Contains("indisponible"));
         var harvest=Assert.Single(report.Candidates,x=>x.Strategy=="Récolte");
-        Assert.Equal("Bûcheron",harvest.Job);Assert.Equal(10,harvest.RequiredJobLevel);Assert.Equal(1000d,harvest.Revenue);
+        Assert.Equal("Bûcheron",harvest.Job);Assert.Equal(10,harvest.RequiredJobLevel);Assert.Equal(990d,harvest.Revenue);
         Assert.Single(harvest.Crafts);Assert.NotNull(harvest.PriceUpdatedUtc);
         var combat=Assert.Single(report.Candidates,x=>x.Strategy=="Ressource de combat");
         Assert.Equal(new long[]{10},combat.MonsterIds);Assert.Equal(harvest.Revenue,combat.Revenue);
         Assert.Contains(combat.Details,x=>x.Contains("ne représente pas le gain d’un combat"));
         Assert.Contains(combat.Details,x=>x.Contains("aucun temps"));
         var transformed=Assert.Single(report.Candidates,x=>x.Strategy=="Récolte puis craft");
-        Assert.Equal(100,transformed.Quantity);Assert.Equal(50000d,transformed.Revenue);
-        Assert.Equal(1000d,transformed.Cost);Assert.Equal(49000d,transformed.Profitability.Gain);
+        Assert.Equal(100,transformed.Quantity);Assert.Equal(49950d,transformed.Revenue);
+        Assert.Equal(1000d,transformed.Cost);Assert.Equal(48950d,transformed.Profitability.Gain);
         Assert.Equal("Bûcheron",transformed.Job);Assert.Equal("Sculpteur",transformed.CraftJob);
         var filtered=ActivityRanking.Select([transformed],new(RespectJobs:true),DateTime.UtcNow,
             new Dictionary<string,int>{{"Bûcheron",100},{"Sculpteur",1}});
@@ -378,7 +409,7 @@ public sealed class ActivityOpportunityTest
         h.Sales.SaveSoulQuote(new("Tylezia",147,9000,DateTimeOffset.UtcNow));
         var report=await h.Scanner.ScanAsync("pierres-ame","Tylezia",null,1,default);
         var boss=Assert.Single(report.Candidates);Assert.Equal("Boss capturable",boss.Name);
-        Assert.Equal(200d,boss.Cost);Assert.Equal(9000d,boss.Revenue);Assert.Equal(8800d,boss.Profitability.Gain);
+        Assert.Equal(200d,boss.Cost);Assert.Equal(8999d,boss.Revenue);Assert.Equal(8799d,boss.Profitability.Gain);
         Assert.False(boss.Complete);Assert.False(boss.Profitability.CanCompareKinetics);
         Assert.Contains(boss.MissingData,x=>x.Contains("cinétique inconnue"));
         var otherServer=await h.Scanner.ScanAsync("pierres-ame","Kourial",null,1,default);
@@ -386,7 +417,7 @@ public sealed class ActivityOpportunityTest
         Assert.Null(partial.Profitability.Gain);Assert.Contains(partial.MissingData,x=>x.Contains("pierre d’âme vide"));
         h.Sales.SaveSoulQuote(new("Kourial",147,7000,DateTimeOffset.UtcNow));
         var knownSale=Assert.Single((await h.Scanner.ScanAsync("pierres-ame","Kourial",null,1,default)).Candidates);
-        Assert.Equal(7000d,knownSale.Revenue);Assert.Null(knownSale.Profitability.Gain);
+        Assert.Equal(6999d,knownSale.Revenue);Assert.Null(knownSale.Profitability.Gain);
     }
 
     [Fact]
@@ -399,9 +430,13 @@ public sealed class ActivityOpportunityTest
             new(2,147,553,new ulong[]{135000,0,0,0})]),DateTimeOffset.UtcNow);
         var after=await h.Scanner.ScanAsync("pierres-ame","Tylezia",null,1,default);
         Assert.NotSame(before,after);var four=Assert.Single(after.Candidates);
-        Assert.Equal(72990d,four.Revenue);Assert.Equal(72790d,four.Profitability.Gain);
+        Assert.Equal(72989d,four.Revenue);Assert.Equal(72789d,four.Profitability.Gain);
         Assert.DoesNotContain(four.Details,x=>x.Contains("butin"));
 
+        h.Sales.SaveSoulMarket("Tylezia", new(33713, [new(1, 147, 553, [0, 699_000, 0, 0])]),
+            DateTimeOffset.UtcNow.AddSeconds(1));
+        var bulkOnly = await h.Scanner.ScanAsync("pierres-ame", "Tylezia", null, 1, default);
+        Assert.Null(Assert.Single(bulkOnly.Candidates).Revenue);
     }
 
     [Fact]
@@ -656,7 +691,7 @@ public sealed class ActivityOpportunityTest
         h.Sales.SaveHistory(new(new("Tylezia",MarketObjectType.Resource,33713,GlobalSalesRepository.BossHistoryVariant(147)),now,[],[new(8000,7,now.AddHours(-1))]));
         var row=Assert.Single((await h.Scanner.ScanAsync("pierres-ame","Tylezia",null,1,default)).Candidates);
         Assert.True(row.Profitability.CanCompareKinetics);Assert.Equal(1d,row.Profitability.Kinetics.UnitsPerDay);
-        Assert.Equal(8800d,row.Profitability.Gain);Assert.Equal(8800d,row.Profitability.MarketDailyGainCapacity);
+        Assert.Equal(8799d,row.Profitability.Gain);Assert.Equal(8799d,row.Profitability.MarketDailyGainCapacity);
         Assert.True(row.Complete);
         Assert.Single(ActivityRanking.Select([row],new(CompleteOnly:true),DateTime.UtcNow));
         Assert.DoesNotContain(row.Details,x=>x.Contains("butin"));
@@ -673,10 +708,10 @@ public sealed class ActivityOpportunityTest
         }
         h.Sales.SaveSoulQuote(new("Tylezia",147,9000,DateTimeOffset.UtcNow));
         var row=Assert.Single((await h.Scanner.ScanAsync("pierres-ame","Tylezia",null,1,default)).Candidates);
-        Assert.Equal(150d,row.Cost);Assert.Equal(1500d,row.CashRequired);Assert.Equal(8850d,row.Profitability.Gain);
+        Assert.Equal(150d,row.Cost);Assert.Equal(1500d,row.CashRequired);Assert.Equal(8849d,row.Profitability.Gain);
         Assert.Contains(row.Details,x=>x.Contains("lot entier"));
         var owned=Harness.Stock() with{Containers=[new("inventory",true,false,DateTime.UtcNow,[new(9686,1,1,null,null,null)])]};
         var ownedRow=Assert.Single((await h.Scanner.ScanAsync("pierres-ame","Tylezia",owned,1,default)).Candidates);
-        Assert.Equal(0d,ownedRow.CashRequired);Assert.Equal(150d,ownedRow.Cost);Assert.Equal(8850d,ownedRow.Profitability.Gain);
+        Assert.Equal(0d,ownedRow.CashRequired);Assert.Equal(150d,ownedRow.Cost);Assert.Equal(8849d,ownedRow.Profitability.Gain);
     }
 }

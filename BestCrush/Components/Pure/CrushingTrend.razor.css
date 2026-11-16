@@ -1,0 +1,11 @@
+.crushing-trend { background:var(--bc-panel); border:1px solid var(--bc-border); border-radius:.5rem; padding:.75rem; margin-bottom:.9rem; }
+.crushing-trend h3 { color:var(--bc-text); font-size:.9rem; margin-bottom:.75rem; }
+.crushing-trend h3 small { color:var(--bc-muted); margin-inline-start:.35rem; }
+.crushing-trend svg { display:block; width:100%; }
+.crushing-trend foreignObject div { color:var(--bc-muted); font-size:12px; line-height:18px; }
+.crushing-axis-value { text-align:right; }
+.crushing-trend-guide { stroke:var(--bc-border); }
+.crushing-trend .coefficient { --series-color:#bfa9f3; }
+.crushing-trend .prices { --series-color:var(--bc-gold); }
+.crushing-trend polyline { fill:none; stroke:var(--series-color); stroke-width:2; vector-effect:non-scaling-stroke; }
+.crushing-trend circle { fill:var(--series-color); }

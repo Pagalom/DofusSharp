@@ -143,9 +143,14 @@ public sealed partial class ActivityCatalogService(IDofusDbClientsFactory factor
         return result;
     }
 
+    private string CacheKey(string key) => Host.Replace('.', '-') + "-" + key;
+
+    private string CachePath(string key) => Path.Combine(cacheDirectory,
+        Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(key))) + ".json");
+
     private async Task<T> CachedAsync<T>(string key, Func<Task<T>> load, CancellationToken token) where T : class
     {
-        key = Host.Replace('.', '-') + "-" + key;
+        key = CacheKey(key);
         if (_memory.TryGetValue(key, out var known)) return (T)known;
         await _gate.WaitAsync(token);
         try
@@ -153,8 +158,7 @@ public sealed partial class ActivityCatalogService(IDofusDbClientsFactory factor
             if (_memory.TryGetValue(key, out known)) return (T)known;
             Directory.CreateDirectory(cacheDirectory);
             // Hash long monster lists before using them as filenames.
-            string file = Path.Combine(cacheDirectory, Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(
-                System.Text.Encoding.UTF8.GetBytes(key))) + ".json");
+            string file = CachePath(key);
             Cached<T>? cached = null;
             if (File.Exists(file))
             {

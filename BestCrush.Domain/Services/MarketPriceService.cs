@@ -294,14 +294,16 @@ public class MarketPriceService(BestCrushDbContext context,
             MarketObjectType objectType,
             string serverName,
             CancellationToken cancellationToken = default,
-            bool excludeUnavailableLots = false)
+            bool excludeUnavailableLots = false,
+            MarketPriceSource? source = null)
     {
         List<MarketPriceObservation> observations =
             await context.MarketPriceObservations
                 .AsNoTracking()
                 .Where(p =>
                     p.ObjectType == objectType &&
-                    p.ServerName == serverName)
+                    p.ServerName == serverName &&
+                    (source == null || p.Source == source))
                 .OrderByDescending(p => p.ObservedAtUtc)
                 .ToListAsync(cancellationToken);
 
@@ -400,14 +402,20 @@ public class MarketPriceService(BestCrushDbContext context,
             .ToListAsync(cancellationToken);
     }
 
+    public static long ResaleLotPrice(long observedPrice) => observedPrice > 1 ? observedPrice - 1 : 1;
+
+    public static double ResaleLotPrice(double referencePrice) => Math.Max(1, Math.Floor(referencePrice) - 1);
+
     public MarketValueResult? CalculateValue(
         long dofusDbId,
         double quantity,
-        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> observations,
-        long lotPriceReduction = 0)
-    {
-        return MarketPriceCalculator.CalculateValue(dofusDbId, quantity, observations, lotPriceReduction);
-    }
+        IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> observations) =>
+        MarketPriceCalculator.CalculateValue(dofusDbId, quantity, observations);
+
+    public static MarketPriceObservation? CheapestUnitQuote(IEnumerable<MarketPriceObservation> observations) =>
+        observations.Where(lot => lot.Quantity > 0 && lot.Price > 0 && !lot.IsCleared)
+            .OrderBy(lot => (decimal)lot.Price / lot.Quantity)
+            .ThenByDescending(lot => lot.ObservedAtUtc).FirstOrDefault();
 
     public MarketPurchaseResult? CalculateMinimumPurchaseCost(
         long dofusDbId,

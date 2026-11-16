@@ -1,0 +1,2 @@
+.crush-summary-focus { display:inline-flex; align-items:center; gap:.25rem; color:var(--bc-gold); }
+.crush-summary-focus img { object-fit:contain; }

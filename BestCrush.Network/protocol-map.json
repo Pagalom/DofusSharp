@@ -2,6 +2,12 @@
   "clientBuild": "3.6.11.15",
   "global_market_history_request": "iqp",
   "global_market_history_response": "ire",
+  "breeding_paddock_snapshot_current": "hrf",
+  "breeding_stable_snapshot": "hqv",
+  "breeding_enclosure_request": "hot",
+  "breeding_enclosure_response": "hpa",
+  "breeding_transfer_into_stable": "hqy",
+  "breeding_transfer_out_of_stable": "hqk",
   "price_list": "jzn",
   "market_selection_response": "jzs",
   "crush_result": "kci",
@@ -21,6 +27,9 @@
   ],
   "purchase_request": "kei",
   "purchase_offer": "kef",
+  "purchase_request_current": "kbf",
+  "purchase_offer_current": "kas",
+  "purchase_receipt_current": "jzx",
   "inventory_add": "isa",
   "smithmagic_request": "jze",
   "smithmagic_result": "kbu",
@@ -36,6 +45,57 @@
   "inventory_remove": "irz",
   "craft_output": "iuq",
   "field_mappings": {
+    "breeding_stable_snapshot": {
+      "1": { "wire": 1, "fields": {
+        "1": { "wire": 1, "fields": {
+          "1": 1, "2": { "wire": 2, "fields": {
+            "5": 5, "6": { "wire": 6, "fields": { "1": 1, "2": 2 } }, "8": 8, "13": 13
+          } }
+        } }
+      } }
+    },
+    "breeding_enclosure_request": { "1": 1 },
+    "breeding_enclosure_response": {
+      "1": { "wire": 1, "fields": {
+        "2": { "wire": 2, "fields": {
+          "1": 1,
+          "4": { "wire": 4, "fields": { "2": 2, "3": 3 } },
+          "5": { "wire": 5, "fields": {
+            "1": 1, "2": { "wire": 2, "fields": {
+              "5": 5, "6": { "wire": 6, "fields": { "1": 1, "2": 2 } }, "8": 8, "13": 13
+            } }
+          } }
+        } }
+      } }
+    },
+    "breeding_transfer_into_stable": { "1": { "wire": 1, "fields": { "1": 1, "2": 2 } } },
+    "breeding_transfer_out_of_stable": {
+      "1": { "wire": 1, "fields": { "1": { "wire": 1, "fields": { "1": 1, "2": 2 } } } }
+    },
+    "breeding_paddock_snapshot_current": {
+      "1": {
+        "wire": 1,
+        "fields": {
+          "1": 1,
+          "4": { "wire": 4, "fields": { "2": 2, "3": 3 } },
+          "5": {
+            "wire": 5,
+            "fields": {
+              "1": 1,
+              "2": {
+                "wire": 2,
+                "fields": {
+                  "5": 5,
+                  "6": { "wire": 6, "fields": { "1": 1, "2": 2 } },
+                  "8": 8,
+                  "13": 13
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "market_listing_request_current": {
       "1": 1,
       "2": 2,
@@ -190,6 +250,19 @@
     "workshop_slot_put": {
       "1": 1,
       "2": 2
+    },
+    "purchase_request_current": {
+      "1": 1,
+      "3": 3,
+      "5": 5
+    },
+    "purchase_offer_current": {
+      "2": 2,
+      "4": 4
+    },
+    "purchase_receipt_current": {
+      "2": 2,
+      "3": 3
     },
     "purchase_request": {
       "1": 1,
@@ -348,6 +421,12 @@
   },
   "schema_version": 1,
   "verified_routes": {
+    "breeding_stable_snapshot": "observed-hqv-full-stable-on-breeding-panel-open-3.7.13.17-2026-11-16",
+    "breeding_enclosure_request": "observed-hot-enclosure-1-3.7.13.17-2026-11-16",
+    "breeding_enclosure_response": "observed-hpa-enclosure-1-3.7.13.17-2026-11-16",
+    "breeding_transfer_into_stable": "observed-hqy-confirmed-mounted-id-3.7.13.17-2026-11-16",
+    "breeding_transfer_out_of_stable": "observed-hqk-confirmed-mounted-id-3.7.13.17-2026-11-16",
+    "breeding_paddock_snapshot_current": "observed-hrf-paddock-mount-uuid-fuel-serenity-maturity-xp-3.7.13.17-2026-11-16",
     "market_listing_request_current": "observed-jyq-conque-marine-x10-910k-2026-11-11",
     "market_listing_created_current": "observed-jxt-conque-marine-x10-910k-2026-11-11",
     "global_market_history_request": "observed-iqp-item-id-3.7.12.12-2026-10-28",
@@ -362,6 +441,9 @@
     "purchase_request": "legacy-3.6.11.15",
     "purchase_offer": "legacy-3.6.11.15",
     "purchase_receipt": "legacy-3.6.11.15",
+    "purchase_request_current": "observed-request-equipment-3.7.13.17-2026-11-15",
+    "purchase_offer_current": "observed-offer-equipment-3.7.13.17-2026-11-15",
+    "purchase_receipt_current": "observed-receipt-equipment-3.7.13.17-2026-11-15",
     "inventory_add": "legacy-3.6.11.15",
     "inventory_quantity": "legacy-3.6.11.15",
     "inventory_remove": "legacy-3.6.11.15",

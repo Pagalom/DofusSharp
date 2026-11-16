@@ -54,15 +54,16 @@ public sealed partial class GlobalSalesRepository
         return reader.Read() ? null : item;
     }
 
-    private IReadOnlyList<SoulCaptureQuote> ReadAutomaticSoulQuotes(string server)
+    private IReadOnlyList<SoulCaptureQuote> ReadAutomaticSoulQuotes(string server, int maximumLotQuantity)
     {
         using var db = Open(); using var command = db.CreateCommand();
         command.CommandText = """
             SELECT boss_id,item_id,lot_quantity,lot_price,observed_at FROM soul_market_prices
-            WHERE server=$s
+            WHERE server=$s AND lot_quantity <= $maximumLotQuantity
             ORDER BY lot_quantity ASC,CAST(lot_price AS REAL)/lot_quantity ASC,observed_at DESC
             """;
         command.Parameters.AddWithValue("$s", server.Trim().ToUpperInvariant());
+        command.Parameters.AddWithValue("$maximumLotQuantity", maximumLotQuantity);
         using var reader = command.ExecuteReader(); List<SoulCaptureQuote> result = [];
         while (reader.Read()) result.Add(new(server, reader.GetInt64(0),
             (double)reader.GetInt64(3) / reader.GetInt32(2), Parse(reader.GetString(4)))

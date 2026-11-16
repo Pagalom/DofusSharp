@@ -46,6 +46,22 @@ public sealed class CraftCostServiceTest : IDisposable
         zinc.Purchase.UsedObservations.Should().ContainSingle().Which.Should().BeSameAs(oreLot);
     }
 
+    [Theory]
+    [InlineData(90, 850, 2060, 2, 4)]
+    [InlineData(90, 950, 2160, 0, 24)]
+    [InlineData(100, 350, 1050, 3, 0)]
+    public void TwentyFourIngredientsMinimizeTheWholeLotBudget(int singlePrice, int tenPrice, int expected,
+        int tens, int singles)
+    {
+        Equipment equipment = new(100);
+        equipment.Recipe.Add(new(equipment, new Resource(1), 24));
+        var recipe = _service.Calculate(equipment, Prices(Price(1, 1, singlePrice), Price(1, 10, tenPrice)), Prices());
+        var purchase = Assert.Single(recipe.Resources).Purchase!;
+        Assert.Equal(expected, purchase.TotalCost);
+        Assert.Equal(tens, purchase.Lots.GetValueOrDefault(10));
+        Assert.Equal(singles, purchase.Lots.GetValueOrDefault(1));
+    }
+
     [Fact]
     public void EquipmentIngredientsUseSinglePurchasePriceWithoutRecursingIntoTheirRecipeOrBuyingBulk()
     {

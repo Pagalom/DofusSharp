@@ -32,6 +32,15 @@ public sealed record ProtocolMap(
 
     public string? GlobalMarketHistoryRequest { get; init; }
     public string? GlobalMarketHistoryResponse { get; init; }
+    public string? CurrentBreedingPaddockSnapshot { get; init; }
+    public string? BreedingStableSnapshot { get; init; }
+    public string? BreedingEnclosureRequest { get; init; }
+    public string? BreedingEnclosureResponse { get; init; }
+    public string? BreedingTransferIntoStable { get; init; }
+    public string? BreedingTransferOutOfStable { get; init; }
+    public string? CurrentPurchaseRequest { get; init; } = "kbf";
+    public string? CurrentPurchaseOffer { get; init; } = "kas";
+    public string? CurrentPurchaseReceipt { get; init; } = "jzx";
     public string? CurrentMarketListingRequest { get; init; }
     public string? CurrentMarketListingCreated { get; init; }
 
@@ -42,6 +51,12 @@ public sealed record ProtocolMap(
     {
         "global_market_history_request" => GlobalMarketHistoryRequest,
         "global_market_history_response" => GlobalMarketHistoryResponse,
+        "breeding_paddock_snapshot_current" => CurrentBreedingPaddockSnapshot,
+        "breeding_stable_snapshot" => BreedingStableSnapshot,
+        "breeding_enclosure_request" => BreedingEnclosureRequest,
+        "breeding_enclosure_response" => BreedingEnclosureResponse,
+        "breeding_transfer_into_stable" => BreedingTransferIntoStable,
+        "breeding_transfer_out_of_stable" => BreedingTransferOutOfStable,
         "price_list" => PriceList,
         "market_selection_response" => MarketSelectionResponse,
         "crush_result" => CrushResult,
@@ -52,6 +67,9 @@ public sealed record ProtocolMap(
         "purchase_request" => PurchaseRequest,
         "purchase_offer" => PurchaseOffer,
         "purchase_receipt" => PurchaseReceipt,
+        "purchase_request_current" => CurrentPurchaseRequest,
+        "purchase_offer_current" => CurrentPurchaseOffer,
+        "purchase_receipt_current" => CurrentPurchaseReceipt,
         "inventory_add" => InventoryAdd,
         "inventory_quantity" => InventoryQuantity,
         "inventory_remove" => InventoryRemove,
@@ -166,10 +184,19 @@ public sealed record ProtocolMap(
 
         map = map with
         {
+            CurrentPurchaseRequest = root.TryGetProperty("purchase_request_current", out var prc) ? prc.GetString() : map.CurrentPurchaseRequest,
+            CurrentPurchaseOffer = root.TryGetProperty("purchase_offer_current", out var poc) ? poc.GetString() : map.CurrentPurchaseOffer,
+            CurrentPurchaseReceipt = root.TryGetProperty("purchase_receipt_current", out var rcc) ? rcc.GetString() : map.CurrentPurchaseReceipt,
             CurrentMarketListingRequest = root.TryGetProperty("market_listing_request_current", out var mlrc) ? mlrc.GetString() : null,
             CurrentMarketListingCreated = root.TryGetProperty("market_listing_created_current", out var mlcc) ? mlcc.GetString() : null,
             GlobalMarketHistoryRequest = root.TryGetProperty("global_market_history_request", out var gmr) ? gmr.GetString() : null,
-            GlobalMarketHistoryResponse = root.TryGetProperty("global_market_history_response", out var gms) ? gms.GetString() : null
+            GlobalMarketHistoryResponse = root.TryGetProperty("global_market_history_response", out var gms) ? gms.GetString() : null,
+            CurrentBreedingPaddockSnapshot = root.TryGetProperty("breeding_paddock_snapshot_current", out var bps) ? bps.GetString() : null,
+            BreedingStableSnapshot = root.TryGetProperty("breeding_stable_snapshot", out var bss) ? bss.GetString() : null,
+            BreedingEnclosureRequest = root.TryGetProperty("breeding_enclosure_request", out var ber) ? ber.GetString() : null,
+            BreedingEnclosureResponse = root.TryGetProperty("breeding_enclosure_response", out var bes) ? bes.GetString() : null,
+            BreedingTransferIntoStable = root.TryGetProperty("breeding_transfer_into_stable", out var bti) ? bti.GetString() : null,
+            BreedingTransferOutOfStable = root.TryGetProperty("breeding_transfer_out_of_stable", out var bto) ? bto.GetString() : null
         };
         return map with
         {

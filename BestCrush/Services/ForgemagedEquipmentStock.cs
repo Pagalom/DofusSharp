@@ -12,6 +12,11 @@ public sealed record OwnedForgemagingEquipment(string Key, Equipment Equipment, 
     double KnownRuneCost, int UnpricedRunes, bool UnobservedChanges)
 {
     internal int RuneCount => Attempts.Sum(attempt => attempt.RuneCount);
+    internal bool HasOver { get; init; }
+    internal bool HasExo { get; init; }
+    public EquipmentAcquisition? Acquisition { get; init; }
+    public long? AcquisitionCost { get; init; }
+    internal bool FmCostUnknown => RuneCount == 0 && (HasOver || HasExo);
 }
 
 internal static class ForgemagedEquipmentStock
@@ -38,20 +43,19 @@ internal static class ForgemagedEquipmentStock
 
     internal static async Task<OwnedForgemagingEquipment[]> LoadAsync(LiveStockSource source, string server,
         ForgemagingSessionStore store, ForgemagingDataService data, ActivityCatalogService? catalog,
-        CoefficientService? coefficients, IBestCrushSettingsProvider? settings, bool crushing, CancellationToken token)
+        CoefficientService? coefficients, IBestCrushSettingsProvider? settings, bool crushing, CancellationToken token, long? itemId = null)
     {
         var stock = source.Containers.Where(c => c.Complete && !c.Stale && c.Container is "inventory" or "bank")
-            .SelectMany(c => c.Items.Where(i => i.Uid > 0 && i.Quantity > 0 && i.ItemId is > 0 and <= long.MaxValue)
+            .SelectMany(c => c.Items.Where(i => i.Uid > 0 && i.Quantity > 0 && i.ItemId is > 0 and <= long.MaxValue &&
+                    (itemId is null || (long)i.ItemId == itemId))
                 .Select(i => (Container: c, Item: i, Key: InstanceKey(server, (long)i.ItemId, i.Uid))))
             .OrderByDescending(row => row.Container.UpdatedUtc).DistinctBy(row => row.Key).ToArray();
         if (stock.Length == 0) return [];
 
-        var sessions = store.GetObserved(server, stock.Where(row => row.Item.Quantity == 1)
-            .Select(row => ((long)row.Item.ItemId, row.Key)));
-        if (crushing)
-            stock = stock.Where(row => sessions.TryGetValue(row.Key, out var session) && session.Attempts.Any(a => a.FromGame)).ToArray();
-        if (stock.Length == 0) return [];
-        var equipment = (await data.GetOwnedEquipmentAsync(stock.Select(row => (long)row.Item.ItemId).Distinct().ToArray(), token))
+        var instances = stock.Where(row => row.Item.Quantity == 1)
+            .Select(row => (ItemId: (long)row.Item.ItemId, row.Key)).ToArray();
+        var sessions = store.GetObserved(server, instances);
+        var equipment = (await data.GetOwnedEquipmentAsync(stock.Select(row => (long)row.Item.ItemId).Distinct().ToArray(), token, forCrushing: crushing))
             .ToDictionary(item => item.DofusDbId);
         stock = stock.Where(row => equipment.ContainsKey((long)row.Item.ItemId)).ToArray();
         if (stock.Length == 0) return [];
@@ -63,7 +67,11 @@ internal static class ForgemagedEquipmentStock
             catch (Exception error) when (!token.IsCancellationRequested && error is HttpRequestException or OperationCanceledException or IOException or System.Text.Json.JsonException)
             { /* The verified workshop history still works without the effect catalogue. */ }
         }
-        var market = crushing ? await data.GetRuneMarketAsync(server, token) : null;
+        var acquisitions = crushing ? store.GetAcquisitions(server, instances) : [];
+        var craftedIds = instances.Where(row => acquisitions.GetValueOrDefault(row.Key)?.Kind == EquipmentAcquisitionKind.Craft)
+            .Select(row => row.ItemId).Distinct().ToArray();
+        var craftCosts = craftedIds.Length > 0 ? await data.GetEquipmentCraftCostsAsync(server, craftedIds, token) : [];
+        var market = crushing ? await data.GetRuneMarketAsync(server, token, gameOnly: true) : null;
         var observations = crushing && coefficients is not null
             ? await coefficients.GetLatestObservationsForServerAsync(server, token) : [];
         var multiplier = settings?.CrushValueMultiplier ?? 1;
@@ -71,12 +79,12 @@ internal static class ForgemagedEquipmentStock
         foreach (var row in stock)
         {
             var item = equipment[(long)row.Item.ItemId];
-            var session = sessions.GetValueOrDefault(row.Key);
-            var roll = ReadStockRoll(item, row.Item, effects);
             var coefficient = observations.GetValueOrDefault(item.DofusDbId);
             var context = new ForgemagingCrushContext(coefficient?.CoefficientPercent, coefficient?.ObservedAtUtc, multiplier);
+            var roll = ReadStockRoll(item, row.Item, effects);
             rows.Add(Project(row.Key, item, row.Container.Container, row.Item.Quantity, row.Container.UpdatedUtc,
-                roll, session, market, context));
+                roll, sessions.GetValueOrDefault(row.Key), market, context,
+                acquisitions.GetValueOrDefault(row.Key), craftCosts.GetValueOrDefault(item.DofusDbId)));
         }
         return rows.ToArray();
     }
@@ -102,7 +110,8 @@ internal static class ForgemagedEquipmentStock
 
     internal static OwnedForgemagingEquipment Project(string key, Equipment item, string container, ulong quantity,
         DateTime stockAt, IReadOnlyList<ForgemagingLine>? stockRoll, ForgemagingSession? session,
-        ForgemagingRuneMarket? market, ForgemagingCrushContext context)
+        ForgemagingRuneMarket? market, ForgemagingCrushContext context, EquipmentAcquisition? acquisition = null,
+        CraftCostResult? craft = null)
     {
         var attempts = session?.Attempts.Where(attempt => attempt.FromGame).ToArray() ?? [];
         var last = attempts.LastOrDefault();
@@ -110,24 +119,38 @@ internal static class ForgemagedEquipmentStock
         bool fromWorkshop = workshopRoll is { Count: > 0 } &&
             (stockRoll is null || (session?.LastObservedRollAtUtc ?? last?.AtUtc) > stockAt);
         var roll = fromWorkshop ? workshopRoll : stockRoll;
+        bool hasOver = roll?.Any(line => line.Maximum is { } max && line.Current > max) == true;
+        bool hasExo = item.Characteristics.Count > 0 && roll?.Any(line => !line.IsNative && line.Current > 0) == true;
         var before = attempts.FirstOrDefault()?.Before;
-        var comparison = market is null ? null : ForgemagingCrushAssessment.CompareRolls(item.Level, before, roll, market.Runes, context);
+        var comparison = market is null ? null : ForgemagingCrushAssessment.CompareRolls(item.Level, before ?? roll, roll,
+            market.Runes, context with { ResalePrices = market.ResalePrices });
+        if (before is null && comparison is not null)
+            comparison = comparison with { Current = null, PreparationCeiling = null };
         var knownCost = attempts.Sum(attempt => (attempt.Rune.UnitPrice ?? 0) * attempt.RuneCount);
         var unpriced = attempts.Where(attempt => attempt.Rune.UnitPrice is null).Sum(attempt => attempt.RuneCount);
         bool unobservedChanges = last is not null &&
             (roll is not null && !SameRoll(last.After, roll) ||
                 attempts.Zip(attempts.Skip(1)).Any(pair => !SameRoll(pair.First.After, pair.Second.Before)));
-        double? gain = comparison is { IsComplete: true, PreparationCeiling: { } improvement } && unpriced == 0 && !unobservedChanges
-            ? improvement - knownCost : null;
-        var neededStats = (before ?? []).Concat(roll ?? []).Where(line => line.Current is > 0).Select(line => line.Characteristic).Distinct();
+        long? acquisitionCost = acquisition?.Kind switch
+        {
+            EquipmentAcquisitionKind.Purchase => acquisition.PricePaid,
+            EquipmentAcquisitionKind.Craft => craft?.TotalCost,
+            _ => null
+        };
+        bool fmCostKnown = unpriced == 0 && !unobservedChanges && (attempts.Length > 0 || (!hasOver && !hasExo));
+        double? gain = comparison is { IsComplete: true, Target: { } target } && fmCostKnown
+            ? target.Value - knownCost - acquisitionCost : null;
         bool fresh = context.ObservedAtUtc is { } observed && DataFreshnessEvaluator.Evaluate(observed) == DataFreshness.Fresh &&
-            market is not null && neededStats.All(stat => market.Runes
-                .Where(rune => rune.Characteristic == stat && !rune.Name.StartsWith("Rune Pa ", StringComparison.OrdinalIgnoreCase) &&
-                    !rune.Name.StartsWith("Rune Ra ", StringComparison.OrdinalIgnoreCase))
-                .OrderBy(rune => rune.Id).FirstOrDefault() is { } rune &&
-                market.ObservedAt.TryGetValue(rune.Id, out var date) && DataFreshnessEvaluator.Evaluate(date) == DataFreshness.Fresh);
+            comparison is { IsComplete: true, Target.PriceFreshness: null or DataFreshness.Fresh } &&
+            (comparison.Current?.PriceFreshness is null or DataFreshness.Fresh) &&
+            (acquisition?.Kind != EquipmentAcquisitionKind.Craft || (craft is { IsComplete: true } &&
+                craft.Resources.All(line => line.Purchase?.Freshness == DataFreshness.Fresh)));
         return new(key, item, container, quantity, roll, fromWorkshop, attempts, comparison, gain,
-            context.CoefficientPercent is > 0, fresh, knownCost, unpriced, unobservedChanges);
+            context.CoefficientPercent is > 0, fresh, knownCost, unpriced, unobservedChanges)
+        {
+            HasOver = hasOver, HasExo = hasExo,
+            Acquisition = acquisition, AcquisitionCost = acquisitionCost
+        };
     }
 
     private static bool SameRoll(IReadOnlyList<ForgemagingLine> left, IReadOnlyList<ForgemagingLine> right) =>

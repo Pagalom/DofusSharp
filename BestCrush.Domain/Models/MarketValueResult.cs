@@ -1,5 +1,7 @@
 namespace BestCrush.Domain.Models;
 
+public readonly record struct MarketResaleLot(long Count, long Price, MarketPriceObservation Observation);
+
 public readonly record struct MarketValueResult(
     double Value,
     bool IsEstimated,
@@ -14,6 +16,8 @@ public readonly record struct MarketValueResult(
             Array.Empty<MarketPriceObservation>())
     {
     }
+
+    public IReadOnlyList<MarketResaleLot> Lots { get; init; } = [];
 
     public DataFreshness? Freshness =>
         UsedObservations.Count == 0

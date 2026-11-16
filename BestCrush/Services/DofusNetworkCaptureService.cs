@@ -54,6 +54,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly LastNetworkEquipmentState _lastNetworkEquipmentState;
 #if WINDOWS
     private readonly WindowScopedNetworkEquipmentState? _windowEquipmentState;
+    private readonly LiveBreedingService? _liveBreeding;
     private readonly LiveStockService? _liveStock;
     private readonly LiveForgemagingService? _liveForgemaging;
     private readonly LiveDofusClientNetworkBindings? _clientBindings;
@@ -175,6 +176,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
         {
             _liveStock = scope.ServiceProvider.GetService<LiveStockService>();
             _liveForgemaging = scope.ServiceProvider.GetService<LiveForgemagingService>();
+            _liveBreeding = scope.ServiceProvider.GetService<LiveBreedingService>();
             _windowEquipmentState = scope.ServiceProvider
                 .GetService<WindowScopedNetworkEquipmentState>();
             _candidateCardsState = scope.ServiceProvider
@@ -1081,6 +1083,7 @@ public sealed class DofusNetworkCaptureService : IDisposable
 
                         _liveStock?.Observe(routed);
                         _liveForgemaging?.Observe(routed);
+                        _liveBreeding?.Observe(_map, routed);
 
                         await _messageProcessor
                             .ProcessMessageAsync(

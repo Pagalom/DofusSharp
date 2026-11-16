@@ -63,6 +63,27 @@ public sealed class LiveStockRepository
             command.ExecuteNonQuery(); tx.Commit();
         }
     }
+    internal LiveStockContainer? PreviousContainer(string source, string label, string server, LiveStockContainer current)
+    {
+        lock (_sync)
+        {
+            using var db = Open();
+            using var command = db.CreateCommand();
+            command.CommandText = """
+                SELECT c.state_json FROM live_containers c JOIN live_sources s ON c.source=s.id
+                WHERE s.id<>$source AND s.label=$label COLLATE NOCASE AND s.server=$server COLLATE NOCASE AND c.container=$container
+                  AND julianday(json_extract(c.state_json,'$.UpdatedUtc')) < julianday($before)
+                ORDER BY julianday(json_extract(c.state_json,'$.UpdatedUtc')) DESC LIMIT 1
+                """;
+            command.Parameters.AddWithValue("$source", source);
+            command.Parameters.AddWithValue("$label", label);
+            command.Parameters.AddWithValue("$server", server);
+            command.Parameters.AddWithValue("$container", current.Container);
+            command.Parameters.AddWithValue("$before", current.UpdatedUtc.ToString("O"));
+            return command.ExecuteScalar() is string json ? JsonSerializer.Deserialize<LiveStockContainer>(json) : null;
+        }
+    }
+
     public IReadOnlyList<LiveStockSource> ReadSources()
     {
         lock (_sync)

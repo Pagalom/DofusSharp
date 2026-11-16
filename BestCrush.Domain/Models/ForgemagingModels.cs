@@ -13,6 +13,7 @@ public sealed class ForgemagingLine
 
 public sealed record ForgemagingRune(long Id, string Name, Characteristic Characteristic, int Gain, double? UnitPrice)
 {
+    public long? IconId { get; init; }
     public double Weight => Gain * Characteristic.GetWeight();
 }
 

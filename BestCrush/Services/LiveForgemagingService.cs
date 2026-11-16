@@ -11,6 +11,8 @@ public sealed record LiveForgemagingView(bool Enabled, string Status, Forgemagin
 {
     public bool CanTrack { get; init; }
     public long Activation { get; init; }
+    public string? StockKey { get; init; }
+    public long? EquipmentIconId { get; init; }
 }
 
 /// <summary>Automatic passive workshop observer. OS/socket identities and instance UIDs stay in RAM.</summary>
@@ -23,6 +25,8 @@ public sealed class LiveForgemagingService : IDisposable
     private readonly ActivityCatalogService _catalog;
     private readonly ForgemagingSessionStore _store;
     private readonly ILogger<LiveForgemagingService> _logger;
+    private readonly MarketDataChangeNotifier? _priceChanges;
+    private int _refreshRequested, _refreshRunning;
     private readonly object _sync = new();
     private readonly SemaphoreSlim _save = new(1, 1);
     private readonly CancellationTokenSource _stop = new();
@@ -39,15 +43,18 @@ public sealed class LiveForgemagingService : IDisposable
     private ForgemagingSession? _session;
     private IReadOnlyList<ForgemagingRune> _runes = [];
     private ForgemagingCrushContext? _crushing;
+    private long? _equipmentIconId;
     private Dictionary<ulong, ForgemagingEffectDefinition> _effects = [];
     public event Action? Changed;
 
     public LiveForgemagingService(IServiceScopeFactory scopes, CurrentDofusClientsState clients, CurrentServerState servers,
         LiveDofusClientNetworkBindings bindings, ActivityCatalogService catalog, ForgemagingSessionStore store,
-        ILogger<LiveForgemagingService> logger)
+        ILogger<LiveForgemagingService> logger, MarketDataChangeNotifier? priceChanges = null)
     {
         _scopes = scopes; _clients = clients; _servers = servers; _bindings = bindings;
         _catalog = catalog; _store = store; _logger = logger;
+        _priceChanges = priceChanges;
+        if (_priceChanges is not null) _priceChanges.Changed += RunePricesChanged;
         _clients.Changed += ClientChanged;
         _bindings.Changed += ContextChanged;
         _servers.ServerSelectionChanged += ContextChanged;
@@ -66,7 +73,14 @@ public sealed class LiveForgemagingService : IDisposable
                 : "Déposez un objet dans l’atelier de forgemagie sur le serveur du personnage pour activer le suivi en jeu.";
             return new(active, active ? _status : unavailable,
                 current && _session is not null ? ForgemagingSessionStore.Copy(_session) : null, current ? _runes.ToArray() : [], current && _isLoading,
-                current ? _crushing : null) { CanTrack = current && _tracker is not null && _session is not null, Activation = _activation };
+                current ? _crushing : null)
+            {
+                CanTrack = current && _tracker is not null && _session is not null,
+                Activation = _activation,
+                EquipmentIconId = current ? _equipmentIconId : null,
+                StockKey = current && _session is not null && _targetUid > 0
+                    ? ForgemagedEquipmentStock.InstanceKey(_server, _session.ItemId, _targetUid) : null
+            };
         }
     }
     public void Start(string server)
@@ -208,14 +222,14 @@ public sealed class LiveForgemagingService : IDisposable
             lock (_sync)
             {
                 if (generation != _generation || !Valid(message) || _targetUid != load.Uid) return;
-                _effects = effects; _runes = data.Runes; _crushing = data.Crushing;
+                _effects = effects; _runes = data.Runes; _crushing = data.Crushing; _equipmentIconId = data.EquipmentIconId;
                 if (Map(load) is not { } values) { InvalidateJet(); _status = "Jet partiellement reconnu. Le suivi attend un relevé complet."; }
                 else
                 {
                     string key = ForgemagedEquipmentStock.InstanceKey(_server, load.ItemId, load.Uid);
                     if (_session?.GameRecordingId != key)
                         _session = _store.GetObserved(_server, load.ItemId, key) ?? data.Session;
-                    _session.GameRecordingId = key;
+                    _session.GameRecordingId ??= key;
                     ApplyValues(_session, values);
                     _session.LastObservedRollAtUtc = message.ObservedAtUtc;
                     _session.Sink = LiveForgemagingProtocol.WorkshopItem(message.Body)!.Value.Sink;
@@ -263,30 +277,65 @@ public sealed class LiveForgemagingService : IDisposable
         }
         await SaveAsync(generation);
     }
+    private void RunePricesChanged(object? sender, MarketDataChangedEventArgs change)
+    {
+        if (change.ObjectType != MarketObjectType.Rune || _stop.IsCancellationRequested) return;
+        lock (_sync)
+        {
+            if (_session is null || !string.Equals(_server, change.ServerName, StringComparison.OrdinalIgnoreCase)) return;
+        }
+        Interlocked.Exchange(ref _refreshRequested, 1);
+        StartPriceRefresh();
+    }
+
+    private void StartPriceRefresh()
+    {
+        if (!_stop.IsCancellationRequested && Interlocked.Exchange(ref _refreshRunning, 1) == 0)
+            _ = Task.Run(RefreshObservedPricesAsync);
+    }
+
+    private async Task RefreshObservedPricesAsync()
+    {
+        try
+        {
+            while (Volatile.Read(ref _refreshRequested) != 0)
+            {
+                await Task.Delay(250, _stop.Token);
+                Interlocked.Exchange(ref _refreshRequested, 0);
+                await RefreshPricesAsync(_stop.Token);
+            }
+        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+        catch (Exception error) { _logger.LogWarning(error, "Could not refresh live FM prices"); }
+        finally
+        {
+            Interlocked.Exchange(ref _refreshRunning, 0);
+            if (Volatile.Read(ref _refreshRequested) != 0) StartPriceRefresh();
+        }
+    }
+
     public async Task RefreshPricesAsync(CancellationToken token = default)
     {
-        long generation, item; string server, recording;
+        long generation, item;
+        string server, recording;
         lock (_sync)
         {
             if (_session?.GameRecordingId is not { } id) return;
-            generation = _generation; item = _session.ItemId; server = _server; recording = id; _isLoading = true;
+            generation = _generation;
+            item = _session.ItemId;
+            server = _server;
+            recording = id;
+        }
+        using var scope = _scopes.CreateScope();
+        var data = await scope.ServiceProvider.GetRequiredService<ForgemagingDataService>().LoadAsync(item, server, token);
+        lock (_sync)
+        {
+            if (generation != _generation || _session?.GameRecordingId != recording) return;
+            _runes = data.Runes;
+            _crushing = data.Crushing;
+            _tracker?.RefreshRunes(_runes);
         }
         Changed?.Invoke();
-        try
-        {
-            using var scope = _scopes.CreateScope();
-            var data = await scope.ServiceProvider.GetRequiredService<ForgemagingDataService>().LoadAsync(item, server, token);
-            lock (_sync)
-            {
-                if (generation != _generation || _session?.GameRecordingId != recording) return;
-                _runes = data.Runes; _crushing = data.Crushing; _tracker?.RefreshRunes(_runes);
-            }
-        }
-        finally
-        {
-            lock (_sync) { if (generation == _generation) _isLoading = false; }
-            Changed?.Invoke();
-        }
     }
     private async Task SaveAsync(long generation)
     {
@@ -301,6 +350,7 @@ public sealed class LiveForgemagingService : IDisposable
     }
     public void Dispose()
     {
+        if (_priceChanges is not null) _priceChanges.Changed -= RunePricesChanged;
         _clients.Changed -= ClientChanged; _bindings.Changed -= ContextChanged; _servers.ServerSelectionChanged -= ContextChanged; _queue.Writer.TryComplete(); _stop.Cancel();
     }
 }

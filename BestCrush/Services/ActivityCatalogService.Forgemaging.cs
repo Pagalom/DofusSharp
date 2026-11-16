@@ -9,8 +9,27 @@ public sealed record ForgemagingEffectDefinition(ulong Code, Characteristic? Sta
 
 public sealed partial class ActivityCatalogService
 {
+    private const string ForgemagingEffectsKey = "fm-effects-v1";
+
+    internal IReadOnlyDictionary<ulong, ForgemagingEffectDefinition>? ReadCachedForgemagingEffects()
+    {
+        string key = CacheKey(ForgemagingEffectsKey);
+        if (_memory.TryGetValue(key, out var known) && known is ForgemagingEffectDefinition[] effects)
+            return effects.ToDictionary(effect => effect.Code);
+
+        string file = CachePath(key);
+        if (!File.Exists(file)) return null;
+        try
+        {
+            var data = JsonSerializer.Deserialize<Cached<ForgemagingEffectDefinition[]>>(File.ReadAllText(file))?.Data;
+            return data?.ToDictionary(effect => effect.Code);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or JsonException or ArgumentException)
+        { return null; }
+    }
+
     public Task<ForgemagingEffectDefinition[]> GetForgemagingEffectsAsync(CancellationToken token) =>
-        CachedAsync("fm-effects-v1", async () =>
+        CachedAsync(ForgemagingEffectsKey, async () =>
         {
             var characteristics = await Fetch(factory.Characteristics(), new() { Select = ["id", "keyword"] }, token);
             var stats = characteristics.Where(c => c.Id is not null && c.Keyword is not null).ToDictionary(

@@ -1,6 +1,7 @@
 using System.Numerics;
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
+using BestCrush.Models;
 using BestCrush.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.Extensions.Logging;
@@ -11,6 +12,9 @@ public partial class Server
 {
     [SupplyParameterFromQuery(Name = "stocks")] public bool UseStocksFromQuery { get; set; }
     [SupplyParameterFromQuery(Name = "item")] public long? StockItemId { get; set; }
+    [SupplyParameterFromQuery(Name = "owned")] public bool OwnedFromQuery { get; set; }
+    [SupplyParameterFromQuery(Name = "instance")] public string? OwnedInstanceFromQuery { get; set; }
+    private SearchItemsModel? _beforeOwnedTarget;
     private bool _takeStocks, _preparingStocks, _stockDisposed;
     private int _stockPreparationVersion;
     private LiveStockSource? _preparedStockSource, _pendingStockSource;

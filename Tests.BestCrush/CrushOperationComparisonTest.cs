@@ -24,7 +24,10 @@ public sealed class CrushOperationComparisonTest
         try
         {
             var store = new ForgemagingSessionStore(path);
-            var services = new ServiceCollection().AddSingleton(store);
+            using var database = new Utils.TestDatabase();
+            using var db = database.CreateContext();
+            var services = new ServiceCollection().AddSingleton(store)
+                .AddSingleton(new MarketPriceService(db, new Utils.TestDataPriorityProvider()));
             using var provider = services.BuildServiceProvider();
             void Record(ulong uid, int price) => store.Save("A", new()
             {
@@ -35,6 +38,8 @@ public sealed class CrushOperationComparisonTest
             });
             Record(10001, 4);
             Record(10002, 12);
+            var paidKey = ForgemagedEquipmentStock.InstanceKey("A", 42, 10001);
+            store.RecordAcquisition("A", 42, paidKey, new(EquipmentAcquisitionKind.Purchase, 100, at));
             Assert.Equal(42, store.FindObservedItemIds("A", [10001])[10001]);
             Assert.Empty(store.FindObservedItemIds("B", [10001]));
             NetworkCrushResultLine Line(ulong uid, int count) => new(42, 200, [new(10, count)])
@@ -44,7 +49,9 @@ public sealed class CrushOperationComparisonTest
             var observations = new Dictionary<(long, int), MarketPriceObservation>
             {
                 [(10, 10)] = new() { ObjectType = MarketObjectType.Rune, DofusDbId = 10, ServerName = "A", Price = 100,
-                    Quantity = 10, Source = MarketPriceSource.InGameAutomatic, ObservedAtUtc = at }
+                    Quantity = 10, Source = MarketPriceSource.InGameAutomatic, ObservedAtUtc = at },
+                [(10, 1)] = new() { ObjectType = MarketObjectType.Rune, DofusDbId = 10, ServerName = "A", Price = 11,
+                    Quantity = 1, Source = MarketPriceSource.InGameAutomatic, ObservedAtUtc = at }
             };
             var result = await CrushOperationAssessment.AddToHistoryAsync(provider, history, [Line(10002, 30), Line(10001, 33)],
                 new Dictionary<long, Equipment?> { [42] = item }, new Dictionary<long, Rune> { [10] = rune }, observations);
@@ -52,14 +59,16 @@ public sealed class CrushOperationComparisonTest
             var second = Assert.IsType<CrushEquipmentComparison>(result.Equipments[1].Comparison);
             Assert.Equal(12, first.KnownFmCost);
             Assert.Equal(4, second.KnownFmCost);
-            Assert.Equal(304, first.EstimatedValue);
-            Assert.Equal(285, first.ObtainedValue);
-            Assert.Equal(-19, first.Difference);
+            Assert.Equal(301.15, first.EstimatedValue!.Value, 2);
+            Assert.Equal(282.15, first.ObtainedValue!.Value, 2);
+            Assert.Equal(-19, first.Difference!.Value, 2);
             Assert.Equal(32, Assert.Single(first.Runes).Estimated);
             Assert.Equal(30, Assert.Single(first.Runes).Obtained);
             Assert.Equal(ForgemagingOutcome.Failure, Assert.Single(first.FmBreakdown).Outcome);
             Assert.Null(first.Margin);
-            Assert.Equal(173, (first with { RecordedAcquisitionCost = 100 }).Margin);
+            Assert.Equal(100, second.RecordedAcquisitionCost);
+            Assert.NotNull(second.Margin);
+            Assert.Equal(170.15, (first with { RecordedAcquisitionCost = 100 }).Margin!.Value, 2);
         }
         finally { File.Delete(path); }
     }

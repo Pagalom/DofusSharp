@@ -1,0 +1,64 @@
+@using System.Globalization
+
+<div class="crushing-trend">
+    <h3>@(Coefficient ? "Évolution du coefficient" : "Évolution du prix à l’unité") <small>60 derniers jours</small></h3>
+    @if (Loading) { <p role="status">Chargement des relevés…</p> }
+    else if (Failed) { <p role="status">Historique indisponible.</p> }
+    else if (_points.Length == 0) { <p>Aucun relevé sur cette période.</p> }
+    else
+    {
+        <svg viewBox="0 0 900 160" role="img" aria-label="Courbe des relevés sur 60 jours">
+            @for (int i = 0; i <= 4; i++)
+            {
+                var y = 13 + i * 30;
+                <line x1="79" x2="883" y1="@y" y2="@y" class="crushing-trend-guide" />
+                <foreignObject x="0" y="@(y - 9)" width="70" height="18"><div class="crushing-axis-value">@Value(_high - (_high - _low) * i / 4)</div></foreignObject>
+            }
+            @for (int i = 0; i <= 3; i++)
+            {
+                <foreignObject x="@(70 + i * 257)" y="138" width="59" height="18"><div>@_start.AddDays(i * 20).ToLocalTime().ToString("dd/MM")</div></foreignObject>
+            }
+            @if (_points.Length > 1)
+            {
+                <polyline points="@_path" class="@(Coefficient ? "coefficient" : "prices")" />
+            }
+            @foreach (var point in _points)
+            {
+                <circle cx="@Number(point.X)" cy="@Number(point.Y)" r="3" tabindex="0" class="@(Coefficient ? "coefficient" : "prices")"
+                        aria-label="@($"{point.At.ToLocalTime():dd/MM HH:mm} · {Value(point.Price)}")">
+                    <title>@point.At.ToLocalTime().ToString("dd/MM HH:mm") · @Value(point.Price)</title>
+                </circle>
+            }
+        </svg>
+    }
+</div>
+
+@code {
+    [Parameter] public (DateTime At, double Value)[]? Points { get; set; }
+    [Parameter] public bool Loading { get; set; }
+    [Parameter] public bool Failed { get; set; }
+    [Parameter] public bool Coefficient { get; set; }
+
+    private DateTime _start;
+    private double _low, _high;
+    private string _path = "";
+    private (DateTime At, double Price, double X, double Y)[] _points = [];
+
+    protected override void OnParametersSet()
+    {
+        if (Points is not { Length: > 0 } points) { _points = []; return; }
+        _start = DateTime.UtcNow.AddDays(-60);
+        _low = points.Min(point => point.Value);
+        _high = points.Max(point => point.Value);
+        double padding = _high == _low ? Math.Max(1, _high * .05) : (_high - _low) * .075;
+        _low = Math.Max(0, _low - padding);
+        _high += padding;
+        _points = points.Select(point => (point.At, point.Value,
+            79 + Math.Clamp((point.At - _start).TotalDays / 60, 0, 1) * 804,
+            13 + 120 * (_high - point.Value) / (_high - _low))).ToArray();
+        _path = string.Join(' ', _points.Select(point => $"{Number(point.X)},{Number(point.Y)}"));
+    }
+
+    private string Value(double value) => Coefficient ? $"{value:N0} %" : $"{value:N0} K";
+    private static string Number(double value) => value.ToString("0.##", CultureInfo.InvariantCulture);
+}

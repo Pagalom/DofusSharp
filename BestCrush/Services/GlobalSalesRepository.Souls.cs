@@ -23,7 +23,7 @@ public sealed partial class GlobalSalesRepository
         if (command.ExecuteNonQuery() > 0) Changed?.Invoke(quote.Server.Trim().ToUpperInvariant());
     }
 
-    public IReadOnlyList<SoulCaptureQuote> ReadSoulQuotes(string server)
+    public IReadOnlyList<SoulCaptureQuote> ReadSoulQuotes(string server, int maximumLotQuantity = int.MaxValue)
     {
         using var db = Open();
         using var command = db.CreateCommand();
@@ -32,6 +32,6 @@ public sealed partial class GlobalSalesRepository
         using var reader = command.ExecuteReader();
         List<SoulCaptureQuote> quotes = [];
         while (reader.Read()) quotes.Add(new(server, reader.GetInt64(0), reader.GetDouble(1), Parse(reader.GetString(2))));
-        return quotes.Concat(ReadAutomaticSoulQuotes(server)).OrderByDescending(x => x.ObservedAtUtc).DistinctBy(x => x.BossId).ToArray();
+        return quotes.Concat(ReadAutomaticSoulQuotes(server, maximumLotQuantity)).OrderByDescending(x => x.ObservedAtUtc).DistinctBy(x => x.BossId).ToArray();
     }
 }

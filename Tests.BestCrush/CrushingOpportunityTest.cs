@@ -47,8 +47,8 @@ public sealed class CrushingOpportunityTest
         var row=rows.Should().ContainSingle().Which;
         row.IsComplete.Should().BeTrue();row.Focus.Should().Be(Characteristic.Strength.ToString());
         row.Runes!.Single().Quantity.Should().BeApproximately(48,0.000001);
-        row.Revenue.Should().BeApproximately(288,0.000001);
-        row.Benefit.Should().BeApproximately(228,0.000001);
+        row.Revenue.Should().BeApproximately(277.2,0.000001);
+        row.Benefit.Should().BeApproximately(223.2,0.000001);
         row.Evidence.Prices.Where(x=>x.ObjectType==MarketObjectType.Rune).Select(x=>x.Quantity).Should().BeEquivalentTo([1,10]);
     }
     [Fact]

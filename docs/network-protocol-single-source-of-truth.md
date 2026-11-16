@@ -1,5 +1,7 @@
 ﻿# Protocole réseau BestCrush — source unique de vérité
 
+La [checklist de mise à jour du client](../BestCrush.Network/VALIDATION.md) regroupe les contrôles en jeu et les routes lues directement par certains décodeurs.
+
 ## Fichier à maintenir après une mise à jour de Dofus
 
 **`BestCrush.Network/protocol-map.json`**
@@ -7,8 +9,8 @@
 Il est partagé et copié tel quel dans les sorties de **BestCrush**, **BestCrush.NetworkProbe** et **Tests.BestCrush**. Il porte trois responsabilités :
 
 1. Les **codes des messages** (ex. `market_selection_response = jzs`, `price_list = jzn`, `crush_result = kci`).
-2. La **correspondance des champs Protobuf** (section `field_mappings`) pour les **23 routes** de capture actuellement connues.
-3. L'**état de vérification** de chaque route (section `verified_routes`, même ensemble de 23 noms).
+2. La **correspondance des champs Protobuf** (section `field_mappings`) pour les routes déclarées dans le profil.
+3. L'**état de vérification** de chaque route (section `verified_routes`, même ensemble de routes).
 
 Ce fichier utilise `schema_version: 1`. Une version de schéma non supportée bloque le chargement.
 
@@ -71,7 +73,8 @@ Les correspondances sont **par route sémantique**, pas par clé brute. Si l'ide
 | `crush_result_current` | résultat actuel `kag` : coefficient, UID, runes et quantités |
 | `item_detail_current` | item `kch` : UID, ID équipement et quantité pour corréler `kag` |
 | `item_detail`, `inventory_add`, `craft_output` | UID → ID équipement, stats, corrélation concassage |
-| `purchase_request`, `purchase_offer`, `purchase_receipt` | achats et rafraîchissement de prix |
+| `purchase_request`, `purchase_offer`, `purchase_receipt` | achats et rafraîchissement de prix, routes historiques |
+| `purchase_request_current`, `purchase_offer_current`, `purchase_receipt_current` | prix payé et reçu du client courant, observation du 15/11/2026 |
 | `market_listing_request`, `market_listing_created` | dépôt/vente HDV |
 | `inventory_quantity`, `inventory_remove` | inventaire (NetworkProbe) |
 | `workshop_slot_put`, `craft_prepare` | atelier/craft (NetworkProbe) |
@@ -97,7 +100,7 @@ Le premier checkpoint de compilation/tests et le test d'exécution F5 restent ob
 
 1. Activer temporairement `Conserver les artefacts de debug`. Capturer des événements connus et comparer les **clés, directions, tailles et signatures** aux états attendus, sans committer les paquets privés.
 2. Identifier la ou les routes affectées : sélection HDV, prix d'un équipement et d'une ressource, achat, inventaire, concassage, etc.
-3. **Modifier uniquement `BestCrush.Network/protocol-map.json`** : code du message et numérotation réelle (valeurs `wire` de `field_mappings`). Mettre à jour l'état `verified_routes` pour chaque événement effectivement caractérisé.
+3. Pour les routes configurables, modifier le code et les numéros reçus dans `BestCrush.Network/protocol-map.json`. Mettre à jour `verified_routes` pour chaque événement caractérisé. Pour les autres routes ou un changement de comportement, suivre la checklist et adapter le décodeur concerné.
 4. Ajouter/mettre à jour des **fixtures synthétiques de non-régression** ; `ProtocolWireNormalizerTest` vérifie que toutes les routes figurent dans le fichier commun. Ne jamais ajouter des données de session ou identifiants utilisateurs aux fixtures.
 5. Exécuter build/test Windows et F5 ; contrôler focus, prix/lot, coefficients, runes, server lease, notifications et observations SQLite. La configuration est chargée au démarrage : **redémarrer BestCrush** après la modification.
 

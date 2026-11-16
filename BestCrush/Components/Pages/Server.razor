@@ -152,7 +152,7 @@
             JobCatalog="_crushingJobCatalog" JobsLoading="_jobFiltersBusy" JobsError="@_jobFiltersError" RetryJobs="LoadCrushingJobsAsync" JobSelectionChanged="OnCrushingJobSelectionChanged" SearchChanged="StateHasChanged"
             PlayerLevel="DetectedPlayerLevel" ProfessionLevels="DetectedProfessionLevels">
             <Actions>
-                @if (Model?.ForgemagedOnly != true)
+                @if (Model?.OwnedOnly != true)
                 {
                 <label class="d-flex align-items-center gap-2">
                     <input id="use-crushing-stocks" class="form-check-input mt-0" type="checkbox" checked="@_takeStocks" @onchange="ToggleStocks" />
@@ -167,27 +167,22 @@
         </SearchItemsForm>
     </form>
 
-    @if (Model is { ForgemagedOnly: true } forgemagedFilters)
+    @if (Model is { OwnedOnly: true } ownedFilters)
     {
-        <OwnedForgemagingList ServerName="@ServerName" Filters="forgemagedFilters" RefreshVersion="_ownedRefreshVersion"
-            FilterEquipment="FilterOwnedItems"
+        <OwnedForgemagingList ServerName="@ServerName" Filters="ownedFilters" RefreshVersion="_ownedRefreshVersion"
+            FilterEquipment="FilterOwnedItems" TargetItemId="@(OwnedFromQuery ? StockItemId : null)"
+            TargetInstanceKey="@(OwnedFromQuery ? OwnedInstanceFromQuery : null)"
             EquipmentLoaded="PrepareOwnedProfessionFiltersAsync" />
     }
     else
     {
-    <div>
-        @if (_takeStocks)
-        {
-            <div class="small text-secondary mt-1" title="Le gain après achats ne déduit pas la valeur de revente des ingrédients possédés.">
-                @if (UseStockCalculation)
-                {
-                    <span>@(BestCrush.Services.StockOpportunityService.HasSynchronizedBank(_preparedStockSource) ? "Inventaire + banque" : "Inventaire seul") · gain après achats, avant taxes.</span>
-                }
-                else if (_preparingStocks) { <span>Préparation des stocks…</span> }
-                else { <span>Inventaire non synchronisé sur ce serveur : calcul standard affiché. Reconnectez le personnage avec BestCrush ouvert.</span> }
-            </div>
-        }
-    </div>
+    @if (_takeStocks && !UseStockCalculation)
+    {
+        <div class="small text-secondary mt-1">
+            @if (_preparingStocks) { <span>Préparation des stocks…</span> }
+            else { <span>Inventaire non synchronisé sur ce serveur : calcul standard affiché. Reconnectez le personnage avec BestCrush ouvert.</span> }
+        </div>
+    }
     @if (_marketUpdating) { <p class="small text-secondary" role="status"><span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Actualisation des prix…</p> }
     @if (_marketRefreshError is not null) { <p class="small text-warning" role="status">@_marketRefreshError</p> }
     @if (_analysisError is not null)
@@ -283,26 +278,15 @@
                         @foreach (ItemCrushResult item in pageRows)
                         {
                             <div class="p-0" @key="item.Equipment.DofusDbId">
-                                <ServiceResult InitiallyExpanded="@(StockItemId == item.Equipment.DofusDbId)" Focus="() => FocusInOverlay(item.Equipment)" FocusItemName="@item.Equipment.Name">
-<Summary>
-    <span class="result-identity"><StockItemArtwork ItemId="item.Equipment.DofusDbId" Stock="artworkStock"><MarketItemPicture IconId="item.Equipment.DofusDbIconId" /></StockItemArtwork><span><span class="result-name"><CopyTextButton Value="@item.Equipment.Name" Tooltip="Copier le nom de l’équipement">@item.Equipment.Name</CopyTextButton></span><small>@item.Equipment.Type.ToDisplayName() · Niv. @item.Equipment.Level</small></span></span>
-    <span class="result-stat"><small>Coefficient</small><strong>@item.Coefficient.CoefficientPercent.ToString("N0") %</strong></span>
-    <span class="result-stat"><small>Valeur des runes</small><strong>@CrushMoney(item.AdjustedRuneValue)</strong></span>
-    <span class="result-stat"><small>@(UseStockCalculation ? "Gain après achats" : "Gain estimé")</small><strong style="@($"color: {GainColor(item)}")">@CrushMoney(GetEffectiveBenefit(item))</strong></span>
-</Summary>
-<ChildContent>
-                                <CrushResultLine Stock="artworkStock" Equipment="item.Equipment"
-                                                Cost="item.Cost"
-                                                CraftCost="item.CraftCost"
-                                                FocusedCharacteristic="item.FocusedCharacteristic"
-                                                Runes="item.Runes"
-                                                RuneValues="item.RuneValues"
-                                                AdjustedRuneValue="item.AdjustedRuneValue"
-                                                NoImage="_searching"
-                                                />
+                                <CrushingResultCard Equipment="item.Equipment" ServerName="@ServerName"
+                                                    InitiallyExpanded="@(StockItemId == item.Equipment.DofusDbId)" Focus="() => FocusInOverlay(item.Equipment)"
+                                                    RankedSummary="@RankedCrushingSummary(item)" Purchase="item.Cost" Craft="item.CraftCost"
+                                                    GainLabel="@(UseStockCalculation ? "Gain après achats" : "Gain estimé")">
+                                    <Identity><span class="result-identity"><StockItemArtwork ItemId="item.Equipment.DofusDbId" Stock="artworkStock"><MarketItemPicture IconId="item.Equipment.DofusDbIconId" /></StockItemArtwork><span><span class="result-name"><CopyTextButton Value="@item.Equipment.Name" Tooltip="Copier le nom de l’équipement">@item.Equipment.Name</CopyTextButton></span><small>@item.Equipment.Type.ToDisplayName() · Niv. @item.Equipment.Level</small></span></span></Identity>
+                                    <ChildContent>
                                 <CraftCostSummary Equipment="item.Equipment" StockServerName="@ServerName" Result="item.CraftCost" StockPlan="@(UseStockCalculation ? _stockPlans.GetValueOrDefault(item.Equipment.DofusDbId) : null)" />
-</ChildContent>
-                                </ServiceResult>
+                                    </ChildContent>
+                                </CrushingResultCard>
                             </div>
                         }
                             </RowContent>
@@ -322,24 +306,12 @@
                         @foreach (ItemCrushResult item in pageRows)
                         {
                             <div class="p-0" @key="item.Equipment.DofusDbId">
-                                <ServiceResult InitiallyExpanded="@(StockItemId == item.Equipment.DofusDbId)" Focus="() => FocusInOverlay(item.Equipment)" FocusItemName="@item.Equipment.Name">
-<Summary>
-    <span class="result-identity"><StockItemArtwork ItemId="item.Equipment.DofusDbId" Stock="artworkStock"><MarketItemPicture IconId="item.Equipment.DofusDbIconId" /></StockItemArtwork><span><span class="result-name"><CopyTextButton Value="@item.Equipment.Name" Tooltip="Copier le nom de l’équipement">@item.Equipment.Name</CopyTextButton></span><small>@item.Equipment.Type.ToDisplayName() · Niv. @item.Equipment.Level</small></span></span>
-    <span class="result-stat"><small>Coefficient</small><strong>@item.Coefficient.CoefficientPercent.ToString("N0") %</strong></span>
-    <span class="result-stat"><small>Valeur des runes</small><strong>@CrushMoney(item.AdjustedRuneValue)</strong></span>
-    <span class="result-stat"><small>@(UseStockCalculation ? "Gain après achats" : "Gain estimé")</small><strong style="@($"color: {GainColor(item)}")">@CrushMoney(GetEffectiveBenefit(item))</strong></span>
-</Summary>
-<ChildContent>
-
-                                <CrushResultLine Stock="artworkStock" Equipment="item.Equipment"
-                                                Cost="item.Cost"
-                                                CraftCost="item.CraftCost"
-                                                FocusedCharacteristic="item.FocusedCharacteristic"
-                                                Runes="item.Runes"
-                                                RuneValues="item.RuneValues"
-                                                AdjustedRuneValue="item.AdjustedRuneValue"
-                                                NoImage="_searching"
-                                                />
+                                <CrushingResultCard Equipment="item.Equipment" ServerName="@ServerName"
+                                                    InitiallyExpanded="@(StockItemId == item.Equipment.DofusDbId)" Focus="() => FocusInOverlay(item.Equipment)"
+                                                    RankedSummary="@RankedCrushingSummary(item)" Purchase="item.Cost" Craft="item.CraftCost"
+                                                    GainLabel="@(UseStockCalculation ? "Gain après achats" : "Gain estimé")">
+                                    <Identity><span class="result-identity"><StockItemArtwork ItemId="item.Equipment.DofusDbId" Stock="artworkStock"><MarketItemPicture IconId="item.Equipment.DofusDbIconId" /></StockItemArtwork><span><span class="result-name"><CopyTextButton Value="@item.Equipment.Name" Tooltip="Copier le nom de l’équipement">@item.Equipment.Name</CopyTextButton></span><small>@item.Equipment.Type.ToDisplayName() · Niv. @item.Equipment.Level</small></span></span></Identity>
+                                    <ChildContent>
                                 <CraftCostSummary Equipment="item.Equipment" StockServerName="@ServerName" Result="item.CraftCost" StockPlan="@(UseStockCalculation ? _stockPlans.GetValueOrDefault(item.Equipment.DofusDbId) : null)" />
 
                                 @if (_missingDataByItem.TryGetValue(
@@ -349,8 +321,8 @@
                                     <CrushingMissingData Calculation="@_baseCalculations.GetValueOrDefault(item.Equipment.DofusDbId)" CraftCost="item.CraftCost" Messages="warnings" Stock="artworkStock" />
                                 }
 
-</ChildContent>
-                                </ServiceResult>
+                                    </ChildContent>
+                                </CrushingResultCard>
                             </div>
                         }
                             </RowContent>
@@ -424,11 +396,13 @@
                     @foreach (Equipment item in pageRows)
                     {
                         <div @key="item.DofusDbId">
-                            <ServiceResult InitiallyExpanded="@(StockItemId == item.DofusDbId)" Focus="() => FocusInOverlay(item)" FocusItemName="@item.Name">
-                                <Summary><span class="result-identity"><StockItemArtwork ItemId="item.DofusDbId" Stock="artworkStock"><MarketItemPicture IconId="item.DofusDbIconId" /></StockItemArtwork><span><span class="result-name"><CopyTextButton Value="@item.Name" Tooltip="Copier le nom de l’équipement">@item.Name</CopyTextButton></span><small>@item.Type.ToDisplayName() · Niv. @item.Level</small></span></span><span class="badge text-bg-secondary">Données manquantes</span></Summary>
+                            <CrushingResultCard Equipment="item" ServerName="@ServerName"
+                                                InitiallyExpanded="@(StockItemId == item.DofusDbId)" Focus="() => FocusInOverlay(item)"
+                                                Purchase="@_baseCalculations.GetValueOrDefault(item.DofusDbId)?.EquipmentCost"
+                                                Craft="@(UseStockCalculation && _stockPlans.TryGetValue(item.DofusDbId, out var detailPlan) ? StockCrushingProjection.RemainingCost(detailPlan) : _craftCostsByItem.GetValueOrDefault(item.DofusDbId))">
+                                <Identity><span class="result-identity"><StockItemArtwork ItemId="item.DofusDbId" Stock="artworkStock"><MarketItemPicture IconId="item.DofusDbIconId" /></StockItemArtwork><span><span class="result-name"><CopyTextButton Value="@item.Name" Tooltip="Copier le nom de l’équipement">@item.Name</CopyTextButton></span><small>@item.Type.ToDisplayName() · Niv. @item.Level</small></span></span></Identity>
+                                <CollapsedStatus><span class="badge text-bg-secondary">Données manquantes</span></CollapsedStatus>
                                 <ChildContent>
-                                    <CrushResultLine Equipment="item" Stock="artworkStock" Cost="@_baseCalculations.GetValueOrDefault(item.DofusDbId)?.EquipmentCost"
-                                        CraftCost="@_craftCostsByItem.GetValueOrDefault(item.DofusDbId)" NoImage="_searching" />
                                     @if (_craftCostsByItem.TryGetValue(item.DofusDbId, out CraftCostResult? craftCost))
                                     {
                                         <CraftCostSummary Equipment="item" StockServerName="@ServerName" Result="@(UseStockCalculation && _stockPlans.TryGetValue(item.DofusDbId, out var plan) ? StockCrushingProjection.RemainingCost(plan) : craftCost)" StockPlan="@(UseStockCalculation ? _stockPlans.GetValueOrDefault(item.DofusDbId) : null)" />
@@ -438,7 +412,7 @@
                                         <CrushingMissingData Calculation="@_baseCalculations.GetValueOrDefault(item.DofusDbId)" CraftCost="@(UseStockCalculation && _stockPlans.TryGetValue(item.DofusDbId, out var missingPlan) ? StockCrushingProjection.RemainingCost(missingPlan) : null)" Messages="missingData" Partial="false" Stock="artworkStock" />
                                     }
                                 </ChildContent>
-                            </ServiceResult>
+                            </CrushingResultCard>
                         </div>
                     }
 
@@ -576,6 +550,7 @@
         bool stocksQueryChanged = _lastStocksQuery != UseStocksFromQuery;
         if (serverChanged)
         {
+            RestoreOwnedTargetFilters();
             InvalidateMarketRefresh();
             bool firstLoad = _loadedServerName is null;
             SaveSessionState();
@@ -588,6 +563,17 @@
         {
             _takeStocks = true;
             RebuildVisibleCalculations();
+        }
+        if ((!OwnedFromQuery || StockItemId is null) && _beforeOwnedTarget is not null) RestoreOwnedTargetFilters();
+        if (Model is { } filters)
+        {
+            filters.ProfitabilityMode = ProfitabilityFilterMode.Best;
+            if (OwnedFromQuery && StockItemId is not null && _beforeOwnedTarget is null)
+            {
+                _beforeOwnedTarget = filters;
+                Model = CloneSearchModel(filters);
+                Model.OwnedOnly = true;
+            }
         }
         _lastStocksQuery = UseStocksFromQuery;
         _lastStockItemId = StockItemId;
@@ -741,6 +727,13 @@
 
     }
 
+    private void RestoreOwnedTargetFilters()
+    {
+        if (_beforeOwnedTarget is not { } prior) return;
+        Model = prior;
+        _beforeOwnedTarget = null;
+    }
+
     private void SaveSessionState()
     {
         if (_sessionState is null)
@@ -751,7 +744,7 @@
         if (Model is not null)
         {
             _sessionState.Model =
-                Model;
+                _beforeOwnedTarget ?? Model;
         }
 
         _sessionState.AllItems =
@@ -805,7 +798,7 @@
 
     private async Task RefreshCrushSettingsAsync()
     {
-        if (Model?.ForgemagedOnly == true)
+        if (Model?.OwnedOnly == true)
         {
             _ownedRefreshVersion++;
             StateHasChanged();
@@ -839,7 +832,7 @@
     private Task AnalyzeAsync()
     {
         _searchForm?.CollapseAdvanced();
-        if (Model?.ForgemagedOnly == true)
+        if (Model?.OwnedOnly == true)
         {
             _ownedRefreshVersion++;
             return Task.CompletedTask;
@@ -894,7 +887,7 @@
             var loaded = await Task.Run(async () =>
             {
                 var all = await itemsService.GetEquipmentsAsync();
-                var market = await profitabilityService.LoadContextAsync(analysisServer);
+                var market = await profitabilityService.LoadContextAsync(analysisServer, gameRunePricesOnly: true);
                 return (Items: all, Market: market);
             });
             if (!IsCurrent()) return;

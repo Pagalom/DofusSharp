@@ -2,6 +2,35 @@ using BestCrush.Domain.Models;
 namespace BestCrush.Components.Pages;
 public partial class ForgemagingWorkspace
 {
+    private static readonly string[] RuneTiers = ["Rune", "Pa", "Ra"];
+    private static readonly ForgemagingOutcome[] DisplayedOutcomes =
+        [ForgemagingOutcome.Critical, ForgemagingOutcome.Neutral, ForgemagingOutcome.Failure];
+
+    private static int RuneTier(ForgemagingRune rune) =>
+        rune.Name.StartsWith("Rune Ra ", StringComparison.OrdinalIgnoreCase) ? 2 :
+        rune.Name.StartsWith("Rune Pa ", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
+
+    private string RuneImage(ForgemagingRune rune) =>
+        (rune.IconId ?? _runes.FirstOrDefault(entry => entry.Id == rune.Id)?.IconId) is > 0 and var icon
+            ? $"img/runes/{icon}.png" : "img/runes/unknown.svg";
+
+    private double OddsPercentage(ForgemagingOdds odds) => _shownOdds switch
+    {
+        ForgemagingOutcome.Critical => odds.Critical,
+        ForgemagingOutcome.Neutral => odds.Neutral,
+        _ => odds.Failure
+    };
+
+    private static string OutcomeCode(ForgemagingOutcome outcome) => outcome switch
+    {
+        ForgemagingOutcome.Critical => "SC",
+        ForgemagingOutcome.Neutral => "SN",
+        ForgemagingOutcome.Failure => "EC",
+        _ => "?"
+    };
+
+    private static string OutcomeClass(ForgemagingOutcome outcome) => outcome.ToString().ToLowerInvariant();
+
     internal static string StatName(Characteristic stat) => stat switch
     {
         Characteristic.Wisdom=>"Sagesse",Characteristic.Strength=>"Force",Characteristic.Intelligence=>"Intelligence",Characteristic.Chance=>"Chance",Characteristic.Agility=>"Agilité",

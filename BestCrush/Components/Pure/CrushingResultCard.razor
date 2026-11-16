@@ -1,0 +1,80 @@
+@using BestCrush.Components.Pages
+@using BestCrush.Domain.Models
+@using BestCrush.Services
+
+<ServiceResult InitiallyExpanded="InitiallyExpanded" ExpandedChanged="SetExpanded" Focus="Focus" FocusItemName="@Equipment.Name">
+    <Summary>
+        @Identity
+        @if (_expanded || RankedSummary.HasValue)
+        {
+            var values = _expanded ? _detailSummary : RankedSummary;
+            <span class="result-stat"><small>Rentabilité</small><strong>@Percent(values?.RoiPercent)</strong></span>
+            <span class="result-stat"><small>Valeur des runes</small><strong>@Money(values?.RuneValue)</strong></span>
+            <span class="result-stat">
+                <small>@GainLabel</small>
+                <strong style="color:@CrushingGainColor.For(values?.Gain ?? double.NaN, values?.Cost)">@Money(values?.Gain)</strong>
+            </span>
+            @if (values is { RuneFocus: { } focus } && _expanded)
+            {
+                var hint = $"Focus {ForgemagingWorkspace.StatName(focus)}";
+                <span class="crush-summary-focus" tabindex="0" role="img" aria-label="@hint"
+                      data-bs-toggle="tooltip" data-bs-title="@hint" data-bs-custom-class="multiline-tooltip">
+                    <i class="bi bi-bullseye" aria-hidden="true"></i>
+                    @if (values.Value.FocusRuneIconId is > 0 and var icon)
+                    {
+                        <img src="@($"img/runes/{icon}.png")" alt="" width="22" height="22" />
+                    }
+                </span>
+            }
+        }
+        else
+        {
+            @CollapsedStatus
+        }
+    </Summary>
+    <ChildContent>
+        <CrushingItemDetail Equipment="Equipment" ServerName="@ServerName" Owned="Owned" Purchase="Purchase"
+                            Craft="Craft" SummaryChanged="UpdateSummary" />
+        @ChildContent
+    </ChildContent>
+</ServiceResult>
+
+@code {
+    [Parameter, EditorRequired] public Equipment Equipment { get; set; } = default!;
+    [Parameter, EditorRequired] public string ServerName { get; set; } = "";
+    [Parameter, EditorRequired] public RenderFragment Identity { get; set; } = default!;
+    [Parameter] public RenderFragment? CollapsedStatus { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public CrushingResultSummary? RankedSummary { get; set; }
+    [Parameter] public OwnedForgemagingEquipment? Owned { get; set; }
+    [Parameter] public MarketPriceObservation? Purchase { get; set; }
+    [Parameter] public CraftCostResult? Craft { get; set; }
+    [Parameter] public bool InitiallyExpanded { get; set; }
+    [Parameter] public EventCallback Focus { get; set; }
+    [Parameter] public string GainLabel { get; set; } = "Gain estimé";
+
+    private bool? _initialExpansion;
+    private bool _expanded;
+    private CrushingResultSummary? _detailSummary;
+
+    protected override void OnParametersSet()
+    {
+        if (_initialExpansion == InitiallyExpanded) return;
+        _initialExpansion = InitiallyExpanded;
+        SetExpanded(InitiallyExpanded);
+    }
+
+    private void SetExpanded(bool expanded)
+    {
+        _expanded = expanded;
+        _detailSummary = null;
+    }
+
+    private void UpdateSummary(CrushingResultSummary summary)
+    {
+        if (_expanded) _detailSummary = summary;
+    }
+
+    private static string Money(double? value) => value is { } amount && double.IsFinite(amount) ? $"{amount:N0} K" : "—";
+    private static string Percent(double? value) => value is { } amount && double.IsFinite(amount) ? $"{amount:N1} %" : "—";
+}

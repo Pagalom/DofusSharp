@@ -13,7 +13,6 @@ public sealed class ActivityOpportunityService : IDisposable
 {
     private static readonly TimeSpan MaximumSalesHistoryAge = TimeSpan.FromDays(2);
     private static readonly int[] ResaleLotSizes = [1, 10, 100, 1000];
-    private const long ResaleDiscountPerLot = 1;
     private readonly IDbContextFactory<BestCrushDbContext> _database;
     private readonly IDataPriorityProvider _priority;
     private readonly GlobalSalesRepository _sales;
@@ -68,9 +67,9 @@ public sealed class ActivityOpportunityService : IDisposable
         bool trading = module is "" or "achat-vente";
         var market = new EquipmentProfitabilityContext
         {
-            EquipmentPrices = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Equipment, server, token),
-            ResourcePrices = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Resource, server, token, excludeUnavailableLots: trading),
-            RunePrices = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Rune, server, token, excludeUnavailableLots: trading),
+            EquipmentPrices = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Equipment, server, token, excludeUnavailableLots: true),
+            ResourcePrices = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Resource, server, token, excludeUnavailableLots: true),
+            RunePrices = await prices.GetLatestObservationsForServerAsync(MarketObjectType.Rune, server, token, excludeUnavailableLots: true),
             Coefficients = new Dictionary<long, CoefficientObservation>()
         };
         var resources = await db.Resources.AsNoTracking().ToArrayAsync(token);
@@ -170,14 +169,16 @@ public sealed class ActivityOpportunityService : IDisposable
                 {
                     long units = OwnedUnits(item.Id);
                     var resalePrices = lots.Where(lot => item.Type == MarketObjectType.Equipment ||
-                            demand is null || demand.CompatibleUnits(lot.Quantity, ResalePrice(lot.Price)) > 0)
+                            demand is null || demand.CompatibleUnits(lot.Quantity, MarketPriceService.ResaleLotPrice(lot.Price)) > 0)
                         .ToDictionary(lot => (lot.DofusDbId, lot.Quantity));
-                    var sale = prices.CalculateValue(item.Id, units, resalePrices, ResaleDiscountPerLot);
-                    double? revenue = sale?.Value ?? (median is { } reference ? ResalePrice(reference.UnitPrice) * units : null);
+                    var sale = prices.CalculateValue(item.Id, units, resalePrices);
+                    double? revenue = sale?.Value ?? (median is { } reference ? MarketPriceService.ResaleLotPrice(reference.UnitPrice) * units : null);
                     var row = Build($"owned-{item.Type}-{item.Id}", "achat-vente", "Revendre mon stock", item, units,
                         revenue, 0, history, server, [
                             $"{stock[item.Id]:N0} possédé(s), dont {units:N0} valorisé(s). Montant encaissable ; le coût de votre acquisition passée n’est pas connu.",
-                            sale is null ? "Valeur indicative d’après la médiane des ventes sur 7 jours." : "Valeur indicative aux prix des lots relevés en HDV."],
+                            sale is not null ? "Valeur aux prix des lots relevés en HDV, à 1 K sous chaque lot."
+                                : median is not null ? "Valeur indicative d’après la médiane des ventes sur 7 jours."
+                                : "Prix indisponible pour un format de lot revendable."],
                         sale?.UsedObservations.Select(x => (DateTime?)x.ObservedAtUtc).Min() ?? history?.ObservedAtUtc.UtcDateTime)
                         with
                         {
@@ -210,7 +211,8 @@ public sealed class ActivityOpportunityService : IDisposable
                         : itemHarvests.Select(harvest => harvest.Item.IconId).FirstOrDefault(id => id is > 0);
                     histories.TryGetValue((item.Id, MarketObjectType.Resource), out var history);
                     var directSale = prices.CalculateValue(item.Id, volume, market.ResourcePrices);
-                    double? revenue = directSale?.Value ?? history?.WeightedUnitPrice(7) * volume;
+                    double? revenue = directSale?.Value ?? (history?.SevenDayMedian() is { } historical
+                        ? MarketPriceService.ResaleLotPrice(historical.UnitPrice) * volume : null);
                     DateTime? priceAt = directSale?.UsedObservations.Select(x => (DateTime?)x.ObservedAtUtc).Min() ?? history?.ObservedAtUtc.UtcDateTime;
                     var marketItem = new MarketItem(item.Id, item.Name, item.Level, MarketObjectType.Resource);
                     var crafts = alternatives.GetValueOrDefault(item.Id)?.OrderByDescending(x => x.AdditionalGain).Take(5).ToArray() ?? [];
@@ -282,32 +284,32 @@ public sealed class ActivityOpportunityService : IDisposable
                 var known = resources.Select(x => x.DofusDbId).ToHashSet();
                 foreach (var stone in stoneIds.Where(x => !known.Contains(x.Id))) db.Resources.Add(new Resource(stone.Id) { Name = stone.Name });
                 if (db.ChangeTracker.HasChanges()) await db.SaveChangesAsync(token);
-                var quotes = _sales.ReadSoulQuotes(server).ToDictionary(x => x.BossId);
+                var quotes = _sales.ReadSoulQuotes(server, maximumLotQuantity: 1).ToDictionary(x => x.BossId);
                 foreach (var boss in bosses)
                 {
-                    var eligible = boss.Stones.Select(x => new { Stone = x, Cost = prices.CalculateValue(x.Id, 1, market.ResourcePrices) })
-                        .Where(x => x.Cost is not null).OrderBy(x => x.Cost!.Value.Value).FirstOrDefault();
+                    var eligible = boss.Stones.Select(stone => new { Stone = stone,
+                            Quote = MarketPriceService.CheapestUnitQuote(market.ResourcePrices.Values.Where(price => price.DofusDbId == stone.Id)) })
+                        .Where(candidate => candidate.Quote is not null)
+                        .Select(candidate => new { candidate.Stone, Quote = candidate.Quote!,
+                            UnitCost = (double)candidate.Quote!.Price / candidate.Quote.Quantity })
+                        .OrderBy(candidate => candidate.UnitCost).FirstOrDefault();
                     quotes.TryGetValue(boss.Id, out var quote);
                     var item = new MarketItem(boss.Id, boss.Name, boss.Level ?? 0, MarketObjectType.Resource);
                     List<string> details = [boss.Dungeon];
                     var aggregate = salesHistories.FirstOrDefault(x => x.Market.Variant == GlobalSalesRepository.BossHistoryVariant(boss.Id));
-                    if (quote is { LotQuantity: > 1 })
-                        details.Add($"Prix unitaire estimé : {quote.Price:N2} k, d’après un lot de {quote.LotQuantity} à {quote.LotPrice:N0} k.");
                     details.Add(eligible is not null ? $"Pierre utilisée : {eligible.Stone.Name}, capacité {eligible.Stone.Capacity}." :
                         "Prix de la pierre vide manquant : " + (boss.Stones.FirstOrDefault()?.Name ?? "pierre adaptée au boss"));
-                    if (eligible?.Cost is { IsEstimated: true } estimated)
-                    {
-                        var lot = estimated.UsedObservations.OrderBy(x => x.Quantity).FirstOrDefault();
-                        if (lot is not null) details.Add($"Coût par pierre estimé depuis un lot de {lot.Quantity} à {lot.Price:N0} k. Le budget d’achat tient compte du lot entier si vous ne possédez pas de pierre.");
-                    }
-                    DateTime? oldestPrice = quote is null ? null : eligible?.Cost?.UsedObservations
-                        .Select(x => (DateTime?)x.ObservedAtUtc).Append(quote.ObservedAtUtc.UtcDateTime).Min() ?? quote.ObservedAtUtc.UtcDateTime;
-                    var row = Build($"soul-{boss.Id}", "pierres-ame", "Capturer puis revendre", item, 1, quote?.Price,
-                        eligible?.Cost?.Value, aggregate, server, details, oldestPrice) with
+                    if (eligible?.Quote is { Quantity: > 1 } lot)
+                        details.Add($"Coût par pierre estimé depuis un lot de {lot.Quantity} à {lot.Price:N0} k. Le budget d’achat tient compte du lot entier si vous ne possédez pas de pierre.");
+                    DateTime? oldestPrice = eligible is null ? quote?.ObservedAtUtc.UtcDateTime : quote is null ? eligible.Quote.ObservedAtUtc
+                        : new[] { quote.ObservedAtUtc.UtcDateTime, eligible.Quote.ObservedAtUtc }.Min();
+                    double? revenue = quote is null ? null : MarketPriceService.ResaleLotPrice(quote.Price);
+                    var row = Build($"soul-{boss.Id}", "pierres-ame", "Capturer puis revendre", item, 1, revenue,
+                        eligible?.UnitCost, aggregate, server, details, oldestPrice) with
                     {
                         BossId = boss.Id,
                         SoulCapture = new(boss.Dungeon, eligible?.Stone ?? boss.Stones.FirstOrDefault(),
-                            eligible?.Cost?.IsEstimated == true, quote is { LotQuantity: > 1 }),
+                            eligible?.Quote.Quantity > 1, false),
                         CashRequired = eligible is null ? null : stock.GetValueOrDefault(eligible.Stone.Id) > 0
                             ? 0 : prices.CalculateMinimumPurchaseCost(eligible.Stone.Id, 1, market.ResourcePrices)?.TotalCost
                     };
@@ -342,35 +344,43 @@ public sealed class ActivityOpportunityService : IDisposable
         IReadOnlyList<MarketPriceObservation> lots, GlobalSalesHistory? history,
         (double UnitPrice, DateTimeOffset? LastAtOrAboveUtc)? median, TradingResaleDemand? demand, string server)
     {
-        var recomposableLots = item.Type == MarketObjectType.Equipment ? [] : lots;
+        var resaleLots = item.Type == MarketObjectType.Equipment ? [] :
+            lots.OrderByDescending(lot => lot.Price).ThenByDescending(lot => lot.Quantity).ToArray();
+        var trades = new Dictionary<(int Units, int SellSize), ActivityRecommendation>();
         foreach (var buy in lots)
         {
-            foreach (var sell in recomposableLots.Where(x => x.Quantity != buy.Quantity))
+            HashSet<int> selectedVolumes = [];
+            foreach (var sell in resaleLots.Where(lot => lot.Quantity != buy.Quantity))
             {
                 int units = Lcm(buy.Quantity, sell.Quantity);
-                if (units <= 0 || units > 10000)
+                if (units <= 0 || units > 10000 || selectedVolumes.Contains(units))
                     continue;
 
                 double cost = (double)buy.Price * (units / buy.Quantity);
-                double sellPrice = ResalePrice(sell.Price);
+                double sellPrice = MarketPriceService.ResaleLotPrice(sell.Price);
                 double revenue = sellPrice * (units / sell.Quantity);
                 long? compatibleDailyUnits = demand?.CompatibleUnits(sell.Quantity, sellPrice);
                 if (revenue <= cost || compatibleDailyUnits < units)
                     continue;
 
-                rows.Add(Build($"lots-{item.Type}-{item.Id}-{buy.Quantity}-{sell.Quantity}", "achat-vente", "Recomposer des lots", item,
+                selectedVolumes.Add(units);
+                var key = (units, sell.Quantity);
+                if (trades.TryGetValue(key, out var existing) && existing.Cost <= cost)
+                    continue;
+
+                trades[key] = Build($"lots-{item.Type}-{item.Id}-{buy.Quantity}-{sell.Quantity}", "achat-vente", "Recomposer des lots", item,
                     units, revenue, cost, history, server, [
                         $"Acheter {units / buy.Quantity} lot(s) de {buy.Quantity} à {buy.Price:N0} k ; revendre {units / sell.Quantity} lot(s) de {sell.Quantity} à {sellPrice:N0} k.",
                         "Revente à 1 K sous le prix du lot relevé en HDV. Vérifiez les quantités disponibles dans Dofus."],
                     buy.ObservedAtUtc <= sell.ObservedAtUtc ? buy.ObservedAtUtc : sell.ObservedAtUtc, compatibleDailyUnits) with
-                    { TradingLots = new(buy.Quantity, buy.Price, sell.Quantity, sellPrice) });
+                    { TradingLots = new(buy.Quantity, buy.Price, sell.Quantity, sellPrice) };
             }
 
             if (median is not { } comparison)
                 continue;
 
             double medianLotPrice = comparison.UnitPrice * buy.Quantity;
-            double sellPriceForLot = ResalePrice(medianLotPrice);
+            double sellPriceForLot = MarketPriceService.ResaleLotPrice(medianLotPrice);
             long? compatibleUnits = demand?.CompatibleUnits(buy.Quantity, sellPriceForLot);
             if (sellPriceForLot <= buy.Price || compatibleUnits < buy.Quantity)
                 continue;
@@ -384,6 +394,7 @@ public sealed class ActivityOpportunityService : IDisposable
                     HistoricalPrice = new(buy.Price, medianLotPrice, comparison.LastAtOrAboveUtc)
                 });
         }
+        rows.AddRange(trades.Values);
     }
 
     private static IReadOnlyList<StockResaleTarget> StockTargets(MarketItem item, long units,
@@ -399,15 +410,13 @@ public sealed class ActivityOpportunityService : IDisposable
             if (reference is not { } price)
                 continue;
 
-            double target = ResalePrice(price);
+            double target = MarketPriceService.ResaleLotPrice(price);
             if (demand?.CompatibleUnits(size, target) >= size || demand is null)
                 targets.Add(new(size, target, medianUnitPrice.HasValue));
         }
 
         return targets;
     }
-
-    private static double ResalePrice(double reference) => Math.Max(1, Math.Floor(reference) - ResaleDiscountPerLot);
 
     private sealed record MarketItem(long Id, string Name, int Level, MarketObjectType Type, bool VariantSensitive = false);
     private static ActivityRecommendation Build(string id, string module, string strategy, MarketItem item,

@@ -1,0 +1,158 @@
+@using BestCrush.Network.Protocol
+@using BestCrush.Services
+@inject LiveBreedingService Breeding
+@implements IDisposable
+
+<PageHeading Title="Élevage" />
+
+@if (Breeding.ViewForWindow(TargetWindow) is not { } view)
+{
+    <p class="text-secondary mt-3" role="status">
+        Ouvrez l’interface Élevage dans la fenêtre Dofus suivie pour synchroniser un enclos.
+    </p>
+}
+else
+{
+    var snapshot = SelectedEnclosure(view);
+    <div class="d-flex flex-wrap gap-2 mt-3" aria-label="Emplacement des montures">
+        @foreach (var enclosure in view.Enclosures)
+        {
+            <button type="button" class="btn @(!_stable && snapshot == enclosure ? "btn-primary" : "btn-outline-secondary")"
+                    aria-pressed="@(!_stable && snapshot == enclosure)" @onclick="() => SelectEnclosure(enclosure.Enclosure)">
+                @(enclosure.Enclosure is { } number ? $"Enclos {number}" : "Enclos")
+            </button>
+        }
+        <button type="button" class="btn @(_stable ? "btn-primary" : "btn-outline-secondary")"
+                aria-pressed="@_stable" @onclick="() => _stable = true">
+            Étable @(view.StableComplete ? $"({view.Stable.Count})" : "")
+        </button>
+    </div>
+
+    @if (_stable || snapshot is null)
+    {
+        @if (view.StableObservedAtUtc is null)
+        {
+            <p class="text-secondary mt-3" role="status">Ouvrez le panneau Élevage dans Dofus pour relever l’étable.</p>
+        }
+        else
+        {
+            <p class="text-secondary mt-3">
+                @(view.StableComplete ? $"{view.Stable.Count} monture(s) dans l’étable" : "Relevé partiel. Rouvrez le panneau Élevage dans Dofus.")
+                · Relevé à @view.StableObservedAtUtc.Value.ToLocalTime().ToString("HH:mm:ss")
+            </p>
+            @if (view.Stable.Count > 0)
+            {
+                <table class="table align-middle" aria-label="Montures de l’étable">
+                    <thead><tr><th scope="col">Monture</th><th scope="col">Niveau</th>
+                        <th scope="col">Sérénité</th><th scope="col">Maturité</th><th scope="col">XP</th></tr></thead>
+                    <tbody>
+                        @foreach (var mount in view.Stable)
+                        {
+                            <tr @key="mount.Id">
+                                <th scope="row">@view.MountNumbers[mount.Id]</th><td>@(mount.Reading?.Level.ToString() ?? "—")</td>
+                                <td>@(mount.Reading?.Serenity.ToString("N0") ?? "—")</td>
+                                <td>@FormatMaturity(mount.Reading?.Maturity)</td>
+                                <td>@(mount.Reading?.Experience.ToString("N0") ?? "—")</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+        }
+    }
+    else
+    {
+    bool live = snapshot.Enclosure == view.CurrentEnclosure && snapshot.IsLive(DateTime.UtcNow);
+    var plan = live ? BreedingMaturityPlan.From(snapshot.Reading) : null;
+    <p class="text-secondary mt-3">
+        @snapshot.Reading.Mounts.Count montures · Relevé à @snapshot.ObservedAtUtc.ToLocalTime().ToString("HH:mm:ss")
+        @if (!live)
+        {
+            <span> · Pour actualiser, ouvrez cet enclos dans Dofus.</span>
+        }
+    </p>
+    @if (plan?.Describe(snapshot.ObservedAtUtc) is { } advice)
+    {
+        <div class="alert alert-info" role="status">@advice</div>
+    }
+
+    <section class="card mb-3" aria-label="Jauges de l’enclos">
+        <div class="card-body">
+            <dl class="row mb-0">
+                @foreach (var gauge in snapshot.Reading.Gauges)
+                {
+                    <dt class="col-6 col-sm-4">@GaugeName(gauge.Gauge)</dt>
+                    <dd class="col-6 col-sm-8">
+                        @gauge.Fuel.ToString("N0") · @(gauge.Active ? "Active" : "Inactive")
+                    </dd>
+                }
+            </dl>
+        </div>
+    </section>
+
+    @if (snapshot.Reading.Mounts.Count > 0)
+    {
+        <table class="table align-middle">
+            <thead>
+                <tr><th scope="col">Monture</th><th scope="col">Niveau</th>
+                    <th scope="col">Sérénité</th><th scope="col">Maturité</th><th scope="col">XP</th>
+                    <th scope="col">Prochaine étape estimée</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var mount in snapshot.Reading.Mounts)
+                {
+                    <tr @key="mount.Id">
+                        <th scope="row">@view.MountNumbers[mount.Id]</th><td>@mount.Level</td>
+                        <td>@mount.Serenity.ToString("N0")</td>
+                        <td>@FormatMaturity(mount.Maturity)</td>
+                        <td>@mount.Experience.ToString("N0")</td>
+                        <td>@(plan?.DescribeMount(mount.Id, snapshot.ObservedAtUtc) ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+    }
+}
+
+@code {
+    [Parameter] public DofusClientWindowKey? TargetWindow { get; set; }
+
+    private readonly PeriodicTimer _refresh = new(TimeSpan.FromSeconds(2));
+    private bool _stable;
+    private int? _enclosure;
+
+    private LivePaddockReading? SelectedEnclosure(LiveBreedingView view) =>
+        view.Enclosures.FirstOrDefault(value => value.Enclosure == (_enclosure ?? view.CurrentEnclosure)) ??
+        view.Enclosures.MaxBy(value => value.ObservedAtUtc);
+
+    private void SelectEnclosure(int? enclosure)
+    {
+        _stable = false;
+        _enclosure = enclosure;
+    }
+
+    private static string FormatMaturity(int? maturity) =>
+        maturity is { } value ? $"{value:N0} / 20 000" : "—";
+
+    protected override void OnInitialized() => _ = RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        while (await _refresh.WaitForNextTickAsync())
+            await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => _refresh.Dispose();
+
+    private static string GaugeName(PaddockGauge gauge) => gauge switch
+    {
+        PaddockGauge.SerenityGain => "Gain de sérénité",
+        PaddockGauge.SerenityLoss => "Perte de sérénité",
+        PaddockGauge.Endurance => "Endurance",
+        PaddockGauge.Maturity => "Maturité",
+        PaddockGauge.Love => "Amour",
+        PaddockGauge.Experience => "Expérience",
+        _ => throw new ArgumentOutOfRangeException(nameof(gauge))
+    };
+}

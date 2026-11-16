@@ -1,4 +1,3 @@
-using System.Reflection;
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
 using BestCrush.Services;
@@ -8,11 +7,6 @@ using static Tests.BestCrush.Utils.EconomicTestData;
 
 namespace Tests.BestCrush.Network;
 
-/// <summary>
-/// P4.0: tests of the existing, real valuation and lot-breakdown paths.
-/// These tests do not assert the incorrect History.razor estimated-lot
-/// expression as a desired behavior.
-/// </summary>
 public sealed class CrushValuationCharacterizationTest
 {
     private const long RuneId = 1523;
@@ -21,13 +15,7 @@ public sealed class CrushValuationCharacterizationTest
         int quantity,
         IReadOnlyDictionary<(long DofusDbId, int Quantity), MarketPriceObservation> prices)
     {
-        MethodInfo? method = typeof(CrushSessionService).GetMethod(
-            "BuildRuneLotBreakdown",
-            BindingFlags.NonPublic | BindingFlags.Static);
-
-        method.Should().NotBeNull("characterize the actual existing service method");
-        object? value = method!.Invoke(null, [RuneId, quantity, prices]);
-        return (IReadOnlyList<CrushSessionRuneLotLine>)value!;
+        return CrushSessionService.BuildRuneLotBreakdown(Value(quantity, prices));
     }
 
     private static MarketValueResult? Value(
@@ -51,7 +39,7 @@ public sealed class CrushValuationCharacterizationTest
 
         MarketValueResult? value = Value(16, prices);
         value.Should().NotBeNull();
-        value!.Value.Value.Should().Be(2375);
+        value!.Value.Value.Should().Be(2368);
         value.Value.IsEstimated.Should().BeFalse();
 
         IReadOnlyList<CrushSessionRuneLotLine> lots =
@@ -59,11 +47,11 @@ public sealed class CrushValuationCharacterizationTest
         lots.Should().HaveCount(2);
         lots[0].Count.Should().Be(1);
         lots[0].LotQuantity.Should().Be(10);
-        lots[0].LotPrice.Should().Be(1595);
+        lots[0].LotPrice.Should().Be(1594);
         lots[0].IsEstimated.Should().BeFalse();
         lots[1].Count.Should().Be(6);
         lots[1].LotQuantity.Should().Be(1);
-        lots[1].LotPrice.Should().Be(130);
+        lots[1].LotPrice.Should().Be(129);
         lots[1].IsEstimated.Should().BeFalse();
 
         lots.Sum(lot => (double)lot.Count * lot.LotPrice /
@@ -72,51 +60,14 @@ public sealed class CrushValuationCharacterizationTest
     }
 
     [Fact]
-    public void ThreeUnitsWithOnlyTenLotCostThreeTenthsNotThreeLots()
+    public void SmallerQuantityCannotUseThePriceOfALargerLot()
     {
-        var prices = Prices(
-            Price(RuneId, 10, 1000, type: MarketObjectType.Rune));
+        var prices = Prices(Price(RuneId, 10, 1000, type: MarketObjectType.Rune));
 
-        MarketValueResult? value = Value(3, prices);
-        value.Should().NotBeNull();
-        value!.Value.Value.Should().Be(300);
-        value.Value.IsEstimated.Should().BeTrue();
-
-        CrushSessionRuneLotLine lot = Breakdown(3, prices)
-            .Should().ContainSingle().Which;
-        lot.Count.Should().Be(3);
-        lot.LotQuantity.Should().Be(10);
-        lot.LotPrice.Should().Be(1000);
-        lot.IsEstimated.Should().BeTrue();
-
-        // Expected History display contract for P4.2:
-        // 3×(1000/10) = 300 K. The CURRENT Razor markup incorrectly
-        // renders Count*LotPrice = 3000 K (not asserted here).
-        ((double)lot.Count * lot.LotPrice / lot.LotQuantity)
-            .Should().Be(value.Value.Value);
-    }
-
-    [Fact]
-    public void MixedFullAndEstimatedLotsKeepTheirEconomicTotals()
-    {
-        var prices = Prices(
-            Price(RuneId, 10, 1000, type: MarketObjectType.Rune));
-        MarketValueResult? value = Value(16, prices);
-
-        value.Should().NotBeNull();
-        value!.Value.Value.Should().Be(1600);
-        value.Value.IsEstimated.Should().BeTrue();
-        IReadOnlyList<CrushSessionRuneLotLine> lots = Breakdown(16, prices);
-
-        lots.Should().HaveCount(2);
-        lots[0].Count.Should().Be(1);
-        lots[0].IsEstimated.Should().BeFalse();
-        lots[1].Count.Should().Be(6);
-        lots[1].LotQuantity.Should().Be(10);
-        lots[1].IsEstimated.Should().BeTrue();
-        lots.Sum(lot => (double)lot.Count * lot.LotPrice /
-                          (lot.IsEstimated ? lot.LotQuantity : 1))
-            .Should().Be(value.Value.Value);
+        Value(3, prices).Should().BeNull();
+        Breakdown(3, prices).Should().BeEmpty();
+        Value(16, prices).Should().BeNull();
+        Breakdown(16, prices).Should().BeEmpty();
     }
 
     [Fact]
@@ -127,9 +78,9 @@ public sealed class CrushValuationCharacterizationTest
             Price(RuneId, 10, 1000, MarketPriceSource.Manual,
                 type: MarketObjectType.Rune, at: timestamp));
 
-        CrushSessionRuneLotLine lot = Breakdown(3, prices)
+        CrushSessionRuneLotLine lot = Breakdown(10, prices)
             .Should().ContainSingle().Which;
-        lot.IsEstimated.Should().BeTrue();
+        lot.IsEstimated.Should().BeFalse();
         lot.PriceSource.Should().Be(MarketPriceSource.Manual);
         lot.PriceObservedAtUtc.Should().Be(timestamp);
     }

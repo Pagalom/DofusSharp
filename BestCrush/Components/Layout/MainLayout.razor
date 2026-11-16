@@ -184,6 +184,10 @@
                           OnDataTabSelected="SelectDataTabAsync" />
         <main class="workspace-main" id="workspace-main">
     <NpcapRequirementBanner />
+    @if (ActiveTab != "elevage" || _workspace.DataOpen)
+    {
+        <BreedingAlertBanner TargetWindow="@ViewFilter.TargetWindow" />
+    }
 
     <div class="flex-grow-1" hidden="@_workspace.DataOpen">
         @if (_servers is null)

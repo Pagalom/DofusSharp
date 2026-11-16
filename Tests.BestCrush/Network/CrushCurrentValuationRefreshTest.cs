@@ -41,17 +41,17 @@ public sealed class CrushCurrentValuationRefreshTest
         snapshot.NetworkCrushCount.Should().Be(1);
         snapshot.Runes.Should().ContainSingle();
         snapshot.Runes.Single().Quantity.Should().Be(16);
-        snapshot.Runes.Single().Value.Should().Be(2540);
-        snapshot.TotalValue.Should().Be(2540);
-        snapshot.DiscountedTotalValue.Should().Be(2413);
+        snapshot.Runes.Single().Value.Should().Be(2533);
+        snapshot.TotalValue.Should().Be(2533);
+        snapshot.DiscountedTotalValue.Should().BeApproximately(2406.35, 0.000001);
         var lots = snapshot.Runes.Single().Lots;
         lots.Should().HaveCount(2);
         lots[0].Count.Should().Be(1);
         lots[0].LotQuantity.Should().Be(10);
-        lots[0].LotPrice.Should().Be(1700);
+        lots[0].LotPrice.Should().Be(1699);
         lots[1].Count.Should().Be(6);
         lots[1].LotQuantity.Should().Be(1);
-        lots[1].LotPrice.Should().Be(140);
+        lots[1].LotPrice.Should().Be(139);
     }
 
     [Fact]
@@ -140,7 +140,7 @@ public sealed class CrushCurrentValuationRefreshTest
         harness.Notifier.Notify(MarketObjectType.Rune, 1523, Server);
         await harness.Service.LastValuationRefreshForTests;
 
-        harness.Snapshot().TotalValue.Should().Be(3002);
+        harness.Snapshot().TotalValue.Should().Be(2995);
     }
 
     private sealed class Harness : IDisposable

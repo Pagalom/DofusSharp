@@ -245,10 +245,14 @@ public sealed class ProtocolWireNormalizerTest
         string[] routeNames =
         [
             "global_market_history_request", "global_market_history_response",
+            "breeding_paddock_snapshot_current",
+            "breeding_stable_snapshot", "breeding_enclosure_request", "breeding_enclosure_response",
+            "breeding_transfer_into_stable", "breeding_transfer_out_of_stable",
             "price_list", "market_selection_response", "crush_result",
             "crush_result_current", "item_detail", "item_detail_current",
             "workshop_slot_put", "purchase_request",
-            "purchase_offer", "purchase_receipt", "inventory_add",
+            "purchase_offer", "purchase_receipt", "purchase_request_current",
+            "purchase_offer_current", "purchase_receipt_current", "inventory_add",
             "inventory_quantity", "inventory_remove", "craft_prepare",
             "craft_output", "smithmagic_request", "smithmagic_batch_request",
             "smithmagic_result", "smithmagic_aux",
@@ -271,6 +275,34 @@ public sealed class ProtocolWireNormalizerTest
         layouts.EnumerateObject().Count().Should().Be(routeNames.Length);
         verified.EnumerateObject().Count().Should().Be(routeNames.Length);
         ProtocolMap.Load(path).Should().NotBeNull();
+    }
+
+    [Fact]
+    public void CurrentPurchaseCodesAndFieldsCanChangeThroughTheSharedProfile()
+    {
+        var map = LoadMap("""
+            {
+              "purchase_request_current": "xaa",
+              "purchase_offer_current": "xab",
+              "purchase_receipt_current": "xac",
+              "field_mappings": {
+                "purchase_request_current": { "1": 7, "3": 8, "5": 9 },
+                "purchase_offer_current": { "2": 7, "4": 8 },
+                "purchase_receipt_current": { "2": 7, "3": 8 }
+              }
+            }
+            """);
+        var request = CurrentPurchaseDecoder.DecodeRequest(map.NormalizeBody(map.CurrentPurchaseRequest!,
+            Message(Unsigned(7, 1), Unsigned(8, 51), Unsigned(9, 850))));
+        var offer = CurrentPurchaseDecoder.DecodeOffer(map.NormalizeBody(map.CurrentPurchaseOffer!,
+            Message(Unsigned(7, 42), Unsigned(8, 51))));
+        var receipt = CurrentPurchaseDecoder.DecodeReceipt(map.NormalizeBody(map.CurrentPurchaseReceipt!,
+            Message(Unsigned(7, 51), Unsigned(8, 1))));
+
+        request.Should().Be(new PurchaseRequestObservation(850, 1, 51));
+        offer!.ItemId.Should().Be(42);
+        offer.OfferId.Should().Be(51);
+        receipt.Should().Be(new PurchaseReceiptObservation(1, 51));
     }
 
     private static ProtocolMap LoadMap(string json)

@@ -97,7 +97,7 @@ public partial class Server
                 var service = scope.ServiceProvider.GetRequiredService<EquipmentProfitabilityService>();
                 var planner = scope.ServiceProvider.GetRequiredService<StockCraftPlanner>();
                 var refreshed = await Task.Run(async () => {
-                    var market = await service.LoadContextAsync(server, token);
+                    var market = await service.LoadContextAsync(server, token, gameRunePricesOnly: true);
                     List<RefreshedCrush> rows = [];
                     foreach (var equipment in equipments)
                     {

@@ -947,7 +947,8 @@ public sealed class CrushSessionService
                     .GetLatestObservationsForServerAsync(
                         MarketObjectType.Rune,
                         serverName,
-                        cancellationToken);
+                        cancellationToken,
+                        excludeUnavailableLots: true);
 
         CrushHistorySessionWriteModel?
             history = null;
@@ -1088,13 +1089,7 @@ public sealed class CrushSessionService
                 rune.Value.Value =
                     value?.Value;
 
-                rune.Value.Lots =
-                    value is null
-                        ? []
-                        : BuildRuneLotBreakdown(
-                            rune.Key,
-                            rune.Value.Quantity,
-                            observations);
+                rune.Value.Lots = BuildRuneLotBreakdown(value);
             }
 
             // Each passive kci is already a complete and final result,
@@ -1196,7 +1191,8 @@ public sealed class CrushSessionService
                     await marketPriceService
                         .GetLatestObservationsForServerAsync(
                             MarketObjectType.Rune,
-                            serverName);
+                            serverName,
+                            excludeUnavailableLots: true);
 
             Dictionary<
                 long,
@@ -1211,10 +1207,7 @@ public sealed class CrushSessionService
 
                 valuations[runeId] = (
                     value?.Value,
-                    value is null
-                        ? []
-                        : BuildRuneLotBreakdown(
-                            runeId, quantity, observations));
+                    BuildRuneLotBreakdown(value));
             }
 
             lock (_stateLock)
@@ -1259,114 +1252,9 @@ public sealed class CrushSessionService
         }
     }
 
-    private static IReadOnlyList<
-        CrushSessionRuneLotLine>
-        BuildRuneLotBreakdown(
-            long dofusDbId,
-            int quantity,
-            IReadOnlyDictionary<
-                (long DofusDbId, int Quantity),
-                MarketPriceObservation> observations)
-    {
-        if (quantity <= 0)
-        {
-            return [];
-        }
-
-        MarketPriceObservation[] prices =
-            observations
-                .Where(entry =>
-                    entry.Key.DofusDbId ==
-                        dofusDbId)
-                .Select(entry =>
-                    entry.Value)
-                .Where(observation =>
-                    observation.Quantity > 0 &&
-                    observation.Price > 0)
-                .OrderByDescending(observation =>
-                    observation.Quantity)
-                .ToArray();
-
-        if (prices.Length == 0)
-        {
-            return [];
-        }
-
-        long remaining =
-            quantity;
-
-        List<CrushSessionRuneLotLine>
-            result = [];
-
-        // Même décomposition que MarketPriceService.CalculateValue :
-        // x1000 → x100 → x10 → x1, en prenant toujours
-        // le plus gros lot effectivement disponible.
-        foreach (
-            MarketPriceObservation lot
-            in prices)
-        {
-            if (remaining <
-                lot.Quantity)
-            {
-                continue;
-            }
-
-            long count =
-                remaining /
-                lot.Quantity;
-
-            if (count <= 0)
-            {
-                continue;
-            }
-
-            result.Add(
-                new CrushSessionRuneLotLine(
-                    count,
-                    lot.Quantity,
-                    lot.Price,
-                    false,
-                    lot.Source,
-                    lot.ObservedAtUtc
-                )
-            );
-
-            remaining -=
-                count *
-                lot.Quantity;
-
-            if (remaining == 0)
-            {
-                break;
-            }
-        }
-
-        // Si un type de lot manque, CalculateValue estime déjà
-        // le reliquat au prix unitaire du plus petit lot disponible.
-        // On conserve cette information dans le breakdown pour que
-        // la formule Excel reproduise exactement l'estimation.
-        if (remaining > 0)
-        {
-            MarketPriceObservation fallback =
-                prices
-                    .OrderBy(observation =>
-                        observation.Quantity)
-                    .First();
-
-            result.Add(
-                new CrushSessionRuneLotLine(
-                    remaining,
-                    fallback.Quantity,
-                    fallback.Price,
-                    true,
-                    fallback.Source,
-                    fallback.ObservedAtUtc
-                )
-            );
-        }
-
-        return result;
-    }
+    internal static IReadOnlyList<CrushSessionRuneLotLine> BuildRuneLotBreakdown(MarketValueResult? value) =>
+        value?.Lots.Select(lot => new CrushSessionRuneLotLine(lot.Count, lot.Observation.Quantity, lot.Price,
+            false, lot.Observation.Source, lot.Observation.ObservedAtUtc)).ToArray() ?? [];
 
     private CrushHistorySessionWriteModel?
         TryPrepareHistorySaveLocked(

@@ -16,7 +16,7 @@ public sealed partial class EquipmentProfitabilityService(
         LoadContextAsync(
             string serverName,
             CancellationToken cancellationToken = default,
-            bool includeCrushingData = true, bool includeRunePrices = false)
+            bool includeCrushingData = true, bool includeRunePrices = false, bool gameRunePricesOnly = false)
     {
         IReadOnlyDictionary<
             (long DofusDbId, int Quantity),
@@ -26,7 +26,9 @@ public sealed partial class EquipmentProfitabilityService(
                     .GetLatestObservationsForServerAsync(
                         MarketObjectType.Rune,
                         serverName,
-                        cancellationToken
+                        cancellationToken,
+                        excludeUnavailableLots: true,
+                        source: gameRunePricesOnly ? MarketPriceSource.InGameAutomatic : null
                     ) : new Dictionary<(long DofusDbId, int Quantity), MarketPriceObservation>();
 
         IReadOnlyDictionary<
@@ -37,7 +39,8 @@ public sealed partial class EquipmentProfitabilityService(
                     .GetLatestObservationsForServerAsync(
                         MarketObjectType.Equipment,
                         serverName,
-                        cancellationToken
+                        cancellationToken,
+                        excludeUnavailableLots: true
                     );
 
         IReadOnlyDictionary<
@@ -48,7 +51,8 @@ public sealed partial class EquipmentProfitabilityService(
                     .GetLatestObservationsForServerAsync(
                         MarketObjectType.Resource,
                         serverName,
-                        cancellationToken
+                        cancellationToken,
+                        excludeUnavailableLots: true
                     );
 
         Dictionary<long, CoefficientObservation>

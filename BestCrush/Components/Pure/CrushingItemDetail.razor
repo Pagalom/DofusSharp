@@ -1,0 +1,137 @@
+@using BestCrush.Components.Pages
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using BestCrush.Services
+
+<section class="crush-sheet" aria-label="Estimation du brisage">
+    <div class="crush-sheet-head">
+        <dl class="crush-sheet-costs">
+            <div><dt>@CostLabel</dt><dd>@Money(AcquisitionCost)</dd></div>
+            <div><dt>Prix de vente conseillé</dt><dd>@Money(_data?.Market.SuggestedSale)</dd></div>
+        </dl>
+        <div class="crush-sheet-graphs" role="group" aria-label="Historiques de l’objet">
+            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Historique du coefficient"
+                    aria-pressed="@(_showCoefficient ? "true" : "false")" @onclick="() => ToggleChartAsync(HistoryKind.Coefficient)"
+                    data-bs-toggle="tooltip" data-bs-title="Historique du coefficient" data-bs-custom-class="multiline-tooltip">
+                <i class="bi bi-percent" aria-hidden="true"></i>
+            </button>
+            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Historique du prix"
+                    aria-pressed="@(_showPrice ? "true" : "false")" @onclick="() => ToggleChartAsync(HistoryKind.Price)"
+                    data-bs-toggle="tooltip" data-bs-title="Historique du prix" data-bs-custom-class="multiline-tooltip">
+                <i class="bi bi-graph-up" aria-hidden="true"></i>
+            </button>
+        </div>
+        <dl class="crush-sheet-numbers">
+            <div class="crush-sheet-coefficient"><dt>Coefficient</dt><dd>@Percent(_data?.Market.Context.CoefficientPercent)</dd></div>
+        </dl>
+    </div>
+    @if (_showCoefficient)
+    {
+        <CrushingTrend Points="_coefficientChart.Value" Loading="_coefficientChart.IsLoading" Failed="@(_coefficientChart.Error is not null)" Coefficient="true" />
+    }
+    @if (_showPrice)
+    {
+        <CrushingTrend Points="_priceChart.Value" Loading="_priceChart.IsLoading" Failed="@(_priceChart.Error is not null)" />
+    }
+    @if (_load.Error is not null)
+    {
+        <p class="small text-warning" role="status">Les données de brisage sont indisponibles.</p>
+    }
+    else if (_load.IsLoading && _data is null)
+    {
+        <p class="small" role="status">Chargement du brisage…</p>
+    }
+    else if (IsOwned && _roll is null)
+    {
+        <p class="small" role="status">Jet réel indisponible. Synchronisez cet équipement pour calculer son brisage.</p>
+    }
+    @if (_data is not null && _roll is { } lines && _estimate is { } estimate)
+    {
+        @if (Owned is null && _data.Owned.Length > 1)
+        {
+            <label class="crush-instance">
+                Exemplaire
+                <select class="form-select form-select-sm" value="@_ownedSelection?.Key" @onchange="SelectInstance">
+                    @for (int i = 0; i < _data.Owned.Length; i++)
+                    {
+                        var item = _data.Owned[i];
+                        <option value="@item.Key">@(i + 1) · @(item.Container == "bank" ? "Banque" : "Inventaire")</option>
+                    }
+                </select>
+            </label>
+        }
+        <div class="crush-sheet-table">
+            <table aria-label="Rendement en runes par caractéristique">
+                <thead>
+                    <tr><th scope="col" rowspan="2">Caractéristique</th><th scope="col" rowspan="2">
+                        Jet
+                        @if (!IsOwned)
+                        {
+                            <span class="crush-jet-presets">
+                                @foreach (var preset in Presets)
+                                {
+                                    <button type="button" aria-label="@preset.Label" data-bs-toggle="tooltip" data-bs-title="@preset.Label"
+                                            data-bs-custom-class="multiline-tooltip" @onclick="() => SetPreset(preset.Jet)">
+                                        <i class="bi @preset.Icon" aria-hidden="true"></i>
+                                    </button>
+                                }
+                            </span>
+                        }
+                    </th><th scope="col" rowspan="2">Rune</th><th scope="col" rowspan="2">Prix / unité</th>
+                    <th scope="colgroup" colspan="2">Sans focus</th><th scope="colgroup" colspan="2">Avec focus</th></tr>
+                    <tr><th scope="col">Runes</th><th scope="col">Kamas</th><th scope="col">Runes</th><th scope="col">Kamas</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in estimate.Lines)
+                    {
+                        var line = lines.First(stat => stat.Characteristic == row.Stat);
+                        var statName = ForgemagingWorkspace.StatName(row.Stat);
+                        <tr @key="row.Stat">
+                            <th scope="row"><ForgemagingStat Stat="row.Stat" /></th>
+                            <td>
+                                @if (IsOwned) { <strong class="@JetClass(line)">@line.Current</strong> }
+                                else
+                                {
+                                    <span class="crush-jet-input">
+                                        <small>@line.Minimum</small>
+                                        <button type="button" aria-label="@($"Diminuer {statName}")" @onclick="() => SetJet(line, (line.Current ?? 0) - 1)">−</button>
+                                        <input type="number" value="@line.Current" aria-label="@($"Jet de simulation · {statName}")" @onchange="args => EditJet(line, args)" />
+                                        <button type="button" aria-label="@($"Augmenter {statName}")" @onclick="() => SetJet(line, (line.Current ?? 0) + 1)">+</button>
+                                        <small>@line.Maximum</small>
+                                    </span>
+                                }
+                            </td>
+                            <td>
+                                @if (row.Rune is { } rune)
+                                {
+                                    <span class="crush-sheet-rune"><img src="@RuneImage(rune)" width="24" height="24" alt="" /> @rune.Name.Replace("Rune ", "", StringComparison.Ordinal)</span>
+                                }
+                                else { <span class="crush-dim">—</span> }
+                            </td>
+                            <td>@Money(row.UnitPrice)</td>
+                            <td class="crush-count">@Quantity(row.StandardQuantity)</td>
+                            <td>@Money(row.StandardValue)</td>
+                            <td class="crush-count">@Quantity(row.FocusQuantity)</td>
+                            <td><span class="@(estimate.Best?.Focus == row.Stat ? "crush-best" : null)">@Money(row.FocusValue)</span></td>
+                        </tr>
+                    }
+                </tbody>
+                <tfoot><tr><th scope="row" colspan="5">Total kamas sans focus</th>
+                    <td><span class="@(estimate.Best is { Focus: null } ? "crush-best" : null)">@Money(estimate.StandardTotal)</span></td><td colspan="2"></td>
+                </tr></tfoot>
+            </table>
+        </div>
+        @if (!IsOwned)
+        {
+            <div class="crush-exo"><RuneExoPicker Runes="_data.Market.Runes.Runes" Lines="lines" Selected="AddExo" OpenUp="true" /></div>
+        }
+        @foreach (var reason in estimate.Missing)
+        {
+            <p class="small crush-dim mb-1">@reason</p>
+        }
+    }
+    @if (IsOwned && _data?.Craft is { } craft)
+    {
+        <CraftCostSummary Equipment="Equipment" StockServerName="@ServerName" Result="craft" />
+    }
+</section>

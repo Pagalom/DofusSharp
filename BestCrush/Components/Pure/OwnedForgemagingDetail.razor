@@ -1,0 +1,215 @@
+@using BestCrush.Components.Pages
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using BestCrush.Services
+
+@if (IsCrushing && Item.Crushing is { } assessment)
+{
+    <div class="owned-fm-values">
+        <dl class="owned-fm-acquisition">
+            <dt>
+                Prix d’obtention
+                @if (SaveAcquisition.HasDelegate)
+                {
+                    <button type="button" class="owned-fm-acquisition-edit" aria-label="Renseigner le prix d’obtention"
+                            data-bs-toggle="tooltip" data-bs-title="Renseigner l’origine" data-bs-custom-class="multiline-tooltip"
+                            @onclick="EditAcquisition"><i class="bi bi-pencil" aria-hidden="true"></i></button>
+                }
+            </dt>
+            <dd>@Money(Item.AcquisitionCost)</dd>
+            <dd class="owned-fm-acquisition-source">@AcquisitionLabel</dd>
+        </dl>
+        <dl class="owned-fm-comparison">
+            <div class="owned-fm-before">
+                <dt>Avant FM</dt>
+                <dd>@ValueText(assessment.Current, assessment.IsComplete)</dd>
+            </div>
+            <div class="owned-fm-after">
+                <dt>Après FM</dt>
+                <dd tabindex="@(assessment.Target is null ? null : "0")"
+                    data-bs-toggle="@(assessment.Target is null ? null : "tooltip")" data-bs-title="@Scenario(assessment.Target)"
+                    data-bs-custom-class="multiline-tooltip">@ValueText(assessment.Target, assessment.IsComplete)</dd>
+            </div>
+        </dl>
+        <dl>
+            <dt>Coût FM</dt>
+            <dd>@FormatCost(Item)</dd>
+        </dl>
+    </div>
+    @if (_editingAcquisition && SaveAcquisition.HasDelegate)
+    {
+        <div class="owned-fm-acquisition-form d-flex flex-wrap align-items-end gap-2 mb-3">
+            <label class="small">Origine
+                <select class="form-select form-select-sm" @bind="_acquisitionKind">
+                    <option value="@EquipmentAcquisitionKind.Purchase">Achat</option>
+                    <option value="@EquipmentAcquisitionKind.Craft">Craft</option>
+                </select>
+            </label>
+            @if (_acquisitionKind == EquipmentAcquisitionKind.Purchase)
+            {
+                <label class="small">Prix payé (K)
+                    <input type="number" min="0" step="1" class="form-control form-control-sm" @bind="_pricePaid" @bind:event="oninput" />
+                </label>
+            }
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(_acquisitionKind == EquipmentAcquisitionKind.Purchase && _pricePaid is not >= 0)"
+                    @onclick="CommitAcquisitionAsync">Enregistrer</button>
+            <button type="button" class="btn btn-sm btn-link" @onclick="CancelAcquisitionEdit">Annuler</button>
+            @if (_acquisitionError is not null) { <span class="small text-warning" role="alert">@_acquisitionError</span> }
+        </div>
+    }
+    @foreach (var reason in assessment.Missing)
+    {
+        <p class="small text-warning mb-1">@reason</p>
+    }
+    @if (Item.UnpricedRunes > 0) { <p class="small text-warning mb-1">Prix manquant pour @Item.UnpricedRunes rune(s) consommée(s).</p> }
+    @if (Item.UnobservedChanges || Item.FmCostUnknown)
+    {
+        <p class="small text-warning mb-1">Le coût de la FM est incomplet. Le gain net est indisponible.</p>
+    }
+}
+
+@if (ShowRoll)
+{
+<h3 class="h6 mt-2 mb-1">Jets</h3>
+@if (Item.Roll is { } roll)
+{
+    <ul class="owned-fm-roll list-unstyled mb-2" role="list">
+        @foreach (var line in roll.Where(line => line.Current is not null and not 0))
+        {
+            var status = JetStatus(line);
+            <li class="owned-fm-roll-line @status?.ToLowerInvariant()" title="@status">
+                <ForgemagingStat Stat="line.Characteristic" Value="line.Current!.Value" />
+                @if (status is not null) { <span class="visually-hidden"> (@status)</span> }
+            </li>
+        }
+    </ul>
+}
+else
+{
+    <p class="small text-secondary mb-2">Jet indisponible.</p>
+}
+}
+@if (Item.Attempts.Count > 0)
+{
+    <details class="mt-2">
+        <summary>Historique des runes · @Item.RuneCount</summary>
+        <PagedDataTable TItem="ForgemagingAttempt" Items="Item.Attempts.Reverse()" PageSize="15">
+            <RowContent Context="attempts">
+                <div class="table-responsive mt-2">
+                    <table class="table table-sm align-middle owned-fm-history">
+                        <thead><tr><th scope="col">Rune</th><th scope="col">Effets</th><th scope="col">Coût</th></tr></thead>
+                        <tbody>
+                            @foreach (var attempt in attempts)
+                            {
+                                var icon = RuneIcons.GetValueOrDefault(attempt.Rune.Id);
+                                var changes = ForgemagingWorkspace.Deltas(attempt).OrderByDescending(change => change.Delta > 0).ToArray();
+                                var outcome = ForgemagingWorkspace.OutcomeName(attempt.Outcome);
+                                var showOutcome = changes.Length == 0 || attempt.Outcome is ForgemagingOutcome.Failure or ForgemagingOutcome.Unconfirmed;
+                                <tr>
+                                    <td>
+                                        <span class="owned-fm-rune">
+                                            <CopyTextButton Value="@attempt.Rune.Name" Tooltip="@attempt.Rune.Name">
+                                                <img src="@RuneImage(icon)" alt="" width="26" height="26" loading="lazy" @onerror="() => _missingRuneIcons.Add(icon)" />
+                                                @if (attempt.RuneCount > 1) { <small>×@attempt.RuneCount</small> }
+                                            </CopyTextButton>
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <span class="@(showOutcome ? "owned-fm-outcome" : "visually-hidden")">@outcome</span>
+                                        @if (changes.Length > 0)
+                                        {
+                                            <ul class="owned-fm-changes list-unstyled mb-0" role="list">
+                                                @foreach (var change in changes)
+                                                {
+                                                    <li class="@(attempt.Outcome == ForgemagingOutcome.Critical && change.Delta > 0 ? "critical" : null)">
+                                                        <ForgemagingStat Stat="change.Stat" Value="change.Delta" />
+                                                    </li>
+                                                }
+                                            </ul>
+                                        }
+                                    </td>
+                                    <td>@Money(attempt.Rune.UnitPrice * attempt.RuneCount)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            </RowContent>
+        </PagedDataTable>
+    </details>
+}
+else if (!IsCrushing)
+{
+    <p class="small text-secondary mb-0">Déposez l’objet à l’atelier pour suivre les prochaines runes.</p>
+}
+
+@code {
+    [Parameter, EditorRequired] public OwnedForgemagingEquipment Item { get; set; } = default!;
+    [Parameter, EditorRequired] public IReadOnlyDictionary<long, long> RuneIcons { get; set; } = default!;
+    [Parameter] public bool IsCrushing { get; set; }
+    [Parameter] public bool ShowRoll { get; set; } = true;
+    [Parameter] public EventCallback<EquipmentAcquisition> SaveAcquisition { get; set; }
+
+    private bool _editingAcquisition;
+    private EquipmentAcquisitionKind _acquisitionKind;
+    private long? _pricePaid;
+    private string? _acquisitionError;
+
+    private string AcquisitionLabel => Item.Acquisition switch
+    {
+        { Kind: EquipmentAcquisitionKind.Purchase, Manual: false } => "Achat HDV",
+        { Kind: EquipmentAcquisitionKind.Purchase } => "Achat renseigné",
+        { Kind: EquipmentAcquisitionKind.Craft } when Item.AcquisitionCost is null => "Coût du craft indisponible",
+        { Kind: EquipmentAcquisitionKind.Craft } => "Craft estimé",
+        _ => "Origine inconnue"
+    };
+
+    private void EditAcquisition()
+    {
+        _acquisitionKind = Item.Acquisition?.Kind ?? EquipmentAcquisitionKind.Purchase;
+        _pricePaid = Item.Acquisition?.PricePaid;
+        _acquisitionError = null;
+        _editingAcquisition = true;
+    }
+
+    private void CancelAcquisitionEdit() => _editingAcquisition = false;
+
+    private async Task CommitAcquisitionAsync()
+    {
+        long? price = _acquisitionKind == EquipmentAcquisitionKind.Purchase ? _pricePaid : null;
+        if (_acquisitionKind == EquipmentAcquisitionKind.Purchase && price is not >= 0) return;
+        try
+        {
+            await SaveAcquisition.InvokeAsync(new(_acquisitionKind, price, DateTime.UtcNow, Manual: true));
+            _editingAcquisition = false;
+        }
+        catch (InvalidOperationException error) { _acquisitionError = error.Message; }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        { _acquisitionError = "Le prix d’obtention n’a pas pu être enregistré."; }
+    }
+
+    private readonly HashSet<long> _missingRuneIcons = [];
+
+    private string RuneImage(long icon) => icon > 0 && !_missingRuneIcons.Contains(icon)
+        ? $"img/runes/{icon}.png" : "img/runes/unknown.svg";
+
+    private string? JetStatus(ForgemagingLine line)
+    {
+        if (line.Maximum is { } maximum && line.Current > maximum) return "Over";
+        if (Item.Equipment.Characteristics.Count > 0 && !line.IsNative && line.Current > 0) return "Exo";
+        return null;
+    }
+
+    private static string? Scenario(ForgemagingCrushValue? value) => value?.Focus is { } focus
+        ? $"Scénario estimé · Focus {ForgemagingWorkspace.StatName(focus)}"
+        : value is null ? null : "Scénario estimé · Sans focus";
+
+    private static string ValueText(ForgemagingCrushValue? value, bool complete) =>
+        value is null ? "—" : $"{(complete ? "" : "≈ ")}{Money(value.Value)}";
+
+    private static string Money(double? value) => value is { } amount ? $"{amount:N0} K" : "—";
+
+    internal static string FormatCost(OwnedForgemagingEquipment item) =>
+        item.RuneCount == 0 ? (item.FmCostUnknown ? "—" : Money(0)) :
+        item.UnpricedRunes == item.RuneCount ? "—" : $"{(item.UnpricedRunes > 0 ? "≥ " : "")}{Money(item.KnownRuneCost)}";
+}

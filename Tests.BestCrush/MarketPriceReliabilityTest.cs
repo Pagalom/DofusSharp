@@ -60,7 +60,7 @@ public sealed class MarketPriceReliabilityTest
         Assert.Null(await prices.GetLatestObservationAsync(type, itemId, Server, 100));
         var current = await prices.GetLatestObservationsForServerAsync(type, Server);
         Assert.Equal(new[] { 1, 10, 1000 }, current.Keys.Select(key => key.Quantity).Order());
-        Assert.Equal(9_970d, prices.CalculateValue(itemId, 100, current)?.Value);
+        Assert.Equal(9_960d, prices.CalculateValue(itemId, 100, current)?.Value);
         Assert.Equal(9_970L, prices.CalculateMinimumPurchaseCost(itemId, 100, current)?.TotalCost);
         var sources = await prices.GetLatestLocalSourceObservationsForServerAsync(type, Server);
         Assert.False(sources.ContainsKey((itemId, 100, MarketPriceSource.InGameAutomatic)));

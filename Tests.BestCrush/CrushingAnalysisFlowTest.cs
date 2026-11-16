@@ -220,7 +220,7 @@ public sealed class CrushingAnalysisFlowTest
         Assert.Equal(80, Calculations()[100].CraftCost.TotalCost); Assert.Equal(80, Calculations()[200].CraftCost.TotalCost);
         var beforeRune = Calculations()[100].Scenarios[0].AdjustedRuneValue;
         await PriceUpdate(10, 200, MarketObjectType.Rune); await Notify(MarketObjectType.Rune, 10);
-        Assert.Equal(beforeRune * 2, Calculations()[100].Scenarios[0].AdjustedRuneValue, 5);
+        Assert.Equal(beforeRune * 199 / 99, Calculations()[100].Scenarios[0].AdjustedRuneValue, 5);
         using (var db = h.Database.CreateContext())
         {
             db.MarketPriceObservations.RemoveRange(db.MarketPriceObservations.Where(x => x.DofusDbId == 10));

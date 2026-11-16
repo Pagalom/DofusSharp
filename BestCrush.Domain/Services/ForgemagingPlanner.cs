@@ -11,21 +11,28 @@ public static class ForgemagingPlanner
     private const double Epsilon = 1e-9;
     public static string? Validate(ForgemagingSession session)
     {
-        if (session.Lines.Count == 0) return "Cet équipement ne possède aucune caractéristique exploitable.";
-        if (session.Lines.Select(l => l.Characteristic).Distinct().Count() != session.Lines.Count)
-            return "Une caractéristique apparaît plusieurs fois.";
-        if (session.Lines.Any(l => l.Current is null)) return "Renseignez le jet actuel de chaque caractéristique.";
-        if (session.Lines.Any(l => Math.Abs((long)l.Current!.Value) > 100000 || Math.Abs((long)l.Target) > 100000))
-            return "Une valeur de caractéristique est trop élevée.";
-        if (session.Sink is { } sink && (!double.IsFinite(sink) || sink < 0 || sink > 100000))
-            return "Le puits doit être un nombre positif ou nul.";
-        if (session.Budget is { } budget && (!double.IsFinite(budget) || budget < 0)) return "Le budget doit être positif ou nul.";
+        if (ValidateObservedRoll(session) is { } error) return error;
         foreach (var line in session.Lines)
         {
+            if (Math.Abs((long)line.Target) > 100000) return "Une valeur de caractéristique est trop élevée.";
             if (line.Target > LineCap(line)) return "Un objectif dépasse la limite de cette caractéristique.";
         }
         if (ExcessWeight(session.Lines, targets: true) > 101 + Epsilon)
             return "Le poids total des overs et exos visés dépasse 101.";
+        return null;
+    }
+
+    public static string? ValidateObservedRoll(ForgemagingSession session)
+    {
+        if (session.Lines.Count == 0) return "Cet équipement ne possède aucune caractéristique exploitable.";
+        if (session.Lines.Select(l => l.Characteristic).Distinct().Count() != session.Lines.Count)
+            return "Une caractéristique apparaît plusieurs fois.";
+        if (session.Lines.Any(l => l.Current is null)) return "Renseignez le jet actuel de chaque caractéristique.";
+        if (session.Lines.Any(l => Math.Abs((long)l.Current!.Value) > 100000))
+            return "Une valeur de caractéristique est trop élevée.";
+        if (session.Sink is { } sink && (!double.IsFinite(sink) || sink < 0 || sink > 100000))
+            return "Le puits doit être un nombre positif ou nul.";
+        if (session.Budget is { } budget && (!double.IsFinite(budget) || budget < 0)) return "Le budget doit être positif ou nul.";
         return null;
     }
 

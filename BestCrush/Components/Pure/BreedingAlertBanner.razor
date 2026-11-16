@@ -1,0 +1,33 @@
+@using BestCrush.Services
+@inject LiveBreedingService Breeding
+@implements IDisposable
+
+@{
+    var now = DateTime.UtcNow;
+    var snapshot = Breeding.ForWindow(TargetWindow, now);
+    var plan = snapshot is null ? null : BreedingMaturityPlan.From(snapshot.Reading);
+}
+@if (snapshot is not null && plan is not null &&
+    plan.IsDue(now - snapshot.ObservedAtUtc) && plan.Describe(snapshot.ObservedAtUtc) is { } advice)
+{
+    <div class="alert alert-warning" role="status">
+        <a href="@KnownRoutes.Module("elevage")">Élevage</a>
+        <span> · @advice</span>
+    </div>
+}
+
+@code {
+    [Parameter] public DofusClientWindowKey? TargetWindow { get; set; }
+
+    private readonly PeriodicTimer _refresh = new(TimeSpan.FromSeconds(2));
+
+    protected override void OnInitialized() => _ = RefreshAsync();
+
+    private async Task RefreshAsync()
+    {
+        while (await _refresh.WaitForNextTickAsync())
+            await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose() => _refresh.Dispose();
+}

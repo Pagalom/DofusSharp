@@ -22,6 +22,7 @@ internal sealed class DofusNetworkMessageProcessor(
     private sealed class FlowCorrelation
     {
         internal readonly RecentItemDetailsCache ItemDetails = new();
+        internal readonly EquipmentAcquisitionTracker Acquisitions = new();
         internal PurchaseRequestObservation? PendingPurchaseRequest;
         internal DateTime PendingPurchaseRequestAtUtc;
         internal MarketListingRequestObservation? PendingListing;
@@ -161,6 +162,8 @@ internal sealed class DofusNetworkMessageProcessor(
         // Translate active wire fields to the canonical decoder schema.
         // Wire debug above intentionally retains original captured bytes.
         byte[] body = map.NormalizeBody(message.Key, message.Body);
+        if (correlation.Acquisitions.Observe(map, message, body, lease) is { } acquisition)
+            await observationWriter.PersistEquipmentAcquisitionAsync(acquisition, lease, cancellationToken);
 
         if (map.GlobalMarketHistoryRequest is not null && message.Key == map.GlobalMarketHistoryRequest)
         {
@@ -546,6 +549,7 @@ internal sealed class DofusNetworkMessageProcessor(
                         $"[MARKET-JZS-VERIFIED-X1] {FormatMarketDebug(prices)}",
                         cancellationToken);
 
+                    correlation.Acquisitions.RememberOffers(prices, message, lease);
                     await observationWriter.PersistMarketAsync(
                         prices,
                         message.ObservedAtUtc,

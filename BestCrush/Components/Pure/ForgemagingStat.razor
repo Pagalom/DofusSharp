@@ -1,0 +1,38 @@
+@using BestCrush.Components.Pages
+@using BestCrush.Domain.Models
+
+<span class="fm-stat">
+    <i class="bi @Appearance.Icon @Appearance.ColorClass" aria-hidden="true"></i>
+    @if (Value is { } value) { <strong>@value.ToString(ShowSign ? "+0;-0;0" : "0")</strong> }
+    @ForgemagingWorkspace.StatName(Stat)
+</span>
+
+@code {
+    [Parameter, EditorRequired] public Characteristic Stat { get; set; }
+    [Parameter] public int? Value { get; set; }
+    [Parameter] public bool ShowSign { get; set; }
+
+    private (string Icon, string? ColorClass) Appearance => Stat switch
+    {
+        Characteristic.Intelligence or Characteristic.DamageFlatFire or Characteristic.ResistanceFlatFire or
+            Characteristic.ResistancePercentFire => ("bi-fire", "fire"),
+        Characteristic.Chance or Characteristic.DamageFlatWater or Characteristic.ResistanceFlatWater or
+            Characteristic.ResistancePercentWater => ("bi-droplet-fill", "water"),
+        Characteristic.Strength or Characteristic.DamageFlatEarth or Characteristic.ResistanceFlatEarth or
+            Characteristic.ResistancePercentEarth => ("bi-diamond-fill", "earth"),
+        Characteristic.Agility or Characteristic.DamageFlatAir or Characteristic.ResistanceFlatAir or
+            Characteristic.ResistancePercentAir => ("bi-wind", "air"),
+        Characteristic.Vitality or Characteristic.Healing => ("bi-heart-fill", "health"),
+        Characteristic.Critical or Characteristic.DamageFlatCritical => ("bi-star-fill", null),
+        Characteristic.Ap or Characteristic.ApDodge or Characteristic.ApReduction => ("bi-lightning-charge-fill", null),
+        Characteristic.Mp or Characteristic.MpDodge or Characteristic.MpReduction => ("bi-signpost-split", null),
+        Characteristic.Wisdom or Characteristic.Initiative => ("bi-hourglass-split", null),
+        Characteristic.Prospecting => ("bi-eye-fill", null),
+        Characteristic.Range => ("bi-bullseye", null),
+        Characteristic.Pods => ("bi-box-seam", null),
+        Characteristic.ResistanceFlatNeutral or Characteristic.ResistanceFlatCritical or
+            Characteristic.ResistanceFlatPushback or Characteristic.ResistancePercentNeutral or
+            Characteristic.ResistancePercentDistance or Characteristic.ResistancePercentMelee => ("bi-shield-fill", null),
+        _ => ("bi-gem", null)
+    };
+}

@@ -1,4 +1,5 @@
 using BestCrush.Domain.Models;
+using System.Text.Json.Serialization;
 
 namespace BestCrush.Models;
 
@@ -44,7 +45,8 @@ public class SearchItemsModel
     public bool FreshDataOnly { get; set; }
     public bool RequireCoefficient { get; set; }
     public bool RespectJobLevels { get; set; }
-    public bool ForgemagedOnly { get; set; }
+    [JsonPropertyName("ForgemagedOnly")]
+    public bool OwnedOnly { get; set; }
 }
 
 public sealed class SearchFilterPreset
