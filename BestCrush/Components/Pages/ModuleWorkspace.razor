@@ -51,6 +51,10 @@
     {
         <BreedingWorkspace TargetWindow="@ServerViewFilter.TargetWindow" ServerName="@ServerViewFilter.ServerName" />
     }
+    else if (_module.Slug == "familiers-xp")
+    {
+        <PetWorkspace TargetWindow="@ServerViewFilter.TargetWindow" ServerName="@ServerViewFilter.ServerName" />
+    }
     else if (_module.Slug == "opportunites")
     {
         <ActivityOpportunities @key="_module.Slug" ItemId="ItemId" />

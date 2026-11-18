@@ -4,5 +4,6 @@ public enum UpgradeKind
 {
     Application,
     DofusDb,
-    RuneCatalog
+    RuneCatalog,
+    PetFoodSeed
 }

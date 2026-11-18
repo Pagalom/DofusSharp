@@ -156,7 +156,7 @@ public sealed class OwnedForgemagingEquipmentTest
         await db.SaveChangesAsync();
 
         var directory = Directory.CreateTempSubdirectory("stock-fm-test");
-        string cacheKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("catalogue-example-fm-effects-v1")));
+        string cacheKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes("catalogue-example-fm-effects-v2")));
         string cacheFile = Path.Combine(directory.FullName, cacheKey + ".json");
         try
         {

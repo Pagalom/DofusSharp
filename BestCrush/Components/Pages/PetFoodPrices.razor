@@ -1,0 +1,105 @@
+@using System.Globalization
+@using BestCrush.Services
+@using BestCrush.Models
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using Microsoft.Extensions.Logging
+@inject PetFoodCatalogService Foods
+@inject MarketDataChangeNotifier Prices
+@inject ILogger<PetFoodPrices> Logger
+@implements IDisposable
+
+<div class="container-fluid workspace-page px-3 px-lg-4">
+    <PageHeading Title="Nourriture familiers" Description="Quantités calculées depuis zéro XP, avec un repas regroupé par aliment. Coûts d’achat au prix des lots entiers les moins chers." />
+    <div class="d-flex flex-wrap gap-3 align-items-end mb-3">
+        <div class="flex-grow-1"><ServiceSearch @bind-Value="_search" Placeholder="Rechercher un aliment…" /></div>
+        <label>Trier par<select class="form-select" @bind="_sort">
+            <option value="name">Nom</option><option value="cost100">Coût au niveau 100</option><option value="cost80">Coût au niveau 80</option><option value="xp">XP par aliment</option>
+        </select></label>
+    </div>
+    <DataLoadingIndicator Busy="_loading" Failed="_failed" Retry="RefreshAsync" />
+    <ItemCopyScope>
+    <PagedDataTable Items="Rows" ResetKey="@($"{ServerName}|{_search}|{_sort}")">
+        <RowContent Context="pageRows">
+            <div class="table-responsive"><table class="table table-dark table-striped table-hover align-middle">
+                <thead><tr><th scope="col">Aliment</th><th scope="col" class="text-end">XP / aliment</th><th scope="col" class="text-end">Prix / unité</th>
+                    <th scope="col" class="text-end">Quantité niveau 80</th><th scope="col" class="text-end">Coût niveau 80</th>
+                    <th scope="col" class="text-end">Quantité niveau 100</th><th scope="col" class="text-end">Coût niveau 100</th></tr></thead>
+                <tbody>@foreach(var row in pageRows)
+                {
+                    <tr @key="row.Food.DofusDbId">
+                        <th scope="row"><ItemIcon Item="row.Food" Size="Size.Tiny" /> <CopyTextButton Value="row.Food.Name" Tooltip="Copier le nom">@row.Food.Name</CopyTextButton></th>
+                        <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@XpInfo(row)">@(row.Food.Experience?.ToString("0.#########") ?? "Inconnue")</span></td>
+                        <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@PriceInfo(row)">@(row.UnitPrice is { } unit ? $"{unit:0.####} K" : "—")</span>
+                            @if(row.UnitQuote is { } quote && quote.ObservedAtUtc<DateTime.UtcNow.AddHours(-72)){<i class="bi bi-clock text-warning" data-bs-toggle="tooltip" data-bs-title="Prix de plus de 72 h : consulter cet aliment à l’HDV."></i>}
+                        </td>
+                        <td class="text-end">@(row.Quantity80?.ToString("N0") ?? "—")</td>
+                        <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@Lots(row.Cost80)">@Money(row.Cost80)</span></td>
+                        <td class="text-end">@(row.Quantity100?.ToString("N0") ?? "—")</td>
+                        <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@Lots(row.Cost100)">@Money(row.Cost100)</span></td>
+                    </tr>
+                }</tbody>
+            </table></div>
+        </RowContent>
+    </PagedDataTable>
+    </ItemCopyScope>
+</div>
+
+@code{
+    [Parameter,EditorRequired] public string ServerName{get;set;}="";
+    [Parameter] public DataPriority Priority{get;set;}
+    [Parameter] public bool IsActive{get;set;}=true;
+    private readonly CancellationTokenSource _lifetime=new();
+    private IReadOnlyList<PetFoodDataRow> _rows=[];
+    private string _search="",_sort="name";
+    private bool _loading,_pending,_failed,_disposed,_wasActive;
+    private DataPriority? _priority;
+    private IEnumerable<PetFoodDataRow> Rows
+    {
+        get
+        {
+            var rows=_rows.Where(r=>CultureInfo.CurrentCulture.CompareInfo.IndexOf(r.Food.Name,_search.Trim(),CompareOptions.IgnoreCase|CompareOptions.IgnoreNonSpace)>=0);
+            return _sort switch
+            {
+                "cost80"=>rows.OrderBy(r=>r.Cost80?.TotalCost ?? long.MaxValue).ThenBy(r=>r.Food.Name),
+                "cost100"=>rows.OrderBy(r=>r.Cost100?.TotalCost ?? long.MaxValue).ThenBy(r=>r.Food.Name),
+                "xp"=>rows.OrderByDescending(r=>r.Food.Experience).ThenBy(r=>r.Food.Name),
+                _=>rows.OrderBy(r=>r.Food.Name)
+            };
+        }
+    }
+    private static string Money(MarketPurchaseResult? result)=>result is { } cost ? $"{cost.TotalCost:N0} K" : "—";
+    private static string Lots(MarketPurchaseResult? result)=>result is { } cost
+        ? string.Join(" + ",cost.Lots.OrderByDescending(lot=>lot.Key).Select(lot=>$"{lot.Value:N0} lot(s) × {lot.Key}"))+$" · {cost.PurchasedQuantity:N0} achetés, {cost.RequiredQuantity:N0} à donner"
+        : "Prix d’achat à relever.";
+    private static string XpInfo(PetFoodDataRow row)=>row.Food.ExperienceSource+
+        (row.Food.SheetExperience is { } xp ? $" · Fichier initial : {xp:0.#########} XP" : "")+
+        " · L’XP totale du repas est arrondie à l’entier inférieur.";
+    private static string PriceInfo(PetFoodDataRow row)=>row.UnitQuote is { } q
+        ? $"{q.Price:N0} K / lot de {q.Quantity} · {(q.Source==MarketPriceSource.Manual ? "Manuel" : "En jeu")} · {q.ObservedAtUtc.ToLocalTime():dd/MM à HH:mm}"
+        : "Prix à relever à l’HDV.";
+    protected override void OnInitialized()=>Prices.Changed+=Changed;
+    protected override Task OnParametersSetAsync()
+    {
+        bool reload=IsActive && (!_wasActive || _priority!=Priority);
+        _wasActive=IsActive;_priority=Priority;
+        return reload ? RefreshAsync() : Task.CompletedTask;
+    }
+    private void Changed(object? sender,MarketDataChangedEventArgs change)
+    {
+        if(!_disposed && IsActive && string.Equals(change.ServerName,ServerName,StringComparison.OrdinalIgnoreCase)) _=InvokeAsync(RefreshAsync);
+    }
+    private async Task RefreshAsync()
+    {
+        if(_disposed || !IsActive) return;
+        _pending=true;if(_loading) return;_loading=true;StateHasChanged();
+        try
+        {
+            do{_pending=false;_rows=await Foods.LoadTableAsync(ServerName,_lifetime.Token);_failed=false;}while(_pending && !_disposed);
+        }
+        catch(OperationCanceledException) when(_lifetime.IsCancellationRequested){}
+        catch(Exception ex){_failed=true;Logger.LogWarning(ex,"Chargement de la nourriture indisponible.");}
+        finally{_loading=false;if(!_disposed) StateHasChanged();}
+    }
+    public void Dispose(){_disposed=true;Prices.Changed-=Changed;_lifetime.Cancel();_lifetime.Dispose();}
+}

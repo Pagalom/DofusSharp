@@ -1,0 +1,11 @@
+<span class="@CssClass" tabindex="0" role="img" aria-label="@(Label ?? Tooltip)"
+      data-bs-toggle="tooltip" data-bs-title="@Tooltip" data-bs-custom-class="multiline-tooltip" style="cursor: help">
+    <i class="bi bi-@Icon" aria-hidden="true"></i>
+</span>
+
+@code {
+    [Parameter] public string Icon { get; set; } = "info-circle";
+    [Parameter, EditorRequired] public string Tooltip { get; set; } = "";
+    [Parameter] public string? Label { get; set; }
+    [Parameter] public string? CssClass { get; set; }
+}

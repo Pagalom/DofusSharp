@@ -1,0 +1,148 @@
+@using BestCrush.Services
+@using BestCrush.Network.Protocol
+@using Microsoft.Extensions.Logging
+@inject PetOpportunityService Opportunities
+@inject LiveStockService Stocks
+@inject CurrentWindowProfessionsState Professions
+@inject GlobalSalesRepository Sales
+@inject MarketDataChangeNotifier MarketChanges
+@inject MarketClipboardQueue CopyQueue
+@inject ILogger<PetWorkspace> Logger
+@implements IDisposable
+
+<PageHeading Title="Familiers / XP" />
+<ItemCopyScope>
+@if (ServerName is null)
+{
+    <p><StatusIcon Icon="globe" Tooltip="Choisissez un serveur." /> Serveur à sélectionner</p>
+}
+else if (_report is null && _loading)
+{
+    <span role="status" class="spinner-border spinner-border-sm" aria-label="Calcul en cours"></span>
+}
+@if (_error is not null) { <StatusIcon Icon="exclamation-triangle" Tooltip="@_error" Label="Calcul indisponible" CssClass="text-warning" /> }
+@if (_report is { } report)
+{
+    <div class="d-flex gap-3 align-items-center mb-3">
+        <input class="form-control" aria-label="Chercher un familier" placeholder="Chercher un familier…" @bind="_search" @bind:event="oninput" />
+        <span class="text-nowrap" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Nourritures avec un prix de moins de 72 h" data-bs-custom-class="multiline-tooltip">
+            <i class="bi bi-shop" aria-hidden="true"></i> @report.QuotedFoods / @report.FoodCount
+        </span>
+        @if (!report.ProfessionsKnown) { <StatusIcon Icon="tools" Tooltip="Niveaux de métier à synchroniser." CssClass="text-warning" /> }
+        @if (!report.RecipesKnown) { <StatusIcon Icon="exclamation-triangle" Tooltip="Recettes indisponibles. Comparaison limitée aux stocks et aux achats." CssClass="text-warning" /> }
+        @if (_loading) { <span role="status" class="spinner-border spinner-border-sm" aria-label="Calcul en cours"></span> }
+    </div>
+    <section aria-label="Mes familiers" class="mb-4">
+        <h2 class="h5">Mes familiers (@report.Owned.Count)</h2>
+        @foreach (var pet in report.Owned.Where(Matches))
+        {
+            <PetOpportunityRow @key="(pet.Owned!.Container,pet.Owned.Uid)" Assessment="pet" Report="report" TargetWindow="TargetWindow" />
+        }
+    </section>
+    <section aria-label="Familiers à acheter et à monter" class="mb-4">
+        <h2 class="h5">Acheter et monter (@report.Purchases.Count)</h2>
+        @foreach (var pet in report.Purchases.Where(Matches))
+        {
+            <PetOpportunityRow @key="pet.Species.Id" Assessment="pet" Report="report" TargetWindow="TargetWindow" />
+        }
+    </section>
+    <details class="mb-4">
+        <summary>Quoi consulter à l’HDV (@report.Checks.Count)
+            <StatusIcon Tooltip="Consultez les offres et le Cours du marché. Prix à actualiser après 72 h." />
+        </summary>
+        <div class="d-flex align-items-center gap-2 my-2">
+            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="CopyChecksAsync">Copier la liste</button>
+            <span role="status">@_copyStatus</span>
+        </div>
+        <ul>
+            @foreach (var check in report.Checks.Take(50))
+            {
+                <li><CopyTextButton Value="check.Name" Tooltip="Copier le nom">@check.Name</CopyTextButton>
+                    <StatusIcon Icon="@(check.Reason.Contains("Cours du marché", StringComparison.OrdinalIgnoreCase) ? "clock-history" : "shop")" Tooltip="@check.Reason" />
+                </li>
+            }
+        </ul>
+        @if (report.Checks.Count>50) { <span class="small text-secondary">50 / @report.Checks.Count <StatusIcon Tooltip="Le bouton copie la liste complète." /></span> }
+    </details>
+}
+</ItemCopyScope>
+
+@code {
+    [Parameter] public DofusClientWindowKey? TargetWindow {get;set;}
+    [Parameter] public string? ServerName {get;set;}
+    private PetOpportunityReport? _report;
+    private string _search="",_copyStatus="";
+    private string? _error;
+    private bool _loading,_pending,_disposed;
+    private (DofusClientWindowKey?,string?) _view;
+    private readonly CancellationTokenSource _lifetime=new();
+    private CancellationTokenSource? _load;
+    private bool Matches(PetAssessment row)=>string.IsNullOrWhiteSpace(_search) || row.Species.Name.Contains(_search,StringComparison.CurrentCultureIgnoreCase);
+    protected override void OnInitialized()
+    {
+        Stocks.Changed+=StockChanged;Professions.Changed+=StockChanged;
+        Sales.PetPricesChanged+=PricesChanged;Sales.ListingsChanged+=PricesChanged;
+        Sales.Changed+=PricesChanged;
+        MarketChanges.Changed+=MarketChanged;
+    }
+    protected override Task OnParametersSetAsync()
+    {
+        var view=(TargetWindow,ServerName);
+        if(_view==view) return Task.CompletedTask;
+        _view=view;_report=null;_load?.Cancel();
+        return RefreshAsync();
+    }
+    private void StockChanged(){if(!_disposed) _=InvokeAsync(RefreshAsync);}
+    private void PricesChanged(string server)
+    {
+        if(!_disposed && string.Equals(server,_report?.Server ?? ServerName,StringComparison.OrdinalIgnoreCase)) _=InvokeAsync(RefreshAsync);
+    }
+    private void MarketChanged(object? sender,MarketDataChangedEventArgs change)=>PricesChanged(change.ServerName);
+    private async Task RefreshAsync()
+    {
+        if(_disposed) return;
+        _pending=true;
+        if(_loading) return;
+        _loading=true;
+        try
+        {
+            do
+            {
+                _pending=false;
+                _load?.Dispose();_load=CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
+                var token=_load.Token;var view=_view;
+                try
+                {
+                    await Task.Delay(250,token);
+                    var report=await Opportunities.LoadAsync(view.Item1,view.Item2,token);
+                    if(view==_view && !_disposed){_report=report;_error=null;}
+                }
+                catch(OperationCanceledException) when(token.IsCancellationRequested){}
+                catch(Exception ex)
+                {
+                    Logger.LogWarning(ex,"Calcul des familiers indisponible.");
+                    _error="Le calcul n’a pas pu aboutir. Vérifiez la connexion au catalogue et les stocks synchronisés.";
+                }
+                if(!_disposed) StateHasChanged();
+            }while(_pending && !_disposed);
+        }
+        finally{_loading=false;}
+    }
+    private async Task CopyChecksAsync()
+    {
+        if(_report is null) return;
+        try
+        {
+            var result=await CopyQueue.CopyAsync(_report.Checks.Select(check=>check.Name),TargetWindow);
+            _copyStatus=result.IsQueue ? $"{result.Count} noms chargés · Ctrl+V dans Dofus." : "Liste copiée.";
+        }
+        catch(Exception ex){Logger.LogWarning(ex,"Copie HDV indisponible.");_copyStatus="Copie indisponible.";}
+    }
+    public void Dispose()
+    {
+        _disposed=true;Stocks.Changed-=StockChanged;Professions.Changed-=StockChanged;
+        Sales.PetPricesChanged-=PricesChanged;Sales.ListingsChanged-=PricesChanged;MarketChanges.Changed-=MarketChanged;
+        Sales.Changed-=PricesChanged;
+        _lifetime.Cancel();_load?.Cancel();_load?.Dispose();_lifetime.Dispose();
+    }
+}

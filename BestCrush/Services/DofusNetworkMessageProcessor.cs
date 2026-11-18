@@ -532,6 +532,8 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (itemId is not null)
             {
+                if (message.Direction == "S→C")
+                    await observationWriter.PersistPetPricesAsync(body, message.ObservedAtUtc, lease, cancellationToken);
                 // A selection is not a price observation. The writer
                 // resolves the ID against the equipment table and checks
                 // that the capture lease is still authoritative.

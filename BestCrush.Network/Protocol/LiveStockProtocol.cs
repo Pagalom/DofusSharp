@@ -6,10 +6,10 @@ public sealed record LiveStockItem(ulong ItemId, ulong Uid, ulong Quantity,
 public sealed record LiveStockMutation(string Container, LiveStockOperation Operation,
     IReadOnlyList<LiveStockItem> Items, ulong Uid = 0, ulong Quantity = 0);
 
-/// <summary>Current 3.7.12.12 stock wire shapes, checked against reversible bank transfers.</summary>
+/// <summary>Stock wire shapes checked against transfers; iqy verified on pet feeding in 3.7.14.18.</summary>
 public static class LiveStockProtocol
 {
-    public static bool IsStockOpcode(string opcode) => opcode is "irl" or "irp" or "iqx" or "iqz" or "irx" or "iqm" or "itf";
+    public static bool IsStockOpcode(string opcode) => opcode is "irl" or "irp" or "iqx" or "iqy" or "iqz" or "irx" or "iqm" or "itf";
 
     public static LiveStockItem FromCandidate(StockItemWireCandidate row) => new(
         row.Field4ItemIdCandidate!.Value, row.Field5InstanceUidCandidate!.Value,
@@ -20,7 +20,7 @@ public static class LiveStockProtocol
         if (body.Length is 0 or > 256 * 1024) return null;
         var root = ProtoWire.ReadFields(body);
         if (root is null) return null;
-        if (opcode is "iqx" or "iqz")
+        if (opcode is "iqx" or "iqy" or "iqz")
         {
             int number = opcode == "iqx" ? 2 : 1;
             var envelopes = root.Where(x => x.Number == number).ToArray();
@@ -31,6 +31,7 @@ public static class LiveStockProtocol
             var rows = parent.Where(x => x.Number == 1).ToArray();
             if (rows.Length is 0 or > 4096 || rows.Any(x => x.WireType != ProtoWireType.LengthDelimited || x.Bytes is null))
                 return null;
+            if (opcode == "iqy" && rows.Length != 1) return null;
             List<LiveStockItem> items = [];
             foreach (var row in rows)
             {
@@ -42,7 +43,7 @@ public static class LiveStockProtocol
                 items.Add(FromCandidate(decoded.Rows[0]));
             }
             if (items.Select(x => x.Uid).Distinct().Count() != items.Count) return null;
-            return new(opcode == "iqx" ? "inventory" : "bank", LiveStockOperation.Upsert, items);
+            return new(opcode == "iqz" ? "bank" : "inventory", LiveStockOperation.Upsert, items);
         }
         if (opcode == "irx")
         {

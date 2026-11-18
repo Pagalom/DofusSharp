@@ -245,7 +245,10 @@ public sealed class LiveForgemagingService : IDisposable
     private void ApplyTrackingUpdate(ForgemagingTrackingUpdate? update)
     {
         if (update == ForgemagingTrackingUpdate.Gap)
-        { InvalidateJet(); _status = "Suivi incomplet : retirez puis redéposez l’objet. Aucun résultat supplémentaire n’a été supposé."; }
+        {
+            _logger.LogWarning("FM tracking interrupted: {Reason}", _tracker?.LastGapReason ?? "unknown");
+            InvalidateJet(); _status = "Suivi interrompu : redéposez l’objet.";
+        }
         else if (update == ForgemagingTrackingUpdate.Recorded && _session?.Attempts.LastOrDefault() is { } attempt)
         {
             _session.LastObservedRollAtUtc = attempt.AtUtc;

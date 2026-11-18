@@ -27,9 +27,9 @@
         <ApplicationId>com.dofussharp.bestcrush</ApplicationId>
 
         <!-- Versions -->
-        <Version>0.2.4</Version>
-        <ApplicationDisplayVersion>0.2.4</ApplicationDisplayVersion>
-        <ApplicationVersion>12</ApplicationVersion>
+        <Version>0.2.5</Version>
+        <ApplicationDisplayVersion>0.2.5</ApplicationDisplayVersion>
+        <ApplicationVersion>13</ApplicationVersion>
 
         <!-- To develop, package, and publish an app to the Microsoft Store, see: https://aka.ms/MauiTemplateUnpackaged -->
         <WindowsPackageType>None</WindowsPackageType>
@@ -122,4 +122,7 @@
             Text="Publication bloquee : images officielles DOFUS detectees sous wwwroot/img/dofus ou wwwroot/img/runes. Compiler la release depuis un dossier Git propre. Voir NOTICE-RESSOURCES-ANKAMA.md." />
     </Target>
 
+    <ItemGroup>
+      <EmbeddedResource Include="Data\pet-food-seed.json" />
+    </ItemGroup>
 </Project>

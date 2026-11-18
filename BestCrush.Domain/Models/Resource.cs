@@ -18,6 +18,7 @@ public class Resource : IItem
     public long DofusDbId { get; private set; }
     public long? DofusDbIconId { get; set; }
     public int Level { get; set; }
+    public double? PetExperience { get; set; }
 
     [MaxLength(256)]
     public string Name { get; set; } = "???";

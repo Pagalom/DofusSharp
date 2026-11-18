@@ -17,7 +17,7 @@
                         {
                             <button type="button" @onclick="() => SelectAsync(rune.Characteristic)">
                                 <img src="@(rune.IconId is > 0 ? $"img/runes/{rune.IconId}.png" : "img/runes/unknown.svg")"
-                                     alt="" width="22" height="22" /> @ForgemagingWorkspace.StatName(rune.Characteristic)
+                                     alt="" width="22" height="22" onerror="this.onerror=null;this.src='img/runes/unknown.svg';" /> @ForgemagingWorkspace.StatName(rune.Characteristic)
                             </button>
                         }
                     </div>

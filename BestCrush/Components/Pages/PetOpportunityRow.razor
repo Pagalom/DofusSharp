@@ -1,0 +1,136 @@
+@using BestCrush.Services
+@using BestCrush.Models
+@using BestCrush.Network.Protocol
+@inject MarketClipboardQueue CopyQueue
+
+<details class="card mb-2">
+    <summary class="card-header d-flex align-items-center gap-3">
+        <StockItemArtwork Stock="Report.Stock" ItemId="Assessment.Species.Id">
+            <ItemIcon Item="Assessment.Species" Size="Size.Small" />
+        </StockItemArtwork>
+        <span class="flex-grow-1">
+            <strong><CopyTextButton Value="Assessment.Species.Name" Tooltip="Copier le nom">@Assessment.Species.Name</CopyTextButton></strong>
+            <span class="d-block small">@SourceDescription</span>
+        </span>
+        @if(Assessment.Issue is { } issue)
+        {
+            <StatusIcon Icon="exclamation-triangle" Tooltip="@issue" Label="Données à compléter" CssClass="text-warning" />
+        }
+        @if(Assessment.Best is { } header)
+        {
+            @if(header.RemainingListings==0)
+            { <StatusIcon Icon="x-circle" Tooltip="Quota de mise en vente atteint." Label="Ne plus mettre en vente" CssClass="text-danger" /> }
+            else if(header.RemainingListings is { } remaining)
+            {
+                <span class="text-nowrap text-warning" tabindex="0" data-bs-toggle="tooltip" data-bs-custom-class="multiline-tooltip"
+                      data-bs-title="@($"Encore {remaining:N0} à mettre en vente. Estimation globale de l’espèce, tous niveaux et pouvoirs confondus.")">× @remaining.ToString("N0")</span>
+            }
+            else
+            { <StatusIcon Icon="clock-history" Tooltip="Volume de ventes à relever." CssClass="text-warning" /> }
+            <span class="text-end">@(Assessment.Owned is not null && Assessment.CurrentResale is null ? "Niveau étudié" : "Niveau conseillé") <strong>@header.Level</strong><br />
+                @(Assessment.Owned is null ? "Marge estimée" : "Gain supplémentaire")
+                <strong class="@(header.Margin>0 ? "text-success" : "")">@Money(header.Margin)</strong>
+            </span>
+        }
+    </summary>
+    <div class="card-body">
+        @if(Assessment.Best is { } choice)
+        {
+            <div class="d-flex flex-wrap gap-4 mb-3">
+                <span>@(Assessment.Owned is null ? "Prix d’achat" : "Vente au niveau actuel")<br /><strong>@Money(Assessment.Owned is null ? Assessment.AcquisitionCost : Assessment.CurrentResale)</strong></span>
+                <span>À débourser en nourriture<br /><strong>@Money(choice.Nutrition.CashRequired)</strong></span>
+                <span>Valeur du stock consommé<br /><strong>@Money(choice.Nutrition.StockValue)</strong></span>
+                <span>Prix de vente conseillé<br /><strong>@Money(choice.SalePrice)</strong></span>
+                <StatusIcon Tooltip="Avant taxes. Stocks simulés séparément pour chaque familier ; recalcul après consommation." />
+            </div>
+            @if(choice.Level==CurrentLevel && Assessment.Owned is not null)
+            {
+                <p><i class="bi bi-shop" aria-hidden="true"></i> Vendre au niveau @CurrentLevel
+                    <StatusIcon Tooltip="Nourrir davantage n’améliore pas la marge parmi les niveaux relevés." />
+                </p>
+            }
+            else
+            {
+                <p><strong>Objectif : niveau @choice.Level</strong> · @choice.Nutrition.Experience.ToString("N0") XP prévues.</p>
+                @if(Assessment.Owned is null){<p><i class="bi bi-cart" aria-hidden="true"></i> Niveau @Assessment.Purchase!.Level · @Money(Assessment.Purchase.Price)</p>}
+                @if(choice.Nutrition.Purchases.Count>0)
+                {
+                    <div class="d-flex align-items-center gap-2 mb-2"><strong>À acheter</strong>
+                        <button class="btn btn-outline-primary btn-sm" @onclick="CopyShoppingAsync">Copier la liste</button><span role="status">@_copyStatus</span>
+                    </div>
+                    <ul>
+                        @foreach(var line in choice.Nutrition.Purchases)
+                        {
+                            <li><CopyTextButton Value="line.Name" Tooltip="Copier le nom">@line.Name</CopyTextButton>
+                                · @string.Join(" + ",line.Purchase.Lots.OrderByDescending(lot=>lot.Key).Select(lot=>$"{lot.Value} lot(s) × {lot.Key}"))
+                                · @Money(line.Purchase.TotalCost)
+                                @if(line.Ingredient){<span> · ingrédient</span>}
+                            </li>
+                        }
+                    </ul>
+                }
+                @foreach(var craft in choice.Nutrition.Crafts)
+                {
+                    <p><strong>Fabriquer @craft.Quantity.ToString("N0") × @craft.Recipe.Product.Name</strong> · @craft.Recipe.Product.Job niveau @craft.Recipe.Product.JobLevel</p>
+                    <ul>@foreach(var ingredient in craft.Ingredients)
+                        {<li>@ingredient.Name × @ingredient.Required.ToString("N0") · <StatusIcon Icon="box-seam" Tooltip="Pris dans le stock" /> @ingredient.Used.ToString("N0") · <StatusIcon Icon="cart" Tooltip="À acheter" /> @ingredient.Missing.ToString("N0")</li>}
+                    </ul>
+                }
+                <strong>À donner</strong> <StatusIcon Tooltip="Regroupez chaque aliment en un seul repas pour conserver l’XP prévue." />
+                <ul>
+                    @foreach(var meal in choice.Nutrition.Meals.GroupBy(meal=>meal.Food.Id))
+                    {
+                        var food=meal.First().Food;
+                        <li><StockItemArtwork Stock="Report.Stock" ItemId="food.Id"><ItemIcon Item="food" Size="Size.Tiny" /></StockItemArtwork>
+                            <CopyTextButton Value="food.Name" Tooltip="Copier le nom">@food.Name</CopyTextButton> × @meal.Sum(line=>line.Quantity).ToString("N0")
+                            · @BestCrush.Domain.Services.PetExperience.MealExperience(food.Experience,meal.Sum(line=>line.Quantity)).ToString("N0") XP
+                            · <StatusIcon Icon="box-seam" Tooltip="Pris dans le stock" /> @meal.Sum(line=>line.FromStock).ToString("N0")
+                        </li>
+                    }
+                </ul>
+                <p><i class="bi bi-shop" aria-hidden="true"></i> Niveau @choice.Level · <strong>@Money(choice.SalePrice)</strong></p>
+            }
+            @if(choice.Nutrition.StockConsumed.Count>0)
+            {
+                <details><summary>Ressources à prendre dans les stocks</summary><ul>
+                    @foreach(var use in choice.Nutrition.StockConsumed)
+                    {
+                        int inventory=(int)System.Numerics.BigInteger.Min(use.Value,Report.Inventory.GetValueOrDefault(use.Key));
+                        <li>@StockName(use.Key) · <StatusIcon Icon="box-seam" Tooltip="Inventaire" /> @inventory.ToString("N0") · <StatusIcon Icon="bank" Tooltip="Banque" /> @((use.Value-inventory).ToString("N0"))</li>
+                    }
+                </ul></details>
+            }
+            <details class="mt-2"><summary>Comparer les niveaux relevés (@Assessment.Options.Count)</summary>
+                <table class="table table-dark table-striped">
+                    <thead><tr><th>Niveau</th><th>À débourser</th><th>Stock utilisé</th><th>Vente conseillée</th><th>Gain estimé</th></tr></thead>
+                    <tbody>@foreach(var option in Assessment.Options.OrderBy(option=>option.Level))
+                        {<tr class="@(option==choice ? "table-active" : "")"><td>@option.Level</td><td>@Money(option.Nutrition.CashRequired)</td><td>@Money(option.Nutrition.StockValue)</td><td>@Money(option.SalePrice)</td><td>@Money(option.Margin)</td></tr>}
+                    </tbody>
+                </table>
+            </details>
+        }
+    </div>
+</details>
+
+@code{
+    [Parameter,EditorRequired] public PetAssessment Assessment {get;set;}=null!;
+    [Parameter,EditorRequired] public PetOpportunityReport Report {get;set;}=null!;
+    [Parameter] public DofusClientWindowKey? TargetWindow {get;set;}
+    private string _copyStatus="";
+    private int? CurrentLevel=>Assessment.Owned?.Reading?.Level ?? Assessment.Purchase?.Level;
+    private string SourceDescription=>Assessment.Owned is { } own
+        ? $"{(own.Container=="bank" ? "Banque" : "Inventaire")} · niveau {own.Reading?.Level.ToString() ?? "inconnu"} · {own.Reading?.Experience?.ToString("N0") ?? "—"} XP · × {own.Quantity}"
+        : $"Achat HDV · niveau {Assessment.Purchase?.Level}";
+    private static string Money(double? value)=>value is { } amount ? $"{amount:N0} K" : "—";
+    private string StockName(long id)=>Assessment.Best?.Nutrition.Meals.FirstOrDefault(line=>line.Food.Id==id)?.Food.Name ??
+        Assessment.Best?.Nutrition.Crafts.SelectMany(craft=>craft.Ingredients).FirstOrDefault(line=>line.ItemId==id)?.Name ?? $"Objet #{id}";
+    private async Task CopyShoppingAsync()
+    {
+        try
+        {
+            var result=await CopyQueue.CopyAsync(Assessment.Best?.Nutrition.Purchases.Select(line=>line.Name) ?? [],TargetWindow);
+            _copyStatus=result.IsQueue ? $"{result.Count} noms chargés · Ctrl+V dans Dofus." : "Liste copiée.";
+        }
+        catch{_copyStatus="Copie indisponible.";}
+    }
+}

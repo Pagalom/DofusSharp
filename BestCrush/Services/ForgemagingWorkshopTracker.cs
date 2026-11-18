@@ -20,13 +20,14 @@ internal sealed class ForgemagingWorkshopTracker(ForgemagingSession session, For
     private ForgemagingRune? _rune;
     private bool _request, _consumed;
     private long _sequence;
+    internal string? LastGapReason { get; private set; }
     internal void RefreshRunes(IReadOnlyList<ForgemagingRune> values) => _runes = values;
     internal void Invalidate()
     {
         _before = null; _rune = null; _request = _consumed = false;
         session.Sink = null; foreach (var line in session.Lines) line.Current = null;
     }
-    private ForgemagingTrackingUpdate Gap() { Invalidate(); return ForgemagingTrackingUpdate.Gap; }
+    private ForgemagingTrackingUpdate Gap(string reason) { LastGapReason=reason; Invalidate(); return ForgemagingTrackingUpdate.Gap; }
 
     internal ForgemagingTrackingUpdate Observe(string direction, string key, byte[] body, DateTime atUtc)
     {
@@ -37,7 +38,7 @@ internal sealed class ForgemagingWorkshopTracker(ForgemagingSession session, For
             var fields = LiveForgemagingProtocol.Fields(body);
             ulong? uid = LiveForgemagingProtocol.Scalar(fields, 1);
             // A single confirmed result is one rune, even when the client later repeats the action.
-            if (uid is not > 0 || LiveForgemagingProtocol.Scalar(fields, 2) != 1 || _consumed) return Gap();
+            if (uid is not > 0 || LiveForgemagingProtocol.Scalar(fields, 2) != 1 || _consumed) return Gap("rune-request-unrecognized");
             if (_runeUid != uid) { _rune = null; _remaining = null; }
             else if (_rune is not null) _rune = _runes.FirstOrDefault(r => r.Id == _rune.Id);
             _runeUid = uid.Value; _request = true;
@@ -49,7 +50,9 @@ internal sealed class ForgemagingWorkshopTracker(ForgemagingSession session, For
             if (LiveForgemagingProtocol.WorkshopItem(body) is not { } description || description.Item.Uid != _runeUid) return ForgemagingTrackingUpdate.Ignored;
             var candidate = _runes.FirstOrDefault(r => r.Id == description.Item.ItemId);
             var values = map(description.Item);
-            if (candidate is null || values is null || values.Count != 1 || values.GetValueOrDefault(candidate.Characteristic) != candidate.Gain) return Gap();
+            if (candidate is null) return Gap("rune-not-in-catalogue");
+            if (values is null) return Gap("rune-effects-unrecognized");
+            if (values.Count != 1 || values.GetValueOrDefault(candidate.Characteristic) != candidate.Gain) return Gap("rune-description-mismatch");
             _rune = candidate; return ForgemagingTrackingUpdate.Ignored;
         }
         if (key is "irx" or "iqm")
@@ -60,19 +63,20 @@ internal sealed class ForgemagingWorkshopTracker(ForgemagingSession session, For
             if (_remaining is { } old)
             {
                 if (quantity == old) return ForgemagingTrackingUpdate.Ignored;
-                if (old == 0 || quantity > old || old - quantity != 1) return Gap();
+                if (old == 0 || quantity > old || old - quantity != 1) return Gap("rune-quantity-gap");
             }
-            else if (!_request) return Gap();
-            if (_consumed) return Gap();
+            else if (!_request) return Gap("consumption-without-request");
+            if (_consumed) return Gap("overlapping-consumptions");
             _remaining = quantity; _consumed = true; _sequence++;
             return ForgemagingTrackingUpdate.Ignored;
         }
         if (key != "kco") return ForgemagingTrackingUpdate.Ignored;
-        if (!_consumed) return _request ? Gap() : ForgemagingTrackingUpdate.Ignored;
+        if (!_consumed) return _request ? Gap("result-without-consumption") : ForgemagingTrackingUpdate.Ignored;
         var result = LiveForgemagingProtocol.Result(body);
-        if (result is null || _rune is null || (result.Item is { } item && (item.Uid != _targetUid || item.ItemId != _itemId))) return Gap();
+        if (result is null || _rune is null) return Gap("result-unrecognized");
+        if (result.Item is { } item && (item.Uid != _targetUid || item.ItemId != _itemId)) return Gap("result-item-mismatch");
         var before = map(_before); var after = result.Item is { } next ? map(next) : before;
-        if (before is null || after is null) return Gap();
+        if (before is null || after is null) return Gap("item-effects-unrecognized");
         double? sink = result.Item is null ? session.Sink : result.Sink;
         var outcome = Classify(result, _rune, before, after, session.Sink);
         ForgemagingSessionActions.RecordObserved(session, _rune, outcome, before, after,

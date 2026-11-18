@@ -44,6 +44,12 @@ else
             <History ServerName="@ServerName" IsEmbedded="true" IsActive="@(IsActive && Tab == WorkspaceDataTab.History)" InitialSelection="@HistorySelection" />
         </div>
     }
+    @if (_visited.Contains(WorkspaceDataTab.PetFood))
+    {
+        <div hidden="@(Tab != WorkspaceDataTab.PetFood)">
+            <PetFoodPrices @key="ServerName" ServerName="@ServerName" Priority="Priority" IsActive="@(IsActive && Tab == WorkspaceDataTab.PetFood)" />
+        </div>
+    }
 }
 @code {
     [Parameter] public string? ServerName { get; set; }

@@ -13,6 +13,7 @@ public class BestCrushDbContext : DbContext
     public DbSet<EquipmentRecipeEntry> EquipmentRecipeEntries { get; set; }
     public DbSet<Rune> Runes { get; set; }
     public DbSet<Resource> Resources { get; set; }
+    public DbSet<PetFoodDefinition> PetFoods { get; set; }
     public DbSet<MarketPriceObservation> MarketPriceObservations { get; set; }
     public DbSet<CoefficientObservation> CoefficientObservations { get; set; }
 
@@ -76,6 +77,7 @@ public class BestCrushDbContext : DbContext
         modelBuilder.Entity<Equipment>().HasAlternateKey(u => u.DofusDbId);
         modelBuilder.Entity<Rune>().HasAlternateKey(u => u.DofusDbId);
         modelBuilder.Entity<Resource>().HasAlternateKey(u => u.DofusDbId);
+        modelBuilder.Entity<PetFoodDefinition>().Property(food=>food.DofusDbId).ValueGeneratedNever();
         modelBuilder.Entity<MarketPriceObservation>()
         .HasIndex(p => new
         {

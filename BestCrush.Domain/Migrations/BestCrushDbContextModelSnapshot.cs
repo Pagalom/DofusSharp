@@ -353,11 +353,29 @@ namespace BestCrush.Domain.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("TEXT");
 
+                    b.Property<double?>("PetExperience")
+                        .HasColumnType("REAL");
+
                     b.HasKey("Id");
 
                     b.HasAlternateKey("DofusDbId");
 
                     b.ToTable("Resources");
+                });
+
+            modelBuilder.Entity("BestCrush.Domain.Models.PetFoodDefinition", b =>
+                {
+                    b.Property<long>("DofusDbId").HasColumnType("INTEGER");
+                    b.Property<string>("Name").IsRequired().HasMaxLength(256).HasColumnType("TEXT");
+                    b.Property<long?>("DofusDbIconId").HasColumnType("INTEGER");
+                    b.Property<int>("Level").HasColumnType("INTEGER");
+                    b.Property<int>("MarketType").HasColumnType("INTEGER");
+                    b.Property<double?>("Experience").HasColumnType("REAL");
+                    b.Property<bool>("Craftable").HasColumnType("INTEGER");
+                    b.Property<string>("ExperienceSource").IsRequired().HasMaxLength(64).HasColumnType("TEXT");
+                    b.Property<double?>("SheetExperience").HasColumnType("REAL");
+                    b.HasKey("DofusDbId");
+                    b.ToTable("PetFoods");
                 });
 
             modelBuilder.Entity("BestCrush.Domain.Models.Rune", b =>

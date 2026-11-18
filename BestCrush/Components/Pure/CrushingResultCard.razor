@@ -22,7 +22,7 @@
                     <i class="bi bi-bullseye" aria-hidden="true"></i>
                     @if (values.Value.FocusRuneIconId is > 0 and var icon)
                     {
-                        <img src="@($"img/runes/{icon}.png")" alt="" width="22" height="22" />
+                        <img src="@($"img/runes/{icon}.png")" alt="" width="22" height="22" onerror="this.onerror=null;this.src='img/runes/unknown.svg';" />
                     }
                 </span>
             }

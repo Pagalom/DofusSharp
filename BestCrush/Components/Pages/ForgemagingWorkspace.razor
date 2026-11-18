@@ -108,7 +108,7 @@
                                             <li class="fm-attempt @OutcomeClass(attempt.Outcome)">
                                                 <div class="fm-attempt-heading" title="@($"{attempt.AtUtc.ToLocalTime():dd/MM HH:mm:ss} · {(attempt.FromGame ? "Reçu du jeu" : "Saisie manuelle")}")">
                                                     <strong class="fm-outcome-code" title="@OutcomeName(attempt.Outcome)" aria-label="@OutcomeName(attempt.Outcome)">@OutcomeCode(attempt.Outcome)</strong>
-                                                    <img src="@RuneImage(attempt.Rune)" alt="" width="22" height="22" />
+                                                    <img src="@RuneImage(attempt.Rune)" alt="" width="22" height="22" onerror="this.onerror=null;this.src='img/runes/unknown.svg';" />
                                                     <span>@attempt.Rune.Name@(attempt.RuneCount > 1 ? $" × {attempt.RuneCount}" : "")</span>
                                                 </div>
                                                 @foreach (var delta in deltas)
@@ -179,7 +179,7 @@
                                                               data-bs-toggle="tooltip" data-bs-title="@tooltip" data-bs-custom-class="multiline-tooltip"
                                                               aria-label="@tooltip">
                                                             <span class="fm-rune">
-                                                                <img src="@RuneImage(rune)" alt="" width="24" height="24" />
+                                                                <img src="@RuneImage(rune)" alt="" width="24" height="24" onerror="this.onerror=null;this.src='img/runes/unknown.svg';" />
                                                                 <span class="@($"fm-odds {OutcomeClass(_shownOdds)}")">@(odds is { Blocked: null } ? $"{OddsPercentage(odds):0.#} %" : "—")</span>
                                                             </span>
                                                         </span>
@@ -211,7 +211,7 @@
                     @if (plan.Next is { } step)
                     {
                         <div class="fm-next-action">
-                            <img src="@RuneImage(step.Rune)" alt="" width="28" height="28" />
+                            <img src="@RuneImage(step.Rune)" alt="" width="28" height="28" onerror="this.onerror=null;this.src='img/runes/unknown.svg';" />
                             <strong>@step.Rune.Name</strong>
                             <span class="fm-muted">@Money(step.Rune.UnitPrice) par tentative · @step.Odds.Critical.ToString("N1") % de succès critique estimé</span>
                         </div>
@@ -242,7 +242,7 @@
                     @if (_coaching.Next is { } next)
                     {
                         <div class="fm-next-action">
-                            <img src="@RuneImage(next.Advice.Rune)" alt="" width="28" height="28" />
+                            <img src="@RuneImage(next.Advice.Rune)" alt="" width="28" height="28" onerror="this.onerror=null;this.src='img/runes/unknown.svg';" />
                             <strong>@next.Advice.Rune.Name</strong>
                             <span class="fm-muted">@next.Stage · @Money(next.Advice.Rune.UnitPrice)</span>
                         </div>

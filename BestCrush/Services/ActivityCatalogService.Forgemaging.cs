@@ -9,7 +9,7 @@ public sealed record ForgemagingEffectDefinition(ulong Code, Characteristic? Sta
 
 public sealed partial class ActivityCatalogService
 {
-    private const string ForgemagingEffectsKey = "fm-effects-v1";
+    private const string ForgemagingEffectsKey = "fm-effects-v2";
 
     internal IReadOnlyDictionary<ulong, ForgemagingEffectDefinition>? ReadCachedForgemagingEffects()
     {
@@ -46,7 +46,9 @@ public sealed partial class ActivityCatalogService
                 foreach (var row in page.RootElement.GetProperty("data").EnumerateArray())
                 {
                     ulong id = row.GetProperty("id").GetUInt64();
-                    Characteristic? stat = row.TryGetProperty("category", out var cat) && cat.GetInt32() == 0 &&
+                    // Category 1 carries elemental resistances (flat and percent).
+                    // Category 0 alone silently erased their rolls and rejected their runes.
+                    Characteristic? stat = row.TryGetProperty("category", out var cat) && cat.TryGetInt32(out int category) && category is 0 or 1 &&
                         row.TryGetProperty("characteristic", out var characteristic) && characteristic.TryGetInt64(out long c)
                         ? stats.GetValueOrDefault(c) : null;
                     string? op = row.TryGetProperty("characteristicOperator", out var sign) ? sign.GetString() : null;

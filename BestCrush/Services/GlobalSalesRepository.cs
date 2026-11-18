@@ -55,6 +55,9 @@ public sealed partial class GlobalSalesRepository
                 fertile INTEGER NOT NULL,quartile INTEGER NOT NULL CHECK(quartile>0),
                 offer_count INTEGER NOT NULL CHECK(offer_count>0),
                 PRIMARY KEY(server,item_id,level,fertile));
+            CREATE TABLE IF NOT EXISTS pet_market_snapshots(
+                server TEXT NOT NULL,item_id INTEGER NOT NULL,observed_at TEXT NOT NULL,snapshot_json TEXT NOT NULL,
+                PRIMARY KEY(server,item_id));
             """;
         command.ExecuteNonQuery();
         MigrateSoulPrices(db);
