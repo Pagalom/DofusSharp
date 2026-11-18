@@ -1,0 +1,215 @@
+@using BestCrush.Network.Protocol
+@using BestCrush.Services
+
+<details class="mb-3">
+    <summary>Préparer un accouplement (@Report.Pairs.Count)</summary>
+    @if (Report.Pairs.Count == 0)
+    {
+        <p>Réunis deux montures fertiles de sexes opposés et de la même famille.</p>
+    }
+    else
+    {
+        var validated = Report.Pairs.Select(pair => (Pair: pair, Gain: Gain(pair)))
+            .Where(entry => entry.Gain.HasValue).OrderByDescending(entry => entry.Gain).FirstOrDefault();
+        if (validated.Pair is { } pricedPair)
+        {
+            <p>Meilleur couple chiffré ·
+                <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="() => Select(pricedPair)">
+                    @Label(pricedPair.First) + @Label(pricedPair.Second)
+                </button>
+                · @validated.Gain?.ToString("+0;-0;0") K par rapport à la revente.
+            </p>
+        }
+        @foreach (var pair in Report.Pairs.Take(5))
+        {
+            <p class="mb-2" @key="(pair.First.Mount.Id, pair.Second.Mount.Id)">
+                <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="() => Select(pair)">
+                    @Label(pair.First) + @Label(pair.Second)
+                </button>
+                @if (!pair.Ready)
+                {
+                    <span> · @pair.MissingTrainingPoints?.ToString("N0") points de jauge à gagner</span>
+                }
+                @if (pair.DirectGeneration is { } generation)
+                {
+                    <span> · Croisement direct de génération @generation</span>
+                }
+                @if (pair.PotentialGain is { } potential)
+                {
+                    <span> · Jusqu’à @potential.ToString("+0;-0;0") K sur les issues directes cotées</span>
+                    @if (pair.PreparationCost is null && !pair.Ready)
+                    {
+                        <span> · Coût de préparation à compléter</span>
+                    }
+                }
+            </p>
+        }
+        <label>
+            Premier parent
+            <select @bind="_first" @bind:after="ResetSecond">
+                <option value="">Choisir une monture</option>
+                @foreach (var parent in Report.Pairs.SelectMany(pair => new[] { pair.First, pair.Second }).DistinctBy(parent => parent.Mount.Id))
+                {
+                    <option value="@parent.Mount.Id">@Label(parent)</option>
+                }
+            </select>
+        </label>
+        @if (_first is { } first)
+        {
+            <label>
+                Second parent
+                <select @bind="_second">
+                    <option value="">Choisir une monture</option>
+                    @foreach (var parent in Report.Pairs.Where(pair => pair.Contains(first))
+                        .Select(pair => pair.First.Mount.Id == first ? pair.Second : pair.First))
+                    {
+                        <option value="@parent.Mount.Id">@Label(parent)</option>
+                    }
+                </select>
+            </label>
+        }
+        @if (Selected is { } current)
+        {
+            <p>
+                @if (current.Ready)
+                {
+                    <span>Place les deux parents à l’étable et ouvre leur aperçu d’accouplement dans Dofus.</span>
+                }
+                else
+                {
+                    <span>Remplis les jauges manquantes des parents avant d’ouvrir leur aperçu d’accouplement.</span>
+                }
+                Les grands-parents peuvent ajouter d’autres issues aux croisements directs.
+            </p>
+            @if (current.FertilityCost is { } lostValue)
+            {
+                <p>Écart de valeur des deux parents après stérilisation · @lostValue.ToString("N0") K.</p>
+            }
+            @if (current.PreparationCost is { } training && training > 0)
+            {
+                <p>Carburant de préparation estimé à @training.ToString("N0") K pour les deux parents entraînés séparément.</p>
+            }
+            else
+            {
+                <p>Pour comparer, relève les prix des montures fertiles et stériles du niveau des parents.</p>
+            }
+            <p>Renseigne toutes les issues et leurs probabilités telles qu’affichées dans Dofus. Les prix des petits se chargent depuis les relevés HDV.</p>
+            <datalist id="breeding-offspring-names">
+                @foreach (var name in Report.MarketNames)
+                {
+                    <option value="@name"></option>
+                }
+            </datalist>
+            var input = Inputs(current);
+            @foreach (var outcome in input.Outcomes)
+            {
+                <div class="d-flex flex-wrap gap-2 align-items-center mb-1" @key="outcome">
+                    <input aria-label="Monture possible" list="breeding-offspring-names" @bind="outcome.Name" />
+                    <label>Probabilité (%) <input type="number" min="0" max="100" step="0.01" @bind="outcome.Chance" /></label>
+                    @if (Report.OffspringValues.TryGetValue(outcome.Name.Trim(), out var quote))
+                    {
+                        <span>@quote.Net.ToString("N0") K après XP · niveau @quote.Level</span>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(outcome.Name))
+                    {
+                        <span>Consulter cette monture à l’HDV.</span>
+                    }
+                    <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => input.Outcomes.Remove(outcome)">Retirer</button>
+                </div>
+            }
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => AddOutcome(input)">Ajouter une issue</button>
+            <label class="ms-2">Préparation et Makina (K) <input type="number" min="0" @bind="input.Preparation" /></label>
+            @if (Gain(current) is { } gain)
+            {
+                <p class="mt-2"><strong>@gain.ToString("+0;-0;0") K en moyenne par rapport à la revente des parents.</strong></p>
+                @if (gain > 0 && HaveOutlets(current))
+                {
+                    <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="KeepPairAsync">Garder ces parents pour l’accouplement</button>
+                }
+                else if (gain > 0)
+                {
+                    <p>Le gain reste théorique. Vérifie les débouchés des petits avant de lancer l’accouplement.</p>
+                }
+                else
+                {
+                    <p>La revente des parents est mieux valorisée d’après ces relevés.</p>
+                }
+            }
+            @if (Reserved is not null)
+            {
+                <button class="btn btn-sm btn-outline-secondary" type="button" @onclick="() => ReservedChanged.InvokeAsync(null)">Retirer la priorité d’accouplement</button>
+            }
+        }
+    }
+</details>
+
+@code {
+    [Parameter, EditorRequired] public BreedingTradeReport Report { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyDictionary<Guid, int> MountNumbers { get; set; } = null!;
+    [Parameter] public BreedingPairOption? Reserved { get; set; }
+    [Parameter] public EventCallback<BreedingPairOption?> ReservedChanged { get; set; }
+
+    private Guid? _first;
+    private Guid? _second;
+    private readonly Dictionary<(Guid, Guid), PairInputs> _inputs = [];
+
+    private sealed class PairInputs(List<Outcome> outcomes, long? preparation)
+    {
+        internal List<Outcome> Outcomes { get; } = outcomes;
+        internal long? Preparation { get; set; } = preparation;
+    }
+
+    private sealed class Outcome(string name)
+    {
+        internal string Name { get; set; } = name;
+        internal decimal? Chance { get; set; }
+    }
+
+    private BreedingPairOption? Selected => _first is { } first && _second is { } second
+        ? Report.Pairs.FirstOrDefault(pair => pair.Matches(first, second)) : null;
+
+    private string Label(BreedingPairParent parent) => $"#{MountNumbers.GetValueOrDefault(parent.Mount.Id)} {parent.Name}";
+
+    private void Select(BreedingPairOption pair)
+    {
+        _first = pair.First.Mount.Id;
+        _second = pair.Second.Mount.Id;
+    }
+
+    private void ResetSecond()
+    {
+        _second = null;
+    }
+
+    private static (Guid, Guid) Key(BreedingPairOption pair) => (pair.First.Mount.Id, pair.Second.Mount.Id);
+
+    private PairInputs Inputs(BreedingPairOption pair)
+    {
+        var key = Key(pair);
+        if (!_inputs.TryGetValue(key, out var input))
+        {
+            input = new(pair.Offspring.Select(name => new Outcome(name)).ToList(),
+                pair.PreparationCost ?? (pair.Ready ? 0 : null));
+            _inputs.Add(key, input);
+        }
+        return input;
+    }
+
+    private static void AddOutcome(PairInputs input) => input.Outcomes.Add(new(""));
+
+    private decimal? Gain(BreedingPairOption pair)
+    {
+        if (!_inputs.TryGetValue(Key(pair), out var input) || input.Preparation is not { } cost) return null;
+        var priced = input.Outcomes.Where(outcome => outcome.Chance > 0).ToArray();
+        if (priced.DistinctBy(outcome => outcome.Name.Trim(), StringComparer.OrdinalIgnoreCase).Count() != priced.Length)
+            return null;
+        return BreedingPortfolioAdvisor.ConfirmedGain(pair, input.Outcomes.Select(outcome =>
+            (Report.OffspringValues.GetValueOrDefault(outcome.Name.Trim()), outcome.Chance ?? 0)), cost);
+    }
+
+    private bool HaveOutlets(BreedingPairOption pair) => _inputs.TryGetValue(Key(pair), out var input) &&
+        input.Outcomes.Where(outcome => outcome.Chance > 0).All(outcome => Report.SellableOffspring.Contains(outcome.Name.Trim()));
+
+    private Task KeepPairAsync() => Selected is { } pair && Gain(pair) is > 0 && HaveOutlets(pair)
+        ? ReservedChanged.InvokeAsync(pair) : Task.CompletedTask;
+}

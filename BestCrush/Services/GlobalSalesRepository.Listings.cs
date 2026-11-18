@@ -33,7 +33,7 @@ public sealed partial class GlobalSalesRepository
         return true;
     }
 
-    internal PersonalListingTotals ReadListingTotals(string serverName, DateTimeOffset now)
+    internal PersonalListingTotals ReadListingTotals(string serverName, DateTimeOffset now, int days = 1)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(serverName);
         using var db = Open();
@@ -55,7 +55,7 @@ public sealed partial class GlobalSalesRepository
             SELECT recent.item_id,bosses.boss_id,recent.units FROM recent LEFT JOIN bosses USING(item_id);
             """;
         command.Parameters.AddWithValue("$s", serverName.Trim().ToUpperInvariant());
-        command.Parameters.AddWithValue("$start", Format(now.AddHours(-24)));
+        command.Parameters.AddWithValue("$start", Format(now.AddDays(-days)));
         command.Parameters.AddWithValue("$end", Format(now));
         using var reader = command.ExecuteReader();
         Dictionary<long, long> items = [], bosses = [];

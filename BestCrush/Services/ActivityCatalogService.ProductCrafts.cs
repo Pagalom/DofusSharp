@@ -9,16 +9,25 @@ public sealed partial class ActivityCatalogService
     public async Task<ProductCraftRecipe[]> GetProductCraftsAsync(CancellationToken token)
     {
         var jobs = await CachedAsync("jobs-v1", async () => (await Fetch(factory.Jobs(), new(), token)).ToArray(), token);
-        return await CachedAsync("product-crafts-v1", () => LoadProductCraftsAsync(jobs, token), token);
+        return await CachedAsync("product-crafts-v1", () => LoadProductCraftsAsync(jobs, null, token), token);
+    }
+
+    internal async Task<ProductCraftRecipe[]> GetProductCraftsAsync(IReadOnlyCollection<long> ids, CancellationToken token)
+    {
+        if (ids.Count == 0) return [];
+        var jobs = await CachedAsync("jobs-v1", async () => (await Fetch(factory.Jobs(), new(), token)).ToArray(), token);
+        return await CachedAsync("product-crafts-selected-v1-" + string.Join(',', ids.Order()),
+            () => LoadProductCraftsAsync(jobs, ids, token), token);
     }
 
     private async Task<ProductCraftRecipe[]> LoadProductCraftsAsync(
-        DofusDbJob[] jobs, CancellationToken token)
+        DofusDbJob[] jobs, IReadOnlyCollection<long>? selectedIds, CancellationToken token)
     {
         var equipmentTypes = Enum.GetValues<EquipmentType>().Select(type => type.ToDofusDbItemTypeId().ToString()).ToArray();
         var recipes = await Fetch(factory.Recipes(), new()
         {
-            Predicates = [new DofusDbSearchPredicate.NotIn("resultTypeId", equipmentTypes)],
+            Predicates = selectedIds is null ? [new DofusDbSearchPredicate.NotIn("resultTypeId", equipmentTypes)]
+                : [new DofusDbSearchPredicate.In("resultId", selectedIds.Select(id => id.ToString()).ToArray())],
             Select = ["id", "resultId", "resultTypeId", "resultLevel", "resultName", "ingredientIds",
                 "quantities", "jobId", "result", "ingredients", "resultType"]
         }, token);

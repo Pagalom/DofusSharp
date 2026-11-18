@@ -82,6 +82,7 @@ public static class MauiProgram
             builder.Services.AddSingleton<BestCrush.Services.CrushSessionService>();
             builder.Services.AddSingleton<BestCrush.Services.MarketDataChangeNotifier>();
             builder.Services.AddSingleton<BestCrush.Services.DofusWindowService>();
+            builder.Services.AddSingleton<BestCrush.Services.MarketClipboardQueue>();
             builder.Services.AddSingleton<BestCrush.Services.DofusCaptureService>();
             builder.Services.AddSingleton<BestCrush.Services.NpcapPrerequisiteService>();
             builder.Services.AddSingleton<BestCrush.Services.DofusNetworkCaptureService>();
@@ -106,6 +107,8 @@ public static class MauiProgram
             builder.Services.AddScoped<ForgemagingDataService>();
             builder.Services.AddSingleton<LiveForgemagingService>();
             builder.Services.AddSingleton<LiveBreedingService>();
+            builder.Services.AddScoped<BreedingRefillService>();
+            builder.Services.AddScoped<BreedingTradeService>();
             builder.Services.AddSingleton(new ForgemagingSessionStore(Path.Combine(dataDirectory, "Data", "fm-sessions.json")));
             builder.Services.AddScoped<CoefficientService>();
             builder.Services.AddScoped<CraftCostService>();

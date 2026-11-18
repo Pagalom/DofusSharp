@@ -2,17 +2,11 @@
 @inject LiveBreedingService Breeding
 @implements IDisposable
 
-@{
-    var now = DateTime.UtcNow;
-    var snapshot = Breeding.ForWindow(TargetWindow, now);
-    var plan = snapshot is null ? null : BreedingMaturityPlan.From(snapshot.Reading);
-}
-@if (snapshot is not null && plan is not null &&
-    plan.IsDue(now - snapshot.ObservedAtUtc) && plan.Describe(snapshot.ObservedAtUtc) is { } advice)
+@foreach (var alert in Alerts())
 {
     <div class="alert alert-warning" role="status">
         <a href="@KnownRoutes.Module("elevage")">Élevage</a>
-        <span> · @advice</span>
+        <span> · @alert</span>
     </div>
 }
 
@@ -20,6 +14,56 @@
     [Parameter] public DofusClientWindowKey? TargetWindow { get; set; }
 
     private readonly PeriodicTimer _refresh = new(TimeSpan.FromSeconds(2));
+    private readonly Dictionary<LivePaddockReading, BreedingTrainingPlan[]> _forecasts =
+        new(ReferenceEqualityComparer.Instance);
+    private IReadOnlyDictionary<Guid, int>? _lastResaleGoals;
+
+    private IEnumerable<string> Alerts()
+    {
+        var now = DateTime.UtcNow;
+        var snapshots = Breeding.EnclosuresForWindow(TargetWindow);
+        var goals = Breeding.ResaleGoalsForWindow(TargetWindow);
+        if (!ReferenceEquals(goals, _lastResaleGoals))
+        {
+            _forecasts.Clear();
+            _lastResaleGoals = goals;
+        }
+        foreach (var obsolete in _forecasts.Keys.Where(known => !snapshots.Any(snapshot => ReferenceEquals(snapshot, known))).ToArray())
+            _forecasts.Remove(obsolete);
+        foreach (var snapshot in snapshots)
+        {
+            if (!_forecasts.TryGetValue(snapshot, out var plans))
+                _forecasts[snapshot] = plans = snapshot.Reading.Gauges.Where(gauge => gauge.Active &&
+                    BreedingTrainingRules.Gauges.Contains(gauge.Gauge))
+                    .Select(gauge => BreedingTrainingPlan.From(snapshot.Reading, gauge.Gauge, resaleGoals: goals)).ToArray();
+            TimeSpan elapsed = now - snapshot.ObservedAtUtc;
+            string location = snapshot.Enclosure is { } number ? $"Enclos {number}" : "Enclos";
+            string estimate = snapshot.IsLive(now) ? "" : " · d’après le dernier relevé";
+            foreach (var plan in plans)
+            {
+                if (snapshot.IsLive(now) && plan.IsDue(elapsed) && plan.Describe(snapshot.ObservedAtUtc) is { } advice)
+                {
+                    yield return $"{location} · {advice}";
+                    continue;
+                }
+                if (plan.FirstRisk is { } risk && elapsed >= risk.NotifyAfter &&
+                    elapsed < risk.HappensAfter + TimeSpan.FromMinutes(2))
+                    yield return $"{location}{estimate} · {BreedingTrainingRules.Name(plan.Gauge)}. Sortie de plage vers {BreedingTrainingPlan.At(snapshot.ObservedAtUtc, risk.HappensAfter)}.";
+                if (plan.WaitingUntil is { } entry && elapsed >= entry &&
+                    elapsed < entry + TimeSpan.FromMinutes(2))
+                    yield return $"{location}{estimate} · Entrées prévues terminées. Vérifier les jauges avant de maintenir la sérénité.";
+                if (plan.ExhaustedAt is { } empty && empty > TimeSpan.Zero && IsNear(elapsed, empty))
+                    yield return $"{location}{estimate} · Réserve de {BreedingTrainingRules.Name(plan.Gauge).ToLowerInvariant()} épuisée vers {BreedingTrainingPlan.At(snapshot.ObservedAtUtc, empty)}.";
+                else if (plan.Action == TrainingAction.None && plan.Mounts.Values
+                             .Where(mount => mount.Full.HasValue).Select(mount => mount.Full!.Value)
+                             .Any(full => IsNear(elapsed, full)))
+                    yield return $"{location}{estimate} · Au moins une monture approche de l’objectif {BreedingTrainingRules.Name(plan.Gauge).ToLowerInvariant()}.";
+            }
+        }
+    }
+
+    private static bool IsNear(TimeSpan elapsed, TimeSpan milestone) =>
+        elapsed >= milestone - TimeSpan.FromMinutes(2) && elapsed < milestone + TimeSpan.FromMinutes(2);
 
     protected override void OnInitialized() => _ = RefreshAsync();
 

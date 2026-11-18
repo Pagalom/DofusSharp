@@ -257,7 +257,9 @@
       "5": 5
     },
     "purchase_offer_current": {
+      "1": 1,
       "2": 2,
+      "3": 3,
       "4": 4
     },
     "purchase_receipt_current": {
@@ -442,7 +444,7 @@
     "purchase_offer": "legacy-3.6.11.15",
     "purchase_receipt": "legacy-3.6.11.15",
     "purchase_request_current": "observed-request-equipment-3.7.13.17-2026-11-15",
-    "purchase_offer_current": "observed-offer-equipment-3.7.13.17-2026-11-15",
+    "purchase_offer_current": "observed-offer-equipment-3.7.13.17-2026-11-15-and-stackable-public-four-lot-refresh-after-listing-3.7.14.18-2026-11-18",
     "purchase_receipt_current": "observed-receipt-equipment-3.7.13.17-2026-11-15",
     "inventory_add": "legacy-3.6.11.15",
     "inventory_quantity": "legacy-3.6.11.15",

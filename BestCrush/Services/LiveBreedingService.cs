@@ -16,6 +16,7 @@ internal sealed record LiveBreedingView(IReadOnlyList<LivePaddockReading> Enclos
 internal sealed class LiveBreedingService(LiveDofusClientNetworkBindings bindings)
 {
     private static readonly TimeSpan SelectionTimeout = TimeSpan.FromSeconds(5);
+    private static readonly IReadOnlyDictionary<Guid, int> EmptyGoals = new Dictionary<Guid, int>();
     private readonly object _sync = new();
     private readonly Dictionary<DofusClientWindowKey, Session> _byWindow = [];
 
@@ -27,6 +28,7 @@ internal sealed class LiveBreedingService(LiveDofusClientNetworkBindings binding
         internal readonly Dictionary<int, LivePaddockReading> Enclosures = [];
         internal readonly Dictionary<Guid, LiveStableMount> Stable = [];
         internal readonly Dictionary<Guid, int> MountNumbers = [];
+        internal IReadOnlyDictionary<Guid, int> ResaleGoals = EmptyGoals;
         internal DateTime? StableObservedAtUtc;
         internal bool StableComplete;
         internal int? CurrentEnclosure;
@@ -187,6 +189,25 @@ internal sealed class LiveBreedingService(LiveDofusClientNetworkBindings binding
             var snapshot = session?.Enclosures.GetValueOrDefault(session.CurrentEnclosure ?? 0);
             return snapshot?.IsLive(nowUtc) == true ? snapshot : null;
         }
+    }
+
+    internal IReadOnlyList<LivePaddockReading> EnclosuresForWindow(DofusClientWindowKey? window)
+    {
+        lock (_sync)
+            return CurrentSession(window)?.Enclosures.Values.ToArray() ?? [];
+    }
+
+    internal IReadOnlyDictionary<Guid, int> ResaleGoalsForWindow(DofusClientWindowKey? window)
+    {
+        lock (_sync)
+            return CurrentSession(window)?.ResaleGoals ?? EmptyGoals;
+    }
+
+    internal void SetResaleGoals(DofusClientWindowKey? window, IReadOnlyDictionary<Guid, int> goals)
+    {
+        lock (_sync)
+            if (CurrentSession(window) is { } session)
+                session.ResaleGoals = goals.Where(goal => session.MountNumbers.ContainsKey(goal.Key)).ToDictionary();
     }
 
     internal LiveBreedingView? ViewForWindow(DofusClientWindowKey? window)

@@ -32,6 +32,12 @@ else
             <Coefficients Priority="@Priority" ServerName="@ServerName" IsEmbedded="true" IsActive="@(IsActive && Tab == WorkspaceDataTab.Coefficients)" />
         </div>
     }
+    @if (_visited.Contains(WorkspaceDataTab.Mounts))
+    {
+        <div hidden="@(Tab != WorkspaceDataTab.Mounts)">
+            <BreedingMarketPrices @key="ServerName" ServerName="@ServerName" IsActive="@(IsActive && Tab == WorkspaceDataTab.Mounts)" />
+        </div>
+    }
     @if (_visited.Contains(WorkspaceDataTab.History))
     {
         <div hidden="@(Tab != WorkspaceDataTab.History)">

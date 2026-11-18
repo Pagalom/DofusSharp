@@ -8,6 +8,22 @@ namespace Tests.BestCrush.Network;
 public sealed class ProtocolWireNormalizerTest
 {
     [Fact]
+    public void CurrentPublicRefreshUsesTheSharedPurchaseOfferFieldMapping()
+    {
+        var map = LoadMap("""
+            { "purchase_offer_current": "qrefresh", "field_mappings": {
+                "purchase_offer_current": { "1":7, "2":8, "3":9, "4":10 }
+            } }
+            """);
+        var wire = Message(Bytes(7, Packed(346, 3970, 44882, 349980)),
+            Unsigned(8, 200), Unsigned(9, 46), Unsigned(10, 5824));
+        var decoded = CurrentPurchaseDecoder.DecodeStackableMarket(map.NormalizeBody("qrefresh", wire));
+        decoded.Should().NotBeNull();
+        decoded!.ItemId.Should().Be(200);
+        decoded.Offers.Single().Ladder.Should().Equal(346UL, 3970UL, 44882UL, 349980UL);
+    }
+
+    [Fact]
     public void EmptyOrIdentityMappingKeepsOriginalBytes()
     {
         ProtocolMap map = LoadMap(

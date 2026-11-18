@@ -1,0 +1,145 @@
+@using System.Globalization
+@using BestCrush.Services
+@using Microsoft.Extensions.Logging
+@inject ActivityCatalogService Catalog
+@inject GlobalSalesRepository Sales
+@inject ILogger<BreedingMarketPrices> Logger
+@implements IDisposable
+
+<div class="container-fluid workspace-page px-3 px-lg-4">
+    <PageHeading Title="Montures" />
+    <div class="d-flex flex-wrap gap-3 align-items-end mb-3">
+        <div class="flex-grow-1">
+            <ServiceSearch @bind-Value="_search" Placeholder="Rechercher une monture…" />
+        </div>
+        <label>Fertilité
+            <select class="form-select" @bind="_fertile">
+                <option value="">Tous les profils</option>
+                <option value="true">Fertile</option>
+                <option value="false">Stérile</option>
+            </select>
+        </label>
+    </div>
+    <DataLoadingIndicator Busy="_loading" Failed="_failed" Retry="RefreshAsync" />
+    <PagedDataTable Items="@FilteredRows" ResetKey="@($"{_search}|{_fertile}")">
+        <RowContent Context="pageRows">
+            <div class="table-responsive">
+                <table class="table table-dark table-striped table-hover align-middle">
+                    <thead>
+                        <tr><th scope="col">Monture</th><th scope="col">Génération</th><th scope="col">Niveau</th>
+                            <th scope="col">Fertilité</th><th scope="col" class="text-end">Offre la moins chère</th>
+                            <th scope="col" class="text-end">Prix conseillé</th><th scope="col">Dernier relevé</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var row in pageRows)
+                        {
+                            <tr @key="(row.Item.Id, row.Quote?.Level, row.Quote?.Fertile)">
+                                <th scope="row"><CopyTextButton Value="@row.Item.Name" Tooltip="Copier le nom">@row.Item.Name</CopyTextButton></th>
+                                <td>@(row.Generation?.ToString() ?? "—")</td>
+                                @if (row.Quote is { } quote)
+                                {
+                                    <td>@quote.Level</td>
+                                    <td>@(quote.Fertile ? "Fertile" : "Stérile")</td>
+                                    <td class="text-end">@quote.Price.ToString("N0") K</td>
+                                    <td class="text-end">@(row.Current ? $"{quote.SuggestedPrice:N0} K" : "—")</td>
+                                    <td>@quote.ObservedAtUtc.ToLocalTime().ToString("dd/MM à HH:mm")
+                                        @if (!row.Current) { <span class="text-warning"> · À actualiser</span> }
+                                    </td>
+                                }
+                                else
+                                {
+                                    <td>—</td><td>—</td><td class="text-end">—</td><td class="text-end">—</td>
+                                    <td>À relever</td>
+                                }
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            </div>
+        </RowContent>
+    </PagedDataTable>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string ServerName { get; set; } = "";
+    [Parameter] public bool IsActive { get; set; } = true;
+    private readonly CancellationTokenSource _lifetime = new();
+    private IReadOnlyList<MarketRow> _rows = [];
+    private string _search = "";
+    private bool? _fertile;
+    private bool _loading;
+    private bool _reloadPending;
+    private bool _failed;
+    private bool _disposed;
+    private bool _wasActive;
+
+    private sealed record MarketRow(BreedingMarketItem Item, int? Generation, BreedingLevelPrice? Quote, bool Current);
+
+    private IEnumerable<MarketRow> FilteredRows => _rows.Where(row => (!_fertile.HasValue || row.Quote?.Fertile == _fertile) &&
+        CultureInfo.CurrentCulture.CompareInfo.IndexOf(row.Item.Name, _search.Trim(), CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0);
+
+    protected override void OnInitialized() => Sales.BreedingPricesChanged += OnPricesChanged;
+
+    protected override Task OnParametersSetAsync()
+    {
+        bool opened = IsActive && !_wasActive;
+        _wasActive = IsActive;
+        return opened ? RefreshAsync() : Task.CompletedTask;
+    }
+
+    private void OnPricesChanged(string server)
+    {
+        if (!_disposed && string.Equals(server, ServerName, StringComparison.OrdinalIgnoreCase))
+            _ = InvokeAsync(RefreshAsync);
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_disposed || !IsActive) return;
+        _reloadPending = true;
+        if (_loading) return;
+        _loading = true;
+        var token = _lifetime.Token;
+        StateHasChanged();
+        try
+        {
+            do
+            {
+                _reloadPending = false;
+                var items = await Catalog.GetBreedingMarketItemsAsync(token);
+                var generations = BreedingLineage.Rides.Values.ToDictionary(ride => ride.ItemId, ride => ride.Generation);
+                var now = DateTimeOffset.UtcNow;
+                var observations = Sales.ReadBreedingPrices(ServerName, DateTimeOffset.MinValue, now).ToLookup(quote => quote.ItemId);
+                _rows = items.OrderBy(item => item.Name).SelectMany(item =>
+                {
+                    int? generation = generations.TryGetValue(item.Id, out int value) ? value : null;
+                    var quotes = observations[item.Id];
+                    var latest = BreedingResaleAdvisor.LatestSnapshot(quotes).ToHashSet();
+                    return quotes.OrderBy(quote => quote.Level).ThenByDescending(quote => quote.Fertile)
+                        .Select(quote => new MarketRow(item, generation, quote, latest.Contains(quote) && BreedingResaleAdvisor.IsFresh(quote, now)))
+                        .DefaultIfEmpty(new(item, generation, null, false));
+                }).ToArray();
+                _failed = false;
+            } while (_reloadPending && !token.IsCancellationRequested);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            _failed = true;
+            Logger.LogWarning(ex, "Impossible de charger les relevés HDV des montures sur {Server}.", ServerName);
+        }
+        finally
+        {
+            _loading = false;
+            if (!_disposed) StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Sales.BreedingPricesChanged -= OnPricesChanged;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+}

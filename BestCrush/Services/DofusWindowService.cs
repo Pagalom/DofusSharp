@@ -93,6 +93,12 @@ public sealed class DofusWindowService
     }
 
 #if WINDOWS
+    internal static bool MatchesWindow(DofusClientWindowKey key) =>
+        GetWindowThreadProcessId(new IntPtr(key.Handle), out uint processId) != 0 && processId == key.ProcessId;
+
+    internal static bool IsForegroundWindow(DofusClientWindowKey key) =>
+        GetForegroundWindow().ToInt64() == key.Handle && MatchesWindow(key);
+
     private static List<DofusWindowInfo> GetDofusWindows()
     {
         List<DofusWindowInfo> result = [];

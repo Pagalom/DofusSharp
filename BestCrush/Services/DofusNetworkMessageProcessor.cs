@@ -165,6 +165,20 @@ internal sealed class DofusNetworkMessageProcessor(
         if (correlation.Acquisitions.Observe(map, message, body, lease) is { } acquisition)
             await observationWriter.PersistEquipmentAcquisitionAsync(acquisition, lease, cancellationToken);
 
+        if (message.Key == map.CurrentPurchaseOffer)
+        {
+            // kas also refreshes public minima after a seller lists a lot.
+            // Equipment rows describe an individual jet; only stackables can
+            // safely update the generic four-lot market snapshot here.
+            if (message.Direction == "S→C" &&
+                CurrentPurchaseDecoder.DecodeStackableMarket(body) is { } refreshedMarket)
+                await observationWriter.PersistMarketAsync(
+                    refreshedMarket, message.ObservedAtUtc, lease, cancellationToken,
+                    requireStackable: true, verifiedWindow: message.CandidateWindow,
+                    captureEpoch: message.CaptureEpoch);
+            return;
+        }
+
         if (map.GlobalMarketHistoryRequest is not null && message.Key == map.GlobalMarketHistoryRequest)
         {
             if (message.Direction == "C→S")
@@ -544,6 +558,7 @@ internal sealed class DofusNetworkMessageProcessor(
                 if (prices is not null &&
                     prices.ItemId == itemId.Value)
                 {
+                    observationWriter.PersistBreedingMarketLevels(body, message.ObservedAtUtc, lease);
                     await debugWriter.WriteEventDebugAsync(
                         message.ObservedAtUtc,
                         $"[MARKET-JZS-VERIFIED-X1] {FormatMarketDebug(prices)}",

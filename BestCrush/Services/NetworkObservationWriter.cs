@@ -64,16 +64,20 @@ internal sealed partial class NetworkObservationWriter(
                 context,
                 cancellationToken);
 
+        long itemId = checked((long)market.ItemId);
         if (objectType is null)
-            objectType = await ResolveEmptySoulStoneAsync(checked((long)market.ItemId), context, lease, cancellationToken);
+            objectType = await ResolveBreedingResourceAsync(itemId, context, lease, cancellationToken) ??
+                await ResolveEmptySoulStoneAsync(itemId, context, lease, cancellationToken);
         if (!currentServerState.IsCaptureLeaseActive(lease))
             return;
 
         // jzs object-type guards: equipment uses x1-only observations,
         // while rune/resource observations may carry four price lots.
         // The independent database classification is authoritative.
+        bool mountMarket = requireEquipment && objectType == MarketObjectType.Resource &&
+            await IsBreedingMountMarketAsync(itemId, cancellationToken);
         if ((requireEquipment &&
-             objectType != MarketObjectType.Equipment) ||
+             objectType != MarketObjectType.Equipment && !mountMarket) ||
             (requireStackable &&
              objectType != MarketObjectType.Rune &&
              objectType != MarketObjectType.Resource))
@@ -417,6 +421,10 @@ internal sealed partial class NetworkObservationWriter(
         if (repository is null) return;
         var context = scope.ServiceProvider.GetRequiredService<BestCrushDbContext>();
         var objectType = await ResolveMarketObjectTypeAsync(history.ItemId, context, cancellationToken);
+        if (objectType is null)
+        {
+            objectType = await ResolveBreedingResourceAsync(history.ItemId, context, lease, cancellationToken);
+        }
         if (objectType is null)
         {
             if (await PersistBossSoulHistoryAsync(history, observedAtUtc, lease, cancellationToken)) return;

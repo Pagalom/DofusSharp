@@ -1,0 +1,229 @@
+@using BestCrush.Domain.Services
+@using BestCrush.Network.Protocol
+@using BestCrush.Services
+@using Microsoft.Extensions.Logging
+@inject BreedingRefillService Refill
+@inject MarketDataChangeNotifier MarketChanges
+@inject ILogger<BreedingRefill> Logger
+@implements IDisposable
+
+<section class="card mb-3" aria-label="@BreedingTrainingRules.Name(Gauge)">
+    <div class="card-body">
+        <h2 class="h6">Carburant · @BreedingTrainingRules.Name(Gauge)</h2>
+        @if (Reserve >= Target)
+        {
+            <p class="mb-0">
+                La réserve suffit. Objectif atteint en
+                <strong>@Duration(BreedingFuel.TimeToSpend(Reserve, Target)!.Value)</strong>
+                @(!Active ? "après activation." : "")
+            </p>
+        }
+        else
+        {
+            <p>
+                Il manque <strong>@((Target - Reserve).ToString("N0")) points</strong> pour l’objectif.
+                @if (Target > BreedingFuel.Capacity)
+                {
+                    <span>Plusieurs remplissages seront nécessaires.</span>
+                }
+                @if (ExhaustedAt is { } delay && delay > TimeSpan.Zero)
+                {
+                    <span>Réserve épuisée vers @BreedingTrainingPlan.At(ObservedAt, delay).</span>
+                }
+            </p>
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CompareAsync" disabled="@_busy">
+                @(_busy ? "Comparaison en cours…" : "Comparer achat et fabrication")
+            </button>
+            @if (_error)
+            {
+                <p class="mt-2 mb-0" role="status">Comparaison indisponible. Réessaie dans un instant.</p>
+            }
+            @if (_result is { } result && _shortage >= Target - Reserve)
+            {
+                <div class="mt-3" role="status">
+                    @if (result.Plan is { } plan)
+                    {
+                        <p class="mb-2"><strong>@plan.Cost.ToString("N0") K à débourser</strong> · Comparé à @_calculatedAt.ToLocalTime().ToString("HH:mm")</p>
+                        <ul class="mb-2">
+                            @foreach (var use in plan.Stock)
+                            {
+                                <li>Prendre en stock @use.Quantity × @use.Item.Name</li>
+                            }
+                            @foreach (var exchange in plan.Exchanges)
+                            {
+                                <li>Échanger @exchange.Dust.ToString("N0") poussières d’élevage contre @exchange.Quantity × @exchange.Item.Name auprès d’Adèle Vage [−18,1]</li>
+                            }
+                            @foreach (var lots in plan.Purchases.GroupBy(purchase => purchase))
+                            {
+                                <li>Acheter @lots.Count() × lot de @lots.Key.LotSize @lots.Key.Item.Name à @lots.Key.Price.ToString("N0") K le lot</li>
+                            }
+                            @if (plan.Craft is { } craft)
+                            {
+                                <li>
+                                    Fabriquer @craft.Quantity × @craft.Product.Name
+                                    <ul>
+                                        @foreach (var ingredient in craft.Ingredients)
+                                        {
+                                            <li>
+                                                @ingredient.Name
+                                                @if (ingredient.Used > 0)
+                                                {
+                                                    <span>· @ingredient.Used en stock</span>
+                                                }
+                                                @if (ingredient.Missing > 0)
+                                                {
+                                                    var purchase = ingredient.Purchase!;
+                                                    <span>· acheter @string.Join(" + ", purchase.Lots.OrderBy(lot => lot.Key).Select(lot => $"{lot.Value} × {lot.Key}")) pour @purchase.TotalCost.ToString("N0") K</span>
+                                                }
+                                            </li>
+                                        }
+                                    </ul>
+                                </li>
+                            }
+                        </ul>
+                        @if (plan.RefillAfterEmpty)
+                        {
+                            <p class="mb-2">Pour cette estimation, utilise la réserve actuelle puis recharge quand la jauge est vide.</p>
+                        }
+                        else if (plan.FuelingOrder.Select(use => use.Item.Capacity).Distinct().Count() > 1)
+                        {
+                            <p class="mb-2">Ajouter les carburants dans cet ordre de plafond croissant
+                                @string.Join(" → ", plan.FuelingOrder.Select(use => use.Item.Name).Distinct()).</p>
+                        }
+                        @if (plan.EstimateDuration(_plannedReserve, _plannedTarget) is { } after)
+                        {
+                            <p class="mb-2">Objectif atteint en <strong>@Duration(after)</strong> avec ce plan.</p>
+                        }
+                    }
+                    else
+                    {
+                        <p class="mb-2">Les relevés disponibles ne permettent pas de chiffrer une recharge suffisante.</p>
+                    }
+                    @if (result.PriceChecks.Count > 0 && result.Plan is not { Cost: 0 })
+                    {
+                        <details>
+                            <summary>Prix HDV à compléter (@result.PriceChecks.Count)</summary>
+                            <ul>
+                                @foreach (var check in result.PriceChecks)
+                                {
+                                    <li><CopyTextButton Value="@check.Name" Tooltip="Copier pour chercher à l’HDV">@check.Name</CopyTextButton> · @check.Reason
+                                        @if (check.LastObserved is { } date)
+                                        {
+                                            <span> · Relevé du @date.ToLocalTime().ToString("dd/MM à HH:mm")</span>
+                                        }
+                                    </li>
+                                }
+                            </ul>
+                        </details>
+                    }
+                    @if (result.Server is null)
+                    {
+                        <p class="small mb-1">Serveur non identifié pour les prix HDV.</p>
+                    }
+                    @if (!result.StockComplete)
+                    {
+                        <p class="small mb-1">Synchronise l’inventaire et la banque pour vérifier les stocks.</p>
+                    }
+                    @if (result.BreederLevel is null)
+                    {
+                        <p class="small mb-1">Synchronise ton niveau d’Éleveur pour inclure les fabrications accessibles.</p>
+                    }
+                    @if (!result.RecipesAvailable)
+                    {
+                        <p class="small mb-1">Le catalogue des recettes est indisponible pour ce calcul.</p>
+                    }
+                </div>
+            }
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter] public DofusClientWindowKey? Window { get; set; }
+    [Parameter] public string? ServerName { get; set; }
+    [Parameter] public PaddockGauge Gauge { get; set; }
+    [Parameter] public int Reserve { get; set; }
+    [Parameter] public int Target { get; set; }
+    [Parameter] public bool Active { get; set; }
+    [Parameter] public TimeSpan? ExhaustedAt { get; set; }
+    [Parameter] public DateTime ObservedAt { get; set; }
+
+    private readonly CancellationTokenSource _lifetime = new();
+    private BreedingRefillResult? _result;
+    private bool _busy;
+    private bool _error;
+    private bool _pending;
+    private bool _disposed;
+    private int _plannedTarget;
+    private int _plannedReserve;
+    private int _shortage;
+    private DateTime _calculatedAt;
+
+    protected override void OnInitialized() => MarketChanges.Changed += OnMarketPricesChanged;
+
+    protected override Task OnParametersSetAsync() =>
+        Target > Reserve && (_shortage < Target - Reserve || _shortage - (Target - Reserve) >= 2_000)
+            ? CompareAsync() : Task.CompletedTask;
+
+    private void OnMarketPricesChanged(object? sender, MarketDataChangedEventArgs change)
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(() => string.Equals(_result?.Server ?? ServerName, change.ServerName, StringComparison.OrdinalIgnoreCase)
+            ? CompareAsync() : Task.CompletedTask);
+    }
+
+    private async Task CompareAsync()
+    {
+        if (_disposed || Target <= Reserve) return;
+        _pending = true;
+        if (_busy) return;
+        _busy = true;
+        _error = false;
+        var token = _lifetime.Token;
+        StateHasChanged();
+        try
+        {
+            do
+            {
+                await Task.Delay(250, token);
+                _pending = false;
+                if (Target <= Reserve) return;
+                _plannedReserve = Reserve;
+                _plannedTarget = Target;
+                _shortage = _plannedTarget - _plannedReserve;
+                _result = await Refill.CompareAsync(Window, ServerName, Gauge, _plannedReserve, _plannedTarget, token);
+                _calculatedAt = DateTime.UtcNow;
+                if (!_disposed) StateHasChanged();
+            } while (_pending);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Comparaison des carburants indisponible pour {Gauge}.", Gauge);
+            _error = true;
+            _result = null;
+        }
+        finally
+        {
+            _busy = false;
+            if (!_disposed) StateHasChanged();
+        }
+    }
+
+    private static string Duration(TimeSpan delay)
+    {
+        if (delay.TotalHours >= 1)
+            return $"{(int)delay.TotalHours} h {delay.Minutes:00}";
+        if (delay.TotalMinutes >= 1)
+            return $"{delay.Minutes} min {delay.Seconds:00} s";
+        return $"{delay.Seconds} s";
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        MarketChanges.Changed -= OnMarketPricesChanged;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+}

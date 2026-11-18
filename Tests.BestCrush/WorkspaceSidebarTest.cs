@@ -53,9 +53,10 @@ public sealed class WorkspaceSidebarTest
     [InlineData(WorkspaceDataTab.Equipment)]
     [InlineData(WorkspaceDataTab.Runes)]
     [InlineData(WorkspaceDataTab.Resources)]
+    [InlineData(WorkspaceDataTab.Mounts)]
     [InlineData(WorkspaceDataTab.Coefficients)]
     [InlineData(WorkspaceDataTab.History)]
-    public async Task DataNavigationHasFiveChoicesAndCallsTheExistingSelectionFlow(WorkspaceDataTab selected)
+    public async Task DataNavigationHasSixChoicesAndCallsTheExistingSelectionFlow(WorkspaceDataTab selected)
     {
         var capture = new Capture(); await using var provider = Services(capture).BuildServiceProvider();
         await using var renderer = new HtmlRenderer(provider, provider.GetRequiredService<ILoggerFactory>());
@@ -64,8 +65,9 @@ public sealed class WorkspaceSidebarTest
         var root = await renderer.Dispatcher.InvokeAsync(() => renderer.RenderComponentAsync<WorkspaceSidebar>(ParameterView.FromDictionary(new Dictionary<string, object?>
             { ["DataOpen"] = true, ["DataTab"] = selected, ["OnDataTabSelected"] = callback })));
         string html = WebUtility.HtmlDecode(await renderer.Dispatcher.InvokeAsync(root.ToHtmlString));
-        Assert.Equal(5, Regex.Matches(html, "class=\"workspace-nav-item").Count);
-        Assert.Equal(5, Regex.Matches(html, "<i class=\"bi bi-").Count);
+        Assert.Equal(6, Regex.Matches(html, "class=\"workspace-nav-item").Count);
+        Assert.Equal(6, Regex.Matches(html, "<i class=\"bi bi-").Count);
+        Assert.Contains("aria-label=\"Montures\"", html);
         Assert.DoesNotContain("bi-circle", html);
         Assert.Equal(1, Regex.Matches(html, "aria-current=\"page\"").Count);
         Assert.DoesNotContain("href=\"/modules/routine\"", html);

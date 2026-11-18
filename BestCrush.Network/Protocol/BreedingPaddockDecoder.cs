@@ -12,8 +12,19 @@ public enum PaddockGauge
 
 public sealed record PaddockGaugeReading(PaddockGauge Gauge, bool Active, int Fuel);
 
+public enum BreedingMountSex { Female, Male }
+public enum BreedingMountFertility { Fertile, Ready, Sterile }
+
 public sealed record PaddockMountReading(
-    Guid Id, int Level, int Experience, int Serenity, int? Maturity);
+    Guid Id, int Level, int Experience, int Serenity, int? Maturity)
+{
+    public int? Endurance { get; init; }
+    public int? Love { get; init; }
+    public int? SpeciesId { get; init; }
+    public BreedingMountSex? Sex { get; init; }
+    public BreedingMountFertility? Fertility { get; init; }
+    public IReadOnlyList<PaddockGauge> TrainingBonuses { get; init; } = [];
+}
 
 public sealed record PaddockReading(
     IReadOnlyList<PaddockGaugeReading> Gauges, IReadOnlyList<PaddockMountReading> Mounts);
@@ -122,12 +133,42 @@ public static class BreedingPaddockDecoder
                 !TryNumber(stats, 8, out int level) || level is < 1 or > 200 ||
                 !TryNumber(stats, 13, out int experience) || experience < 0 ||
                 !TryNumber(stats, 5, out int serenity) || serenity is < -5_000 or > 5_000 ||
-                !TryReadMaturity(stats, out int? maturity) ||
-                !mounts.TryAdd(id, new(id, level, experience, serenity, maturity)))
+                !TryNumber(stats, 12, out int species) || species < 0 ||
+                !TryReadTraining(stats, out var training) ||
+                !mounts.TryAdd(id, new(id, level, experience, serenity, training.GetValueOrDefault(PaddockGauge.Maturity))
+                {
+                    Endurance = training.GetValueOrDefault(PaddockGauge.Endurance),
+                    Love = training.GetValueOrDefault(PaddockGauge.Love),
+                    SpeciesId = species > 0 ? species : null,
+                    Sex = species > 0 ? ReadSex(stats) : null,
+                    Fertility = species > 0 ? ReadFertility(stats, training) : null
+                }))
                 return null;
         }
 
         return mounts.Values.ToArray();
+    }
+
+    // The stable packet for three fertile males and one sterile male
+    // carried f2=1 for all four and f10=1 only for the sterile mount.
+    private static BreedingMountSex? ReadSex(List<ProtoField> stats) =>
+        TryNumber(stats, 2, out var sex) ? sex switch
+        {
+            0 => BreedingMountSex.Female,
+            1 => BreedingMountSex.Male,
+            _ => null
+        } : null;
+
+    private static BreedingMountFertility? ReadFertility(List<ProtoField> stats, Dictionary<PaddockGauge, int?> training)
+    {
+        if (!TryNumber(stats, 10, out var status)) return null;
+        return status switch
+        {
+            1 => BreedingMountFertility.Sterile,
+            0 when training.Count == 3 && training.Values.All(points => points == 20_000) => BreedingMountFertility.Ready,
+            0 => BreedingMountFertility.Fertile,
+            _ => null
+        };
     }
 
     private static bool TryReadId(List<ProtoField> fields, out Guid id)
@@ -137,19 +178,26 @@ public static class BreedingPaddockDecoder
             Guid.TryParseExact(ProtoWire.TryUtf8(identifier), "D", out id) && id != Guid.Empty;
     }
 
-    private static bool TryReadMaturity(List<ProtoField> fields, out int? maturity)
+    private static bool TryReadTraining(List<ProtoField> fields, out Dictionary<PaddockGauge, int?> training)
     {
-        maturity = null;
+        training = [];
         foreach (var field in fields.Where(field => field.Number == 6))
         {
             if (field.Bytes is not { } bytes || ProtoWire.ReadFields(bytes) is not { } stat ||
                 !TryNumber(stat, 1, out int kind))
                 return false;
-            if (kind != 1)
+            PaddockGauge? gauge = kind switch
+            {
+                0 => PaddockGauge.Love,
+                1 => PaddockGauge.Maturity,
+                2 => PaddockGauge.Endurance,
+                _ => null
+            };
+            if (gauge is null)
                 continue;
-            if (maturity.HasValue || !TryNumber(stat, 2, out int value) || value is < 0 or > 20_000)
+            if (!TryNumber(stat, 2, out int value) || value is < 0 or > 20_000 ||
+                !training.TryAdd(gauge.Value, value))
                 return false;
-            maturity = value;
         }
         return true;
     }

@@ -1,0 +1,376 @@
+@using BestCrush.Network.Protocol
+@using BestCrush.Domain.Models
+@using BestCrush.Services
+@using Microsoft.Extensions.Logging
+@inject BreedingTradeService Trade
+@inject GlobalSalesRepository Sales
+@inject MarketDataChangeNotifier MarketChanges
+@inject MarketClipboardQueue CopyQueue
+@inject ILogger<BreedingDecisionsPanel> Logger
+@implements IDisposable
+
+@if (_report is { } strategyReport)
+{
+    <BreedingMarketPlan Report="strategyReport" MountNumbers="MountNumbers" />
+}
+
+<details class="mb-3" open="@_marketOpen">
+    <summary @onclick="ToggleMarketAsync" @onclick:preventDefault="true">Montures à chercher et à revendre</summary>
+    @if (_notice is not null)
+    {
+        <p role="status">@_notice</p>
+    }
+    else if (_loading && _report is null)
+    {
+        <p role="status">Calcul en cours…</p>
+    }
+    @if (_report is { } report)
+    {
+        var firstSale = Mounts.Where(mount => !KeepForBreeding(mount.Id) && report.Sellable.ContainsKey(mount.Id))
+            .OrderByDescending(mount => report.Sellable[mount.Id].Net)
+            .ThenBy(mount => report.Sellable[mount.Id].ExperienceCost).FirstOrDefault();
+        <p>Serveur @report.Server · @Mounts.Count monture(s) relevée(s) · @report.PriceChecks.Count relevé(s) HDV à faire</p>
+        @if (report.PriceChecks.FirstOrDefault() is { } priorityCheck)
+        {
+            <p>À vérifier en priorité à l’HDV ·
+                <CopyTextButton Value="@priorityCheck.Name" Tooltip="Copier pour chercher à l’HDV">@priorityCheck.Name</CopyTextButton>
+                · @priorityCheck.Reason.
+            </p>
+        }
+        @if (firstSale is { } saleMount && report.Sellable[saleMount.Id] is { } bestSale)
+        {
+            <p>
+                <strong>Meilleure revente sur stock avec débouché</strong> · @Label(saleMount) ·
+                @(bestSale.Level > saleMount.Level ? $"Monter au niveau {bestSale.Level}" : "Vendre à ce niveau") ·
+                @bestSale.Net.ToString("N0") K après @bestSale.ExperienceCost.ToString("N0") K d’XP.
+            </p>
+        }
+        @if (_reserved is { } reserved)
+        {
+            <p><strong>À garder</strong> · @Label(reserved.First.Mount) et @Label(reserved.Second.Mount) pour l’accouplement.</p>
+        }
+        @if (report.Captures.FirstOrDefault() is { } capture)
+        {
+            <p>
+                <strong>À capturer</strong> · @capture.Name · @capture.Zone · @capture.Owned fertile(s) en élevage.
+            </p>
+            @if (capture.Resale is { } direct)
+            {
+                <p>Revente directe au niveau @direct.Level · @((direct.Net - capture.CaptureExpense).ToString("N0")) K après XP et capture.</p>
+            }
+            @if (capture.Cross is { } cross)
+            {
+                <p>
+                    @if (capture.PreferCross) { <strong>Accouplement conseillé</strong> }
+                    else { <span>Accouplement comparé</span> }
+                    · Cherche @(cross.Partner.Mount.Sex == BreedingMountSex.Male ? "une femelle" : "un mâle") pour @Label(cross.Partner.Mount)
+                    · @string.Join(" ou ", cross.Offspring) (génération @cross.Generation)
+                    · @((cross.Net - capture.CaptureExpense).ToString("N0")) K attendus après capture, préparation et coût d’opportunité.
+                    Vérifie les probabilités dans l’aperçu Dofus.
+                </p>
+            }
+        }
+        else if (report.Strategy.Recommended is null)
+        {
+            <p>Aucune capture immédiate avec un bénéfice et un débouché vérifiés.</p>
+        }
+        @if (report.PriceChecks.Count > 0)
+        {
+            <details class="mb-2">
+                <summary>Quoi consulter à l’HDV (@report.PriceChecks.Count)</summary>
+                <div class="d-flex align-items-center gap-2 mt-1 mb-2">
+                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                            aria-label="Copier la liste des éléments à consulter" title="Copier la liste des éléments à consulter"
+                            disabled="@_copying" @onclick="() => CopyChecksAsync(report.PriceChecks)">
+                        <i class="bi bi-copy" aria-hidden="true"></i>
+                    </button>
+                    <span role="status" class="small">@_copyStatus</span>
+                </div>
+                <ul>
+                    @foreach (var check in report.PriceChecks)
+                    {
+                        <li><CopyTextButton Value="@check.Name" Tooltip="Copier pour chercher à l’HDV">@check.Name</CopyTextButton> · @check.Reason
+                            @if (check.LastObserved is { } date)
+                            {
+                                <span> · Dernier relevé le @date.ToLocalTime().ToString("dd/MM à HH:mm")</span>
+                            }
+                        </li>
+                    }
+                </ul>
+            </details>
+        }
+        <details class="mb-2">
+        <summary>Zones de capture</summary>
+        <ul>
+            @foreach (var (zone, targets) in BreedingTradeService.SearchAreas)
+            {
+                <li>
+                    @if (report.Captures.FirstOrDefault(option => option.Zone == zone) is { } target)
+                    {
+                        <strong>@target.Name</strong> <span>· @zone · @target.Net.ToString("N0") K estimés · @(target.PreferCross ? "Accouplement" : "Revente directe")</span>
+                    }
+                    else
+                    {
+                        <span>@zone · Aucune capture rentable chiffrée parmi @string.Join(", ", targets).</span>
+                    }
+                </li>
+            }
+        </ul>
+        </details>
+        @if (Mounts.Count > 0)
+        {
+            <details class="mb-2">
+            <summary>Niveau de revente des montures possédées</summary>
+            <p>Prix conseillé à 1 kama sous l’offre HDV la moins chère du même niveau et profil de fertilité. Le gain déduit le coût d’XP pour une monture entraînée seule, avant taxe.</p>
+            <ul>
+                @foreach (var mount in Mounts.OrderByDescending(mount => report.Resale.GetValueOrDefault(mount.Id)?.AdditionalNet)
+                    .ThenByDescending(mount => report.Resale.GetValueOrDefault(mount.Id)?.Best?.Net))
+                {
+                    var estimate = report.Resale.GetValueOrDefault(mount.Id);
+                    <li @key="mount.Id">
+                        <strong>@Label(mount)</strong>
+                        <span> · @MountLocations.GetValueOrDefault(mount.Id)</span>
+                        @if (Species(mount)?.Generation is { } generation)
+                        {
+                            <span> · Génération @generation</span>
+                        }
+                        <span> · @BreedingTrainingRules.DescribeProfile(mount) · Sérénité @mount.Serenity.ToString("N0") · XP @mount.Experience.ToString("N0")</span>
+                        <span> · Endurance @GaugeValue(mount.Endurance) · Maturité @GaugeValue(mount.Maturity) · Amour @GaugeValue(mount.Love)</span>
+                        @if (KeepForBreeding(mount.Id))
+                        {
+                            <span> · Garder pour l’accouplement.</span>
+                        }
+                        else if (report.Sellable.GetValueOrDefault(mount.Id) is { } allowed && allowed.Level >= mount.Level)
+                        {
+                            <span> → @(allowed.Level > mount.Level ? $"Monter au niveau {allowed.Level}, puis vendre" : "Vendre à ce niveau")
+                                · @allowed.SalePrice.ToString("N0") K · @allowed.Net.ToString("N0") K après XP.</span>
+                        }
+                        else if (estimate?.Best is not null && report.OwnedCapacity.GetValueOrDefault(mount.Id) is { } capacity)
+                        {
+                            <span> · @(capacity.SalesAtPrice == 0 ? "Aucune vente observée au prix visé." :
+                                capacity.Remaining == 0 ? "Plafond de mise en vente atteint." : "Quota de vente déjà attribué aux montures mieux valorisées.")</span>
+                        }
+                        else if (estimate?.Best is not null)
+                        {
+                            <span> · Cours du marché à relever pour vérifier le débouché.</span>
+                        }
+                        else if (estimate?.QuotedLevels > 0)
+                        {
+                            <span> · @(report.ExperiencePricingFailed ? "Calcul du coût d’XP indisponible." : "Prix du carburant d’XP à relever.")</span>
+                        }
+                        else if (report.PriceChecks.Any(check => check.Name == Species(mount)?.Name))
+                        {
+                            <span> · Actualiser le relevé HDV.</span>
+                        }
+                        else if (estimate?.LatestSpeciesQuoteAt is not null)
+                        {
+                            <span> · Aucune offre comparable à partir du niveau @mount.Level pour ce profil de fertilité.</span>
+                        }
+                        else
+                        {
+                            <span> · Consulte cette espèce à l’HDV pour relever les prix par niveau.</span>
+                        }
+                        @if (estimate is { Best: not null } && estimate.ComparedLevels < estimate.QuotedLevels)
+                        {
+                            <span> · @(report.ExperiencePricingFailed ? "Calcul du coût d’XP indisponible pour les autres niveaux." : "Certains niveaux restent à chiffrer faute de prix du carburant.")</span>
+                        }
+                        @if (estimate?.Best is { OfferCount: > 0 } sample)
+                        {
+                            <span> · @sample.OfferCount offre(s) pour ce niveau.</span>
+                        }
+                        @if (estimate?.LatestSpeciesQuoteAt is { } observed)
+                        {
+                            <span> · Relevé HDV du @observed.ToLocalTime().ToString("dd/MM à HH:mm").</span>
+                        }
+                    </li>
+                }
+            </ul>
+            </details>
+        }
+    }
+</details>
+
+@if (_report is { } pairingReport)
+{
+    <BreedingPairPlanner Report="pairingReport" MountNumbers="MountNumbers" Reserved="_reserved" ReservedChanged="ReservePairAsync" />
+}
+
+@code {
+    [Parameter] public DofusClientWindowKey? Window { get; set; }
+    [Parameter] public string? ServerName { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyDictionary<long, BreedingSpecies> SpeciesById { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyList<PaddockMountReading> Mounts { get; set; } = [];
+    [Parameter, EditorRequired] public IReadOnlyDictionary<Guid, int> MountNumbers { get; set; } = null!;
+    [Parameter, EditorRequired] public IReadOnlyDictionary<Guid, string> MountLocations { get; set; } = null!;
+    [Parameter] public EventCallback<IReadOnlyDictionary<Guid, int>> ExperienceGoalsChanged { get; set; }
+    [Parameter] public EventCallback<IReadOnlyDictionary<Guid, BreedingResaleAssessment>> ResaleChanged { get; set; }
+
+    private readonly CancellationTokenSource _lifetime = new();
+    private BreedingTradeReport? _report;
+    private string? _notice;
+    private bool _loading;
+    private bool _marketOpen = true;
+    private bool _refreshPending;
+    private bool _disposed;
+    private bool _copying;
+    private string? _copyStatus;
+    private DateTime _marketChecked;
+    private IReadOnlyDictionary<long, BreedingSpecies>? _lastSpecies;
+    private (Guid Id, int Level, int? SpeciesId, BreedingMountFertility? Fertility, BreedingMountSex? Sex, int ExperienceBand)[] _lastMountProfiles = [];
+    private BreedingPairOption? _reserved;
+
+    private BreedingSpecies? Species(PaddockMountReading mount) =>
+        mount.SpeciesId is { } id ? SpeciesById.GetValueOrDefault(id) : null;
+
+    private string Label(PaddockMountReading mount) =>
+        $"#{MountNumbers.GetValueOrDefault(mount.Id)} · {Species(mount)?.Name ?? "Monture"} · Niveau {mount.Level}";
+
+    private static string GaugeValue(int? value) => value?.ToString("N0") ?? "—";
+
+    private async Task CopyChecksAsync(IReadOnlyList<BreedingPriceCheck> checks)
+    {
+        if (_copying) return;
+        _copying = true;
+        try
+        {
+            var names = checks.Select(check => check.Name)
+                .OrderBy(name => name.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                    .Contains("et", StringComparer.OrdinalIgnoreCase));
+            var result = await CopyQueue.CopyAsync(names, Window);
+            _copyStatus = result.IsQueue ? $"{result.Count} noms chargés · Ctrl+V dans Dofus." : "Liste copiée.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Copie de la liste HDV indisponible.");
+            _copyStatus = "Copie indisponible. Réessaie.";
+        }
+        finally
+        {
+            _copying = false;
+        }
+    }
+
+    private async Task ReservePairAsync(BreedingPairOption? pair)
+    {
+        _reserved = pair;
+        await PublishExperienceGoalsAsync();
+    }
+
+    private bool KeepForBreeding(Guid id) => _reserved?.Contains(id) == true ||
+        _report?.Plan.Any(step => step.Action == BreedingObjectiveAction.Prepare && step.OwnedId == id) == true;
+
+    private Task PublishExperienceGoalsAsync()
+    {
+        var goals = _report?.Sellable.Where(entry => !KeepForBreeding(entry.Key) &&
+                Mounts.Any(mount => mount.Id == entry.Key && mount.Level < entry.Value.Level))
+            .ToDictionary(entry => entry.Key, entry => entry.Value.Level) ?? [];
+        if (_report is { } report)
+            foreach (var step in report.Plan.Where(step => step.Action == BreedingObjectiveAction.Prepare))
+                if (step.OwnedId is { } id && step.Level is { } level && Mounts.Any(mount => mount.Id == id && mount.Level < level))
+                    goals[id] = level;
+        return ExperienceGoalsChanged.InvokeAsync(goals);
+    }
+
+    protected override void OnInitialized()
+    {
+        Sales.BreedingPricesChanged += OnBreedingPricesChanged;
+        Sales.ListingsChanged += OnBreedingPricesChanged;
+        MarketChanges.Changed += OnMarketPricesChanged;
+    }
+
+    protected override Task OnParametersSetAsync()
+    {
+        var profiles = Mounts.Select(mount => (mount.Id, mount.Level, mount.SpeciesId, mount.Fertility, mount.Sex,
+                ExperienceBand: mount.Experience / 2_000))
+            .OrderBy(profile => profile.Id).ToArray();
+        bool changed = !ReferenceEquals(_lastSpecies, SpeciesById) || !_lastMountProfiles.SequenceEqual(profiles);
+        _lastSpecies = SpeciesById;
+        _lastMountProfiles = profiles;
+        return changed || DateTime.UtcNow - _marketChecked >= TimeSpan.FromMinutes(10)
+            ? RefreshAsync() : Task.CompletedTask;
+    }
+
+    private Task ToggleMarketAsync()
+    {
+        _marketOpen = !_marketOpen;
+        return _marketOpen ? RefreshAsync() : Task.CompletedTask;
+    }
+
+    private void OnBreedingPricesChanged(string server) => QueueMarketRefresh(server);
+
+    private void OnMarketPricesChanged(object? sender, MarketDataChangedEventArgs change)
+    {
+        QueueMarketRefresh(change.ServerName);
+    }
+
+    private void QueueMarketRefresh(string server)
+    {
+        if (_disposed) return;
+        _ = InvokeAsync(() =>
+        {
+            string? viewedServer = _report?.Server ?? ServerName;
+            return viewedServer is null || string.Equals(server, viewedServer, StringComparison.OrdinalIgnoreCase)
+                ? RefreshAsync() : Task.CompletedTask;
+        });
+    }
+
+    private async Task RefreshAsync()
+    {
+        if (_disposed) return;
+        _refreshPending = true;
+        if (_loading) return;
+
+        var token = _lifetime.Token;
+        _loading = true;
+        StateHasChanged();
+        try
+        {
+            do
+            {
+                // The listing and ordinary resource prices can be saved together.
+                await Task.Delay(250, token);
+                _refreshPending = false;
+                await LoadMarketAsync(token);
+                if (!_disposed) StateHasChanged();
+            } while (_refreshPending && !_disposed);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        finally
+        {
+            _loading = false;
+            if (!_disposed) StateHasChanged();
+        }
+    }
+
+    private async Task LoadMarketAsync(CancellationToken token)
+    {
+        try
+        {
+            _marketChecked = DateTime.UtcNow;
+            var report = await Trade.LoadAsync(Window, ServerName, Mounts, SpeciesById, token);
+            token.ThrowIfCancellationRequested();
+            _report = report;
+            _notice = report is null ? "Identifie le serveur pour consulter les prix." : null;
+            if (_reserved is { } pair && report?.Pairs.Any(current =>
+                    current.Matches(pair.First.Mount.Id, pair.Second.Mount.Id)) != true)
+                _reserved = null;
+            await ResaleChanged.InvokeAsync(report?.Resale ?? new Dictionary<Guid, BreedingResaleAssessment>());
+            await PublishExperienceGoalsAsync();
+        }
+        catch (Exception ex) when (!token.IsCancellationRequested)
+        {
+            Logger.LogWarning(ex, "Comparaison des prix d’élevage indisponible.");
+            _notice = "Comparaison indisponible. Rouvre cette section pour réessayer.";
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        Sales.BreedingPricesChanged -= OnBreedingPricesChanged;
+        Sales.ListingsChanged -= OnBreedingPricesChanged;
+        MarketChanges.Changed -= OnMarketPricesChanged;
+        _lifetime.Cancel();
+        _lifetime.Dispose();
+    }
+}

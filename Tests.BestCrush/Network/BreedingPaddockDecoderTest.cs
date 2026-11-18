@@ -47,6 +47,40 @@ public sealed class BreedingPaddockDecoderTest
     }
 
     [Fact]
+    public void ReadsLoveAndEnduranceIncludingExplicitZero()
+    {
+        var mount = Bytes(5, Message(Id(), Bytes(2, Message(
+            Bytes(6, Unsigned(2, 690)),
+            Bytes(6, Unsigned(1, 2)),
+            Bytes(6, Message(Unsigned(1, 1), Unsigned(2, 70))),
+            Unsigned(8, 1), Unsigned(12, 10)))));
+        var result = BreedingPaddockDecoder.Decode(Snapshot(mount));
+        var stats = Assert.Single(result!.Mounts);
+        Assert.Equal(690, stats.Love);
+        Assert.Equal(0, stats.Endurance);
+        Assert.Equal(10, stats.SpeciesId);
+        Assert.Equal(70, stats.Maturity);
+    }
+
+    [Theory]
+    [InlineData(1, 0, false, BreedingMountSex.Male, BreedingMountFertility.Fertile)]
+    [InlineData(1, 1, true, BreedingMountSex.Male, BreedingMountFertility.Sterile)]
+    [InlineData(0, 0, true, BreedingMountSex.Female, BreedingMountFertility.Ready)]
+    public void ReadsStableSexAndFertility(int sex, int status, bool full,
+        BreedingMountSex expectedSex, BreedingMountFertility expectedFertility)
+    {
+        ulong points = full ? 20_000UL : 0;
+        var mount = Bytes(1, Message(Id(), Bytes(2, Message(
+            sex == 1 ? Unsigned(2, 1) : [], status == 1 ? Unsigned(10, 1) : [], Unsigned(8, 1), Unsigned(12, 20),
+            Bytes(6, Unsigned(2, points)),
+            Bytes(6, Message(Unsigned(1, 1), Unsigned(2, points))),
+            Bytes(6, Message(Unsigned(1, 2), Unsigned(2, points)))))));
+        var stats = Assert.Single(BreedingPaddockDecoder.DecodeStable(Bytes(1, mount))!);
+        Assert.Equal(expectedSex, stats.Sex);
+        Assert.Equal(expectedFertility, stats.Fertility);
+    }
+
+    [Fact]
     public void RejectsIncompleteSnapshotsAndRepeatedMountIds()
     {
         Assert.Null(BreedingPaddockDecoder.Decode(Bytes(1, [])));

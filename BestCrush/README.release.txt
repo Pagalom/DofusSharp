@@ -1,4 +1,4 @@
-BestCrush 0.2.3
+BestCrush 0.2.4
 ===============
 
 Installation sur un PC Windows x64 (Intel ou AMD)

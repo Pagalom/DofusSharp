@@ -2,7 +2,7 @@ using BestCrush.Domain.Models;
 
 namespace BestCrush.Components;
 
-public enum WorkspaceDataTab { Equipment, Runes, Resources, Coefficients, History }
+public enum WorkspaceDataTab { Equipment, Runes, Resources, Mounts, Coefficients, History }
 
 public sealed record ObjectHistorySelection(MarketObjectType ObjectType, long ItemId, string Name);
 

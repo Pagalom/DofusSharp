@@ -14,6 +14,72 @@ namespace Tests.BestCrush.Network;
 
 public sealed class DofusNetworkRoutingTest
 {
+    private static byte[] CurrentMarketRefresh(ulong item, params ulong[] prices) =>
+        Message(Bytes(1, Packed(prices)), Unsigned(2, item), Unsigned(3, 46), Unsigned(4, 5824));
+
+    [Fact]
+    public async Task SellerListingAboveMinimumKeepsThePublicPriceInsteadOfTheDepositPrice()
+    {
+        await using var harness = await RoutingHarness.CreateAsync();
+        await harness.Service.ReplayMessageAsync("C→S", "jyq",
+            Message(Unsigned(1, 501), Unsigned(2, 10), Unsigned(3, 1301)), ObservedAt);
+        await harness.Service.ReplayMessageAsync("S→C", "jxt",
+            Message(Unsigned(1, 1301), Bytes(2, Message(
+                Unsigned(1, 200), Unsigned(3, 502), Unsigned(4, 10))), Unsigned(3, 2419200)),
+            ObservedAt.AddMilliseconds(1));
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200)).Should().BeEmpty();
+        await harness.Service.ReplayMessageAsync("S→C", "kas",
+            CurrentMarketRefresh(200, 114, 1300, 9496, 139998), ObservedAt.AddMilliseconds(2));
+        (await harness.ReadCurrentPricesAsync(MarketObjectType.Resource, 200))
+            .Single(price => price.Quantity == 10).Price.Should().Be(1300);
+    }
+
+    [Theory]
+    [InlineData(200, MarketObjectType.Resource)]
+    [InlineData(100, MarketObjectType.Rune)]
+    public async Task SellerRefreshUpdatesStackableLotsAndClearsUnavailableLots(int item, MarketObjectType type)
+    {
+        await using var harness = await RoutingHarness.CreateAsync();
+        await harness.Service.ReplayMessageAsync("S→C", "kas",
+            CurrentMarketRefresh((ulong)item, 347, 3970, 44882, 349980), ObservedAt);
+        await harness.Service.ReplayMessageAsync("S→C", "kas",
+            CurrentMarketRefresh((ulong)item, 346, 3970, 0, 349980), ObservedAt.AddSeconds(1));
+        var prices = await harness.ReadCurrentPricesAsync(type, item);
+        prices.OrderBy(price => price.Quantity).Select(price => (price.Quantity, price.Price))
+            .Should().Equal((1, 346L), (10, 3970L), (1000, 349980L));
+        harness.Notifications.Should().Contain(change => change.Quantity == 100);
+    }
+
+    [Theory]
+    [InlineData(42)] // An equipment row is not the public minimum across different jets.
+    [InlineData(999999)] // Unclassified objects cannot be inferred from their wire category.
+    public async Task SellerRefreshNeverPromotesEquipmentOrUnknownObjectsToStackablePrices(int item)
+    {
+        await using var harness = await RoutingHarness.CreateAsync();
+        await harness.Service.ReplayMessageAsync("S→C", "kas",
+            CurrentMarketRefresh((ulong)item, 346, 3970, 44882, 349980), ObservedAt);
+        (await harness.ReadPricesAsync(MarketObjectType.Equipment, item)).Should().BeEmpty();
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, item)).Should().BeEmpty();
+        harness.Notifications.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task SellerRefreshHonorsDirectionCaptureSettingsAndServerLease()
+    {
+        await using var harness = await RoutingHarness.CreateAsync();
+        var body = CurrentMarketRefresh(200, 346, 3970, 44882, 349980);
+        await harness.Service.ReplayMessageAsync("C→S", "kas", body, ObservedAt);
+        harness.Settings.ResourceCaptureEnabled = false;
+        await harness.Service.ReplayMessageAsync("S→C", "kas", body, ObservedAt.AddSeconds(1));
+        harness.Settings.ResourceCaptureEnabled = true;
+        var oldLease = harness.ServerState.GetCaptureLease()!.Value;
+        harness.ServerState.SelectServer("OTHER_SERVER");
+        await harness.Service.ReplayMessageAsync("S→C", "kas", body, ObservedAt.AddSeconds(2), recordedLease: oldLease);
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200)).Should().BeEmpty();
+        (await harness.ReadPricesAsync(MarketObjectType.Resource, 200, "OTHER_SERVER")).Should().BeEmpty();
+        harness.Notifications.Should().BeEmpty();
+    }
+
     private static readonly DateTime ObservedAt =
         new(2026, 10, 10, 12, 0, 0, DateTimeKind.Utc);
 

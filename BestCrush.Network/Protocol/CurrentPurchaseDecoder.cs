@@ -17,6 +17,27 @@ public static class CurrentPurchaseDecoder
             ? new(item, offer, [], []) : null;
     }
 
+    /// <summary>
+    /// Public lot minima refreshed after a purchase or a listing. This is not
+    /// the player's requested listing price or a completed-sale receipt.
+    /// The caller must resolve the item as a catalogue rune/resource.
+    /// </summary>
+    public static MarketObservation? DecodeStackableMarket(byte[] body)
+    {
+        if (body.Length is 0 or > 128) return null;
+        var fields = ProtoWire.ReadFields(body);
+        if (fields is not { Count: 4 } ||
+            Scalar(fields, 2) is not (> 0 and <= int.MaxValue and var item) ||
+            Scalar(fields, 3) is not (> 0 and <= int.MaxValue) ||
+            Scalar(fields, 4) is not (> 0 and var offer)) return null;
+        var prices = fields.Where(field => field.Number == 1).ToArray();
+        if (prices is not [{ WireType: ProtoWireType.LengthDelimited, Bytes: { } packed }]) return null;
+        var ladder = ProtoWire.ReadPackedVarints(packed);
+        if (ladder is not { Count: 4 } || ladder.Any(price => price > long.MaxValue) ||
+            !ladder.Any(price => price > 0)) return null;
+        return new(item, [new(offer, item, ladder)]);
+    }
+
     public static PurchaseReceiptObservation? DecodeReceipt(byte[] body)
     {
         var fields = ProtoWire.ReadFields(body);

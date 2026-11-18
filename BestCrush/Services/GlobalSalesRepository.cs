@@ -45,6 +45,16 @@ public sealed partial class GlobalSalesRepository
                 PRIMARY KEY(server,listing_uid));
             CREATE INDEX IF NOT EXISTS personal_market_listings_time
                 ON personal_market_listings(server,observed_at);
+            CREATE TABLE IF NOT EXISTS breeding_market_levels(
+                server TEXT NOT NULL, item_id INTEGER NOT NULL,
+                level INTEGER NOT NULL CHECK(level BETWEEN 1 AND 200), price INTEGER NOT NULL CHECK(price > 0),
+                fertile INTEGER NOT NULL CHECK(fertile IN (0,1)),
+                observed_at TEXT NOT NULL, PRIMARY KEY(server,item_id,level,fertile));
+            CREATE TABLE IF NOT EXISTS breeding_market_summary(
+                server TEXT NOT NULL,item_id INTEGER NOT NULL,level INTEGER NOT NULL,
+                fertile INTEGER NOT NULL,quartile INTEGER NOT NULL CHECK(quartile>0),
+                offer_count INTEGER NOT NULL CHECK(offer_count>0),
+                PRIMARY KEY(server,item_id,level,fertile));
             """;
         command.ExecuteNonQuery();
         MigrateSoulPrices(db);
