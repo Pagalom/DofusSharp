@@ -1,4 +1,4 @@
-using BestCrush.Domain.Models;
+﻿using BestCrush.Domain.Models;
 using BestCrush.Network.Protocol;
 using BestCrush.Services;
 
@@ -110,7 +110,7 @@ public sealed class BreedingMarketStrategyTest
     private static BreedingStrategyResult Calculate(Dictionary<int, BreedingRide> rides, Dictionary<long, string> names,
         Dictionary<long, IReadOnlyList<BreedingResaleOption>> sales, Dictionary<long, BreedingMarketDemand> market) =>
         BreedingMarketStrategy.Calculate(rides, names, new Dictionary<long, long>(), new Dictionary<int, long> { [1] = 20 },
-            10, new Dictionary<int, long>(), sales, market, CancellationToken.None);
+            10, new Dictionary<int, long>(), sales, market, CancellationToken.None, new(0));
 
     private static BreedingMarketDemand Demand(long id, GlobalSalePoint[] points) =>
         new(new(new("Kourial", MarketObjectType.Resource, id), Now, [], points), 0, 0);

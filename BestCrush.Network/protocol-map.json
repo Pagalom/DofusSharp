@@ -1,7 +1,8 @@
-{
+﻿{
   "clientBuild": "3.6.11.15",
   "global_market_history_request": "iqp",
   "global_market_history_response": "ire",
+  "market_mean_prices": "isr",
   "breeding_paddock_snapshot_current": "hrf",
   "breeding_stable_snapshot": "hqv",
   "breeding_enclosure_request": "hot",
@@ -45,6 +46,7 @@
   "inventory_remove": "irz",
   "craft_output": "iuq",
   "field_mappings": {
+    "market_mean_prices": { "3": { "wire": 3, "fields": { "1": 1, "2": 2 } } },
     "breeding_stable_snapshot": {
       "1": { "wire": 1, "fields": {
         "1": { "wire": 1, "fields": {
@@ -423,6 +425,7 @@
   },
   "schema_version": 1,
   "verified_routes": {
+    "market_mean_prices": "observed-isr-full-mean-cache-and-disabled-history-3.7.14.18-2026-11-18-replayed-2026-11-19",
     "breeding_stable_snapshot": "observed-hqv-full-stable-on-breeding-panel-open-3.7.13.17-2026-11-16",
     "breeding_enclosure_request": "observed-hot-enclosure-1-3.7.13.17-2026-11-16",
     "breeding_enclosure_response": "observed-hpa-enclosure-1-3.7.13.17-2026-11-16",

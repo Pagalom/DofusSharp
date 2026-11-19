@@ -1,0 +1,38 @@
+@using System.Globalization
+@using BestCrush.Services
+
+<div class="breeding-progress @Tone">
+    <div class="breeding-progress-label"><span><i class="bi bi-@Icon" aria-hidden="true"></i> @Label</span>
+        <span class="breeding-progress-value">@(Value is { } value ? $"{value:N0}" : "—")<small> / @Maximum.ToString("N0")</small></span>
+    </div>
+    <div class="breeding-progress-track" role="progressbar" aria-label="@Label" aria-valuemin="0" aria-valuemax="@Maximum" aria-valuenow="@Value"
+         aria-valuetext="@(Value is null ? "Non relevé" : null)">
+        <span style="width:@Percent%"></span>
+    </div>
+    <div class="breeding-progress-caption">
+        @if (Forecast?.Deadline is { } deadline)
+        {
+            <span data-bs-toggle="tooltip" data-bs-title="@ForecastTooltip" data-bs-custom-class="multiline-tooltip">
+                <i class="bi bi-@(Forecast.Status == "Sortie de plage" ? "exclamation-triangle" : "clock")" aria-hidden="true"></i>
+                @Forecast.Status · @(deadline > DateTime.UtcNow ? "≈ " : "")@BreedingDashboardPresentation.Duration(deadline, DateTime.UtcNow)
+                @if (Forecast.Conditional) { <i class="bi bi-info-circle" aria-label="Estimation sous condition"></i> }
+            </span>
+        }
+        else if (Forecast?.Status is { } status) { <span>@status</span> }
+        else if (Caption is not null) { <span>@Caption</span> }
+    </div>
+</div>
+
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Icon { get; set; } = "";
+    [Parameter] public string Tone { get; set; } = "";
+    [Parameter] public int? Value { get; set; }
+    [Parameter] public int Maximum { get; set; } = 20_000;
+    [Parameter] public string? Caption { get; set; }
+    [Parameter] public BestCrush.Services.BreedingGaugeDisplay? Forecast { get; set; }
+    private string Percent => (Maximum > 0 ? Math.Clamp(100d * (Value ?? 0) / Maximum, 0, 100) : 0).ToString("0.###", CultureInfo.InvariantCulture);
+    private string ForecastTooltip => (Forecast?.Conditional == true
+        ? "Estimation si le changement de sérénité est arrêté. " : "Estimation à partir du dernier relevé. ") +
+        $"Échéance : {Forecast?.Deadline?.ToLocalTime():dd/MM HH:mm:ss}. Les jauges affichent les valeurs réellement relevées.";
+}

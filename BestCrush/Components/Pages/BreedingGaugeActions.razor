@@ -1,0 +1,14 @@
+﻿@using BestCrush.Services
+            <section class="breeding-urgent" aria-label="Jauges à ajuster"><h2><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> À ajuster maintenant</h2>
+                @foreach (var notice in Notices.OrderBy(n => n.Deadline ?? DateTime.MinValue))
+                {
+                    <article><i class="bi bi-exclamation-circle" aria-hidden="true"></i><div><strong>@notice.Title</strong><small>@notice.Location · @notice.Reason</small></div>
+                        @if (notice.Deadline is { } deadline) { <span>@BreedingDashboardPresentation.Duration(deadline, DateTime.UtcNow)</span> }
+                        <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ViewLocation.InvokeAsync(notice.Location)">Voir l’enclos</button>
+                    </article>
+                }
+            </section>
+@code {
+    [Parameter] public IReadOnlyList<BreedingGaugeNotice> Notices { get; set; } = [];
+    [Parameter] public EventCallback<string> ViewLocation { get; set; }
+}

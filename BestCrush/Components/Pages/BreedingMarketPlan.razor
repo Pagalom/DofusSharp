@@ -1,4 +1,4 @@
-@using BestCrush.Network.Protocol
+﻿@using BestCrush.Network.Protocol
 @using BestCrush.Services
 
 <section class="mb-3" aria-label="Objectif de rentabilité">
@@ -76,7 +76,7 @@
                             <td class="text-end">@(best is null ? "—" : $"{best.Margin:N0} K")</td>
                             <td class="text-end">@(generation.Best?.WeeklyPotential is { } weekly ? $"{weekly:N0} K" : "—")</td>
                             <td>
-                                @if (best?.Capacity is { } quota)
+                                @if (best?.Capacity is { Evidence: BreedingDemandEvidence.Observed } quota)
                                 {
                                     <span>@quota.SalesAtPrice vente(s) sur 7 j au prix visé · @quota.Remaining mise(s) conseillée(s) restante(s).</span>
                                 }

@@ -24,6 +24,14 @@ Le fichier utilisateur **XP Familiers.ods**, daté du 18 novembre 2026, fournit 
 
 Le tableau montre aussi les aliments du catalogue déjà utilisé par BestCrush, y compris ceux absents du fichier. Il conserve les cases inconnues. Il calcule, depuis zéro XP, les quantités pour **29 819 XP (niveau 80)** et **179 592 XP (niveau 100)** avec l’arrondi réel du repas. Le prix unitaire est celui du lot d’achat le moins cher par unité ; le coût total optimise les lots entiers nécessaires et leur surplus. Le détail des lots et la provenance des XP sont disponibles au survol. Les anciens prix sont signalés et les relevés en jeu actualisent automatiquement les coûts.
 
+## Vérification par les repas réels
+
+La requête `irb` désigne le familier et l’aliment : f2 contient l’UID du familier, et l’unique f3 contient la quantité (f1) et l’UID de nourriture (f3). Le suivi exige ensuite la consommation exacte (`irx` ou `iqm`) et l’XP du même exemplaire (`iqy`), dans les dix secondes, sur la même connexion vérifiée et avec un inventaire complet. Les repas mélangés, les arrivées au niveau maximal et les rapprochements ambigus sont ignorés. Le cas réel Serpète/Bec de Dodox du 18 novembre 2026 a été rejoué localement ; les captures restent hors dépôt.
+
+`PetFeedingObservations` conserve durablement les quantités, les XP avant/après et le build du client, sans identifiant d’exemplaire. Les observations sont séparées par build. Une variation de 101 XP pour un aliment ne signifie pas un rendement exact de 101 : elle définit l’intervalle [101, 102). Dix aliments donnant 1 012 XP réduisent cet intervalle à [101,2, 101,3), compatible avec 101,25. La référence précise n’est jamais remplacée par une division arrondie.
+
+Dans les données, une icône indique si les repas confirment la référence, la contredisent ou ne permettent pas encore de connaître la valeur exacte. Les explications restent au survol. Une référence contredite ou des observations incompatibles excluent l’aliment des conseils et masquent ses quantités/coûts de montée, tout en conservant les données d’origine. Une XP encore inconnue reste inconnue ; l’intervalle mesuré est consultable sans inventer une valeur exacte. Les pages se recalculent après enregistrement d’un repas.
+
 ## Prix et revente
 
 Les offres `jzs` des catégories 18 et 121 conservent leur niveau, XP et variantes spéciales. Les effets 2821 et 2819 utilisent le sous-message f9, dont f4 contient respectivement le niveau et l’XP. L’absence de f4 signifie zéro dans ces variantes reconnues. Les pouvoirs légendaires sont séparés pour éviter de valoriser un familier ordinaire au prix d’un familier légendaire. Le module ne simule pas une transformation légendaire.

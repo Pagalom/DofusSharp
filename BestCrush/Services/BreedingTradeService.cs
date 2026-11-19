@@ -1,4 +1,4 @@
-using BestCrush.Domain.Models;
+﻿using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
 using BestCrush.Network.Protocol;
 using Microsoft.Extensions.Logging;
@@ -11,10 +11,14 @@ public sealed record BreedingTradeReport(string Server, IReadOnlyList<string> Ma
     IReadOnlyList<BreedingPairOption> Pairs, IReadOnlyDictionary<string, BreedingResaleOption> OffspringValues,
     BreedingMarketStrategyReport Strategy, IReadOnlyList<BreedingObjectiveStep> Plan,
     IReadOnlyDictionary<Guid, BreedingResaleOption> Sellable, IReadOnlyDictionary<Guid, BreedingMarketCapacity> OwnedCapacity,
-    IReadOnlySet<string> SellableOffspring);
+    IReadOnlySet<string> SellableOffspring)
+{
+    public BreedingPlanningOptions Planning { get; init; } = new();
+    public IReadOnlyDictionary<string, IReadOnlyList<BreedingObjectiveStep>> ObjectivePlans { get; init; } = new Dictionary<string, IReadOnlyList<BreedingObjectiveStep>>();
+}
 
 internal sealed class BreedingTradeService(CurrentServerState servers, ActivityCatalogService catalog, GlobalSalesRepository history,
-    BreedingRefillService refill, ILogger<BreedingTradeService> logger)
+    BreedingRefillService refill, ILogger<BreedingTradeService> logger, BestCrushSettingsService settings)
 {
     internal static IReadOnlyList<(string Zone, string[] Targets)> SearchAreas { get; } =
         [
@@ -27,6 +31,7 @@ internal sealed class BreedingTradeService(CurrentServerState servers, ActivityC
         IReadOnlyList<PaddockMountReading> mounts, IReadOnlyDictionary<long, BreedingSpecies> species,
         CancellationToken token)
     {
+        var planning = settings.BreedingPlanning;
         var lease = window is { } key ? servers.GetWindowCaptureLease(key) : null;
         string? server = lease?.ServerName ?? serverView;
         if (string.IsNullOrWhiteSpace(server))
@@ -46,9 +51,10 @@ internal sealed class BreedingTradeService(CurrentServerState servers, ActivityC
         var histories = history.ReadHistories(server).Where(sales => sales.Market.ObjectType == MarketObjectType.Resource &&
                 sales.Market.Variant.Length == 0 && marketNames.ContainsKey(sales.Market.ItemId) &&
                 sales.ObservedAtUtc <= now).ToDictionary(sales => sales.Market.ItemId);
-        var demand = histories.Values.Where(sales => now - sales.ObservedAtUtc <= BreedingMarketDemand.Lifetime)
-            .ToDictionary(sales => sales.Market.ItemId, sales => new BreedingMarketDemand(sales,
-                listedToday.GetValueOrDefault(sales.Market.ItemId), listedThisWeek.GetValueOrDefault(sales.Market.ItemId)));
+        var availability = history.ReadHistoryAvailability(server, now);
+        // One demand calculation serves every species, stock sale and offspring. No species blacklist.
+        var demand = marketNames.Keys.ToDictionary(id => id, id => BreedingMarketDemand.FromEvidence(id,
+            histories.GetValueOrDefault(id), availability, listedToday.GetValueOrDefault(id), listedThisWeek.GetValueOrDefault(id), now));
         var captureZones = SearchAreas.SelectMany(area => area.Targets.Select(name => (Name: name, area.Zone)))
             .ToDictionary(entry => entry.Name, entry => entry.Zone, StringComparer.OrdinalIgnoreCase);
         var captureNames = SearchAreas.SelectMany(area => area.Targets).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -69,6 +75,9 @@ internal sealed class BreedingTradeService(CurrentServerState servers, ActivityC
                 BreedingResaleAdvisor.ComparableQuotes(capturedMount, quotes[item.Id])
                     .Select(quote => BreedingResaleAdvisor.Need(capturedMount, quote.Level))))
             .Concat(Enumerable.Range(2, 199).Select(BreedingMountExperience.RequiredAtLevel))
+            .Concat(owned.Where(row => row.Mount.Fertility is BreedingMountFertility.Fertile or BreedingMountFertility.Ready)
+                .SelectMany(row => Enumerable.Range(row.Mount.Level, 201 - row.Mount.Level)
+                    .Select(level => Math.Max(0, BreedingMountExperience.RequiredAtLevel(level) - row.Mount.Experience))))
             .Where(points => points > 0).Distinct().ToArray();
         BreedingExperiencePricing experience = new([], []);
         bool experiencePricingFailed = false;
@@ -128,56 +137,56 @@ internal sealed class BreedingTradeService(CurrentServerState servers, ActivityC
         {
             PreparationCost = preparationCosts.GetValueOrDefault(pair.First.Mount.Id) + preparationCosts.GetValueOrDefault(pair.Second.Mount.Id)
         }));
-        BreedingCaptureSupply net;
-        try
-        {
-            net = await refill.EstimateCaptureSupplyAsync(window, server, token);
-        }
-        catch (Exception ex) when (!token.IsCancellationRequested)
-        {
-            logger.LogWarning(ex, "Le prix du filet de capture universel est indisponible.");
-            net = new(null, null);
-        }
-
         var productionSales = newbornResale.Where(entry => entry.Value.Options.Count > 0)
             .ToDictionary(entry => entry.Key, entry => entry.Value.Options);
         var purchases = quotes.SelectMany(group => group.Where(price => price is { Level: 1, Fertile: true }))
             .ToDictionary(price => price.ItemId, price => price.Price);
-        var captureCosts = new Dictionary<int, long>();
-        if (net.Cost is { } netPrice)
-            foreach (int family in captureRides.Values.Select(ride => ride.Family).Distinct())
-                captureCosts.Add(family, netPrice);
+        // Capture equipment is excluded by user policy; no filet quote or recipe is required.
+        var captureCosts = captureRides.Values.Select(ride => ride.Family).Distinct().ToDictionary(family => family, _ => 0L);
         long? fullPreparation = preparationCosts.GetValueOrDefault(Guid.Empty);
         var strategy = await Task.Run(() => BreedingMarketStrategy.Calculate(BreedingLineage.Rides, marketNames, purchases,
-            captureCosts, fullPreparation, experience.Costs, productionSales, demand, token), token);
+            captureCosts, fullPreparation, experience.Costs, productionSales, demand, token, planning), token);
         var ownedCapacity = owned.Where(row => demand.ContainsKey(row.ItemId) && resale[row.Mount.Id].Best is not null)
             .ToDictionary(row => row.Mount.Id, row => demand[row.ItemId].AtPrice(resale[row.Mount.Id].Best!.SalePrice));
         var sellable = owned.Where(row => row.Mount.Fertility.HasValue && demand.ContainsKey(row.ItemId))
             .GroupBy(row => row.ItemId).SelectMany(group => demand[group.Key].Allocate(
                 group.Select(row => (row.Mount.Id, resale[row.Mount.Id].Options))))
             .ToDictionary();
-        IReadOnlyList<BreedingObjectiveStep> plan = strategy.Report.Recommended is { } objective
-            ? BreedingObjectivePlan.Build(objective, strategy.Routes[objective.RideId], BreedingLineage.Rides, marketNames,
-                parents, preparationCosts, experience.Costs, sellable, fullPreparation, captureZones)
-            : [];
+        var plans = await Task.Run(() => strategy.Report.Objectives.ToDictionary(BreedingObjectiveProgressStore.Key, objective =>
+        {
+            token.ThrowIfCancellationRequested();
+            // A quota warning must not hide an already owned target from its route. The player may
+            // inspect the route or explicitly override that warning; this does not allocate any sales.
+            var planningSales = new Dictionary<Guid, BreedingResaleOption>(sellable);
+            foreach (var row in owned.Where(row => row.Mount.SpeciesId == objective.RideId))
+            {
+                planningSales.Remove(row.Mount.Id);
+                if (resale[row.Mount.Id].Options.FirstOrDefault(option => option.Level == objective.Sale.Level &&
+                    option.Fertile == objective.Sale.Fertile) is { } comparable)
+                    planningSales[row.Mount.Id] = comparable;
+            }
+            return BreedingObjectivePlan.Build(objective, strategy.Routes[objective.RideId], BreedingLineage.Rides, marketNames,
+                parents, preparationCosts, experience.Costs, planningSales, fullPreparation, captureZones, planning);
+        }), token);
+        IReadOnlyList<BreedingObjectiveStep> plan = strategy.Report.Recommended is { } recommended
+            ? plans.GetValueOrDefault(BreedingObjectiveProgressStore.Key(recommended), []) : [];
 
         var sellableOffspring = offspringValues.Where(entry =>
                 demand.GetValueOrDefault(itemIds[entry.Key])?.AtPrice(entry.Value.SalePrice).Remaining > 0)
             .Select(entry => entry.Key).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var captures = net.Cost is not { } captureExpense ? [] : SearchAreas.SelectMany(area => area.Targets.Select(name =>
+        var captures = SearchAreas.SelectMany(area => area.Targets.Select(name =>
             new BreedingCaptureOption(name, area.Zone, DirectSale(name),
                 owned.Count(row => string.Equals(row.Name, name, StringComparison.OrdinalIgnoreCase) &&
                     row.Mount.Fertility is BreedingMountFertility.Fertile or BreedingMountFertility.Ready), BestCaptureCross(name))
-                { CaptureExpense = captureExpense }))
+                { CaptureExpense = 0 }))
             .Where(option => option.Net > 0)
             .OrderByDescending(option => option.Net).ThenBy(option => option.PreferCross).ThenBy(option => option.Resale?.ExperienceCost)
             .ThenBy(option => option.Owned).ToArray();
         var checks = new List<BreedingPriceCheck>();
-        if (net.Cost is null)
-            checks.Add(new(BreedingRefillService.CaptureNetId, BreedingRefillService.CaptureNetName, net.LastObserved,
-                "Chiffrer le coût d’entrée des lignées sauvages"));
         foreach (var candidate in strategy.Report.Generations.Select(row => row.BestPriced).OfType<BreedingMarketObjective>()
-                     .Where(row => row.Margin > 0 && row.Capacity is null).OrderByDescending(row => row.Margin))
+                     .Where(row => row.Margin > 0 && row.Capacity?.Evidence != BreedingDemandEvidence.Observed &&
+                         availability?.IsUnavailable(row.ItemId, histories.GetValueOrDefault(row.ItemId)?.ObservedAtUtc, now) != true)
+                     .OrderByDescending(row => row.Margin))
             checks.Add(new(candidate.ItemId, candidate.Name, histories.GetValueOrDefault(candidate.ItemId)?.ObservedAtUtc,
                 "Ouvrir le Cours du marché pour relever le volume des ventes"));
         foreach (var generation in strategy.Report.Generations.Where(row => row.WithoutPrice > 0).OrderByDescending(row => row.Generation))
@@ -207,11 +216,11 @@ internal sealed class BreedingTradeService(CurrentServerState servers, ActivityC
         foreach (var (_, pricing) in trainingPrices.Where(price => price.Pricing.Costs.Count == 0))
             checks.AddRange(pricing.PriceChecks);
         checks.AddRange(CompleteMarketChecks(BreedingLineage.Rides.Values, marketNames, observations, quotes,
-            histories.Values.ToDictionary(sales => sales.Market.ItemId, sales => sales.ObservedAtUtc), now));
+            histories.Values.ToDictionary(sales => sales.Market.ItemId, sales => sales.ObservedAtUtc), now, availability));
         if (lease is { } confirmed && !servers.IsCaptureLeaseActive(confirmed))
             throw new InvalidOperationException("La session Dofus a changé pendant le calcul.");
         return new(server, itemIds.Keys.Order().ToArray(), resale, experiencePricingFailed, checks.DistinctBy(check => check.ItemId).ToArray(),
-            captures, pairs, offspringValues, strategy.Report, plan, sellable, ownedCapacity, sellableOffspring);
+            captures, pairs, offspringValues, strategy.Report, plan, sellable, ownedCapacity, sellableOffspring) { ObjectivePlans = plans, Planning = planning };
 
         BreedingPriceCheck? PriceCheck(string name, string reason)
         {
@@ -225,7 +234,7 @@ internal sealed class BreedingTradeService(CurrentServerState servers, ActivityC
             if (!captureRides.TryGetValue(name, out var ride) || !captureCrosses.TryGetValue(name, out var options))
                 return null;
             var sterile = quotes[ride.ItemId].FirstOrDefault(price => price is { Level: 1, Fertile: false });
-            return options.Select(cross => BreedingPortfolioAdvisor.EstimateCaptureCross(cross, name, sterile,
+            return options.Where(cross => planning.Accepts(1, cross.Partner.Mount.Level)).Select(cross => BreedingPortfolioAdvisor.EstimateCaptureCross(cross, name, sterile,
                     preparationCosts, marketNames, offspringValues))
                 .OfType<BreedingCaptureCross>()
                 .Where(cross => cross.Offspring.All(sellableOffspring.Contains))
@@ -241,7 +250,7 @@ internal sealed class BreedingTradeService(CurrentServerState servers, ActivityC
     internal static IEnumerable<BreedingPriceCheck> CompleteMarketChecks(IEnumerable<BreedingRide> rides,
         IReadOnlyDictionary<long, string> marketNames, ILookup<long, BreedingLevelPrice> observations,
         ILookup<long, BreedingLevelPrice> currentQuotes, IReadOnlyDictionary<long, DateTimeOffset> lastHistories,
-        DateTimeOffset now)
+        DateTimeOffset now, MarketHistoryAvailability? availability = null)
     {
         foreach (var ride in rides.OrderByDescending(ride => ride.Generation))
         {
@@ -254,7 +263,8 @@ internal sealed class BreedingTradeService(CurrentServerState servers, ActivityC
             else
             {
                 DateTimeOffset? last = lastHistories.TryGetValue(ride.ItemId, out var date) ? date : null;
-                if (!last.HasValue || now - last.Value > BreedingMarketDemand.Lifetime)
+                if ((!last.HasValue || now - last.Value > BreedingMarketDemand.Lifetime) &&
+                    availability?.IsUnavailable(ride.ItemId, last, now) != true)
                     yield return new(ride.ItemId, name, last, "Ouvrir le Cours du marché pour relever le volume des ventes");
             }
         }

@@ -11,7 +11,11 @@ public sealed record BreedingProduction(int RideId, BreedingSupplyKind Kind, dec
     public int FirstLevel { get; init; } = 1;
     public int SecondLevel { get; init; } = 1;
     public decimal SuccessChance { get; init; } = 1;
+    public decimal ExpectedCrosses { get; init; }
+    public decimal ExpectedCaptures { get; init; }
+    public decimal TrainingExperience { get; init; }
     internal decimal CostForParent => Kind == BreedingSupplyKind.Cross ? 2 * Cost : Cost;
+    internal decimal ParentFactor => Kind == BreedingSupplyKind.Cross ? 2 : 1;
 }
 
 public sealed record BreedingMarketObjective(int RideId, long ItemId, int Generation, string Name, BreedingResaleOption Sale,
@@ -38,8 +42,10 @@ internal static class BreedingMarketStrategy
         IReadOnlyDictionary<int, long> captureCosts, long? preparation,
         IReadOnlyDictionary<int, long> experienceCosts,
         IReadOnlyDictionary<long, IReadOnlyList<BreedingResaleOption>> sales, IReadOnlyDictionary<long, BreedingMarketDemand> demand,
-        CancellationToken token)
+        CancellationToken token, BreedingPlanningOptions? planning = null)
     {
+        planning ??= new();
+        planning.Validate();
         var routes = new Dictionary<int, IReadOnlyList<BreedingProduction>>();
         var cheapest = new Dictionary<int, BreedingProduction>();
         var cheapestParents = new Dictionary<int, BreedingProduction>();
@@ -57,7 +63,7 @@ internal static class BreedingMarketStrategy
             token.ThrowIfCancellationRequested();
             var sources = new List<BreedingProduction>();
             if (ride.Generation == 1 && captureCosts.TryGetValue(ride.Family, out long capture))
-                sources.Add(new(ride.Id, BreedingSupplyKind.Capture, capture));
+                sources.Add(new(ride.Id, BreedingSupplyKind.Capture, capture) { ExpectedCaptures = 1 });
             if (purchases.TryGetValue(ride.ItemId, out long price))
                 sources.Add(new(ride.Id, BreedingSupplyKind.Purchase, price));
 
@@ -70,24 +76,28 @@ internal static class BreedingMarketStrategy
                     var (generation, count) = outcomeCounts[(pair[0], pair[1])];
                     // The forecast targets the highest direct generation of each pair.
                     if (ride.Generation != generation) continue;
-                    var source = training.Select(levels =>
+                    var candidates = training.Where(levels => planning.Accepts(levels.First, levels.Second)).Select(levels =>
                     {
                         decimal chance = BreedingDecisions.TargetGenerationChance(levels.First, levels.Second).Base / 100m / count;
                         // A bred parent must also have the required sex. Model one in two.
                         decimal cost = (first.CostForParent + second.CostForParent + 2m * prep + levels.Cost) / chance;
                         return new BreedingProduction(ride.Id, BreedingSupplyKind.Cross, cost)
                         {
-                            First = first, Second = second, FirstLevel = levels.First, SecondLevel = levels.Second, SuccessChance = chance
+                            First = first, Second = second, FirstLevel = levels.First, SecondLevel = levels.Second, SuccessChance = chance,
+                            ExpectedCrosses = (1 + first.ParentFactor * first.ExpectedCrosses + second.ParentFactor * second.ExpectedCrosses) / chance,
+                            ExpectedCaptures = (first.ParentFactor * first.ExpectedCaptures + second.ParentFactor * second.ExpectedCaptures) / chance,
+                            TrainingExperience = (first.ParentFactor * first.TrainingExperience + second.ParentFactor * second.TrainingExperience +
+                                BreedingMountExperience.RequiredAtLevel(levels.First) + BreedingMountExperience.RequiredAtLevel(levels.Second)) / chance
                         };
-                    }).MinBy(route => route.Cost)!;
-                    sources.Add(source);
+                    });
+                    if (planning.Order(candidates).FirstOrDefault() is { } source) sources.Add(source);
                 }
             }
             if (sources.Count == 0) continue;
-            var ordered = sources.OrderBy(source => source.Cost).ToArray();
+            var ordered = planning.Order(sources).ToArray();
             routes.Add(ride.Id, ordered);
             cheapest.Add(ride.Id, ordered[0]);
-            cheapestParents.Add(ride.Id, ordered.MinBy(source => source.CostForParent)!);
+            cheapestParents.Add(ride.Id, planning.Mode == BreedingPlanningMode.Speed ? ordered[0] : ordered.MinBy(source => source.CostForParent)!);
             if (!sales.TryGetValue(ride.ItemId, out var offers) || !names.TryGetValue(ride.ItemId, out var name)) continue;
             var liquidity = demand.GetValueOrDefault(ride.ItemId);
             options.Add(ride.Id, offers.Select(sale => new BreedingMarketObjective(ride.Id, ride.ItemId,
@@ -105,7 +115,7 @@ internal static class BreedingMarketStrategy
             return new BreedingGenerationReview(group.Key, group.Count(),
                 group.Count(ride => !sales.ContainsKey(ride.ItemId)),
                 group.Count(ride => sales.ContainsKey(ride.ItemId) && !cheapest.ContainsKey(ride.Id)),
-                group.Count(ride => sales.ContainsKey(ride.ItemId) && !demand.ContainsKey(ride.ItemId)),
+                group.Count(ride => sales.ContainsKey(ride.ItemId) && demand.GetValueOrDefault(ride.ItemId)?.HasUsableHistory != true),
                 sellable.FirstOrDefault(row => row.Generation == group.Key), rows.MaxBy(row => row.Margin));
         }).ToArray();
         return new(new(generations, sellable, recommended), routes);

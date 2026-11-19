@@ -8,6 +8,10 @@ namespace BestCrush.Services;
 public sealed class BestCrushSettingsService
     : IBestCrushSettingsProvider
 {
+    private readonly IPreferences? _breedingPreferences;
+    private IPreferences BreedingPreferences => _breedingPreferences ?? Preferences.Default;
+    public BestCrushSettingsService() { }
+    internal BestCrushSettingsService(IPreferences breedingPreferences) => _breedingPreferences = breedingPreferences;
     private const string EquipmentCaptureKey =
         "Settings.EquipmentCaptureEnabled";
 
@@ -151,6 +155,38 @@ public sealed class BestCrushSettingsService
     }
 
     public event Action? TargetRoiChanged;
+
+    public event Action? BreedingSettingsChanged;
+
+    public int BreedingMinimumChancePercent
+    {
+        get => Math.Clamp(BreedingPreferences.Get("Settings.BreedingMinimumChancePercent", 65), 0, 100);
+        set
+        {
+            int threshold = Math.Clamp(value, 0, 100);
+            if (threshold == BreedingMinimumChancePercent) return;
+            BreedingPreferences.Set("Settings.BreedingMinimumChancePercent", threshold);
+            BreedingSettingsChanged?.Invoke();
+        }
+    }
+
+    public BreedingPlanningMode BreedingPlanningMode
+    {
+        get
+        {
+            int stored = BreedingPreferences.Get("Settings.BreedingPlanningMode", (int)global::BestCrush.Services.BreedingPlanningMode.Economy);
+            return Enum.IsDefined(typeof(BreedingPlanningMode), stored) ? (BreedingPlanningMode)stored : global::BestCrush.Services.BreedingPlanningMode.Economy;
+        }
+        set
+        {
+            if (!Enum.IsDefined(value)) throw new ArgumentOutOfRangeException(nameof(value));
+            if (value == BreedingPlanningMode) return;
+            BreedingPreferences.Set("Settings.BreedingPlanningMode", (int)value);
+            BreedingSettingsChanged?.Invoke();
+        }
+    }
+
+    public BreedingPlanningOptions BreedingPlanning => new(BreedingMinimumChancePercent, BreedingPlanningMode);
 
     public double TargetRoiPercent
     {

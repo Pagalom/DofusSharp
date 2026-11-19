@@ -1,4 +1,4 @@
-# Prix actualisés pendant les mises en vente et disponibilité de l’historique
+﻿# Prix actualisés pendant les mises en vente et disponibilité de l’historique
 
 Observation locale du 18/11/2026, client Dofus 3.7.14.18. Les octets et identifiants de session restent dans les diagnostics locaux. Les tests utilisent des objets synthétiques.
 
@@ -36,3 +36,35 @@ Les sélections de ces deux montures n’ont émis aucune requête `iqp`, et n�
 - Mettre en vente un lot prévu, comparer les quatre minima affichés avant/après et les prix enregistrés. Vérifier un dépôt qui change le minimum puis un dépôt qui ne le change pas.
 - Vérifier l’absence d’écriture pour le sens client → serveur, un serveur expiré, la capture désactivée et un objet inconnu/équipement.
 - Comparer une référence avec historique actif et une référence avec bouton grisé, sans cliquer. Puis ouvrir uniquement l’historique actif et vérifier la séquence requête/réponse.
+
+## Prise en compte du cache dans Élevage — 19/11/2026
+
+La route `market_mean_prices=isr` et ses champs figurent maintenant dans le profil commun, les preuves et la checklist.
+Le décodeur exige une liste complète structurellement valide : entrées répétées f3, ID unique positif f1,
+moyenne positive f2 pour les références disponibles. Un f2 omis ou nul correspond à une référence sans moyenne.
+Une trame vide, tronquée, ambiguë ou contenant des doublons est refusée intégralement. Les messages client → serveur
+et les leases de serveur expirés ne mettent rien à jour.
+
+Le dépôt global conserve par serveur le dernier cache reçu : date et ensemble des références ayant un prix moyen.
+Il ne conserve pas ces moyennes comme prix de vente et n’ajoute aucun point aux historiques ni aux ventes personnelles.
+Un cache ancien n’écrase pas un récent. Une absence connue reste mémorisée jusqu’à un nouveau cache positif ou un
+historique détaillé reçu plus récemment ; un simple délai ne rend pas le bouton du jeu disponible.
+
+Le planificateur utilise une formule commune à toutes les espèces :
+
+`potentiel hebdomadaire = marge unitaire estimée × quota de vente estimé`
+
+Le quota ne peut être positif qu’avec un volume de ventes exploitable au prix visé, puis il tient compte des dépôts
+du joueur. Les cas « historique manquant », « historique inaccessible » et « historique observé à zéro vente » restent
+séparés. Les deux premiers donnent un quota prudent de zéro, sans inventer un relevé de zéro vente.
+Il n’existe aucune liste noire de couleurs. La même demande alimente les objectifs, l’allocation des montures en stock
+et la capture pour revente. Les parcours d’obtention de parents restent calculés indépendamment : une espèce sans
+marché direct peut être utile pour produire une descendance qui a un débouché.
+
+Les contrôles HDV gardent les prix d’offres utiles mais ne demandent plus d’ouvrir un historique signalé indisponible.
+La réception du cache rafraîchit les conseils automatiquement. Après installation du correctif, une nouvelle réception
+`isr` est nécessaire ; les anciennes traces privées sans attribution serveur ne sont pas importées dans la base du joueur.
+
+Validation locale : trois trames déjà enregistrées ont été rejouées en lecture seule, sans attribution ni écriture en base :
+8617 entrées / 8613 moyennes positives pour les deux anciennes trames ; 8626 / 8599 pour la plus récente.
+Prune et Amande (33207) est présent et Prune et Turquoise (33215) absent dans les trois.

@@ -1,0 +1,174 @@
+﻿@using System.Globalization
+@using BestCrush.Network.Protocol
+@using BestCrush.Services
+@using BestCrush.Domain.Services
+
+@{ var selected = Mounts.FirstOrDefault(entry => entry.Id == SelectedMount); }
+<article class="breeding-enclosure @(selected is not null ? "is-flipped" : "")" aria-label="@Title" data-breeding-location="@LocationKey">
+    <div class="breeding-enclosure-turn">
+        <section class="breeding-enclosure-face breeding-enclosure-front" aria-hidden="@(selected is not null ? "true" : "false")" inert="@(selected is not null)">
+            <header class="breeding-enclosure-heading">
+                <div class="breeding-enclosure-identity">
+                    <span class="breeding-eyebrow">@(IsStable ? "Au repos" : "Enclos")</span>
+                    <div class="breeding-enclosure-title"><h2>@Title <span>@Mounts.Count</span></h2>
+                        @if (NeedsSync) { <StatusIcon Icon="@(ObservedAt is null || !Complete ? "cloud-slash" : "clock-history")" Tooltip="@SyncTooltip" CssClass="text-warning" /> }
+                    </div>
+                </div>
+                @if (!IsStable)
+                {
+                <div class="breeding-fuel-meters" role="group" aria-label="Carburant des jauges de l’enclos">
+                    @foreach (var kind in Enum.GetValues<PaddockGauge>())
+                    {
+                        var gauge = Gauges.FirstOrDefault(value => value.Gauge == kind);
+                        <span class="breeding-fuel-meter tone-@kind.ToString().ToLowerInvariant() @(gauge?.Active == true ? "is-active" : "") @(gauge is null ? "is-unknown" : "")"
+                              role="meter" aria-label="@ShortGauge(kind)" aria-valuemin="0" aria-valuemax="@BreedingFuel.Capacity" aria-valuenow="@gauge?.Fuel"
+                              aria-valuetext="@(gauge is null ? "Non relevé" : $"{gauge.Fuel:N0} points · {(gauge.Active ? "Active" : "Inactive")}")"
+                              tabindex="0" data-bs-toggle="tooltip" data-bs-title="@(gauge is null ? $"{BreedingTrainingRules.Name(kind)} · Non relevé" : FuelTooltip(gauge))" data-bs-custom-class="multiline-tooltip">
+                            <span class="breeding-fuel-tank" aria-hidden="true">
+                                @if (gauge is not null) { <span class="breeding-fuel-level" style="height:@FuelHeight(gauge.Fuel)%"></span> }
+                                <span class="breeding-fuel-tick" style="bottom:40%"></span><span class="breeding-fuel-tick" style="bottom:70%"></span><span class="breeding-fuel-tick" style="bottom:90%"></span>
+                            </span>
+                            <span class="breeding-fuel-symbol" aria-hidden="true">
+                                @switch (kind)
+                                {
+                                    case PaddockGauge.SerenityLoss: <span>−</span> break;
+                                    case PaddockGauge.SerenityGain: <span>+</span> break;
+                                    case PaddockGauge.Endurance: <i class="bi bi-lightning-charge-fill"></i> break;
+                                    case PaddockGauge.Maturity: <i class="bi bi-droplet-fill"></i> break;
+                                    case PaddockGauge.Love: <i class="bi bi-heart-fill"></i> break;
+                                    case PaddockGauge.Experience: <span class="breeding-fuel-xp">XP</span> break;
+                                }
+                            </span>
+                        </span>
+                    }
+                </div>
+                }
+            </header>
+            @if (Notices.Count > 0)
+            {
+                <button type="button" class="breeding-gauge-notice" @onclick="() => Adjust.InvokeAsync()" @onclick:stopPropagation="true"
+                        data-bs-toggle="tooltip" data-bs-title="@string.Join("\n", Notices.Select(n => $"{n.Title} · {n.Reason}"))" data-bs-custom-class="multiline-tooltip">
+                    <i class="bi bi-exclamation-triangle" aria-hidden="true"></i> @Notices.Select(n => n.Gauge).Distinct().Count() jauge@(Notices.Select(n => n.Gauge).Distinct().Count() > 1 ? "s" : "") à ajuster <i class="bi bi-arrow-right" aria-hidden="true"></i>
+                </button>
+            }
+            <div class="breeding-mount-grid">
+                @foreach (var tile in Mounts)
+                {
+                    <button type="button" class="breeding-mount-tile" @key="tile.Id" data-breeding-mount-tile
+                            aria-label="@MountAccessibleName(tile)" aria-expanded="false" data-bs-toggle="tooltip" data-bs-html="true"
+                            data-bs-custom-class="multiline-tooltip breeding-mount-tooltip" data-bs-title="@BreedingDashboardPresentation.MountTooltipHtml(tile)"
+                            @onclick="() => Open.InvokeAsync(tile.Id)" @onclick:stopPropagation="true">
+                        <span class="breeding-tile-topline">
+                            <span class="breeding-tile-level">Niv. @(tile.Reading?.Level.ToString() ?? "?")</span>
+                        </span>
+                        <span class="breeding-tile-fertility @FertilityClass(tile.Reading)" aria-hidden="true"><i class="bi bi-@FertilityIcon(tile.Reading?.Fertility)"></i></span>
+                        <img src="@BreedingDashboardPresentation.Head(tile.Reading?.SpeciesId ?? tile.Species?.Id, tile.Species?.FamilyId)"
+                             alt="@(tile.Species?.Name ?? "Monture")" loading="lazy"
+                             onerror="@($"this.onerror=null;this.src='{BreedingDashboardPresentation.FallbackHead(tile.Species?.FamilyId)}';")" />
+                        <span class="breeding-tile-sex @SexClass(tile.Reading?.Sex)"><i class="bi bi-@SexIcon(tile.Reading?.Sex)" aria-hidden="true"></i></span>
+                        <span class="breeding-tile-generation">G@(tile.Species?.Generation?.ToString() ?? "?")</span>
+                    </button>
+                }
+                @if (Mounts.Count == 0)
+                {
+                    <div class="breeding-enclosure-empty"><i class="bi bi-@(IsStable ? "house" : "bounding-box")" aria-hidden="true"></i>
+                        <span>@(ObservedAt is null ? "À synchroniser dans Dofus" : Filtered ? "Aucune monture correspondante" : "Aucune monture")</span></div>
+                }
+            </div>
+            <footer class="breeding-enclosure-footer">@(IsStable ? "Étable" : "Dernier relevé")
+                @if (ObservedAt is { } at) { <span>@at.ToLocalTime().ToString("dd/MM · HH:mm")</span> }
+            </footer>
+        </section>
+        <section class="breeding-enclosure-face breeding-enclosure-back" aria-hidden="@(selected is null ? "true" : "false")" inert="@(selected is null)"
+                 data-breeding-open="@(selected is not null ? LocationKey : null)" @onclick:stopPropagation="true">
+            @if ((selected ?? _lastMount) is { } mount)
+            {
+                <div class="breeding-mount-toolbar"><button type="button" class="breeding-back-button" @onclick="() => Close.InvokeAsync()"><i class="bi bi-arrow-left" aria-hidden="true"></i> Retour</button>
+                    <span>@Title</span></div>
+                <div class="breeding-mount-sheet">
+                    <header class="breeding-mount-identity">
+                        <img src="@BreedingDashboardPresentation.Head(mount.Reading?.SpeciesId ?? mount.Species?.Id, mount.Species?.FamilyId)" alt=""
+                             onerror="@($"this.onerror=null;this.src='{BreedingDashboardPresentation.FallbackHead(mount.Species?.FamilyId)}';")" />
+                        <div><h3>@(mount.Species?.Name ?? "Monture")</h3>
+                            <div class="breeding-mount-meta"><span>Niv. @(mount.Reading?.Level.ToString() ?? "—")</span><span>G@(mount.Species?.Generation?.ToString() ?? "?")</span>
+                                <span><i class="bi bi-@SexIcon(mount.Reading?.Sex)" aria-hidden="true"></i> @SexName(mount.Reading?.Sex)</span>
+                                <span class="breeding-fertility">@Fertility(mount.Reading?.Fertility)</span></div>
+                        </div>
+                        <div class="breeding-mount-price" data-bs-toggle="tooltip" data-bs-title="Valeur au niveau actuel, d’après les offres HDV comparables relevées.">
+                            <small>Valeur estimée</small><strong>@(mount.Value is { } price ? $"{price:N0} K" : "—")</strong></div>
+                    </header>
+                    <div class="breeding-mount-gauges">
+                        <BreedingProgressGauge Label="Endurance" Icon="shield" Tone="tone-endurance" Value="mount.Reading?.Endurance" Forecast="@Forecast(mount, PaddockGauge.Endurance)" />
+                        <BreedingProgressGauge Label="Maturité" Icon="flower1" Tone="tone-maturity" Value="mount.Reading?.Maturity" Forecast="@Forecast(mount, PaddockGauge.Maturity)" />
+                        <BreedingProgressGauge Label="Amour" Icon="heart" Tone="tone-love" Value="mount.Reading?.Love" Forecast="@Forecast(mount, PaddockGauge.Love)" />
+                        <BreedingProgressGauge Label="Expérience" Icon="stars" Tone="tone-experience" Value="mount.Reading?.Experience"
+                            Maximum="@ExperienceMaximum(mount)" Caption="@ExperienceCaption(mount)" Forecast="@Forecast(mount, PaddockGauge.Experience)" />
+                    </div>
+                    <div class="breeding-serenity">
+                        <div class="breeding-progress-label"><span><i class="bi bi-sliders2" aria-hidden="true"></i> Sérénité</span><strong>@(mount.Reading?.Serenity.ToString("+0;-0;0") ?? "—")</strong></div>
+                        <div class="breeding-serenity-track" role="meter" aria-label="Sérénité" aria-valuemin="-5000" aria-valuemax="5000" aria-valuenow="@mount.Reading?.Serenity"
+                             data-bs-toggle="tooltip" data-bs-title="Endurance : sérénité négative · Maturité : −2 000 à +2 000 · Amour : sérénité positive ou nulle.">
+                            @if (mount.Reading is { } reading) { <span class="breeding-serenity-marker" style="left:@SerenityPosition(reading.Serenity)%"></span> }
+                        </div>
+                        <div class="breeding-serenity-labels"><span>−5 000</span><span>Maturité</span><span>+5 000</span></div>
+                    </div>
+                    <details class="breeding-mount-details"><summary>Détails</summary>
+                        <dl><dt>Expérience relevée</dt><dd>@(mount.Reading?.Experience.ToString("N0") ?? "—") XP</dd>
+                            <dt>Dernier relevé</dt><dd>@(ObservedAt?.ToLocalTime().ToString("dd/MM à HH:mm:ss") ?? "—")</dd>
+                            @if (mount.Reading?.TrainingBonuses.Count > 0)
+                            { <dt>Bonus d’entraînement</dt><dd>@string.Join(", ", mount.Reading.TrainingBonuses.Select(BreedingTrainingRules.Name))</dd> }
+                        </dl>
+                    </details>
+                </div>
+                <footer class="breeding-sheet-footer"><button type="button" class="btn btn-outline-primary btn-sm" @onclick="() => SeeActions.InvokeAsync(mount.Id)">Voir les actions <i class="bi bi-arrow-right" aria-hidden="true"></i></button></footer>
+            }
+        </section>
+    </div>
+</article>
+
+@code {
+    [Parameter] public IReadOnlyList<BreedingGaugeNotice> Notices { get; set; } = [];
+    [Parameter] public EventCallback Adjust { get; set; }
+    [Parameter] public string Title { get; set; } = "";
+    [Parameter] public string LocationKey { get; set; } = "";
+    [Parameter] public bool IsStable { get; set; }
+    [Parameter] public bool Complete { get; set; } = true;
+    [Parameter] public bool Filtered { get; set; }
+    [Parameter] public DateTime? ObservedAt { get; set; }
+    [Parameter] public IReadOnlyList<BreedingMountDisplay> Mounts { get; set; } = [];
+    [Parameter] public IReadOnlyList<PaddockGaugeReading> Gauges { get; set; } = [];
+    [Parameter] public Guid? SelectedMount { get; set; }
+    [Parameter] public EventCallback<Guid> Open { get; set; }
+    [Parameter] public EventCallback Close { get; set; }
+    [Parameter] public EventCallback<Guid> SeeActions { get; set; }
+    private BreedingMountDisplay? _lastMount;
+    protected override void OnParametersSet()
+    {
+        if (Mounts.FirstOrDefault(mount => mount.Id == SelectedMount) is { } selected) _lastMount = selected;
+    }
+    private bool NeedsSync => BreedingDashboardPresentation.NeedsSynchronization(ObservedAt, Complete, DateTime.UtcNow);
+    private string SyncTooltip => ObservedAt is not { } at ? $"{Title} : à synchroniser dans Dofus." :
+        $"{Title} : {(!Complete ? "relevé incomplet" : "relevé de plus de 2 h")} · {at.ToLocalTime():dd/MM HH:mm}.";
+    private static string SexName(BreedingMountSex? sex) => sex switch { BreedingMountSex.Female => "Femelle", BreedingMountSex.Male => "Mâle", _ => "Sexe inconnu" };
+    private static string SexIcon(BreedingMountSex? sex) => sex switch { BreedingMountSex.Female => "gender-female", BreedingMountSex.Male => "gender-male", _ => "question" };
+    private static string SexClass(BreedingMountSex? sex) => sex switch { BreedingMountSex.Female => "is-female", BreedingMountSex.Male => "is-male", _ => "" };
+    private static string Fertility(BreedingMountFertility? value) => value switch { BreedingMountFertility.Ready => "Féconde", BreedingMountFertility.Fertile => "Fertile", BreedingMountFertility.Sterile => "Stérile", _ => "Fertilité inconnue" };
+    private static string FertilityIcon(BreedingMountFertility? value) => value switch { BreedingMountFertility.Sterile => "slash-circle", BreedingMountFertility.Fertile or BreedingMountFertility.Ready => "egg-fill", _ => "question-circle" };
+    private static string FertilityClass(PaddockMountReading? mount) => mount?.Fertility switch
+    {
+        BreedingMountFertility.Sterile => "is-sterile",
+        BreedingMountFertility.Fertile or BreedingMountFertility.Ready => BreedingDashboardPresentation.NeedsBreedingTraining(mount) ? "needs-training" : "is-fertile",
+        _ => ""
+    };
+    private static string MountAccessibleName(BreedingMountDisplay mount) => $"{mount.Species?.Name ?? "Monture"} · Niv. {mount.Reading?.Level.ToString() ?? "?"} · {SexName(mount.Reading?.Sex)} · {Fertility(mount.Reading?.Fertility)}" +
+        (BreedingDashboardPresentation.NeedsBreedingTraining(mount.Reading) ? " · Besoins de reproduction incomplets" : "");
+    private static string ShortGauge(PaddockGauge gauge) => gauge switch { PaddockGauge.SerenityGain => "Sérénité +", PaddockGauge.SerenityLoss => "Sérénité −", _ => BreedingTrainingRules.Name(gauge) };
+    private static string FuelHeight(int fuel) => (Math.Clamp((double)fuel / BreedingFuel.Capacity, 0, 1) * 100).ToString("0.###", CultureInfo.InvariantCulture);
+    private static string FuelTooltip(PaddockGaugeReading gauge) => $"{BreedingTrainingRules.Name(gauge.Gauge)} · {(gauge.Active ? "Active" : "Inactive")}\n{gauge.Fuel:N0} points de carburant" +
+        (gauge.Active && gauge.Fuel > 0 ? $" · {BreedingFuel.PointsPerCycle(gauge.Fuel)} points / 10 s" : "");
+    private static BreedingGaugeDisplay? Forecast(BreedingMountDisplay mount, PaddockGauge gauge) => mount.Forecasts.FirstOrDefault(value => value.Gauge == gauge);
+    private static int ExperienceMaximum(BreedingMountDisplay mount) => BreedingMountExperience.RequiredAtLevel(
+        Math.Clamp(mount.TargetLevel ?? Math.Min(200, (mount.Reading?.Level ?? 1) + 1), 1, 200));
+    private static string ExperienceCaption(BreedingMountDisplay mount) => mount.TargetLevel is { } target ? $"Objectif niv. {target}" : mount.Reading?.Level == 200 ? "Niveau maximal" : $"Niveau suivant : {Math.Min(200, (mount.Reading?.Level ?? 1) + 1)}";
+    private static string SerenityPosition(int value) => Math.Clamp((value + 5000d) / 100, 0, 100).ToString("0.###", CultureInfo.InvariantCulture);
+}

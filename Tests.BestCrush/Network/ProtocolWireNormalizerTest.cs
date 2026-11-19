@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using BestCrush.Network.Protocol;
 using FluentAssertions;
 using static Tests.BestCrush.Network.NetworkPayload;
@@ -7,6 +7,22 @@ namespace Tests.BestCrush.Network;
 
 public sealed class ProtocolWireNormalizerTest
 {
+    [Fact]
+    public void MeanPriceAvailabilityUsesTheCentralOpcodeAndNestedFieldMapping()
+    {
+        var map = LoadMap("""
+            { "market_mean_prices": "qmeans", "field_mappings": {
+                "market_mean_prices": { "3": { "wire":9, "fields": { "1":7, "2":8 } } }
+            } }
+            """);
+        var wire = Message(Bytes(9, Message(Unsigned(7, 33207), Unsigned(8, 373874))), Bytes(9, Unsigned(7, 33215)));
+        var decoded = MarketMeanPriceDecoder.Decode(map.NormalizeBody("qmeans", wire));
+        Assert.NotNull(decoded);
+        Assert.Equal(2, decoded.EntryCount);
+        Assert.Contains(33207, decoded.WithMeanPrice);
+        Assert.DoesNotContain(33215, decoded.WithMeanPrice);
+    }
+
     [Fact]
     public void CurrentPublicRefreshUsesTheSharedPurchaseOfferFieldMapping()
     {
@@ -260,7 +276,7 @@ public sealed class ProtocolWireNormalizerTest
 
         string[] routeNames =
         [
-            "global_market_history_request", "global_market_history_response",
+            "global_market_history_request", "global_market_history_response", "market_mean_prices",
             "breeding_paddock_snapshot_current",
             "breeding_stable_snapshot", "breeding_enclosure_request", "breeding_enclosure_response",
             "breeding_transfer_into_stable", "breeding_transfer_out_of_stable",

@@ -5,6 +5,7 @@
 @inject LiveStockService Stocks
 @inject CurrentWindowProfessionsState Professions
 @inject GlobalSalesRepository Sales
+@inject LivePetFeedingService Feeding
 @inject MarketDataChangeNotifier MarketChanges
 @inject MarketClipboardQueue CopyQueue
 @inject ILogger<PetWorkspace> Logger
@@ -83,6 +84,7 @@ else if (_report is null && _loading)
         Stocks.Changed+=StockChanged;Professions.Changed+=StockChanged;
         Sales.PetPricesChanged+=PricesChanged;Sales.ListingsChanged+=PricesChanged;
         Sales.Changed+=PricesChanged;
+        Feeding.Changed+=PricesChanged;
         MarketChanges.Changed+=MarketChanged;
     }
     protected override Task OnParametersSetAsync()
@@ -143,6 +145,7 @@ else if (_report is null && _loading)
         _disposed=true;Stocks.Changed-=StockChanged;Professions.Changed-=StockChanged;
         Sales.PetPricesChanged-=PricesChanged;Sales.ListingsChanged-=PricesChanged;MarketChanges.Changed-=MarketChanged;
         Sales.Changed-=PricesChanged;
+        Feeding.Changed-=PricesChanged;
         _lifetime.Cancel();_load?.Cancel();_load?.Dispose();_lifetime.Dispose();
     }
 }

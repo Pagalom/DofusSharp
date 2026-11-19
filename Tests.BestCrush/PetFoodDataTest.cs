@@ -101,6 +101,13 @@ public sealed class PetFoodDataTest
             Assert.False(await db.Resources.AnyAsync(r=>r.DofusDbId==20));
             Assert.Equal(0.05,(await db.PetFoods.SingleAsync(r=>r.DofusDbId==20)).Experience);
             Assert.Contains(await service.GetFoodsAsync(default),food=>food.Id==10 && food.Experience==101.25);
+            db.PetFeedingObservations.Add(new(){Id=new('C',64),FoodItemId=10,PetItemId=12133,Quantity=1,
+                ExperienceBefore=0,ExperienceAfter=80,ClientBuild="3.7.14.18",ObservedAtUtc=DateTime.UtcNow});
+            await db.SaveChangesAsync();
+            Assert.DoesNotContain(await service.GetFoodsAsync(default),food=>food.Id==10);
+            var contradicted=Assert.Single(await service.LoadTableAsync("A",default),row=>row.Food.DofusDbId==10);
+            Assert.False(contradicted.Evidence!.Matches);Assert.Null(contradicted.Quantity100);
+            Assert.Equal(101.25,contradicted.Food.Experience);
         }
         finally{Directory.Delete(folder,true);}
     }

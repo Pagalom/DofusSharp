@@ -1,7 +1,10 @@
-@using BestCrush.Network.Protocol
+﻿@using BestCrush.Network.Protocol
 @using BestCrush.Domain.Models
 @using BestCrush.Services
 @using Microsoft.Extensions.Logging
+@inject BreedingObjectiveProgressStore ProgressStore
+@inject CurrentDofusClientsState Clients
+@inject BestCrushSettingsService Settings
 @inject BreedingTradeService Trade
 @inject GlobalSalesRepository Sales
 @inject MarketDataChangeNotifier MarketChanges
@@ -9,6 +12,28 @@
 @inject ILogger<BreedingDecisionsPanel> Logger
 @implements IDisposable
 
+@if (_trackingError is not null) { <p class="text-warning" role="status">@_trackingError</p> }
+@if (_report is { } current && _journal is not null)
+{
+    <BreedingObjectiveBoard Report="current" Journal="_journal" PlanningModeChanged="ChangePlanningMode" Select="SelectObjectiveAsync" Override="OverrideObjectiveAsync" Confirm="ConfirmStepAsync" ViewMount="ViewMount" Notices="Notices" ViewLocation="ViewLocation" />
+    <div class="breeding-action-columns"><div>@ChildContent</div>
+    <section class="breeding-hdv-card bc-surface">
+        <header><h2><i class="bi bi-shop" aria-hidden="true"></i> À consulter à l’HDV <span>@current.PriceChecks.Count</span></h2>
+            <button type="button" class="btn btn-sm btn-outline-secondary" aria-label="Copier la liste des éléments à consulter" disabled="@_copying" @onclick="() => CopyChecksAsync(current.PriceChecks)"><i class="bi bi-copy" aria-hidden="true"></i></button></header>
+        <span role="status" class="small">@_copyStatus</span>
+        <div class="breeding-hdv-list">
+            @foreach (var check in current.PriceChecks)
+            {
+                <div><CopyTextButton Value="@check.Name" Tooltip="Copier pour chercher à l’HDV">@check.Name</CopyTextButton><StatusIcon Icon="@(check.LastObserved is null ? "question-circle" : "clock-history")" Tooltip="@($"{check.Reason}{(check.LastObserved is { } at ? $" · {at.ToLocalTime():dd/MM HH:mm}" : "")}")" CssClass="text-warning" /></div>
+            }
+        </div>
+    </section></div>
+}
+else if (_loading) { <span class="small" role="status">Calcul en cours…</span> }
+else if (_notice is not null) { <p role="status">@_notice</p> }
+
+<details class="breeding-calculation-details">
+<summary>Détail du calcul et réglages</summary>
 @if (_report is { } strategyReport)
 {
     <BreedingMarketPlan Report="strategyReport" MountNumbers="MountNumbers" />
@@ -127,7 +152,7 @@
                     .ThenByDescending(mount => report.Resale.GetValueOrDefault(mount.Id)?.Best?.Net))
                 {
                     var estimate = report.Resale.GetValueOrDefault(mount.Id);
-                    <li @key="mount.Id">
+                    <li @key="mount.Id" data-breeding-action="@mount.Id.ToString("N")" class="@(FocusedMount == mount.Id ? "breeding-action-focused" : null)">
                         <strong>@Label(mount)</strong>
                         <span> · @MountLocations.GetValueOrDefault(mount.Id)</span>
                         @if (Species(mount)?.Generation is { } generation)
@@ -147,8 +172,16 @@
                         }
                         else if (estimate?.Best is not null && report.OwnedCapacity.GetValueOrDefault(mount.Id) is { } capacity)
                         {
+                            @if (capacity.Evidence != BreedingDemandEvidence.Observed)
+                            {
+                                <StatusIcon Icon="@(capacity.Evidence == BreedingDemandEvidence.HistoryUnavailable ? "slash-circle" : "question-circle")"
+                                    Tooltip="@(capacity.Evidence == BreedingDemandEvidence.HistoryUnavailable ? "Pas de prix moyen relevé : cours du marché indisponible. Débouché non chiffrable ; quantité conseillée à vendre : 0." : "Volume des ventes non relevé : quantité conseillée à vendre : 0.")" CssClass="text-warning" />
+                            }
+                            else
+                            {
                             <span> · @(capacity.SalesAtPrice == 0 ? "Aucune vente observée au prix visé." :
                                 capacity.Remaining == 0 ? "Plafond de mise en vente atteint." : "Quota de vente déjà attribué aux montures mieux valorisées.")</span>
+                            }
                         }
                         else if (estimate?.Best is not null)
                         {
@@ -195,6 +228,8 @@
     <BreedingPairPlanner Report="pairingReport" MountNumbers="MountNumbers" Reserved="_reserved" ReservedChanged="ReservePairAsync" />
 }
 
+</details>
+
 @code {
     [Parameter] public DofusClientWindowKey? Window { get; set; }
     [Parameter] public string? ServerName { get; set; }
@@ -204,12 +239,99 @@
     [Parameter, EditorRequired] public IReadOnlyDictionary<Guid, string> MountLocations { get; set; } = null!;
     [Parameter] public EventCallback<IReadOnlyDictionary<Guid, int>> ExperienceGoalsChanged { get; set; }
     [Parameter] public EventCallback<IReadOnlyDictionary<Guid, BreedingResaleAssessment>> ResaleChanged { get; set; }
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+    [Parameter] public Guid? FocusedMount { get; set; }
+    [Parameter] public EventCallback<Guid> ViewMount { get; set; }
+    [Parameter] public EventCallback<string> ViewLocation { get; set; }
+    [Parameter] public IReadOnlyList<BreedingGaugeNotice> Notices { get; set; } = [];
+    private BreedingObjectiveJournal? _journal;
+    private string? _scope, _trackingError;
+    private bool _goalsDirty;
+    private IReadOnlyList<BreedingObjectiveStep> SelectedPlan => _journal?.Selected is { } key && _journal.Goals.GetValueOrDefault(key) is { } progress ? progress.Steps : _report?.Plan ?? [];
+
+    private void UpdateProgress()
+    {
+        if (_report is null) return;
+        try
+        {
+            // Window titles scope user planning only, never economic observations or network attribution.
+            string? name = Clients.Clients.FirstOrDefault(c => c.Key == Window && c.HasCharacterTitle)?.DisplayName;
+            string scope = name is null ? _scope ?? Guid.NewGuid().ToString("N") :
+                Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(_report.Server + "\n" + name)));
+            if (_journal is null || _scope != scope) { _journal = ProgressStore.Read(scope); _scope = scope; }
+            bool changed = false;
+            foreach (var objective in _report.Strategy.Objectives)
+            {
+                string key = BreedingObjectiveProgressStore.Key(objective);
+                if (!_journal.Goals.TryGetValue(key, out var saved))
+                {
+                    saved = new() { Steps = _report.ObjectivePlans.GetValueOrDefault(key, []).ToList(), Planning = _report.Planning };
+                    _journal.Goals.Add(key, saved); changed = true;
+                }
+                else if (saved.Planning != _report.Planning && _report.ObjectivePlans.GetValueOrDefault(key) is { } revised)
+                {
+                    _report.Planning.Rebase(saved, revised); changed = true;
+                }
+                else if (saved.Done.Count == 0 && !saved.OverrideCurrentCycle &&
+                    _report.ObjectivePlans.GetValueOrDefault(key) is { } latest && !saved.Steps.SequenceEqual(latest))
+                {
+                    saved.Steps = latest.ToList(); changed = true;
+                }
+                // Keep the current route stable while working; a new cycle gets the latest plan.
+                if (BreedingObjectiveProgressStore.Available(_journal, objective, DateTimeOffset.UtcNow))
+                    changed |= BreedingObjectiveProgressStore.Observe(saved, Mounts);
+            }
+            if (_journal.Selected is null || !_report.Strategy.Objectives.Any(g => BreedingObjectiveProgressStore.Key(g) == _journal.Selected))
+            {
+                var recommended = _report.Strategy.Objectives.FirstOrDefault(g => BreedingObjectiveProgressStore.Available(_journal, g, DateTimeOffset.UtcNow)) ?? _report.Strategy.Objectives.FirstOrDefault();
+                if (recommended is not null) { _journal.Selected = BreedingObjectiveProgressStore.Key(recommended); changed = true; }
+            }
+            _goalsDirty |= changed;
+            if (changed && name is not null) ProgressStore.Save(scope, _journal);
+            _trackingError = name is null ? "Choisis ton personnage pour conserver les objectifs entre les relances." : null;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+        { Logger.LogWarning(ex, "Suivi des objectifs indisponible."); _trackingError = "Suivi indisponible · fichier conservé."; }
+    }
+
+    private void ChangePlanningMode(BreedingPlanningMode mode) => Settings.BreedingPlanningMode = mode;
+    private void OnPlanningChanged() { if (!_disposed) _ = InvokeAsync(RefreshAsync); }
+
+    private async Task SelectObjectiveAsync(string key)
+    {
+        if (_journal is null || !_journal.Goals.ContainsKey(key)) return;
+        _journal.Selected = key; SaveProgress(); await PublishExperienceGoalsAsync();
+    }
+    private async Task OverrideObjectiveAsync(string key)
+    {
+        if (_journal?.Goals.GetValueOrDefault(key) is not { } progress) return;
+        progress.OverrideCurrentCycle = true;
+        await SelectObjectiveAsync(key);
+    }
+    private async Task ConfirmStepAsync(int index)
+    {
+        if (_journal?.Selected is not { } key || _report?.Strategy.Objectives.FirstOrDefault(g => BreedingObjectiveProgressStore.Key(g) == key) is not { } objective) return;
+        try
+        {
+            BreedingObjectiveProgressStore.ConfirmStep(_journal, objective, _report.ObjectivePlans.GetValueOrDefault(key, []), index, DateTimeOffset.UtcNow);
+            UpdateProgress();
+            SaveProgress(); await PublishExperienceGoalsAsync();
+        }
+        catch (InvalidOperationException ex) { _trackingError = ex.Message; }
+    }
+    private void SaveProgress()
+    {
+        if (_journal is null || _scope is null || !Clients.Clients.Any(c => c.Key == Window && c.HasCharacterTitle)) return;
+        try { ProgressStore.Save(_scope, _journal); _trackingError = null; }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Logger.LogWarning(ex, "Sauvegarde des objectifs indisponible."); _trackingError = "Sauvegarde indisponible · fichier conservé."; }
+    }
+
 
     private readonly CancellationTokenSource _lifetime = new();
     private BreedingTradeReport? _report;
     private string? _notice;
     private bool _loading;
-    private bool _marketOpen = true;
+    private bool _marketOpen;
     private bool _refreshPending;
     private bool _disposed;
     private bool _copying;
@@ -257,15 +379,15 @@
     }
 
     private bool KeepForBreeding(Guid id) => _reserved?.Contains(id) == true ||
-        _report?.Plan.Any(step => step.Action == BreedingObjectiveAction.Prepare && step.OwnedId == id) == true;
+        SelectedPlan.Any(step => step.Action == BreedingObjectiveAction.Prepare && step.OwnedId == id) == true;
 
     private Task PublishExperienceGoalsAsync()
     {
         var goals = _report?.Sellable.Where(entry => !KeepForBreeding(entry.Key) &&
                 Mounts.Any(mount => mount.Id == entry.Key && mount.Level < entry.Value.Level))
             .ToDictionary(entry => entry.Key, entry => entry.Value.Level) ?? [];
-        if (_report is { } report)
-            foreach (var step in report.Plan.Where(step => step.Action == BreedingObjectiveAction.Prepare))
+        if (_report is not null)
+            foreach (var step in SelectedPlan.Where(step => step.Action == BreedingObjectiveAction.Prepare))
                 if (step.OwnedId is { } id && step.Level is { } level && Mounts.Any(mount => mount.Id == id && mount.Level < level))
                     goals[id] = level;
         return ExperienceGoalsChanged.InvokeAsync(goals);
@@ -273,6 +395,8 @@
 
     protected override void OnInitialized()
     {
+        Settings.BreedingSettingsChanged += OnPlanningChanged;
+        Sales.HistoryAvailabilityChanged += OnBreedingPricesChanged;
         Sales.BreedingPricesChanged += OnBreedingPricesChanged;
         Sales.ListingsChanged += OnBreedingPricesChanged;
         MarketChanges.Changed += OnMarketPricesChanged;
@@ -280,14 +404,17 @@
 
     protected override Task OnParametersSetAsync()
     {
+        UpdateProgress();
         var profiles = Mounts.Select(mount => (mount.Id, mount.Level, mount.SpeciesId, mount.Fertility, mount.Sex,
                 ExperienceBand: mount.Experience / 2_000))
             .OrderBy(profile => profile.Id).ToArray();
         bool changed = !ReferenceEquals(_lastSpecies, SpeciesById) || !_lastMountProfiles.SequenceEqual(profiles);
         _lastSpecies = SpeciesById;
         _lastMountProfiles = profiles;
-        return changed || DateTime.UtcNow - _marketChecked >= TimeSpan.FromMinutes(10)
-            ? RefreshAsync() : Task.CompletedTask;
+        if (changed || DateTime.UtcNow - _marketChecked >= TimeSpan.FromMinutes(10)) return RefreshAsync();
+        if (!_goalsDirty) return Task.CompletedTask;
+        _goalsDirty = false;
+        return PublishExperienceGoalsAsync();
     }
 
     private Task ToggleMarketAsync()
@@ -350,6 +477,7 @@
             var report = await Trade.LoadAsync(Window, ServerName, Mounts, SpeciesById, token);
             token.ThrowIfCancellationRequested();
             _report = report;
+            UpdateProgress();
             _notice = report is null ? "Identifie le serveur pour consulter les prix." : null;
             if (_reserved is { } pair && report?.Pairs.Any(current =>
                     current.Matches(pair.First.Mount.Id, pair.Second.Mount.Id)) != true)
@@ -367,6 +495,8 @@
     public void Dispose()
     {
         _disposed = true;
+        Settings.BreedingSettingsChanged -= OnPlanningChanged;
+        Sales.HistoryAvailabilityChanged -= OnBreedingPricesChanged;
         Sales.BreedingPricesChanged -= OnBreedingPricesChanged;
         Sales.ListingsChanged -= OnBreedingPricesChanged;
         MarketChanges.Changed -= OnMarketPricesChanged;

@@ -162,6 +162,12 @@ internal sealed class DofusNetworkMessageProcessor(
         // Translate active wire fields to the canonical decoder schema.
         // Wire debug above intentionally retains original captured bytes.
         byte[] body = map.NormalizeBody(message.Key, message.Body);
+        if (map.MarketMeanPrices is not null && message.Key == map.MarketMeanPrices)
+        {
+            if (message.Direction == "S→C")
+                observationWriter.PersistHistoryAvailability(body, message.ObservedAtUtc, lease);
+            return;
+        }
         if (correlation.Acquisitions.Observe(map, message, body, lease) is { } acquisition)
             await observationWriter.PersistEquipmentAcquisitionAsync(acquisition, lease, cancellationToken);
 

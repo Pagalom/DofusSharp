@@ -378,6 +378,21 @@ namespace BestCrush.Domain.Migrations
                     b.ToTable("PetFoods");
                 });
 
+            modelBuilder.Entity("BestCrush.Domain.Models.PetFeedingObservation", b =>
+                {
+                    b.Property<string>("Id").HasMaxLength(64).HasColumnType("TEXT");
+                    b.Property<long>("FoodItemId").HasColumnType("INTEGER");
+                    b.Property<long>("PetItemId").HasColumnType("INTEGER");
+                    b.Property<int>("Quantity").HasColumnType("INTEGER");
+                    b.Property<long>("ExperienceBefore").HasColumnType("INTEGER");
+                    b.Property<long>("ExperienceAfter").HasColumnType("INTEGER");
+                    b.Property<DateTime>("ObservedAtUtc").HasColumnType("TEXT");
+                    b.Property<string>("ClientBuild").IsRequired().HasMaxLength(64).HasColumnType("TEXT");
+                    b.HasKey("Id");
+                    b.HasIndex("FoodItemId","ClientBuild","ObservedAtUtc");
+                    b.ToTable("PetFeedingObservations");
+                });
+
             modelBuilder.Entity("BestCrush.Domain.Models.Rune", b =>
                 {
                     b.Property<Guid>("Id")

@@ -1,0 +1,123 @@
+﻿@using BestCrush.Services
+@using BestCrush.Network.Protocol
+
+@{ var now = DateTimeOffset.UtcNow; var goal = Report.Strategy.Objectives.FirstOrDefault(g => BreedingObjectiveProgressStore.Key(g) == Journal.Selected);
+   var progress = goal is null ? null : Journal.Goals.GetValueOrDefault(BreedingObjectiveProgressStore.Key(goal)); }
+<section class="breeding-objective-board" aria-label="Objectifs de production" @onclick:stopPropagation="true">
+    <div class="d-flex align-items-center flex-wrap gap-3">
+        <label class="d-flex align-items-center gap-2">Priorité
+            <select class="form-select form-select-sm" aria-label="Priorité d’élevage" value="@Report.Planning.Mode" @onchange="ChangeModeAsync">
+                <option value="@BreedingPlanningMode.Economy">Économie</option><option value="@BreedingPlanningMode.Speed">Vitesse</option>
+            </select>
+        </label>
+        <StatusIcon Icon="info-circle" Tooltip="Économie : dépenses moyennes minimales. Vitesse : achats disponibles, moins de reproductions puis moins d’XP. La durée de capture est inconnue." />
+        <small><i class="bi bi-shield-check" aria-hidden="true"></i> @Report.Planning.MinimumGenerationChancePercent.ToString("0.#") % minimum
+            <StatusIcon Icon="info-circle" Tooltip="Chance estimée d’obtenir la génération cible à chaque croisement. Plusieurs couleurs peuvent se la partager. Seuil réglable dans Paramètres → Élevage." /></small>
+    </div>
+    @if (goal is not null && progress is not null)
+    {
+        bool available = BreedingObjectiveProgressStore.Available(Journal, goal, now);
+        var waiting = BreedingObjectiveProgressStore.WaitingUntil(Journal, goal.ItemId, now);
+        int percent = BreedingObjectiveProgressStore.Percent(progress);
+        <div class="breeding-goal-hero bc-surface">
+            <details class="breeding-goal-picker" open="@_pickerOpen">
+                <summary @onclick="() => _pickerOpen = !_pickerOpen" @onclick:preventDefault="true"><img src="@BreedingDashboardPresentation.Head(goal.RideId, null)" alt="" onerror="this.onerror=null;this.src='img/mount.svg';" />
+                    <span><small>Objectif de production</small><strong>@goal.Name</strong><span>G@(goal.Generation) · Vente niv. @goal.Sale.Level</span></span><i class="bi bi-chevron-down" aria-hidden="true"></i></summary>
+                <div class="breeding-goal-options" role="group" aria-label="Choisir un objectif">
+                    @foreach (var option in Report.Strategy.Objectives)
+                    {
+                        string key = BreedingObjectiveProgressStore.Key(option);
+                        var saved = Journal.Goals.GetValueOrDefault(key);
+                        bool allowed = BreedingObjectiveProgressStore.Available(Journal, option, now);
+                        <button type="button" class="@(key == Journal.Selected ? "is-selected" : "") @(!allowed ? "is-waiting" : "")" @onclick="() => ChooseAsync(key, allowed)">
+                            <img src="@BreedingDashboardPresentation.Head(option.RideId, null)" alt="" onerror="this.onerror=null;this.src='img/mount.svg';" /><span><strong>@option.Name</strong><small>G@(option.Generation) · niv. @option.Sale.Level · @option.Margin.ToString("N0") K</small></span>
+                            @if (!allowed || saved?.OverrideCurrentCycle == true) { <StatusIcon Icon="@(saved?.OverrideCurrentCycle == true ? "exclamation-triangle" : "hourglass-split")" Tooltip="@(saved?.OverrideCurrentCycle == true ? "Cycle relancé malgré le risque de saturation." : "En attente d’écoulement ou de quota disponible. Cliquer pour relancer malgré l’alerte.")" CssClass="text-warning" /> }
+                            <span class="breeding-option-percent">@(saved is null ? 0 : BreedingObjectiveProgressStore.Percent(saved)) %</span>
+                        </button>
+                    }
+                </div>
+            </details>
+            <div class="breeding-goal-figures">
+                <div><small>Obtention + XP estimés</small><strong>@((goal.Production.Cost + goal.Sale.ExperienceCost).ToString("N0")) K</strong></div>
+                <div><small>Revente estimée</small><strong>@goal.Sale.SalePrice.ToString("N0") K</strong></div>
+                <div class="breeding-goal-profit"><small>Bénéfice estimé · avant taxe</small><strong>@goal.Margin.ToString("N0") K</strong></div>
+            </div>
+            <div class="breeding-goal-progress"><div role="progressbar" aria-label="Progression de l’objectif" aria-valuenow="@percent" aria-valuemin="0" aria-valuemax="100"><span style="width:@percent%"></span></div><strong>@percent %</strong><small>Cycle @(progress.Cycles + 1)</small>
+                @if (progress.OverrideCurrentCycle) { <span class="breeding-goal-wait"><StatusIcon Icon="exclamation-triangle" Tooltip="Cycle relancé à ta demande malgré le quota ou l’attente d’écoulement. Les dépôts précédents restent comptabilisés." CssClass="text-warning" /> Risque de saturation</span> }
+                else if (available) { <span class="breeding-goal-quota" data-bs-toggle="tooltip" data-bs-title="Mises en vente restantes selon le volume observé et tes dépôts.">× @goal.Capacity!.Remaining</span> }
+                else { <span class="breeding-goal-wait"><StatusIcon Icon="hourglass-split" Tooltip="La production est suspendue. Le délai estime l’écoulement ; aucune vente n’est supposée. Les quotas quotidiens et hebdomadaires continuent de s’appliquer." CssClass="text-warning" /> En attente d’écoulement @if (waiting is { } date) { <small>· Réévaluer @date.ToLocalTime().ToString("dd/MM HH:mm")</small> }<button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ChooseAsync(BreedingObjectiveProgressStore.Key(goal), false)">Relancer quand même</button></span> }
+            </div>
+            <details class="breeding-route" open="@_routeOpen"><summary @onclick="() => _routeOpen = !_routeOpen" @onclick:preventDefault="true">Voir le parcours <span>@progress.Done.Count / @progress.Steps.Count étapes</span></summary>
+                <ol>
+                    @for (int i = 0; i < progress.Steps.Count; i++)
+                    {
+                        int index = i; var step = progress.Steps[i]; bool done = progress.Done.Contains(i);
+                        <li class="@(done ? "is-done" : "")"><i class="bi bi-@(done ? "check-circle-fill" : Icon(step.Action))" aria-hidden="true"></i><span><strong>@Title(step)</strong><small>@Detail(step)</small></span>
+                            @if (step.OwnedId is { } id) { <button class="btn btn-sm btn-outline-secondary" @onclick="() => ViewMount.InvokeAsync(id)">Voir</button> }
+                        </li>
+                    }
+                </ol>
+            </details>
+        </div>
+        @if (Notices.Count > 0) { <BreedingGaugeActions Notices="Notices" ViewLocation="ViewLocation" /> }
+        @if (available && Enumerable.Range(0, progress.Steps.Count).FirstOrDefault(i => !progress.Done.Contains(i), -1) is >= 0 and var next)
+        {
+            var step = progress.Steps[next];
+            <article class="breeding-next-step bc-surface"><i class="bi bi-@Icon(step.Action)" aria-hidden="true"></i><div><small>Prochaine étape</small><h2>@Title(step)</h2><p>@Detail(step)</p></div>
+                @if (step.OwnedId is { } id) { <button class="btn btn-outline-secondary" @onclick="() => ViewMount.InvokeAsync(id)">Voir la monture</button> }
+                <button type="button" class="btn btn-primary" @onclick="() => Confirm.InvokeAsync(next)">@(step.Action == BreedingObjectiveAction.Sell ? "Mise en vente effectuée" : "Fait")</button>
+            </article>
+        }
+    }
+    else
+    {
+        @if (Notices.Count > 0) { <BreedingGaugeActions Notices="Notices" ViewLocation="ViewLocation" /> }
+        <div class="breeding-actions-empty bc-surface"><i class="bi bi-binoculars" aria-hidden="true"></i><p>Consulte les prix et les historiques HDV pour chiffrer un objectif.</p></div>
+    }
+</section>
+@if (_confirmGoal is { } confirmKey)
+{
+    <div class="breeding-confirm-backdrop" @onclick="() => _confirmGoal = null">
+        <section class="breeding-confirm-dialog bc-surface" role="dialog" aria-modal="true" aria-labelledby="breeding-restart-title" @onclick:stopPropagation="true">
+            <h2 id="breeding-restart-title"><i class="bi bi-exclamation-triangle" aria-hidden="true"></i> Relancer cet objectif ?</h2>
+            <p>Le marché peut être saturé. Les mises en vente précédentes restent prises en compte.</p>
+            <div><button type="button" class="btn btn-outline-secondary" autofocus @onclick="() => _confirmGoal = null">Annuler</button><button type="button" class="btn btn-primary" @onclick="() => ConfirmRestartAsync(confirmKey)">Relancer malgré l’alerte</button></div>
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired] public BreedingTradeReport Report { get; set; } = null!;
+    [Parameter, EditorRequired] public BreedingObjectiveJournal Journal { get; set; } = null!;
+    [Parameter] public EventCallback<string> Select { get; set; }
+    [Parameter] public EventCallback<BreedingPlanningMode> PlanningModeChanged { get; set; }
+    [Parameter] public EventCallback<string> Override { get; set; }
+    [Parameter] public EventCallback<int> Confirm { get; set; }
+    [Parameter] public EventCallback<Guid> ViewMount { get; set; }
+    [Parameter] public IReadOnlyList<BreedingGaugeNotice> Notices { get; set; } = [];
+    [Parameter] public EventCallback<string> ViewLocation { get; set; }
+    private bool _routeOpen, _pickerOpen;
+    private string? _confirmGoal;
+    private Task ChangeModeAsync(ChangeEventArgs args) => Enum.TryParse<BreedingPlanningMode>(args.Value?.ToString(), out var mode)
+        ? PlanningModeChanged.InvokeAsync(mode) : Task.CompletedTask;
+    private Task ChooseAsync(string key, bool allowed)
+    {
+        if (allowed) { _pickerOpen = false; return Select.InvokeAsync(key); }
+        _confirmGoal = key; return Task.CompletedTask;
+    }
+    private async Task ConfirmRestartAsync(string key) { _confirmGoal = null; _pickerOpen = false; await Override.InvokeAsync(key); }
+    private static string Icon(BreedingObjectiveAction action) => action switch { BreedingObjectiveAction.Capture => "geo-alt", BreedingObjectiveAction.Buy => "cart", BreedingObjectiveAction.Prepare => "heart", BreedingObjectiveAction.Cross => "gender-ambiguous", BreedingObjectiveAction.Train => "stars", _ => "shop" };
+    private static string Title(BreedingObjectiveStep step) => step.Action switch { BreedingObjectiveAction.Capture => $"Chercher {step.Name}", BreedingObjectiveAction.Buy => $"Acheter {step.Name}", BreedingObjectiveAction.Prepare => $"Préparer {step.Name}", BreedingObjectiveAction.Cross => $"Obtenir {step.Name}", BreedingObjectiveAction.Train => $"Monter {step.Name} au niveau {step.Level}", _ => $"Mettre en vente {step.Name}" };
+    private static string Detail(BreedingObjectiveStep step)
+    {
+        string sex = step.Sex switch { BreedingMountSex.Male => "Mâle", BreedingMountSex.Female => "Femelle", _ => "" };
+        return step.Action switch {
+            BreedingObjectiveAction.Capture => string.Join(" · ", new[] { sex, step.Zone }.Where(s => !string.IsNullOrEmpty(s))),
+            BreedingObjectiveAction.Buy => $"{sex} · Niveau {step.Level ?? 1}".Trim(' ', '·'),
+            BreedingObjectiveAction.Prepare => $"{sex} · Endurance, maturité et amour au maximum · Niveau {step.Level}".Trim(' ', '·'),
+            BreedingObjectiveAction.Cross => $"{step.First} × {step.Second}" + (sex.Length > 0 ? $" · {sex} recherché" : "") +
+                (step.GenerationChancePercent is { } chance ? $" · Génération cible : {chance:0.##} % estimés" : ""),
+            BreedingObjectiveAction.Train => "Utiliser le carburant le moins coûteux indiqué ci-dessous.",
+            _ => $"Niveau {step.Level} · {step.SalePrice:N0} K · avant taxe" };
+    }
+}

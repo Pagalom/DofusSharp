@@ -67,6 +67,7 @@ Les correspondances sont **par route sémantique**, pas par clé brute. Si l'ide
 
 | Route du JSON | Fonctions concernées |
 | --- | --- |
+| `market_mean_prices` | cache complet des prix moyens `isr` ; disponibilité du Cours du marché, sans transformer les moyennes en minima HDV ni en ventes |
 | `price_list` | prix du marché, lots, notification SQLite |
 | `market_selection_response` | dernier équipement réseau/clic molette ; prix **x1 équipement** et **quatre lots rune/ressource** après validation stricte de `jzs` et de la catégorie enregistrée en base |
 | `crush_result` | résultat historique `kci` (Dofus 3.6.11.15) |

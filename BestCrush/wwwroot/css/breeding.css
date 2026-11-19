@@ -1,0 +1,186 @@
+.breeding-dashboard { padding-bottom:2rem; }
+.breeding-tabs { display:flex; gap:2rem; border-bottom:1px solid #d8cfb4; margin-bottom:2rem; }
+.breeding-tabs button { border:0; border-bottom:3px solid transparent; background:none; padding:.8rem .25rem 1rem; color:#6d746d; font-size:1rem; }
+.breeding-tabs button i { margin-right:.45rem; }
+.breeding-tabs button.is-selected { color:#78551f; border-color:#ba954c; font-weight:650; }
+.breeding-overview[hidden],.breeding-actions[hidden] { display:none!important; }
+.breeding-overview-heading { display:flex; align-items:center; justify-content:space-between; margin-bottom:1.5rem; }
+.breeding-overview-heading h2 { font-size:1.5rem; font-weight:700; margin:0; }
+.breeding-overview-heading h2 span { font-size:1rem; font-weight:400; color:#6b736b; margin-left:.3rem; }
+.breeding-filters { display:grid; grid-template-columns:minmax(200px,1.5fr) repeat(3,minmax(145px,1fr)); gap:.8rem; margin-bottom:1.8rem; }
+.breeding-search { display:flex; align-items:center; gap:.7rem; background:#152429; border:1px solid #718579; border-radius:.4rem; padding:.65rem .9rem; color:#c4d1ce; }
+.breeding-search:focus-within { outline:2px solid #b8954d; outline-offset:2px; }
+.breeding-search input { border:0; outline:0; background:none; color:#f5f1e8; min-width:0; width:100%; }
+.breeding-search input::placeholder { color:#bec9c6; }
+.breeding-filters .form-select { font-size:.85rem; }
+.breeding-enclosures { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.6rem; }
+.breeding-enclosure { height:500px; perspective:1600px; min-width:0; --bc-link:#e4c27a; --bc-button-ink:#f5f1e8; --bc-button-border:#718579; --bc-button-hover:#354c49; }
+.breeding-enclosure-turn { position:relative; width:100%; height:100%; transform-style:preserve-3d; transition:transform .45s cubic-bezier(.25,.65,.25,1); }
+.breeding-enclosure.is-flipped .breeding-enclosure-turn { transform:rotateY(180deg); }
+.breeding-enclosure-face { position:absolute; inset:0; display:flex; flex-direction:column; border:1px solid #52645e; border-radius:1rem; background:#222e34; color:#f5f1e8; backface-visibility:hidden; -webkit-backface-visibility:hidden; overflow:hidden; box-shadow:0 5px 18px #2634300a; }
+.breeding-enclosure-front { padding:1.5rem 1.6rem 1rem; }
+.breeding-enclosure-back { transform:rotateY(180deg); border-color:#bda467; background:linear-gradient(140deg,#2b3a3e,#222e34); }
+.breeding-enclosure-heading { display:flex; justify-content:space-between; align-items:center; gap:1rem; margin-bottom:1.5rem; }
+.breeding-enclosure-identity { min-width:0; flex:1; }
+.breeding-enclosure-title { display:flex; align-items:center; flex-wrap:wrap; gap:.6rem; }
+.breeding-eyebrow { display:block; font-size:.65rem; letter-spacing:.12em; text-transform:uppercase; color:#b9c4c2; margin-bottom:.3rem; }
+.breeding-enclosure-heading h2 { display:flex; align-items:center; gap:.7rem; font-size:1.2rem; margin:0; color:#e4c27a; }
+.breeding-enclosure-heading h2 span { border:1px solid #52645e; border-radius:2rem; padding:.2rem .5rem; font-size:.75rem; color:#d6dfda; font-weight:400; }
+.breeding-fuel-meters { display:flex; align-items:center; justify-content:flex-end; gap:6px; flex-shrink:0; margin-left:auto; }
+.breeding-fuel-meter { --fuel-color:#ba9ccc; display:flex; flex-direction:column; align-items:center; gap:7px; width:30px; padding:7px 3px 5px; border:1px solid #42554f; border-radius:.5rem; background:#293a3b; cursor:help; }
+.breeding-fuel-meter.is-active { border-color:#e4c27a; box-shadow:0 0 0 1px #e4c27a30; background:#31413b; }
+.breeding-fuel-meter:focus-visible { outline:2px solid #e4c27a; outline-offset:3px; }
+.breeding-fuel-meter.tone-endurance { --fuel-color:#dbc17e; }.breeding-fuel-meter.tone-maturity { --fuel-color:#8fc4ba; }
+.breeding-fuel-meter.tone-love { --fuel-color:#d6a0ae; }.breeding-fuel-meter.tone-experience { --fuel-color:#c8cc92; }
+.breeding-fuel-tank { position:relative; width:9px; height:58px; overflow:hidden; border-radius:3px; background:#142328; }
+.breeding-fuel-level { position:absolute; bottom:0; left:0; width:100%; background:var(--fuel-color); border-top:1px solid #ffffff9c; }
+.breeding-fuel-tick { position:absolute; left:2px; right:2px; height:1px; background:#233431a6; }
+.breeding-fuel-symbol { display:flex; align-items:center; justify-content:center; height:18px; color:var(--fuel-color); font-size:.85rem; line-height:1; }
+.breeding-fuel-symbol>span:not(.breeding-fuel-xp) { font-size:1.35rem; font-weight:500; }.breeding-fuel-xp { font-size:.6rem; font-weight:800; letter-spacing:-.03em; }
+.breeding-fuel-meter.is-unknown .breeding-fuel-tank { background:repeating-linear-gradient(135deg,#17262a 0 3px,#334440 3px 5px); }
+.breeding-fuel-meter.is-unknown .breeding-fuel-symbol { color:#8fa49a; }
+.breeding-mount-grid { flex:1; min-height:0; display:flex; flex-wrap:wrap; gap:.8rem; align-content:flex-start; overflow:auto; padding:.2rem .25rem .8rem; }
+.breeding-mount-tile { position:relative; flex:0 0 84px; height:88px; border:1px solid #4c6258; border-radius:.75rem; background:linear-gradient(145deg,#354b42,#2a3b36); color:#f5f1e8; padding:9px 8px 17px; transition:background .15s,border-color .15s,transform .15s; }
+.breeding-mount-tile:hover { background:#41584a; border-color:#d4b56f; transform:translateY(-2px); }
+.breeding-mount-tile:focus-visible,.breeding-back-button:focus-visible,.breeding-tabs button:focus-visible { outline:2px solid #e4c27a; outline-offset:3px; }
+.breeding-mount-tile img { width:100%; height:100%; object-fit:contain; }
+.breeding-tile-topline { position:absolute; top:4px; left:6px; display:flex; align-items:center; gap:4px; }
+.breeding-tile-level { font-size:.6rem; color:#dbe4dd; font-weight:600; }
+.breeding-tile-fertility { position:absolute; top:4px; right:6px; font-size:.7rem; color:#b9c4c2; line-height:1.2; }
+.breeding-tile-fertility.is-fertile { color:#a5cfac; }.breeding-tile-fertility.is-sterile { color:#e2a4ad; }
+.breeding-tile-fertility.needs-training { color:#e9ad65; }
+.breeding-mount-tooltip .tooltip-inner { padding:.8rem 1rem; }
+.breeding-tooltip-name { display:block; font-weight:600; margin-bottom:.7rem; }
+.breeding-tooltip-needs { display:flex; justify-content:center; align-items:center; gap:.6rem; }
+.breeding-need { --need-color:#d6a0ae; position:relative; display:inline-flex; align-items:center; justify-content:center; width:26px; height:26px; border-radius:50%; background:#53635e; color:#82918c; font-size:.8rem; }
+.breeding-need:not(.need-serenity)::before { content:""; position:absolute; inset:2px; border-radius:50%; background:#253238; }
+.breeding-need>i { position:relative; z-index:1; }
+.breeding-need.need-endurance { --need-color:#e4c27a; }.breeding-need.need-maturity { --need-color:#8fc4cf; }
+.breeding-need.is-full { background:var(--need-color); color:var(--need-color); }
+.breeding-need.quarter-1 { background:conic-gradient(var(--need-color) 25%,#53635e 25%); }
+.breeding-need.quarter-2 { background:conic-gradient(var(--need-color) 50%,#53635e 50%); }
+.breeding-need.quarter-3 { background:conic-gradient(var(--need-color) 75%,#53635e 75%); }
+.breeding-need.is-empty,.breeding-need.is-unknown { background:#53635e; }
+.breeding-need.need-serenity { background:transparent; color:#b29bd7; font-size:1.4rem; }
+.breeding-tile-sex { position:absolute; bottom:4px; left:7px; display:flex; align-items:center; justify-content:center; font-size:.9rem; }
+.breeding-tile-sex.is-female { color:#e5b3c6; }.breeding-tile-sex.is-male { color:#a6cde4; }
+.breeding-tile-generation { position:absolute; bottom:5px; right:7px; font-size:.62rem; color:#e4d7b4; font-weight:650; }
+.breeding-enclosure-footer { display:flex; justify-content:space-between; margin-top:.7rem; padding-top:.8rem; border-top:1px solid #3f514b; color:#91a69b; font-size:.65rem; }
+.breeding-enclosure-empty { display:flex; flex-direction:column; justify-content:center; align-items:center; width:100%; height:100%; min-height:120px; gap:1rem; color:#9baea4; font-size:.85rem; }
+.breeding-enclosure-empty>i { font-size:2.5rem; opacity:.55; }
+.breeding-mount-toolbar { display:flex; align-items:center; justify-content:space-between; padding:.85rem 1.25rem; border-bottom:1px solid #4d6059; font-size:.7rem; color:#b9c4c2; }
+.breeding-back-button { display:inline-flex; align-items:center; gap:.5rem; border:0; background:none; color:#e4c27a; font-size:.8rem; padding:.3rem 0; }
+.breeding-mount-sheet { padding:1.25rem 1.5rem .6rem; overflow:auto; flex:1; min-height:0; }
+.breeding-mount-identity { display:flex; align-items:center; gap:.8rem; margin-bottom:1.7rem; }
+.breeding-mount-identity>img { width:54px; height:60px; object-fit:contain; flex-shrink:0; }
+.breeding-mount-identity h3 { font-size:1.1rem; color:#e4c27a; line-height:1.35; margin:0 0 .5rem; }
+.breeding-mount-meta { display:flex; flex-wrap:wrap; gap:.35rem .7rem; font-size:.75rem; color:#c2ceca; }
+.breeding-fertility { color:#a9ceb1; }
+.breeding-mount-price { margin-left:auto; text-align:right; white-space:nowrap; align-self:flex-start; padding-top:.1rem; }
+.breeding-mount-price small { display:block; font-size:.6rem; color:#b9c4c2; margin-bottom:.35rem; }
+.breeding-mount-price strong { font-size:.9rem; }
+.breeding-mount-gauges { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:1.15rem 1.4rem; }
+.breeding-progress { --gauge-color:#b7bd8b; min-width:0; }
+.breeding-progress.tone-maturity { --gauge-color:#8fc4ba; }.breeding-progress.tone-love { --gauge-color:#d6a0ae; }.breeding-progress.tone-experience { --gauge-color:#c7b0df; }
+.breeding-progress-label { display:flex; justify-content:space-between; align-items:center; gap:.45rem; font-size:.8rem; margin-bottom:.5rem; color:#e4e9e1; }
+.breeding-progress-label i { margin-right:.2rem; color:var(--gauge-color,#d3bf89); }
+.breeding-progress-value { font-variant-numeric:tabular-nums; white-space:nowrap; font-size:.75rem; }
+.breeding-progress-value small { color:#8fa49a; font-size:.65rem; }
+.breeding-progress-track { height:7px; background:#17252a; border-radius:2rem; overflow:hidden; }
+.breeding-progress-track>span { display:block; height:100%; border-radius:2rem; background:var(--gauge-color); }
+.breeding-progress-caption { min-height:1rem; margin-top:.4rem; font-size:.68rem; color:#aabdb2; font-variant-numeric:tabular-nums; }
+.breeding-progress-caption i { margin-right:.15rem; }
+.breeding-serenity { margin-top:1.25rem; }
+.breeding-serenity-track { position:relative; margin:.7rem 0 .55rem; height:8px; border-radius:1rem; background:linear-gradient(to right,#ad9c69 0%,#ad9c69 30%,#84b9ac 30%,#84b9ac 70%,#b68b9d 70%,#b68b9d 100%); }
+.breeding-serenity-marker { position:absolute; top:50%; width:10px; height:15px; border-radius:3px; background:#fff7df; border:2px solid #24332e; transform:translate(-50%,-50%); box-shadow:0 0 0 1px #f7e7c3; }
+.breeding-serenity-labels { display:flex; justify-content:space-between; color:#9cb0a5; font-size:.58rem; }
+.breeding-mount-details { margin-top:1.25rem; font-size:.7rem; color:#b9c4c2; }
+.breeding-mount-details summary { cursor:pointer; }.breeding-mount-details dl { display:grid; grid-template-columns:1fr 1fr; gap:.5rem; margin-top:1rem; }.breeding-mount-details dd { margin:0; text-align:right; color:#e4e9e1; }
+.breeding-sheet-footer { padding:.65rem 1.4rem 1rem; text-align:right; }
+.breeding-sheet-footer .btn { font-size:.7rem; color:#e4c27a; border-color:#7c8f7d; }
+.breeding-empty-dashboard { padding:4rem 1rem; text-align:center; border:1px dashed #c8bea1; border-radius:1rem; }
+.breeding-empty-dashboard>i { display:block; color:#a58d58; font-size:3rem; }
+.breeding-empty-hint { margin:.8rem 0 0; color:#7b8374; font-size:.85rem; }
+.breeding-actions { padding-top:.5rem; }.breeding-enclosure-actions { border:1px solid #51635f; border-radius:.8rem; padding:1.5rem; margin:1.5rem 0; }.breeding-enclosure-actions>h2 { font-size:1.1rem; color:#e4c27a; margin-bottom:1rem; }
+.breeding-serenity-target { display:flex; flex-wrap:wrap; align-items:center; gap:1rem; margin:1rem 0; }.breeding-serenity-target select { width:auto; }
+.breeding-action-focused { outline:2px solid #b8954d; outline-offset:6px; border-radius:.3rem; background:#e4c27a12; }
+@media (min-width:1600px) { .breeding-mount-tile { flex-basis:96px; height:100px; } }
+@media (max-width:1120px) { .breeding-filters { grid-template-columns:repeat(2,minmax(0,1fr)); }.breeding-enclosures { grid-template-columns:minmax(0,1fr); } }
+@media (max-width:560px) { .breeding-filters { grid-template-columns:minmax(0,1fr); }.breeding-enclosure-front { padding:1.2rem; }.breeding-mount-sheet { padding:1rem; }.breeding-mount-identity { flex-wrap:wrap; }.breeding-mount-price { margin-left:auto; }.breeding-progress-value small { display:none; }.breeding-mount-gauges { gap:1rem; }.breeding-tabs { gap:1rem; } }
+@media (max-width:480px) { .breeding-enclosure-heading { flex-wrap:wrap; }.breeding-fuel-meters { margin-left:auto; }.breeding-fuel-meter { width:28px; }.breeding-fuel-tank { height:48px; } }
+@media (prefers-reduced-motion:reduce) { .breeding-enclosure-turn,.breeding-mount-tile { transition:none; }.breeding-mount-tile:hover { transform:none; } }
+
+/* Action plan: a spacious objective, a single next step, then shopping and market research. */
+.breeding-objective-board { display:grid;gap:22px;margin:12px 0 28px; }
+.breeding-goal-hero,.breeding-next-step,.breeding-hdv-card,.breeding-actions-empty { border:1px solid var(--bc-border,#536c68);border-radius:14px;padding:24px; background:var(--bc-surface,#202f34);color:var(--bc-text,#eef0e8); }
+.breeding-goal-picker { position:relative; }
+.breeding-goal-picker>summary { display:flex;align-items:center;gap:18px;list-style:none;cursor:pointer; }
+.breeding-goal-picker>summary::-webkit-details-marker { display:none; }
+.breeding-goal-picker>summary>img { width:76px;height:76px;object-fit:contain; }
+.breeding-goal-picker>summary>span { display:grid;gap:4px;flex:1; }
+.breeding-goal-picker>summary strong { color:#eec16e;font-size:1.35rem; }
+.breeding-goal-picker small,.breeding-goal-picker>summary>span>span { font-size:.82rem;color:#b9c8c5; }
+.breeding-goal-options { position:absolute;z-index:8;top:calc(100% + 14px);left:0;right:0;max-height:390px;overflow:auto;padding:8px;background:#19282c;border:1px solid #778d80;border-radius:10px;box-shadow:0 12px 30px #0006; }
+.breeding-goal-options button { display:flex;align-items:center;gap:12px;width:100%;text-align:left;background:transparent;border:1px solid transparent;border-radius:8px;padding:10px;color:inherit; }
+.breeding-goal-options button:hover,.breeding-goal-options button.is-selected { background:#344943;border-color:#bb995f; }
+.breeding-goal-options img { width:42px;height:42px;object-fit:contain; }
+.breeding-goal-options button>span:first-of-type { display:grid;flex:1;gap:3px; }
+.breeding-option-percent { white-space:nowrap;font-weight:600;color:#eec16e; }
+.breeding-goal-figures { display:grid;grid-template-columns:repeat(3,1fr);gap:25px;margin:30px 0; }
+.breeding-goal-figures>div { display:grid;gap:7px; }
+.breeding-goal-figures small,.breeding-goal-progress small,.breeding-next-step small { color:#b9c8c5; }
+.breeding-goal-figures strong { font-size:1.25rem; }
+.breeding-goal-profit strong { color:#94c9a8; }
+.breeding-goal-progress { display:flex;align-items:center;flex-wrap:wrap;gap:12px; }
+.breeding-goal-progress>[role=progressbar] { flex:1;min-width:130px;height:7px;border-radius:8px;background:#42514f;overflow:hidden; }
+.breeding-goal-progress>[role=progressbar]>span { display:block;height:100%;border-radius:inherit;background:#d9b165;transition:width .3s; }
+.breeding-goal-quota { margin-left:auto;color:#eec16e;font-weight:700; }
+.breeding-goal-wait { width:100%;display:flex;align-items:center;gap:8px;color:#eec16e; }
+.breeding-route { margin-top:22px;border-top:1px solid #506360;padding-top:16px; }
+.breeding-route summary { cursor:pointer;font-size:.9rem;color:#d6c19b; }
+.breeding-route summary span { float:right;color:#b9c8c5; }
+.breeding-route ol { list-style:none;padding:8px 0 0;margin:0; }
+.breeding-route li { display:flex;align-items:center;gap:14px;padding:15px 5px;border-bottom:1px solid #43534f; }
+.breeding-route li>span { flex:1;display:grid;gap:5px; }
+.breeding-route small { color:#b9c8c5; }
+.breeding-route .is-done { opacity:.55; }
+.breeding-route .is-done>i { color:#a0c5a5; }
+.breeding-next-step { display:flex;align-items:center;gap:18px; }
+.breeding-next-step>i { font-size:1.7rem;color:#eec16e; }
+.breeding-next-step>div { flex:1; }
+.breeding-next-step h2 { font-size:1.08rem;margin:5px 0 8px;color:#eec16e; }
+.breeding-next-step p { margin:0;font-size:.88rem; }
+.breeding-action-columns { display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:26px;align-items:start; }
+.breeding-hdv-card header { display:flex;align-items:center;justify-content:space-between;gap:15px;margin-bottom:15px; }
+.breeding-hdv-card h2 { font-size:1.08rem;margin:0; }
+.breeding-hdv-card h2 span { color:#c5b899;font-size:.8rem; }
+.breeding-hdv-list { max-height:450px;overflow:auto;display:grid;gap:12px; }
+.breeding-hdv-list>div { display:flex;justify-content:space-between;gap:15px;padding-bottom:9px;border-bottom:1px solid #43534f; }
+.breeding-calculation-details { margin-top:28px; }
+.breeding-calculation-details>summary { color:#8b713d;cursor:pointer;padding:12px 0; }
+.breeding-calculation-details[open]>section,.breeding-calculation-details[open]>details { margin-top:20px; }
+.breeding-refill-card { padding:18px 0;border-bottom:1px solid #52625b; }
+.breeding-refill-card:last-child { border:0; }
+.breeding-refill-card h2 { color:#eec16e;margin-bottom:14px; }
+.breeding-refill-card p,.breeding-refill-card ul { font-size:.88rem;line-height:1.6; }
+.breeding-refill-card li { margin:6px 0; }
+.breeding-gauge-notice { display:flex;align-items:center;gap:9px;margin:0 0 16px;padding:8px 12px;border:1px solid #9b814a;border-radius:8px;color:#e7bc72;background:#d2a95412;font-size:.8rem; }
+.breeding-gauge-notice>i:last-child { margin-left:auto; }
+.breeding-urgent { border-left:3px solid #d8b266;padding-left:20px; }
+.breeding-urgent h2 { font-size:1.05rem;margin-bottom:16px; }
+.breeding-urgent article { display:flex;align-items:center;gap:15px;padding:14px 0;border-top:1px solid #b8ac8e55; }
+.breeding-urgent article>div { flex:1;display:grid;gap:4px; }
+.breeding-urgent article small { opacity:.75; }
+.breeding-urgent article>i { color:#ad7d23; }
+.breeding-actions-empty { display:flex;align-items:center;gap:15px; }
+.breeding-actions-empty p { margin:0; }
+@media(max-width:950px) { .breeding-action-columns { grid-template-columns:1fr; }.breeding-next-step{flex-wrap:wrap;}.breeding-goal-figures { gap:15px; } }
+@media(max-width:600px) { .breeding-goal-hero,.breeding-next-step,.breeding-hdv-card { padding:18px; }.breeding-goal-figures{grid-template-columns:1fr;gap:14px;}.breeding-goal-wait{flex-wrap:wrap;}.breeding-goal-picker>summary strong{font-size:1.05rem;} }
+.breeding-goal-options button.is-waiting { color:#a6aba6;background:#293332; }
+.breeding-goal-options button.is-waiting img { filter:grayscale(1);opacity:.6; }
+.breeding-goal-options button.is-waiting:hover { border-color:#b79a65;color:#d9c59c; }
+.breeding-confirm-backdrop { position:fixed;inset:0;z-index:1100;background:#101c24a6;display:flex;align-items:center;justify-content:center;padding:24px; }
+.breeding-confirm-dialog { padding:26px;max-width:490px;border-radius:14px;border:1px solid #ac945f;box-shadow:0 18px 70px #0006; }
+.breeding-confirm-dialog h2 { font-size:1.18rem;color:#eec16e; }
+.breeding-confirm-dialog p { margin:18px 0 24px;font-size:.9rem; }
+.breeding-confirm-dialog>div { display:flex;gap:12px;justify-content:flex-end; }

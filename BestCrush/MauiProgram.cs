@@ -50,6 +50,7 @@ public static class MauiProgram
             builder.Services.AddSingleton(new ImageCache(Path.Combine(dataDirectory, "Cache", "images")));
             builder.Services.AddSingleton<IWorkspacePreferences, MauiWorkspacePreferences>();
             builder.Services.AddSingleton<CurrentCharacterState>();
+            builder.Services.AddSingleton(new BreedingObjectiveProgressStore(Path.Combine(dataDirectory, "Data", "breeding-objectives.json")));
             builder.Services.AddSingleton(new WeeklyRoutineStore(Path.Combine(dataDirectory, "Data", "weekly-routine.json")));
             builder.Services.AddSingleton<CurrentDofusClientsState>();
             builder.Services.AddSingleton(new LiveStockRepository(Path.Combine(dataDirectory, "Data", "stock-current.db")));
@@ -106,6 +107,7 @@ public static class MauiProgram
             builder.Services.AddScoped<MarketAnalyticsService>();
             builder.Services.AddScoped<ForgemagingDataService>();
             builder.Services.AddSingleton<LiveForgemagingService>();
+            builder.Services.AddSingleton<LivePetFeedingService>();
             builder.Services.AddSingleton<LiveBreedingService>();
             builder.Services.AddScoped<BreedingRefillService>();
             builder.Services.AddScoped<BreedingTradeService>();

@@ -1,4 +1,4 @@
-@using BestCrush.Domain.Services
+﻿@using BestCrush.Domain.Services
 @using BestCrush.Network.Protocol
 @using BestCrush.Services
 @using Microsoft.Extensions.Logging
@@ -7,13 +7,13 @@
 @inject ILogger<BreedingRefill> Logger
 @implements IDisposable
 
-<section class="card mb-3" aria-label="@BreedingTrainingRules.Name(Gauge)">
-    <div class="card-body">
+<section class="breeding-refill-card" aria-label="@BreedingTrainingRules.Name(Gauge)">
+    <div class="breeding-refill-body">
         <h2 class="h6">Carburant · @BreedingTrainingRules.Name(Gauge)</h2>
         @if (Reserve >= Target)
         {
             <p class="mb-0">
-                La réserve suffit. Objectif atteint en
+                <i class="bi bi-check-circle text-success" aria-hidden="true"></i> Réserve suffisante ·
                 <strong>@Duration(BreedingFuel.TimeToSpend(Reserve, Target)!.Value)</strong>
                 @(!Active ? "après activation." : "")
             </p>
@@ -21,7 +21,7 @@
         else
         {
             <p>
-                Il manque <strong>@((Target - Reserve).ToString("N0")) points</strong> pour l’objectif.
+                <i class="bi bi-fuel-pump" aria-hidden="true"></i> <strong>@((Target - Reserve).ToString("N0")) points à recharger</strong>.
                 @if (Target > BreedingFuel.Capacity)
                 {
                     <span>Plusieurs remplissages seront nécessaires.</span>
@@ -31,9 +31,7 @@
                     <span>Réserve épuisée vers @BreedingTrainingPlan.At(ObservedAt, delay).</span>
                 }
             </p>
-            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="CompareAsync" disabled="@_busy">
-                @(_busy ? "Comparaison en cours…" : "Comparer achat et fabrication")
-            </button>
+            @if (_busy) { <span class="small" role="status"><i class="bi bi-hourglass-split" aria-hidden="true"></i> Calcul…</span> }
             @if (_error)
             {
                 <p class="mt-2 mb-0" role="status">Comparaison indisponible. Réessaie dans un instant.</p>
@@ -43,7 +41,7 @@
                 <div class="mt-3" role="status">
                     @if (result.Plan is { } plan)
                     {
-                        <p class="mb-2"><strong>@plan.Cost.ToString("N0") K à débourser</strong> · Comparé à @_calculatedAt.ToLocalTime().ToString("HH:mm")</p>
+                        <p class="mb-2"><strong>@plan.Cost.ToString("N0") K à débourser</strong></p>
                         <ul class="mb-2">
                             @foreach (var use in plan.Stock)
                             {
@@ -122,11 +120,11 @@
                     }
                     @if (!result.StockComplete)
                     {
-                        <p class="small mb-1">Synchronise l’inventaire et la banque pour vérifier les stocks.</p>
+                        <StatusIcon Icon="bag-dash" Tooltip="Synchronise l’inventaire et la banque pour vérifier les stocks." CssClass="text-warning" />
                     }
                     @if (result.BreederLevel is null)
                     {
-                        <p class="small mb-1">Synchronise ton niveau d’Éleveur pour inclure les fabrications accessibles.</p>
+                        <StatusIcon Icon="tools" Tooltip="Synchronise ton niveau d’Éleveur pour inclure les fabrications accessibles." CssClass="text-warning" />
                     }
                     @if (!result.RecipesAvailable)
                     {

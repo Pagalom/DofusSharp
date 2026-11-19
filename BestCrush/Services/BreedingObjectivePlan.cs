@@ -1,4 +1,4 @@
-using BestCrush.Domain.Services;
+﻿using BestCrush.Domain.Services;
 using BestCrush.Network.Protocol;
 
 namespace BestCrush.Services;
@@ -7,7 +7,11 @@ public enum BreedingObjectiveAction { Capture, Buy, Prepare, Cross, Train, Sell 
 
 public sealed record BreedingObjectiveStep(BreedingObjectiveAction Action, string Name, Guid? OwnedId = null,
     BreedingMountSex? Sex = null, int? Level = null, string? Zone = null, string? First = null, string? Second = null,
-    long? SalePrice = null, bool Ready = false);
+    long? SalePrice = null, bool Ready = false)
+{
+    public int? RideId { get; init; }
+    public decimal? GenerationChancePercent { get; init; }
+}
 
 internal static class BreedingObjectivePlan
 {
@@ -16,8 +20,11 @@ internal static class BreedingObjectivePlan
         IReadOnlyDictionary<long, string> names, IReadOnlyList<BreedingPairParent> owned,
         IReadOnlyDictionary<Guid, long?> preparationCosts, IReadOnlyDictionary<int, long> experienceCosts,
         IReadOnlyDictionary<Guid, BreedingResaleOption> sellable, long? fullPreparation,
-        IReadOnlyDictionary<string, string> captureZones)
+        IReadOnlyDictionary<string, string> captureZones, BreedingPlanningOptions? planning = null)
     {
+        planning ??= new();
+        var rideIds = rides.Values.Where(ride => names.ContainsKey(ride.ItemId))
+            .GroupBy(ride => names[ride.ItemId]).ToDictionary(group => group.Key, group => group.First().Id);
         var availableSale = owned.Where(parent => parent.Mount.SpeciesId == objective.RideId && sellable.ContainsKey(parent.Mount.Id))
             .OrderByDescending(parent => sellable[parent.Mount.Id].Net).FirstOrDefault();
         if (availableSale is not null)
@@ -25,9 +32,10 @@ internal static class BreedingObjectivePlan
             var sale = sellable[availableSale.Mount.Id];
             var sell = new BreedingObjectiveStep(BreedingObjectiveAction.Sell, objective.Name, availableSale.Mount.Id,
                 Level: sale.Level, SalePrice: sale.SalePrice);
-            return sale.Level > availableSale.Mount.Level
+            IReadOnlyList<BreedingObjectiveStep> existing = sale.Level > availableSale.Mount.Level
                 ? [new(BreedingObjectiveAction.Train, objective.Name, availableSale.Mount.Id, Level: sale.Level), sell]
                 : [sell];
+            return Describe(existing);
         }
 
         var best = routes.Select(route =>
@@ -39,9 +47,16 @@ internal static class BreedingObjectivePlan
                 steps.Add(new(BreedingObjectiveAction.Train, objective.Name, Level: objective.Sale.Level));
             steps.Add(new(BreedingObjectiveAction.Sell, objective.Name, Level: objective.Sale.Level,
                 SalePrice: objective.Sale.SalePrice));
-            return (Steps: steps, EstimatedCost: route.Cost - savings, Used: used.Count);
-        }).OrderBy(result => result.EstimatedCost).ThenByDescending(result => result.Used).First();
-        return best.Steps;
+            return (Steps: steps, EstimatedCost: route.Cost - savings, Used: used.Count, Route: route);
+        });
+        var chosen = planning.Mode == BreedingPlanningMode.Speed
+            ? best.OrderBy(result => result.Route.ExpectedCrosses).ThenBy(result => result.Route.ExpectedCaptures)
+                .ThenBy(result => result.Route.TrainingExperience).ThenBy(result => result.EstimatedCost).First()
+            : best.OrderBy(result => result.EstimatedCost).ThenByDescending(result => result.Used).First();
+        return Describe(chosen.Steps);
+
+        IReadOnlyList<BreedingObjectiveStep> Describe(IReadOnlyList<BreedingObjectiveStep> steps) => steps.Select(step =>
+            step with { RideId = rideIds.TryGetValue(step.Name, out int id) ? id : null }).ToArray();
 
         string Name(int id) => names.GetValueOrDefault(rides[id].ItemId, $"Monture #{id}");
 
@@ -99,9 +114,22 @@ internal static class BreedingObjectivePlan
                     var reverse = (firstMale.Saving + secondFemale.Saving,
                         Convert.ToInt32(firstMale.Parent is not null) + Convert.ToInt32(secondFemale.Parent is not null));
                     bool swap = reverse.CompareTo(direct) > 0;
-                    savings += Prepare(first, swap ? male : female, route.FirstLevel, true, used, steps);
-                    savings += Prepare(second, swap ? female : male, route.SecondLevel, true, used, steps);
-                    steps.Add(new(BreedingObjectiveAction.Cross, name, Sex: sex, First: Name(first.RideId), Second: Name(second.RideId)));
+                    int firstLevel = route.FirstLevel, secondLevel = route.SecondLevel;
+                    var ownedFirst = swap ? firstMale.Parent : firstFemale.Parent;
+                    var ownedSecond = swap ? secondFemale.Parent : secondMale.Parent;
+                    if ((ownedFirst is not null || ownedSecond is not null) &&
+                        planning.OwnedParentLevels(ownedFirst?.Mount, ownedSecond?.Mount, experienceCosts,
+                            (ownedFirst is null ? first.CostForParent + (fullPreparation ?? 0) : preparationCosts[ownedFirst.Mount.Id]!.Value) +
+                            (ownedSecond is null ? second.CostForParent + (fullPreparation ?? 0) : preparationCosts[ownedSecond.Mount.Id]!.Value)) is { } training)
+                    { firstLevel = training.First; secondLevel = training.Second; }
+                    savings += Prepare(first, swap ? male : female, firstLevel, true, used, steps);
+                    savings += Prepare(second, swap ? female : male, secondLevel, true, used, steps);
+                    savings += experienceCosts.GetValueOrDefault(BreedingMountExperience.RequiredAtLevel(route.FirstLevel))
+                        + experienceCosts.GetValueOrDefault(BreedingMountExperience.RequiredAtLevel(route.SecondLevel))
+                        - experienceCosts.GetValueOrDefault(BreedingMountExperience.RequiredAtLevel(firstLevel))
+                        - experienceCosts.GetValueOrDefault(BreedingMountExperience.RequiredAtLevel(secondLevel));
+                    steps.Add(new(BreedingObjectiveAction.Cross, name, Sex: sex, First: Name(first.RideId), Second: Name(second.RideId))
+                        { GenerationChancePercent = BreedingDecisions.TargetGenerationChance(firstLevel, secondLevel).Base });
                     break;
                 default:
                     throw new ArgumentOutOfRangeException(nameof(route));

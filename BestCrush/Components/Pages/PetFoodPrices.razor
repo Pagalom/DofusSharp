@@ -6,6 +6,7 @@
 @using Microsoft.Extensions.Logging
 @inject PetFoodCatalogService Foods
 @inject MarketDataChangeNotifier Prices
+@inject LivePetFeedingService Feeding
 @inject ILogger<PetFoodPrices> Logger
 @implements IDisposable
 
@@ -29,7 +30,11 @@
                 {
                     <tr @key="row.Food.DofusDbId">
                         <th scope="row"><ItemIcon Item="row.Food" Size="Size.Tiny" /> <CopyTextButton Value="row.Food.Name" Tooltip="Copier le nom">@row.Food.Name</CopyTextButton></th>
-                        <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@XpInfo(row)">@(row.Food.Experience?.ToString("0.#########") ?? "Inconnue")</span></td>
+                        <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@XpInfo(row)">@(row.Food.Experience?.ToString("0.#########") ?? "Inconnue")</span>
+                            @if(row.Evidence is { } evidence)
+                            {<StatusIcon Icon="@(evidence.Matches==true ? "check-circle" : evidence.Matches==false || !evidence.Consistent ? "exclamation-triangle" : "eye")"
+                                CssClass="@(evidence.Matches==true ? "text-success" : "text-warning")" Tooltip="@EvidenceInfo(evidence)" />}
+                        </td>
                         <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@PriceInfo(row)">@(row.UnitPrice is { } unit ? $"{unit:0.####} K" : "—")</span>
                             @if(row.UnitQuote is { } quote && quote.ObservedAtUtc<DateTime.UtcNow.AddHours(-72)){<i class="bi bi-clock text-warning" data-bs-toggle="tooltip" data-bs-title="Prix de plus de 72 h : consulter cet aliment à l’HDV."></i>}
                         </td>
@@ -75,10 +80,18 @@
     private static string XpInfo(PetFoodDataRow row)=>row.Food.ExperienceSource+
         (row.Food.SheetExperience is { } xp ? $" · Fichier initial : {xp:0.#########} XP" : "")+
         " · L’XP totale du repas est arrondie à l’entier inférieur.";
+    private static string EvidenceInfo(PetFoodEvidence evidence)=>
+        $"{evidence.Meals} repas observé(s) · Dofus {evidence.Build}\n"+
+        (!evidence.Consistent ? "Mesures incompatibles : rendement à vérifier." :
+            $"XP unitaire comprise entre {evidence.Minimum:0.#########} et moins de {evidence.Maximum:0.#########}.\n"+
+            (evidence.Matches==true ? "Valeur du catalogue compatible avec les repas observés." :
+                evidence.Matches==false ? "Écart avec le catalogue : aliment écarté des conseils." : "XP unitaire exacte encore inconnue."));
     private static string PriceInfo(PetFoodDataRow row)=>row.UnitQuote is { } q
         ? $"{q.Price:N0} K / lot de {q.Quantity} · {(q.Source==MarketPriceSource.Manual ? "Manuel" : "En jeu")} · {q.ObservedAtUtc.ToLocalTime():dd/MM à HH:mm}"
         : "Prix à relever à l’HDV.";
-    protected override void OnInitialized()=>Prices.Changed+=Changed;
+    protected override void OnInitialized(){Prices.Changed+=Changed;Feeding.Changed+=FeedingChanged;}
+    private void FeedingChanged(string server)
+    {if(!_disposed && IsActive && string.Equals(server,ServerName,StringComparison.OrdinalIgnoreCase)) _=InvokeAsync(RefreshAsync);}
     protected override Task OnParametersSetAsync()
     {
         bool reload=IsActive && (!_wasActive || _priority!=Priority);
@@ -101,5 +114,5 @@
         catch(Exception ex){_failed=true;Logger.LogWarning(ex,"Chargement de la nourriture indisponible.");}
         finally{_loading=false;if(!_disposed) StateHasChanged();}
     }
-    public void Dispose(){_disposed=true;Prices.Changed-=Changed;_lifetime.Cancel();_lifetime.Dispose();}
+    public void Dispose(){_disposed=true;Prices.Changed-=Changed;Feeding.Changed-=FeedingChanged;_lifetime.Cancel();_lifetime.Dispose();}
 }

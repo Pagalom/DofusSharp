@@ -1,316 +1,221 @@
-@using BestCrush.Network.Protocol
+﻿@using BestCrush.Network.Protocol
 @using BestCrush.Services
 @using BestCrush.Domain.Services
 @using Microsoft.Extensions.Logging
 @inject LiveBreedingService Breeding
 @inject ActivityCatalogService Catalog
-@inject CurrentWindowProfessionsState Professions
+@inject IJSRuntime JS
 @inject ILogger<BreedingWorkspace> Logger
-@implements IDisposable
+@implements IAsyncDisposable
 
 <PageHeading Title="Élevage" />
-
 @{
     var view = Breeding.ViewForWindow(TargetWindow);
     var mounts = view is null ? [] : view.Stable.Select(mount => mount.Reading).OfType<PaddockMountReading>()
         .Concat(view.Enclosures.SelectMany(enclosure => enclosure.Reading.Mounts)).DistinctBy(mount => mount.Id).ToArray();
     var locations = view is null ? EmptyMountLocations : view.Stable.Select(mount => (mount.Id, Location: "Étable"))
-        .Concat(view.Enclosures.SelectMany(enclosure => enclosure.Reading.Mounts.Select(mount =>
-            (mount.Id, Location: enclosure.Enclosure is { } number ? $"Enclos {number}" : "Enclos"))))
+        .Concat(view.Enclosures.SelectMany(enclosure => enclosure.Reading.Mounts.Select(mount => (mount.Id, Location: EnclosureName(enclosure)))))
         .DistinctBy(mount => mount.Id).ToDictionary(mount => mount.Id, mount => mount.Location);
-    int? breeder = Professions.ForWindow(TargetWindow)?.FirstOrDefault(profession => profession.Name == "Éleveur")?.Level;
+    var goals = Breeding.ResaleGoalsForWindow(TargetWindow);
+    var notices = view is null ? Array.Empty<BreedingGaugeNotice>() : view.Enclosures
+        .Where(e => e.Enclosure == view.CurrentEnclosure && e.IsLive(DateTime.UtcNow))
+        .SelectMany(e => BreedingGaugeNotices.Build(EnclosureName(e), e.Reading, Analyze(e, goals), goals, e.ObservedAtUtc, DateTime.UtcNow)).ToArray();
 }
-<BreedingDecisionsPanel @key="(TargetWindow, ServerName)"
-                        Window="TargetWindow" ServerName="@ServerName"
-                        ExperienceGoalsChanged="SetResaleGoals" ResaleChanged="SetResale"
-                        SpeciesById="_species" Mounts="mounts" MountNumbers="@(view?.MountNumbers ?? EmptyMountNumbers)" MountLocations="locations" />
-
-@if (view is null)
-{
-    <p class="text-secondary mt-3" role="status">
-        Ouvrez l’interface Élevage dans la fenêtre Dofus suivie pour synchroniser un enclos.
-    </p>
-}
-else
-{
-    var snapshot = SelectedEnclosure(view);
-    <p class="mb-2">
-        @view.Enclosures.Count enclos relevé(s) · @view.Enclosures.Sum(enclosure => enclosure.Reading.Mounts.Count) monture(s) en enclos ·
-        @(view.StableObservedAtUtc is null ? "Étable à relever" : $"{view.Stable.Count} à l’étable")
-    </p>
-    @if (breeder is { } level)
-    {
-        int unlocked = BreedingDecisions.EnclosureLevels.Count(required => required <= level);
-        <p class="mb-0">Éleveur niv. @level · @unlocked enclos accessible(s)
-            @if (unlocked < BreedingDecisions.EnclosureLevels.Count)
-            {
-                <span> · Prochain au niveau @BreedingDecisions.EnclosureLevels[unlocked]</span>
-            }
-        </p>
-    }
-    <div class="d-flex flex-wrap gap-2 mt-3" aria-label="Emplacement des montures">
-        @foreach (var enclosure in view.Enclosures)
+<div class="breeding-dashboard" @ref="_element" @onclick="CloseMount">
+    <nav class="breeding-tabs" aria-label="Élevage">
+        <button type="button" class="@(!_actions ? "is-selected" : "")" aria-current="@(!_actions ? "page" : null)" @onclick="() => SelectTab(false)"><i class="bi bi-grid" aria-hidden="true"></i> Mon élevage</button>
+        <button type="button" class="@(_actions ? "is-selected" : "")" aria-current="@(_actions ? "page" : null)" @onclick="() => SelectTab(true)"><i class="bi bi-list-check" aria-hidden="true"></i> À faire</button>
+    </nav>
+    <div hidden="@_actions" class="breeding-overview">
+        <div class="breeding-overview-heading"><h2>@locations.Count <span>monture@(locations.Count == 1 ? "" : "s")</span></h2>
+            @if (SynchronizationNotice(view) is { } notice) { <StatusIcon Icon="cloud-slash" Tooltip="@notice" CssClass="text-warning" /> }
+        </div>
+        <div class="breeding-filters">
+            <label class="breeding-search"><i class="bi bi-search" aria-hidden="true"></i><input type="search" placeholder="Chercher une monture…" aria-label="Chercher une monture" @bind="_search" @bind:event="oninput" @bind:after="CloseMount" /></label>
+            <select class="form-select" aria-label="Emplacement" @bind="_location" @bind:after="CloseMount">
+                <option value="">Tous les emplacements</option>
+                @if (view is not null) { @foreach (var enclosure in view.Enclosures) { <option value="@LocationKey(enclosure)">@EnclosureName(enclosure)</option> } }
+                <option value="stable">Étable</option>
+            </select>
+            <select class="form-select" aria-label="Famille de monture" @bind="_family" @bind:after="CloseMount"><option value="">Toutes les familles</option><option value="1">Dragodindes</option><option value="2">Muldos</option><option value="3">Volkornes</option></select>
+            <select class="form-select" aria-label="Trier les montures" @bind="_sort" @bind:after="CloseMount"><option value="number">Ordre du relevé</option><option value="level">Niveau décroissant</option><option value="value">Valeur décroissante</option></select>
+        </div>
+        @if (view is null)
         {
-            <button type="button" class="btn @(!_stable && snapshot == enclosure ? "btn-primary" : "btn-outline-secondary")"
-                    aria-pressed="@(!_stable && snapshot == enclosure)" @onclick="() => SelectEnclosure(enclosure.Enclosure)">
-                @(enclosure.Enclosure is { } number ? $"Enclos {number}" : "Enclos")
-            </button>
-        }
-        <button type="button" class="btn @(_stable ? "btn-primary" : "btn-outline-secondary")"
-                aria-pressed="@_stable" @onclick="() => _stable = true">
-            Étable @(view.StableComplete ? $"({view.Stable.Count})" : "")
-        </button>
-    </div>
-
-    @if (_stable || snapshot is null)
-    {
-        @if (view.StableObservedAtUtc is null)
-        {
-            <p class="text-secondary mt-3" role="status">Ouvrez le panneau Élevage dans Dofus pour relever l’étable.</p>
+            <div class="breeding-empty-dashboard"><i class="bi bi-house-heart" aria-hidden="true"></i><p class="breeding-empty-hint">Ouvre Élevage dans Dofus pour retrouver tes montures.</p></div>
         }
         else
         {
-            <p class="text-secondary mt-3">
-                @(view.StableComplete ? $"{view.Stable.Count} monture(s) dans l’étable" : "Relevé partiel. Rouvrez le panneau Élevage dans Dofus.")
-                · Relevé à @view.StableObservedAtUtc.Value.ToLocalTime().ToString("HH:mm:ss")
-            </p>
-            @if (view.Stable.Count > 0)
-            {
-                <table class="table align-middle" aria-label="Montures de l’étable">
-                    <thead><tr><th scope="col">Monture</th><th scope="col">Niveau</th>
-                        <th scope="col">Sexe et fertilité</th><th scope="col">Sérénité</th><th scope="col">Endurance</th><th scope="col">Maturité</th><th scope="col">Amour</th><th scope="col">XP</th>
-                        <th scope="col" class="text-end">Valeur estimée</th></tr></thead>
-                    <tbody>
-                        @foreach (var mount in view.Stable)
-                        {
-                            <tr @key="mount.Id">
-                                <th scope="row">@MountName(view.MountNumbers[mount.Id], mount.Reading)</th><td>@(mount.Reading?.Level.ToString() ?? "—")</td>
-                                <td>@BreedingTrainingRules.DescribeProfile(mount.Reading)</td>
-                                <td>@(mount.Reading?.Serenity.ToString("N0") ?? "—")</td>
-                                <td>@FormatTraining(mount.Reading?.Endurance)</td>
-                                <td>@FormatTraining(mount.Reading?.Maturity)</td>
-                                <td>@FormatTraining(mount.Reading?.Love)</td>
-                                <td>@(mount.Reading?.Experience.ToString("N0") ?? "—")</td>
-                                <td class="text-end text-nowrap">@EstimatedValue(mount.Reading)</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
-            }
-        }
-    }
-    else
-    {
-    bool live = snapshot.Enclosure == view.CurrentEnclosure && snapshot.IsLive(DateTime.UtcNow);
-    var resaleGoals = Breeding.ResaleGoalsForWindow(TargetWindow);
-    var analysis = live ? Analyze(snapshot, resaleGoals) : [];
-    <p class="text-secondary mt-3">
-        @snapshot.Reading.Mounts.Count montures · Relevé à @snapshot.ObservedAtUtc.ToLocalTime().ToString("HH:mm:ss")
-        @if (!live)
-        {
-            <span> · Pour actualiser, ouvrez cet enclos dans Dofus.</span>
-        }
-    </p>
-    @foreach (string advice in analysis.Select(plan => plan.Describe(snapshot.ObservedAtUtc)).OfType<string>())
-    {
-        <div class="alert alert-info" role="status">@advice</div>
-    }
-
-    <section class="card mb-3" aria-label="Jauges de l’enclos">
-        <div class="card-body">
-            <dl class="row mb-0">
-                @foreach (var gauge in snapshot.Reading.Gauges)
+            <div class="breeding-enclosures">
+                @foreach (var enclosure in view.Enclosures.Where(value => _location.Length == 0 || _location == LocationKey(value)))
                 {
-                    <dt class="col-6 col-sm-4">@BreedingTrainingRules.Name(gauge.Gauge)</dt>
-                    <dd class="col-6 col-sm-8">
-                        @gauge.Fuel.ToString("N0") · @(gauge.Active ? "Active" : "Inactive")
-                        @if (gauge.Active && gauge.Fuel > 0)
-                        {
-                            <span> · @BreedingFuel.PointsPerCycle(gauge.Fuel) points / 10 s</span>
-                        }
-                    </dd>
+                    var live = enclosure.Enclosure == view.CurrentEnclosure && enclosure.IsLive(DateTime.UtcNow);
+                    var plans = live ? Analyze(enclosure, goals) : [];
+                    var entries = Filter(enclosure.Reading.Mounts.Select(mount => Display(mount.Id, mount, view, goals, plans, enclosure.ObservedAtUtc)));
+                    <BreedingEnclosureCard @key="(TargetWindow, LocationKey(enclosure))" Title="@EnclosureName(enclosure)" LocationKey="@LocationKey(enclosure)"
+                        Notices="@notices.Where(n => n.Location == EnclosureName(enclosure)).ToArray()" Adjust="ShowGaugeActions" Mounts="entries" Gauges="enclosure.Reading.Gauges" ObservedAt="enclosure.ObservedAtUtc" Filtered="@HasFilter"
+                        SelectedMount="_selectedMount" Open="OpenMount" Close="CloseMount" SeeActions="ShowActions" />
                 }
-            </dl>
-        </div>
-    </section>
-
-    @if (live && snapshot.Reading.Mounts.Count > 0)
-    {
-        <p>
-            <label>Déplacer la sérénité du groupe
-                <select @bind="_serenityTarget">
-                    <option value="">Aucun objectif</option>
-                    <option value="-5000">Vers −5 000</option><option value="-1000">À −1 000 ou moins</option>
-                    <option value="1000">À +1 000 ou plus</option><option value="5000">Vers +5 000</option>
-                </select>
-            </label>
-        </p>
-        @if (BreedingEnclosureAdvice.Describe(snapshot.Reading, resaleGoals) is { } next)
-        {
-            <p>@next</p>
-        }
-        <details class="mb-3" open="@_fuelPlansOpen">
-            <summary @onclick="() => _fuelPlansOpen = !_fuelPlansOpen" @onclick:preventDefault="true">Délais et approvisionnement en carburant</summary>
-            @if (_fuelPlansOpen)
-            {
-            <p>Les objectifs des jauges de progression concernent les montures déjà dans la bonne plage, à sérénité stable.</p>
-            @foreach (var gauge in snapshot.Reading.Gauges)
-            {
-                int target = gauge.Gauge switch
+                @if (_location.Length == 0 || _location == "stable")
                 {
-                    PaddockGauge.SerenityGain when _serenityTarget is > 0 and var goal =>
-                        snapshot.Reading.Mounts.Max(mount => Math.Max(0, goal - mount.Serenity)),
-                    PaddockGauge.SerenityLoss when _serenityTarget is < 0 and var goal =>
-                        snapshot.Reading.Mounts.Max(mount => Math.Max(0, mount.Serenity - goal)),
-                    PaddockGauge.SerenityGain or PaddockGauge.SerenityLoss => 0,
-                    _ => BreedingTrainingPlan.RefillTarget(snapshot.Reading, gauge.Gauge, resaleGoals: resaleGoals)
-                };
-                var plan = analysis.FirstOrDefault(value => value.Gauge == gauge.Gauge);
-                @if (target > 0)
-                {
-                    <BreedingRefill @key="(TargetWindow, ServerName, snapshot.Enclosure, gauge.Gauge, _serenityTarget)"
-                                   Gauge="gauge.Gauge" Window="TargetWindow" ServerName="@ServerName"
-                                   Reserve="gauge.Fuel" Target="target" Active="gauge.Active"
-                                   ExhaustedAt="plan?.ExhaustedAt" ObservedAt="snapshot.ObservedAtUtc" />
+                    var entries = Filter(view.Stable.Select(mount => Display(mount.Id, mount.Reading, view, goals, [], view.StableObservedAtUtc ?? DateTime.UtcNow)));
+                    <BreedingEnclosureCard @key="StableKey" Title="Étable" LocationKey="stable" IsStable="true" Complete="view.StableComplete"
+                        Mounts="entries" ObservedAt="view.StableObservedAtUtc" Filtered="@HasFilter" SelectedMount="_selectedMount" Open="OpenMount" Close="CloseMount" SeeActions="ShowActions" />
                 }
-            }
-            }
-        </details>
-    }
-
-    @if (snapshot.Reading.Mounts.Count > 0)
-    {
-        <table class="table align-middle">
-            <thead>
-                <tr><th scope="col">Monture</th><th scope="col">Niveau</th>
-                    <th scope="col">Sexe et fertilité</th><th scope="col">Sérénité</th><th scope="col">Endurance</th><th scope="col">Maturité</th><th scope="col">Amour</th><th scope="col">XP</th>
-                    <th scope="col" class="text-end">Valeur estimée</th><th scope="col">Prochaine étape estimée</th></tr>
-            </thead>
-            <tbody>
-                @foreach (var mount in snapshot.Reading.Mounts)
-                {
-                    <tr @key="mount.Id">
-                        <th scope="row">@MountName(view.MountNumbers[mount.Id], mount)</th><td>@mount.Level</td>
-                        <td>@BreedingTrainingRules.DescribeProfile(mount)</td>
-                        <td>@mount.Serenity.ToString("N0")</td>
-                        <td>@FormatTraining(mount.Endurance)</td>
-                        <td>@FormatTraining(mount.Maturity)</td>
-                        <td>@FormatTraining(mount.Love)</td>
-                        <td>@mount.Experience.ToString("N0")
-                            @if (resaleGoals.TryGetValue(mount.Id, out int target) && target > mount.Level)
+            </div>
+        }
+    </div>
+    <div hidden="@(!_actions)" class="breeding-actions">
+        <BreedingDecisionsPanel @key="(TargetWindow, ServerName)" Window="TargetWindow" ServerName="@ServerName"
+            ExperienceGoalsChanged="SetResaleGoals" ResaleChanged="SetResale" FocusedMount="_focusedMount"
+            Notices="notices" ViewMount="ViewOwnedMount" ViewLocation="ViewEnclosure" SpeciesById="_species" Mounts="mounts" MountNumbers="@(view?.MountNumbers ?? EmptyMountNumbers)" MountLocations="locations">
+        @if (view is not null)
+        {
+            @foreach (var snapshot in view.Enclosures.Where(enclosure => enclosure.Enclosure == view.CurrentEnclosure && enclosure.IsLive(DateTime.UtcNow)))
+            {
+                var analysis = Analyze(snapshot, goals);
+                <section class="breeding-enclosure-actions bc-surface">
+                    <h2>@EnclosureName(snapshot)</h2>
+                    <h3 class="h5"><i class="bi bi-fuel-pump" aria-hidden="true"></i> À acheter / fabriquer</h3>
+                    <details>
+                        <summary>Réglages de sérénité</summary>
+                        <label class="breeding-serenity-target">Déplacer la sérénité du groupe
+                            <select class="form-select" @bind="_serenityTarget"><option value="">Aucun objectif</option><option value="-5000">Vers −5 000</option><option value="-1000">À −1 000 ou moins</option><option value="1000">À +1 000 ou plus</option><option value="5000">Vers +5 000</option></select>
+                        </label>
+                        @foreach (string advice in analysis.Select(plan => plan.Describe(snapshot.ObservedAtUtc)).OfType<string>()) { <p>@advice</p> }
+                        @if (BreedingEnclosureAdvice.Describe(snapshot.Reading, goals) is { } next) { <p>@next</p> }
+                    </details>
+                    <div class="breeding-refill-grid">
+                        @if (snapshot.Reading.Mounts.Count > 0)
+                        {
+                            @foreach (var gauge in snapshot.Reading.Gauges)
                             {
-                                <span> · viser niv. @target</span>
-                            }
-                        </td>
-                        <td class="text-end text-nowrap">@EstimatedValue(mount)</td>
-                        <td>
-                            @foreach (var plan in analysis)
-                            {
-                                @if (plan.DescribeMount(mount.Id, snapshot.ObservedAtUtc) is { } step)
+                                int target = gauge.Gauge switch
                                 {
-                                    <div>@BreedingTrainingRules.Name(plan.Gauge) · @step</div>
-                                    @if (plan.ToProtect.Contains(mount.Id) &&
-                                        BreedingDecisions.TransferDestination(mount, plan.Gauge, snapshot.Enclosure, view.Enclosures, breeder) is { } destination)
-                                    {
-                                        <div>Enclos @destination · une place et une jauge active au dernier relevé.</div>
-                                    }
+                                    PaddockGauge.SerenityGain when _serenityTarget is > 0 and var goal => snapshot.Reading.Mounts.Max(mount => Math.Max(0, goal - mount.Serenity)),
+                                    PaddockGauge.SerenityLoss when _serenityTarget is < 0 and var goal => snapshot.Reading.Mounts.Max(mount => Math.Max(0, mount.Serenity - goal)),
+                                    PaddockGauge.SerenityGain or PaddockGauge.SerenityLoss => 0,
+                                    _ => BreedingTrainingPlan.RefillTarget(snapshot.Reading, gauge.Gauge, resaleGoals: goals)
+                                };
+                                @if (target > 0)
+                                {
+                                    <BreedingRefill @key="(TargetWindow, ServerName, snapshot.Enclosure, gauge.Gauge, _serenityTarget)" Gauge="gauge.Gauge" Window="TargetWindow" ServerName="@ServerName"
+                                        Reserve="gauge.Fuel" Target="target" Active="gauge.Active" ExhaustedAt="analysis.FirstOrDefault(plan => plan.Gauge == gauge.Gauge)?.ExhaustedAt" ObservedAt="snapshot.ObservedAtUtc" />
                                 }
                             }
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
-    }
-    }
-}
+                        }
+                    </div>
+                </section>
+            }
+        }
+        </BreedingDecisionsPanel>
+    </div>
+</div>
 
 @code {
     [Parameter] public DofusClientWindowKey? TargetWindow { get; set; }
     [Parameter] public string? ServerName { get; set; }
-
-    private readonly PeriodicTimer _refresh = new(TimeSpan.FromSeconds(2));
     private static readonly IReadOnlyDictionary<Guid, int> EmptyMountNumbers = new Dictionary<Guid, int>();
     private static readonly IReadOnlyDictionary<Guid, string> EmptyMountLocations = new Dictionary<Guid, string>();
-    private bool _stable;
-    private bool _fuelPlansOpen;
-    private int? _enclosure;
-    private int? _serenityTarget;
+    private readonly PeriodicTimer _refresh = new(TimeSpan.FromSeconds(2));
     private readonly CancellationTokenSource _lifetime = new();
+    private readonly Dictionary<int, (LivePaddockReading Snapshot, IReadOnlyDictionary<Guid, int> Goals, BreedingTrainingPlan[] Plans)> _plans = [];
     private IReadOnlyDictionary<long, BreedingSpecies> _species = new Dictionary<long, BreedingSpecies>();
     private IReadOnlyDictionary<Guid, BreedingResaleAssessment> _resale = new Dictionary<Guid, BreedingResaleAssessment>();
-    private (DofusClientWindowKey?, string?) _resaleView;
-    private LivePaddockReading? _analyzedSnapshot;
-    private IReadOnlyDictionary<Guid, int>? _analyzedResaleGoals;
-    private BreedingTrainingPlan[] _plans = [];
-
+    private (DofusClientWindowKey?, string?) _resaleView, _context;
+    private bool _actions, _disposed, _scrollToAction;
+    private Guid? _selectedMount, _focusedMount;
+    private int? _serenityTarget;
+    private string _search = "", _location = "", _family = "", _sort = "number";
+    private ElementReference _element;
+    private IJSObjectReference? _module;
+    private DotNetObjectReference<BreedingWorkspace>? _reference;
+    private bool HasFilter => _search.Length > 0 || _family.Length > 0;
+    private (DofusClientWindowKey?, string) StableKey => (TargetWindow, "stable");
     private void SetResaleGoals(IReadOnlyDictionary<Guid, int> goals) => Breeding.SetResaleGoals(TargetWindow, goals);
-
-    private void SetResale(IReadOnlyDictionary<Guid, BreedingResaleAssessment> estimates)
+    private void SetResale(IReadOnlyDictionary<Guid, BreedingResaleAssessment> estimates) { _resale = estimates; _resaleView = (TargetWindow, ServerName); }
+    private BreedingMountDisplay Display(Guid id, PaddockMountReading? reading, LiveBreedingView view, IReadOnlyDictionary<Guid, int> goals, BreedingTrainingPlan[] plans, DateTime observed)
     {
-        _resale = estimates;
-        _resaleView = (TargetWindow, ServerName);
+        var current = _resaleView == (TargetWindow, ServerName) ? _resale.GetValueOrDefault(id)?.Current : null;
+        long? value = reading is { Fertility: not null } && current?.Level == reading.Level && current.Fertile == (reading.Fertility != BreedingMountFertility.Sterile) ? current.SalePrice : null;
+        return new(id, view.MountNumbers.GetValueOrDefault(id), reading, reading?.SpeciesId is { } species ? _species.GetValueOrDefault(species) : null, value,
+            plans.Select(plan => BreedingDashboardPresentation.Forecast(plan, id, observed)).ToArray(), goals.TryGetValue(id, out int target) ? target : null);
     }
-
-    private string EstimatedValue(PaddockMountReading? mount) =>
-        _resaleView == (TargetWindow, ServerName) && mount is { Fertility: not null } &&
-        _resale.GetValueOrDefault(mount.Id)?.Current is { } option && option.Level == mount.Level &&
-        option.Fertile == (mount.Fertility != BreedingMountFertility.Sterile)
-            ? $"{option.SalePrice:N0} K" : "—";
-    private BreedingTrainingPlan[] Analyze(LivePaddockReading snapshot, IReadOnlyDictionary<Guid, int> resaleGoals)
+    private IReadOnlyList<BreedingMountDisplay> Filter(IEnumerable<BreedingMountDisplay> source)
     {
-        if (ReferenceEquals(_analyzedSnapshot, snapshot) && ReferenceEquals(_analyzedResaleGoals, resaleGoals))
-            return _plans;
-        _analyzedSnapshot = snapshot;
-        _analyzedResaleGoals = resaleGoals;
-        return _plans = snapshot.Reading.Gauges.Where(gauge =>
-                gauge.Active && BreedingTrainingRules.Gauges.Contains(gauge.Gauge))
-            .Select(gauge => BreedingTrainingPlan.From(snapshot.Reading, gauge.Gauge, resaleGoals: resaleGoals)).ToArray();
+        var matches = source.Where(mount => (_family.Length == 0 || mount.Species?.FamilyId?.ToString() == _family) &&
+            (_search.Length == 0 || $"{mount.Number} {mount.Species?.Name}".Contains(_search, StringComparison.CurrentCultureIgnoreCase)));
+        return (_sort switch { "level" => matches.OrderByDescending(mount => mount.Reading?.Level).ThenBy(mount => mount.Number),
+            "value" => matches.OrderByDescending(mount => mount.Value).ThenBy(mount => mount.Number), _ => matches.OrderBy(mount => mount.Number) }).ToArray();
     }
-
-    private LivePaddockReading? SelectedEnclosure(LiveBreedingView view) =>
-        view.Enclosures.FirstOrDefault(value => value.Enclosure == (_enclosure ?? view.CurrentEnclosure)) ??
-        view.Enclosures.MaxBy(value => value.ObservedAtUtc);
-
-    private void SelectEnclosure(int? enclosure)
+    private BreedingTrainingPlan[] Analyze(LivePaddockReading snapshot, IReadOnlyDictionary<Guid, int> goals)
     {
-        _stable = false;
-        _enclosure = enclosure;
+        int key = snapshot.Enclosure ?? 0;
+        if (_plans.TryGetValue(key, out var cached) && ReferenceEquals(snapshot, cached.Snapshot) && ReferenceEquals(goals, cached.Goals)) return cached.Plans;
+        var result = snapshot.Reading.Gauges.Where(gauge => gauge.Active && BreedingTrainingRules.Gauges.Contains(gauge.Gauge)).Select(gauge => BreedingTrainingPlan.From(snapshot.Reading, gauge.Gauge, resaleGoals: goals)).ToArray();
+        _plans[key] = (snapshot, goals, result); return result;
     }
-
-    private static string FormatTraining(int? points) =>
-        points is { } value ? $"{value:N0} / 20 000" : "—";
-
-    private string MountName(int number, PaddockMountReading? mount) =>
-        mount?.SpeciesId is { } id && _species.TryGetValue(id, out var species)
-            ? $"{number} · {species.Name}" + (species.Generation is { } generation ? $" · Gén. {generation}" : "")
-            : $"Monture {number}";
-
-    protected override void OnInitialized() => _ = RefreshAsync();
-
+    private static string EnclosureName(LivePaddockReading value) => value.Enclosure is { } number ? $"Enclos {number}" : "Enclos";
+    private static string LocationKey(LivePaddockReading value) => $"enclosure-{value.Enclosure ?? 0}";
+    private static string? SynchronizationNotice(LiveBreedingView? view)
+    {
+        if (view is null) return "Ouvre Élevage dans Dofus pour synchroniser les enclos et l’étable.";
+        var notices = view.Enclosures.Where(value => BreedingDashboardPresentation.NeedsSynchronization(value.ObservedAtUtc, true, DateTime.UtcNow)).Select(value => $"{EnclosureName(value)} · {value.ObservedAtUtc.ToLocalTime():dd/MM HH:mm}").ToList();
+        if (BreedingDashboardPresentation.NeedsSynchronization(view.StableObservedAtUtc, view.StableComplete, DateTime.UtcNow)) notices.Add(view.StableObservedAtUtc is { } at ? $"Étable · {at.ToLocalTime():dd/MM HH:mm}{(!view.StableComplete ? " · relevé incomplet" : "")}" : "Étable · à synchroniser");
+        return notices.Count == 0 ? null : "À actualiser dans Dofus :\n" + string.Join("\n", notices);
+    }
+    private void ShowGaugeActions() { _actions = true; CloseMount(); }
+    private void ViewOwnedMount(Guid id)
+    {
+        var view = Breeding.ViewForWindow(TargetWindow);
+        _actions = false; _search = ""; _family = "";
+        var enclosure = view?.Enclosures.FirstOrDefault(e => e.Reading.Mounts.Any(m => m.Id == id));
+        _location = enclosure is null ? "stable" : LocationKey(enclosure);
+        _selectedMount = id;
+    }
+    private void ViewEnclosure(string name)
+    {
+        var enclosure = Breeding.ViewForWindow(TargetWindow)?.Enclosures.FirstOrDefault(e => EnclosureName(e) == name);
+        _actions = false; _search = ""; _family = ""; _location = enclosure is null ? "" : LocationKey(enclosure); CloseMount();
+    }
+    private void SelectTab(bool actions) { _actions = actions; CloseMount(); }
+    private void OpenMount(Guid id) => _selectedMount = id;
+    private void CloseMount() => _selectedMount = null;
+    private void ShowActions(Guid id) { _focusedMount = id; _actions = true; _scrollToAction = true; CloseMount(); }
+    [JSInvokable] public Task DismissMount() => _disposed ? Task.CompletedTask : InvokeAsync(() => { CloseMount(); StateHasChanged(); });
+    protected override void OnParametersSet()
+    {
+        if (_context == (TargetWindow, ServerName)) return;
+        _context = (TargetWindow, ServerName); CloseMount(); _focusedMount = null; _location = ""; _plans.Clear();
+    }
     protected override async Task OnInitializedAsync()
     {
-        try
-        {
-            _species = (await Catalog.GetBreedingSpeciesAsync(_lifetime.Token)).ToDictionary(species => species.Id);
-        }
+        _ = RefreshAsync();
+        try { _species = (await Catalog.GetBreedingSpeciesAsync(_lifetime.Token)).ToDictionary(species => species.Id); }
         catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
-        catch (Exception ex)
-        {
-            Logger.LogWarning(ex, "Catalogue des montures indisponible.");
-        }
+        catch (Exception ex) { Logger.LogWarning(ex, "Catalogue des montures indisponible."); }
     }
-
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_disposed) return;
+        if (firstRender)
+        {
+            _reference = DotNetObjectReference.Create(this);
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/breeding-dashboard.js");
+            if (!_disposed) await _module.InvokeVoidAsync("attach", _element, _reference);
+        }
+        if (_scrollToAction && _module is not null) { _scrollToAction = false; await _module.InvokeVoidAsync("revealAction", _element, _focusedMount?.ToString("N")); }
+    }
     private async Task RefreshAsync()
     {
-        while (await _refresh.WaitForNextTickAsync())
-            await InvokeAsync(StateHasChanged);
+        try { while (await _refresh.WaitForNextTickAsync(_lifetime.Token)) await InvokeAsync(StateHasChanged); }
+        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { }
+        catch (ObjectDisposedException) when (_disposed) { }
     }
-
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
-        _refresh.Dispose();
-        _lifetime.Cancel();
-        _lifetime.Dispose();
+        _disposed = true; _lifetime.Cancel(); _refresh.Dispose();
+        if (_module is not null) { try { await _module.InvokeVoidAsync("detach", _element); await _module.DisposeAsync(); } catch (JSDisconnectedException) { } }
+        _reference?.Dispose(); _lifetime.Dispose();
     }
 }

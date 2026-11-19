@@ -34,6 +34,8 @@ public sealed partial class GlobalSalesRepository
                 server TEXT NOT NULL, object_type INTEGER NOT NULL, item_id INTEGER NOT NULL,
                 variant TEXT NOT NULL, observed_at TEXT NOT NULL, history_json TEXT NOT NULL,
                 PRIMARY KEY(server,object_type,item_id,variant));
+            CREATE TABLE IF NOT EXISTS market_history_availability(
+                server TEXT NOT NULL PRIMARY KEY,observed_at TEXT NOT NULL,available_ids TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS global_sales_periods(
                 server TEXT NOT NULL, object_type INTEGER NOT NULL, item_id INTEGER NOT NULL,
                 variant TEXT NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL,
