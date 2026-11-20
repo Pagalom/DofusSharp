@@ -1,4 +1,4 @@
-﻿using BestCrush.Domain;
+using BestCrush.Domain;
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
 using BestCrush.Network.Protocol;
@@ -248,6 +248,11 @@ internal sealed partial class NetworkObservationWriter(
                 }
                 catch (InvalidDataException error) { logger.LogWarning(error, "Could not recover a crushed equipment from FM history"); }
             }
+            var candidateIds=itemDetails.Values.Where(i=>i.ItemId is > 0 and <= long.MaxValue)
+                .Select(i=>(long)i.ItemId).Concat(recoveredIds.Values).Distinct().ToArray();
+            scope ??= serviceScopeFactory.CreateScope();
+            var knownRuneIds=(await scope.ServiceProvider.GetRequiredService<BestCrushDbContext>().Runes.AsNoTracking()
+                .Where(r=>candidateIds.Contains(r.DofusDbId)).Select(r=>r.DofusDbId).ToArrayAsync(cancellationToken)).ToHashSet();
             foreach (CrushLineObservation line in crush.Lines)
             {
                 if (!currentServerState.IsCaptureLeaseActive(lease))
@@ -264,6 +269,11 @@ internal sealed partial class NetworkObservationWriter(
                     continue;
                 }
 
+                if(knownRuneIds.Contains((long)item.ItemId))
+                {
+                    logger.LogDebug("Crushing association points to a yielded rune {RuneId}; no equipment coefficient recorded.",item.ItemId);
+                    continue;
+                }
                 await RememberLastEquipmentAsync(
                     item.ItemId,
                     observedAtUtc,
@@ -304,7 +314,7 @@ internal sealed partial class NetworkObservationWriter(
                         serverName,
                         line.CoefficientPercent,
                         CoefficientSource.InGameAutomatic,
-                        cancellationToken);
+                        cancellationToken, observedAtUtc: observedAtUtc);
 
                 if (!currentServerState.IsCaptureLeaseActive(lease))
                     return;
@@ -323,6 +333,9 @@ internal sealed partial class NetworkObservationWriter(
         if (networkResultLines.Count > 0 &&
             currentServerState.IsCaptureLeaseActive(lease))
         {
+            using var overlayScope = serviceScopeFactory.CreateScope();
+            overlayScope.ServiceProvider.GetService<OverlayWorkspaceService>()?
+                .ObserveCrushedEquipment(networkResultLines, lease, verifiedWindow);
             await applyNetworkCrushAsync(
                 networkResultLines,
                 observedAtUtc,

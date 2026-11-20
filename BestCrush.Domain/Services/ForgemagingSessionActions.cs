@@ -4,6 +4,18 @@ namespace BestCrush.Domain.Services;
 
 public static class ForgemagingSessionActions
 {
+    public static bool CanRemoveGoalLine(ForgemagingSession session, Characteristic stat) =>
+        session.Lines.FirstOrDefault(line => line.Characteristic == stat) is { IsNative: false, Current: 0 } &&
+        !session.Attempts.Any(attempt => attempt.Rune.Characteristic == stat ||
+            attempt.Before.Concat(attempt.After).Any(line => line.Characteristic == stat && line.Current != 0));
+
+    public static bool RemoveGoalLine(ForgemagingSession session, Characteristic stat)
+    {
+        if (!CanRemoveGoalLine(session, stat)) return false;
+        session.Lines.RemoveAll(line => line.Characteristic == stat);
+        return true;
+    }
+
     public static ForgemagingAttempt Record(ForgemagingSession session, ForgemagingRune rune,
         ForgemagingOutcome outcome, IReadOnlyList<ForgemagingLine> actual, DateTime atUtc)
     {

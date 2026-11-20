@@ -158,6 +158,11 @@
                                             <th scope="row" class="fm-effect">
                                                 <div class="fm-effect-values">
                                                     <span class="@(line.IsNative ? line.Current > line.Maximum ? "fm-over" : null : "fm-exotic")" title="@(line.IsNative ? null : "Exotique")"><ForgemagingStat Stat="line.Characteristic" Value="line.Current" /></span>
+                                                    @if (!_prepareCrushing && ForgemagingSessionActions.CanRemoveGoalLine(session, line.Characteristic))
+                                                    {
+                                                        <button type="button" class="fm-remove-goal" disabled="@Busy" @onclick="() => RemoveExtraAsync(line.Characteristic)"
+                                                                title="Supprimer cet objectif" aria-label="@($"Supprimer l’objectif : {name}")"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                                                    }
                                                 </div>
                                             </th>
                                             @if (!_prepareCrushing)

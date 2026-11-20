@@ -2,12 +2,15 @@
 @using BestCrush.Network.Protocol
 @using Microsoft.Extensions.Logging
 @inject PetOpportunityService Opportunities
+@inject IServiceProvider OverlayServices
+@inject PetObjectiveProgressStore ProgressStore
+@inject CurrentDofusClientsState Clients
+@inject BestCrushSettingsService Settings
 @inject LiveStockService Stocks
 @inject CurrentWindowProfessionsState Professions
 @inject GlobalSalesRepository Sales
 @inject LivePetFeedingService Feeding
 @inject MarketDataChangeNotifier MarketChanges
-@inject MarketClipboardQueue CopyQueue
 @inject ILogger<PetWorkspace> Logger
 @implements IDisposable
 
@@ -27,44 +30,60 @@ else if (_report is null && _loading)
     <div class="d-flex gap-3 align-items-center mb-3">
         <input class="form-control" aria-label="Chercher un familier" placeholder="Chercher un familier…" @bind="_search" @bind:event="oninput" />
         <span class="text-nowrap" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Nourritures avec un prix de moins de 72 h" data-bs-custom-class="multiline-tooltip">
-            <i class="bi bi-shop" aria-hidden="true"></i> @report.QuotedFoods / @report.FoodCount
+            <i class="bi bi-shop" aria-hidden="true"></i> @(report.AnalysisComplete ? $"{report.QuotedFoods} / {report.FoodCount}" : "—")
         </span>
         @if (!report.ProfessionsKnown) { <StatusIcon Icon="tools" Tooltip="Niveaux de métier à synchroniser." CssClass="text-warning" /> }
         @if (!report.RecipesKnown) { <StatusIcon Icon="exclamation-triangle" Tooltip="Recettes indisponibles. Comparaison limitée aux stocks et aux achats." CssClass="text-warning" /> }
         @if (_loading) { <span role="status" class="spinner-border spinner-border-sm" aria-label="Calcul en cours"></span> }
     </div>
+    <nav class="pet-tabs" aria-label="Familiers">
+        <button type="button" class="@(!_actions ? "is-selected" : "")" aria-current="@(!_actions ? "page" : null)" @onclick="() => _actions = false"><i class="bi bi-heart" aria-hidden="true"></i> Mes familiers <small>@report.Owned.Count</small></button>
+        <button type="button" class="@(_actions ? "is-selected" : "")" aria-current="@(_actions ? "page" : null)" @onclick="() => _actions = true"><i class="bi bi-list-check" aria-hidden="true"></i> À faire</button>
+    </nav>
+    @if (!_actions)
+    {
     <section aria-label="Mes familiers" class="mb-4">
         <h2 class="h5">Mes familiers (@report.Owned.Count)</h2>
         @foreach (var pet in report.Owned.Where(Matches))
         {
-            <PetOpportunityRow @key="(pet.Owned!.Container,pet.Owned.Uid)" Assessment="pet" Report="report" TargetWindow="TargetWindow" />
+            <PetOpportunityRow @key="(pet.Owned!.Container,pet.Owned.Uid)" Assessment="TrackedAssessment(pet)" Report="report" TargetWindow="TargetWindow" Progress="@GoalFor(pet)?.Percent" Analyzing="@(!report.OwnedAnalysisComplete && _loading)" />
         }
     </section>
+    <PetPreparationLists Checks="report.OwnedChecks" ShowFoods="false" TargetWindow="TargetWindow" />
+    }
+    else
+    {
+    @if (_journal?.Goals.Values.Where(g => g.ReturnedAt is not null && g.PendingListings.Count == 0 &&
+        (g.SoldAt is null || g.ReturnedAt > g.SoldAt)).ToArray() is { Length: > 0 } returned)
+    {
+        <section class="mb-4" aria-label="Familiers invendus"><h2 class="h5">À remettre en vente (@returned.Length)</h2>
+            @foreach (var goal in returned)
+            { <div class="d-flex gap-3 mb-2"><strong>@goal.Name</strong><span>Niv. @goal.TargetLevel</span><StatusIcon Icon="arrow-counterclockwise" Tooltip="Invendu. Récupère le familier en banque, puis relève les offres avant de le remettre en vente." CssClass="text-warning" /></div> }
+        </section>
+    }
+    <label class="d-flex align-items-center gap-2 mb-3">Budget (K)
+        <input type="number" min="0" step="1" class="form-control form-control-sm" style="width:10rem" value="@report.BudgetKamas" placeholder="À renseigner" @onchange="ChangeBudget" aria-label="Budget d’achat des familiers" />
+        <StatusIcon Tooltip="Capital disponible pour acheter et nourrir les familiers. Les quantités conseillées tiennent aussi compte du marché et des stocks relevés ; recalcul après chaque consommation." />
+    </label>
+    @if (_journal?.Goals.Values.Where(g => g.PendingListings.Count > 0).ToArray() is { Length: > 0 } pending)
+    {
+        <section class="mb-4" aria-label="Familiers en vente"><h2 class="h5">En vente (@pending.Sum(g => g.PendingListings.Count))</h2>
+            @foreach (var goal in pending)
+            { <div class="d-flex align-items-center gap-3 mb-2"><strong>@goal.Name</strong><span>Niv. @goal.TargetLevel</span><progress value="95" max="100" aria-label="En attente de vente"></progress><span>95 %</span><StatusIcon Icon="hourglass-split" Tooltip="En vente. Le cycle se terminera après confirmation de l’encaissement." /></div> }
+        </section>
+    }
     <section aria-label="Familiers à acheter et à monter" class="mb-4">
-        <h2 class="h5">Acheter et monter (@report.Purchases.Count)</h2>
-        @foreach (var pet in report.Purchases.Where(Matches))
+        <h2 class="h5">Acheter et monter (@PurchaseChoices.Count)</h2>
+        @foreach (var pet in PurchaseChoices.Where(Matches))
         {
-            <PetOpportunityRow @key="pet.Species.Id" Assessment="pet" Report="report" TargetWindow="TargetWindow" />
+            <PetOpportunityRow @key="pet.Species.Id" Assessment="TrackedAssessment(pet)" Report="report" TargetWindow="TargetWindow" Progress="@GoalFor(pet)?.Percent" />
         }
     </section>
-    <details class="mb-4">
-        <summary>Quoi consulter à l’HDV (@report.Checks.Count)
-            <StatusIcon Tooltip="Consultez les offres et le Cours du marché. Prix à actualiser après 72 h." />
-        </summary>
-        <div class="d-flex align-items-center gap-2 my-2">
-            <button type="button" class="btn btn-outline-primary btn-sm" @onclick="CopyChecksAsync">Copier la liste</button>
-            <span role="status">@_copyStatus</span>
-        </div>
-        <ul>
-            @foreach (var check in report.Checks.Take(50))
-            {
-                <li><CopyTextButton Value="check.Name" Tooltip="Copier le nom">@check.Name</CopyTextButton>
-                    <StatusIcon Icon="@(check.Reason.Contains("Cours du marché", StringComparison.OrdinalIgnoreCase) ? "clock-history" : "shop")" Tooltip="@check.Reason" />
-                </li>
-            }
-        </ul>
-        @if (report.Checks.Count>50) { <span class="small text-secondary">50 / @report.Checks.Count <StatusIcon Tooltip="Le bouton copie la liste complète." /></span> }
-    </details>
+    }
+    @if (_actions)
+    {
+        <PetPreparationLists Checks="report.Checks" Foods="report.FoodTests" TargetWindow="TargetWindow" />
+    }
 }
 </ItemCopyScope>
 
@@ -72,7 +91,31 @@ else if (_report is null && _loading)
     [Parameter] public DofusClientWindowKey? TargetWindow {get;set;}
     [Parameter] public string? ServerName {get;set;}
     private PetOpportunityReport? _report;
-    private string _search="",_copyStatus="";
+    private PetObjectiveJournal? _journal;
+    private string? _progressScope;
+    private bool _actions;
+    private void ChangeBudget(ChangeEventArgs args) => Settings.ProductionBudgetKamas = long.TryParse(args.Value?.ToString(), out long value) ? Math.Max(0, value) : 0;
+    private IReadOnlyList<PetAssessment> PurchaseChoices => _report?.Purchases ?? [];
+    private PetObjectiveProgress? GoalFor(PetAssessment pet) => _journal?.Goals.Values.FirstOrDefault(g =>
+        pet.Owned is { } owned ? g.Uid == owned.Uid && g.ItemId == pet.Species.Id :
+        g.Purchase && g.ItemId == pet.Species.Id && g.TargetLevel == pet.Best?.Level && g.Variant == pet.Purchase?.Variant && g.ListingId is null);
+    private PetAssessment TrackedAssessment(PetAssessment pet) => GoalFor(pet) is { } goal &&
+        pet.Options.FirstOrDefault(o => o.Level == goal.TargetLevel) is { } target ? pet with { Best = target } : pet;
+    private void UpdateProgress()
+    {
+        if (_report is not { } report || ProductionTrackingScope.For(Clients, TargetWindow, report.Server) is not { } scope)
+        { _journal = null; _progressScope = null; return; }
+        try
+        {
+            if (_journal is null || _progressScope != scope) { _journal = ProgressStore.Read(scope); _progressScope = scope; }
+            PetObjectiveProgressStore.Observe(_journal, report, Sales.ReadProductionListings(report.Server, scope, DateTimeOffset.UtcNow), DateTimeOffset.UtcNow,
+                Sales.ReadProductionSales(report.Server, scope, DateTimeOffset.UtcNow), Sales.ReadProductionReturns(report.Server, scope, DateTimeOffset.UtcNow));
+            ProgressStore.Save(scope, _journal);
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException or UnauthorizedAccessException)
+        { Logger.LogWarning(ex, "Suivi des objectifs familiers indisponible."); _error = "Suivi indisponible · fichier conservé."; }
+    }
+    private string _search="";
     private string? _error;
     private bool _loading,_pending,_disposed;
     private (DofusClientWindowKey?,string?) _view;
@@ -82,6 +125,7 @@ else if (_report is null && _loading)
     protected override void OnInitialized()
     {
         Stocks.Changed+=StockChanged;Professions.Changed+=StockChanged;
+        Settings.BreedingSettingsChanged+=StockChanged;
         Sales.PetPricesChanged+=PricesChanged;Sales.ListingsChanged+=PricesChanged;
         Sales.Changed+=PricesChanged;
         Feeding.Changed+=PricesChanged;
@@ -91,15 +135,38 @@ else if (_report is null && _loading)
     {
         var view=(TargetWindow,ServerName);
         if(_view==view) return Task.CompletedTask;
-        _view=view;_report=null;_load?.Cancel();
-        return RefreshAsync();
+        _view=view;_report=null;_journal=null;_progressScope=null;_load?.Cancel();
+        _=RefreshAsync();
+        return Task.CompletedTask;
     }
-    private void StockChanged(){if(!_disposed) _=InvokeAsync(RefreshAsync);}
+    private void StockChanged(){if(!_disposed) _=InvokeAsync(RequestRefreshAsync);}
     private void PricesChanged(string server)
     {
-        if(!_disposed && string.Equals(server,_report?.Server ?? ServerName,StringComparison.OrdinalIgnoreCase)) _=InvokeAsync(RefreshAsync);
+        if(!_disposed && string.Equals(server,_report?.Server ?? ServerName,StringComparison.OrdinalIgnoreCase)) _=InvokeAsync(RequestRefreshAsync);
     }
-    private void MarketChanged(object? sender,MarketDataChangedEventArgs change)=>PricesChanged(change.ServerName);
+    private void MarketChanged(object? sender,MarketDataChangedEventArgs change)
+    {
+        if(_report is { } report && !report.RelevantPriceItems.Contains(change.DofusDbId)) return;
+        PricesChanged(change.ServerName);
+    }
+    private Task RequestRefreshAsync()
+    {
+        _load?.Cancel();
+        return RefreshAsync();
+    }
+    private Task PublishAsync(PetOpportunityReport report,(DofusClientWindowKey?,string?) view,CancellationToken token)=>InvokeAsync(()=>
+    {
+        if(_disposed || token.IsCancellationRequested || view!=_view) return;
+        if(!report.OwnedAnalysisComplete && _report is { } previous)
+            report=report with {Owned=report.Owned.Select(row=>previous.Owned.FirstOrDefault(old=>old.Owned?.Uid==row.Owned?.Uid &&
+                old.Species.Id==row.Species.Id && old.Owned?.Container==row.Owned?.Container && old.Owned?.Reading==row.Owned?.Reading) is { } known
+                ? known with {Owned=row.Owned} : row).ToArray()};
+        if(!report.AnalysisComplete && _report is { } knownReport)
+            report=report with {Purchases=knownReport.Purchases,Checks=knownReport.Checks};
+        _report=report;
+        OverlayServices.GetService<OverlayWorkspaceService>()?.PublishPets(report);
+        StateHasChanged();
+    });
     private async Task RefreshAsync()
     {
         if(_disposed) return;
@@ -116,8 +183,8 @@ else if (_report is null && _loading)
                 try
                 {
                     await Task.Delay(250,token);
-                    var report=await Opportunities.LoadAsync(view.Item1,view.Item2,token);
-                    if(view==_view && !_disposed){_report=report;_error=null;}
+                    var report=await Opportunities.LoadAsync(view.Item1,view.Item2,token,partial=>PublishAsync(partial,view,token));
+                    if(view==_view && !_disposed){_report=report;_error=null;UpdateProgress();}
                 }
                 catch(OperationCanceledException) when(token.IsCancellationRequested){}
                 catch(Exception ex)
@@ -128,21 +195,12 @@ else if (_report is null && _loading)
                 if(!_disposed) StateHasChanged();
             }while(_pending && !_disposed);
         }
-        finally{_loading=false;}
-    }
-    private async Task CopyChecksAsync()
-    {
-        if(_report is null) return;
-        try
-        {
-            var result=await CopyQueue.CopyAsync(_report.Checks.Select(check=>check.Name),TargetWindow);
-            _copyStatus=result.IsQueue ? $"{result.Count} noms chargés · Ctrl+V dans Dofus." : "Liste copiée.";
-        }
-        catch(Exception ex){Logger.LogWarning(ex,"Copie HDV indisponible.");_copyStatus="Copie indisponible.";}
+        finally{_loading=false;if(!_disposed) StateHasChanged();}
     }
     public void Dispose()
     {
         _disposed=true;Stocks.Changed-=StockChanged;Professions.Changed-=StockChanged;
+        Settings.BreedingSettingsChanged-=StockChanged;
         Sales.PetPricesChanged-=PricesChanged;Sales.ListingsChanged-=PricesChanged;MarketChanges.Changed-=MarketChanged;
         Sales.Changed-=PricesChanged;
         Feeding.Changed-=PricesChanged;

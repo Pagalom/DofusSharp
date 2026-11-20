@@ -12,10 +12,18 @@
             <strong><CopyTextButton Value="Assessment.Species.Name" Tooltip="Copier le nom">@Assessment.Species.Name</CopyTextButton></strong>
             <span class="d-block small">@SourceDescription</span>
         </span>
+        @if (Progress is { } percent)
+        {
+            <span class="pet-goal-progress" data-bs-toggle="tooltip" data-bs-title="Progression automatique : obtention, nourriture, XP puis mise en vente.">
+                <progress value="@percent" max="100" aria-label="Progression du familier"></progress><strong>@percent %</strong>
+            </span>
+        }
         @if(Assessment.Issue is { } issue)
         {
             <StatusIcon Icon="exclamation-triangle" Tooltip="@issue" Label="Données à compléter" CssClass="text-warning" />
         }
+        @if(Analyzing && Assessment.Best is null)
+        { <span role="status" class="spinner-border spinner-border-sm" aria-label="Calcul des conseils"></span> }
         @if(Assessment.Best is { } header)
         {
             @if(header.RemainingListings==0)
@@ -116,6 +124,8 @@
     [Parameter,EditorRequired] public PetAssessment Assessment {get;set;}=null!;
     [Parameter,EditorRequired] public PetOpportunityReport Report {get;set;}=null!;
     [Parameter] public DofusClientWindowKey? TargetWindow {get;set;}
+    [Parameter] public int? Progress {get;set;}
+    [Parameter] public bool Analyzing {get;set;}
     private string _copyStatus="";
     private int? CurrentLevel=>Assessment.Owned?.Reading?.Level ?? Assessment.Purchase?.Level;
     private string SourceDescription=>Assessment.Owned is { } own

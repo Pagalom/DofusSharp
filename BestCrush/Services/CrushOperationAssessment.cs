@@ -50,7 +50,7 @@ internal static class CrushOperationAssessment
         }
 
         Dictionary<ulong, ForgemagingEffectDefinition>? effects = null;
-        if (lines.Any(line => line.ObservedItem is { StatsComplete: true, Stats.Count: > 0 }) &&
+        if (lines.Any(line => line.ObservedItem is { EffectWire: not null } or { StatsComplete: true, Stats.Count: > 0 }) &&
             services.GetService<ActivityCatalogService>() is { } catalog)
         {
             using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(12));
@@ -77,16 +77,19 @@ internal static class CrushOperationAssessment
         return history with { Equipments = assessed };
     }
 
-    private static IReadOnlyList<ForgemagingLine>? ResolveRoll(NetworkCrushResultLine line, Equipment? equipment,
+    internal static IReadOnlyList<ForgemagingLine>? ResolveRoll(NetworkCrushResultLine line, Equipment? equipment,
         ForgemagingSession? session, IReadOnlyDictionary<ulong, ForgemagingEffectDefinition>? effects, DateTime crushedAt)
     {
         var lastAttempt = session?.Attempts.LastOrDefault(attempt => attempt.FromGame && attempt.AtUtc <= crushedAt);
         var workshopAt = session?.LastObservedRollAtUtc is { } date && date <= crushedAt ? date : lastAttempt?.AtUtc;
         var workshopRoll = session?.LastObservedRollAtUtc == workshopAt &&
             session?.Lines is { Count: > 0 } lines && lines.All(l => l.Current.HasValue) ? lines : lastAttempt?.After;
-        if (line.ObservedItem is { StatsComplete: true, Stats.Count: > 0 } observed && effects is not null &&
-            (workshopRoll is null || workshopAt is null || observed.ObservedAtUtc >= workshopAt) &&
-            ForgemagedEquipmentStock.MapEffects(observed.Stats.Select(stat => (stat.EffectId, (long?)stat.Value)), effects) is { } stats)
+        var observed=line.ObservedItem;
+        var stats=observed is not null && effects is not null
+            ? observed.EffectWire is { } raw?ForgemagedEquipmentStock.MapWireEffects(raw,effects):
+                observed is {StatsComplete:true,Stats.Count:>0}?ForgemagedEquipmentStock.MapEffects(observed.Stats.Select(s=>(s.EffectId,(long?)s.Value)),effects):null
+            :null;
+        if (observed is not null && stats is not null && (workshopRoll is null || workshopAt is null || observed.ObservedAtUtc >= workshopAt))
         {
             var native = equipment?.Characteristics.Select(line => line.Characteristic).ToHashSet() ?? [];
             return stats.Select(stat => new ForgemagingLine { Characteristic = stat.Key, Current = stat.Value,

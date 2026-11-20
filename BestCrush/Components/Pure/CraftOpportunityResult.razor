@@ -96,9 +96,8 @@
         CraftedProduct product => product.TypeName,
         _ => "Produit"
     };
-    private EventCallback FocusAction => Item is Equipment equipment
-        ? EventCallback.Factory.Create(this, () => Services.GetRequiredService<OverlayService>().FocusEquipmentAndCopyNameAsync(equipment, ServerName))
-        : default;
+    private EventCallback FocusAction => EventCallback.Factory.Create(this,
+        () => Services.GetRequiredService<OverlayWorkspaceService>().FocusAsync(Item, ServerName));
     private string? GainColor => Opportunity.Benefit is { } gain ? CrushingGainColor.For(gain, Opportunity.Plan.EconomicCost) : null;
     private string MissingTooltip => Opportunity.MissingData.Count > 0
         ? string.Join("\n", Opportunity.MissingData) : "Certains prix nécessaires au calcul sont manquants.";

@@ -1,0 +1,57 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using BestCrush.Components.Pages
+
+<div class="fm-overlay-table">
+    <RuneExoPicker Runes="Runes" Lines="Session.Lines" Selected="ExtraSelected" />
+    <div class="fm-overlay-scroll">
+    <table aria-label="Jet réel et chances par rune">
+        <thead><tr><th>Min</th><th>Max</th><th>Effets</th><th>Poids</th><th>Modif.</th><th>Rune</th><th>Pa</th><th>Ra</th></tr></thead>
+        <tbody>
+        @foreach(var line in Session.Lines)
+        {
+            var last=Session.Attempts.LastOrDefault();
+            var delta=last is null?0:(last.After.FirstOrDefault(l=>l.Characteristic==line.Characteristic)?.Current??0)-(last.Before.FirstOrDefault(l=>l.Characteristic==line.Characteristic)?.Current??0);
+            <tr @key="line.Characteristic">
+                <td class="muted">@line.Minimum</td><td class="muted">@line.Maximum</td>
+                <th class="fm-overlay-stat">
+                    <span class="@(line.IsNative?line.Current>line.Maximum?"over":null:line.Current>0?"exotic":null)"><ForgemagingStat Stat="line.Characteristic" Value="line.Current" /></span>
+                    @if(ForgemagingSessionActions.CanRemoveGoalLine(Session,line.Characteristic))
+                    {
+                        <button type="button" class="fm-overlay-remove-goal" @onclick="() => ExtraRemoved.InvokeAsync(line.Characteristic)"
+                                title="Supprimer cet objectif" aria-label="@($"Supprimer l’objectif : {ForgemagingWorkspace.StatName(line.Characteristic)}")"><i class="bi bi-x-lg" aria-hidden="true"></i></button>
+                    }
+                </th>
+                <td>@((line.Current*line.Characteristic.GetWeight())?.ToString("0.##")??"—")</td>
+                <td class="@(delta>0?"positive":delta<0?"negative":"muted")">@(delta==0?"—":delta.ToString("+0;-0"))</td>
+                @for(int tier=0;tier<3;tier++)
+                {
+                    var runes=Runes.Where(r=>r.Characteristic==line.Characteristic && r.Gain>0 && Tier(r)==tier).ToArray();
+                    <td class="fm-overlay-runes">
+                    @foreach(var rune in runes)
+                    {
+                        var odds=Session.Lines.All(l=>l.Current.HasValue)?ForgemagingPlanner.Evaluate(Session.Level,Session.Lines,rune):null;
+                        var label=$"{rune.Name} · +{rune.Gain} {ForgemagingWorkspace.StatName(rune.Characteristic)}";
+                        <span class="fm-overlay-rune" tabindex="0" title="@label">
+                            <img src="@(rune.IconId is >0?$"img/runes/{rune.IconId}.png":"img/runes/unknown.svg")" alt="@rune.Name" width="24" height="24" onerror="this.onerror=null;this.src='img/runes/unknown.svg';" />
+                            @if(odds is {Blocked:null})
+                            {<span class="fm-overlay-odds" aria-label="@($"Succès critique {odds.Critical:0.#} %, succès neutre {odds.Neutral:0.#} %, échec critique {odds.Failure:0.#} %")"><span class="sc">@odds.Critical.ToString("0.#")</span><b>·</b><span class="sn">@odds.Neutral.ToString("0.#")</span><b>·</b><span class="ec">@odds.Failure.ToString("0.#")</span></span>}
+                            else{<span class="muted" title="@(odds?.Blocked??"Jet incomplet")">—</span>}
+                        </span>
+                    }
+                    @if(runes.Length==0){<span class="muted">—</span>}
+                    </td>
+                }
+            </tr>
+        }
+        </tbody>
+    </table>
+    </div>
+</div>
+@code{
+    [Parameter,EditorRequired] public ForgemagingSession Session {get;set;}=null!;
+    [Parameter] public IReadOnlyList<ForgemagingRune> Runes {get;set;}=[];
+    [Parameter] public EventCallback<Characteristic> ExtraSelected {get;set;}
+    [Parameter] public EventCallback<Characteristic> ExtraRemoved {get;set;}
+    private static int Tier(ForgemagingRune rune)=>rune.Name.StartsWith("Rune Ra ",StringComparison.OrdinalIgnoreCase)?2:rune.Name.StartsWith("Rune Pa ",StringComparison.OrdinalIgnoreCase)?1:0;
+}

@@ -1,0 +1,2 @@
+.pet-goal-progress{display:flex;align-items:center;gap:.6rem;white-space:nowrap}.pet-goal-progress progress{width:5rem;height:.5rem;accent-color:var(--bs-primary)}
+@media(max-width:650px){.pet-goal-progress progress{width:3rem}}

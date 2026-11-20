@@ -38,7 +38,8 @@ public sealed class ForgemagingWorkspaceTest
         item.Characteristics.Add(new(item, Characteristic.Strength, 0, 20)); db.Equipments.Add(item);
         db.Runes.AddRange(new Rune(10) { Name = "Rune Fo", Characteristic = Characteristic.Strength, DofusDbIconId = 78043 },
             new Rune(11) { Name = "Rune Pa Fo", Characteristic = Characteristic.Strength },
-            new Rune(12) { Name = "Rune Ra Fo", Characteristic = Characteristic.Strength });
+            new Rune(12) { Name = "Rune Ra Fo", Characteristic = Characteristic.Strength },
+            new Rune(13) { Name = "Rune Cha", Characteristic = Characteristic.Chance });
         foreach (var server in new[] { "A", "B" })
         foreach (long id in new[] { 10L, 11L }) db.MarketPriceObservations.Add(new() { ObjectType = MarketObjectType.Rune,
             DofusDbId = id, ServerName = server, Price = server == "A" ? 100 : 1000, Quantity = 10,
@@ -196,6 +197,32 @@ public sealed class ForgemagingWorkspaceTest
             Assert.DoesNotContain("Jet actuel :", html);
             Assert.Contains("Objectif : Force", html);
 
+            var recording = live.View("A").Session!.GameRecordingId!;
+            await renderer.Dispatcher.InvokeAsync(() => (Task)typeof(ForgemagingWorkspace).GetMethod("AddExtraAsync", Hidden)!
+                .Invoke(capture.Workspace, [Characteristic.Chance])!);
+            await Until(() => Field<ForgemagingSession>(capture.Workspace, "_session").Lines.Any(l => l.Characteristic == Characteristic.Chance));
+            Assert.Contains("Supprimer l’objectif : Chance", WebUtility.HtmlDecode(await Html()));
+            Assert.DoesNotContain("Supprimer l’objectif : Force", WebUtility.HtmlDecode(await Html()));
+            var added = live.View("A").Session!.Lines.Single(l => l.Characteristic == Characteristic.Chance);
+            Assert.Equal(0, added.Current); Assert.Equal(0, added.Target);
+            Assert.Contains(store.GetObserved("A", 1, recording)!.Lines, l => l.Characteristic == Characteristic.Chance);
+            // A stale overlay callback must not delete another session's goal.
+            await live.RemoveGoalLineAsync("old-recording", Characteristic.Chance);
+            Assert.Contains(live.View("A").Session!.Lines, l => l.Characteristic == Characteristic.Chance);
+            await live.RemoveGoalLineAsync(recording, Characteristic.Strength);
+            Assert.Contains(live.View("A").Session!.Lines, l => l.Characteristic == Characteristic.Strength);
+            // Overlay and module use this same service; its event updates the module view.
+            await live.RemoveGoalLineAsync(recording, Characteristic.Chance);
+            await Until(() => Field<ForgemagingSession>(capture.Workspace, "_session").Lines.All(l => l.Characteristic != Characteristic.Chance));
+            Assert.DoesNotContain(store.GetObserved("A", 1, recording)!.Lines, l => l.Characteristic == Characteristic.Chance);
+            await live.AddExtraLineAsync(recording, Characteristic.Chance);
+            await Until(() => Field<ForgemagingSession>(capture.Workspace, "_session").Lines.Any(l => l.Characteristic == Characteristic.Chance));
+            await renderer.Dispatcher.InvokeAsync(() => (Task)typeof(ForgemagingWorkspace).GetMethod("RemoveExtraAsync", Hidden)!
+                .Invoke(capture.Workspace, [Characteristic.Chance])!);
+            Assert.DoesNotContain(live.View("A").Session!.Lines, l => l.Characteristic == Characteristic.Chance);
+            Assert.DoesNotContain(store.GetObserved("A", 1, recording)!.Lines, l => l.Characteristic == Characteristic.Chance);
+            Assert.Empty(live.View("A").Session!.Attempts);
+
             await renderer.Dispatcher.InvokeAsync(() =>
             {
                 var workspace = capture.Workspace;
@@ -221,6 +248,7 @@ public sealed class ForgemagingWorkspaceTest
             Assert.DoesNotContain("Manuel", WebUtility.HtmlDecode(await Html()));
             Deposit();
             await Until(() => Field<ForgemagingSession?>(capture.Workspace, "_session") is not null);
+            Assert.DoesNotContain(live.View("A").Session!.Lines, l => l.Characteristic == Characteristic.Chance);
             servers.SelectServer("B");
             await Until(() => Field<ForgemagingSession?>(capture.Workspace, "_session") is null);
             Assert.False(live.View("A").CanTrack);

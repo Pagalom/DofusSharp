@@ -1,4 +1,4 @@
-﻿using BestCrush.Network.Protocol;
+using BestCrush.Network.Protocol;
 
 namespace BestCrush.Services;
 
@@ -26,6 +26,7 @@ internal sealed class DofusNetworkMessageProcessor(
         internal PurchaseRequestObservation? PendingPurchaseRequest;
         internal DateTime PendingPurchaseRequestAtUtc;
         internal MarketListingRequestObservation? PendingListing;
+        internal ProductionListingEvidence? PendingListingEvidence;
         internal DateTime PendingListingAtUtc;
         internal NetworkCaptureLease? PendingListingLease;
         internal string? PendingListingCreatedKey;
@@ -146,6 +147,9 @@ internal sealed class DofusNetworkMessageProcessor(
 
         if (message.Direction == "S→C" && message.CandidateWindow is not null)
         {
+            if(message.Key is "iqm" or "irx" && LiveStockProtocol.Decode(message.Key,message.Body) is { } removal &&
+                (removal.Operation==LiveStockOperation.Remove || removal.Quantity==0))
+                itemDetails.RememberRemoval(removal.Uid,message.ObservedAtUtc);
             IEnumerable<LiveStockItem> stockItems = message.Key switch
             {
                 "irl" when InventoryBankSnapshotDecoder.Decode("irl", message.Body) is
@@ -156,12 +160,21 @@ internal sealed class DofusNetworkMessageProcessor(
             foreach (var item in stockItems)
                 itemDetails.Remember(new(item.Uid, item.ItemId, item.Quantity,
                     item.Effects?.Select(effect => new ItemStatObservation(effect.EffectCode, effect.Value)).ToArray() ?? [])
-                { ObservedAtUtc = message.ObservedAtUtc, StatsComplete = item.EffectIssue is null && item.Effects is { Count: > 0 } });
+                { ObservedAtUtc = message.ObservedAtUtc, StatsComplete = item.EffectIssue is null && item.Effects is { Count: > 0 },EffectWire=item.EffectWire });
         }
 
         // Translate active wire fields to the canonical decoder schema.
         // Wire debug above intentionally retains original captured bytes.
         byte[] body = map.NormalizeBody(message.Key, message.Body);
+        if(message.Direction=="S→C" && message.Key==map.InventoryRemove &&
+            SemanticDecoders.TryDecodeInventoryRemove(body) is { } removedItem)
+            itemDetails.RememberRemoval(removedItem.ItemUid,message.ObservedAtUtc);
+        if (map.PersonalMarketHistory is not null && message.Key == map.PersonalMarketHistory)
+        {
+            if (message.Direction == "S→C")
+                observationWriter.PersistPersonalMarketHistory(body, message.CandidateWindow, message.ObservedAtUtc, lease);
+            return;
+        }
         if (map.MarketMeanPrices is not null && message.Key == map.MarketMeanPrices)
         {
             if (message.Direction == "S→C")
@@ -225,6 +238,13 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (item is not null)
             {
+                if(message.Key==map.CurrentItemDetail)
+                {
+                    var current=LiveForgemagingProtocol.Item(LiveForgemagingProtocol.Child(
+                        LiveForgemagingProtocol.Child(LiveForgemagingProtocol.Fields(message.Body),3),1));
+                    item=item with{StatsComplete=false,EffectWire=current is not null && current.Uid==item.ItemUid &&
+                        (ulong)current.ItemId==item.ItemId?current.EffectWire:null};
+                }
                 itemDetails.Remember(item with { ObservedAtUtc = message.ObservedAtUtc });
                 await observationWriter.RememberLastEquipmentAsync(
                     item.ItemId,
@@ -454,6 +474,8 @@ internal sealed class DofusNetworkMessageProcessor(
             if (message.Direction == "C→S")
             {
                 correlation.PendingListing = MarketListingDecoder.DecodeRequest(body);
+                correlation.PendingListingEvidence = correlation.PendingListing is { } pending
+                    ? observationWriter.ListingEvidence(message.CandidateWindow, pending.ItemUid, lease) : null;
                 correlation.PendingListingAtUtc = message.ObservedAtUtc;
                 correlation.PendingListingLease = lease;
                 correlation.PendingListingCreatedKey = message.Key == map.CurrentMarketListingRequest
@@ -473,7 +495,7 @@ internal sealed class DofusNetworkMessageProcessor(
                 MarketListingDecoder.DecodeCreated(body) is { } confirmed &&
                 request.Quantity == confirmed.Quantity && request.Price == confirmed.Price)
             {
-                observationWriter.PersistMarketListing(confirmed, message.ObservedAtUtc, lease);
+                observationWriter.PersistMarketListing(confirmed, message.ObservedAtUtc, lease, correlation.PendingListingEvidence);
                 await debugWriter.WriteEventDebugAsync(message.ObservedAtUtc,
                     $"[LISTING-CURRENT-CONFIRMED] MarketUid={confirmed.MarketListingUid} ItemId={confirmed.ItemId} x{confirmed.Quantity} price={confirmed.Price} K",
                     cancellationToken);
@@ -500,7 +522,7 @@ internal sealed class DofusNetworkMessageProcessor(
                 if (request is not null && inTime && correlation.PendingListingLease == lease &&
                     correlation.PendingListingCreatedKey == message.Key &&
                     request.Quantity == listing.Quantity && request.Price == listing.Price)
-                    observationWriter.PersistMarketListing(listing, message.ObservedAtUtc, lease);
+                    observationWriter.PersistMarketListing(listing, message.ObservedAtUtc, lease, correlation.PendingListingEvidence);
                 await observationWriter.RememberLastEquipmentAsync(
                     listing.ItemId,
                     message.ObservedAtUtc,
@@ -652,9 +674,10 @@ internal sealed class DofusNetworkMessageProcessor(
 
             if (crush is not null)
             {
+                var crushedItems=itemDetails.TakeForCrush(crush.Lines.Select(l=>l.ItemUid),message.ObservedAtUtc);
                 foreach (CrushLineObservation line in crush.Lines)
                 {
-                    itemDetails.TryGetValue(
+                    crushedItems.TryGetValue(
                         line.ItemUid,
                         out ItemDetailObservation? knownItem);
 
@@ -668,7 +691,7 @@ internal sealed class DofusNetworkMessageProcessor(
 
                 await observationWriter.PersistCrushAsync(
                     crush,
-                    itemDetails.Items,
+                    crushedItems,
                     message.ObservedAtUtc,
                     lease,
                     cancellationToken,

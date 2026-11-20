@@ -57,7 +57,7 @@ public sealed class LiveForgemagingService : IDisposable
         if (_priceChanges is not null) _priceChanges.Changed += RunePricesChanged;
         _clients.Changed += ClientChanged;
         _bindings.Changed += ContextChanged;
-        _servers.ServerSelectionChanged += ContextChanged;
+        _servers.ServerSelectionChanged += ContextChanged;_servers.PlayedServerChanged += ContextChanged;
         _worker = Task.Run(ConsumeAsync);
     }
     public LiveForgemagingView View(string? server)
@@ -230,6 +230,13 @@ public sealed class LiveForgemagingService : IDisposable
                     if (_session?.GameRecordingId != key)
                         _session = _store.GetObserved(_server, load.ItemId, key) ?? data.Session;
                     _session.GameRecordingId ??= key;
+                    // A saved session can predate the correction of a native effect, such as Hunting.
+                    foreach (var native in data.Session.Lines)
+                    {
+                        var existing = _session.Lines.FirstOrDefault(line => line.Characteristic == native.Characteristic);
+                        if (existing is null) _session.Lines.Add(native);
+                        else { existing.Minimum = native.Minimum; existing.Maximum = native.Maximum; }
+                    }
                     ApplyValues(_session, values);
                     _session.LastObservedRollAtUtc = message.ObservedAtUtc;
                     _session.Sink = LiveForgemagingProtocol.WorkshopItem(message.Body)!.Value.Sink;
@@ -265,6 +272,34 @@ public sealed class LiveForgemagingService : IDisposable
         foreach (var stat in values.Keys.Except(session.Lines.Select(l => l.Characteristic))) session.Lines.Add(new() { Characteristic = stat });
         foreach (var line in session.Lines) line.Current = values.GetValueOrDefault(line.Characteristic);
     }
+    public async Task AddExtraLineAsync(string? recording,Characteristic stat)
+    {
+        long generation;
+        lock(_sync)
+        {
+            if(_session is null || string.IsNullOrWhiteSpace(recording) || _session.GameRecordingId!=recording ||
+                _isLoading || _tracker is null || _flowLease is not { } lease || !_servers.IsCaptureLeaseActive(lease) ||
+                !_runes.Any(rune=>rune.Characteristic==stat) || _session.Lines.Any(line=>line.Characteristic==stat))return;
+            _session.Lines.Add(new(){Characteristic=stat,Current=0,Target=0});
+            generation=_generation;
+        }
+        await SaveAsync(generation);
+        Changed?.Invoke();
+    }
+    public async Task RemoveGoalLineAsync(string? recording, Characteristic stat)
+    {
+        long generation;
+        lock (_sync)
+        {
+            if (_session is null || string.IsNullOrWhiteSpace(recording) || _session.GameRecordingId != recording ||
+                _isLoading || _tracker is null || _flowLease is not { } lease || !_servers.IsCaptureLeaseActive(lease) ||
+                !ForgemagingSessionActions.RemoveGoalLine(_session, stat)) return;
+            generation = _generation;
+        }
+        await SaveAsync(generation);
+        Changed?.Invoke();
+    }
+
     public async Task UpdateGoalsAsync(ForgemagingSession edited)
     {
         long generation;
@@ -354,6 +389,6 @@ public sealed class LiveForgemagingService : IDisposable
     public void Dispose()
     {
         if (_priceChanges is not null) _priceChanges.Changed -= RunePricesChanged;
-        _clients.Changed -= ClientChanged; _bindings.Changed -= ContextChanged; _servers.ServerSelectionChanged -= ContextChanged; _queue.Writer.TryComplete(); _stop.Cancel();
+        _clients.Changed -= ClientChanged; _bindings.Changed -= ContextChanged; _servers.ServerSelectionChanged -= ContextChanged;_servers.PlayedServerChanged -= ContextChanged; _queue.Writer.TryComplete(); _stop.Cancel();
     }
 }

@@ -23,6 +23,8 @@ internal sealed partial class NetworkObservationWriter
             {
                 var key = ForgemagedEquipmentStock.InstanceKey(lease.ServerName, observation.ItemId, observation.Uid);
                 store.RecordAcquisition(lease.ServerName, observation.ItemId, key, observation.Acquisition);
+                if (services.GetService<OverlayWorkspaceService>() is { } overlays)
+                    _ = overlays.FocusAcquisitionAsync(observation, lease);
             }
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or Microsoft.Data.Sqlite.SqliteException)

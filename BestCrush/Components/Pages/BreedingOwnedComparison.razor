@@ -1,0 +1,77 @@
+@using BestCrush.Network.Protocol
+@using BestCrush.Services
+
+@if (Mounts.Count > 0)
+{
+    <details class="breeding-comparison-section" open="@FocusedMount.HasValue">
+        <summary><i class="bi bi-grid" aria-hidden="true"></i> Mes montures <span class="small">(@Mounts.Count)</span></summary>
+        <div class="breeding-comparison-body table-responsive">
+            <table class="table table-dark table-striped align-middle">
+                <thead><tr><th>Monture</th><th>Conseil</th><th class="text-end">Coût XP</th><th class="text-end">Revente</th><th class="text-end">Après XP <StatusIcon Tooltip="Revente moins le coût d’XP restant, avant taxes. Le prix d’obtention n’est pas déduit ici." /></th><th></th></tr></thead>
+                <tbody>
+                @foreach (var mount in Mounts.OrderByDescending(m => Report.Resale.GetValueOrDefault(m.Id)?.AdditionalNet)
+                    .ThenByDescending(m => Report.Resale.GetValueOrDefault(m.Id)?.Best?.Net))
+                {
+                    var estimate = Report.Resale.GetValueOrDefault(mount.Id);
+                    var sale = Report.Sellable.GetValueOrDefault(mount.Id) ?? estimate?.Best;
+                    var advice = Advice(mount);
+                    <tr @key="mount.Id" data-breeding-action="@mount.Id.ToString("N")" class="@(FocusedMount == mount.Id ? "breeding-action-focused" : null)">
+                        <th scope="row"><div class="breeding-comparison-mount">
+                            <img src="@BreedingDashboardPresentation.Head(mount.SpeciesId, SpeciesById.GetValueOrDefault(mount.SpeciesId ?? 0)?.FamilyId)" alt="" onerror="this.onerror=null;this.src='img/mount.svg';" />
+                            <span><strong>@Name(mount)</strong><small>Niv. @mount.Level · @MountLocations.GetValueOrDefault(mount.Id)</small></span>
+                        </div></th>
+                        <td><span class="breeding-comparison-advice"><i class="bi bi-@advice.Icon" aria-hidden="true"></i>@advice.Text
+                            @if (advice.Detail is { } detail) { <StatusIcon Icon="info-circle" Tooltip="@detail" /> }
+                        </span></td>
+                        <td class="text-end breeding-comparison-value">@Money(sale?.ExperienceCost)</td>
+                        <td class="text-end breeding-comparison-value">@Money(sale?.SalePrice)</td>
+                        <td class="text-end breeding-comparison-value">@Money(sale?.Net)
+                            @if (estimate is not null) { <StatusIcon Tooltip="@PriceDetail(estimate)" /> }
+                        </td>
+                        <td><button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ViewMount.InvokeAsync(mount.Id)" aria-label="@($"Voir {Name(mount)}")">Voir</button></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </details>
+}
+
+@code {
+    [Parameter, EditorRequired] public BreedingTradeReport Report { get; set; } = null!;
+    [Parameter] public IReadOnlyList<PaddockMountReading> Mounts { get; set; } = [];
+    [Parameter] public IReadOnlyDictionary<long, BreedingSpecies> SpeciesById { get; set; } = new Dictionary<long, BreedingSpecies>();
+    [Parameter] public IReadOnlyDictionary<Guid, string> MountLocations { get; set; } = new Dictionary<Guid, string>();
+    [Parameter] public IReadOnlySet<Guid> HeldMounts { get; set; } = new HashSet<Guid>();
+    [Parameter] public Guid? FocusedMount { get; set; }
+    [Parameter] public EventCallback<Guid> ViewMount { get; set; }
+
+    private string Name(PaddockMountReading mount) => SpeciesById.GetValueOrDefault(mount.SpeciesId ?? 0)?.Name ?? "Monture";
+    private static string Money(long? value) => value is { } amount ? $"{amount:N0} K" : "—";
+    private (string Icon, string Text, string? Detail) Advice(PaddockMountReading mount)
+    {
+        if (HeldMounts.Contains(mount.Id)) return ("gender-ambiguous", "Garder pour l’accouplement", null);
+        if (Report.Sellable.GetValueOrDefault(mount.Id) is { } allowed && allowed.Level >= mount.Level)
+            return allowed.Level > mount.Level ? ("stars", $"Monter au niv. {allowed.Level}", "Puis mettre en vente au prix conseillé.") : ("shop", "Vendre à ce niveau", null);
+        var estimate = Report.Resale.GetValueOrDefault(mount.Id);
+        if (estimate?.Best is not null && Report.OwnedCapacity.GetValueOrDefault(mount.Id) is { } capacity)
+        {
+            if (capacity.Evidence != BreedingDemandEvidence.Observed)
+                return ("hourglass-split", "Débouché à vérifier", capacity.Evidence == BreedingDemandEvidence.HistoryUnavailable
+                    ? "Cours du marché indisponible. Les prix restent des valeurs de comparaison ; aucune vente n’est conseillée."
+                    : "Volume des ventes à relever pour vérifier le débouché.");
+            return ("hourglass-split", "Attendre", capacity.SalesAtPrice == 0 ? "Aucune vente observée au prix visé."
+                : capacity.Remaining == 0 ? "Plafond de mise en vente atteint." : "Quota attribué aux montures mieux valorisées.");
+        }
+        if (estimate?.Best is not null) return ("clock-history", "Débouché à vérifier", "Consulte le Cours du marché de cette espèce.");
+        if (estimate?.QuotedLevels > 0) return ("fuel-pump", "Coût XP à compléter", Report.ExperiencePricingFailed
+            ? "Calcul du coût d’XP indisponible." : "Prix du carburant d’XP à relever.");
+        return ("shop", "Prix à relever", estimate?.LatestSpeciesQuoteAt is not null
+            ? $"Aucune offre récente comparable à partir du niveau {mount.Level}, pour ce profil de fertilité."
+            : "Consulte cette espèce à l’HDV pour relever ses prix par niveau.");
+    }
+    private static string PriceDetail(BreedingResaleAssessment assessment) =>
+        $"{assessment.ComparedLevels} / {assessment.QuotedLevels} niveaux chiffrés" +
+        (assessment.Best is { OfferCount: > 0 } best ? $" · {best.OfferCount} offres au niveau étudié" : "") +
+        (assessment.LatestSpeciesQuoteAt is { } at ? $" · Relevé du {at.ToLocalTime():dd/MM HH:mm}" : "");
+}

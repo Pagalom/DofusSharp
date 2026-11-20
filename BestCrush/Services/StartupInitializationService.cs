@@ -65,6 +65,7 @@ public sealed class StartupInitializationService
                     progress.DeriveSubtask(50, 100),
                     cancellationToken);
 
+                await gameUpgrades.RepairNativeHuntingAsync(dofusDbClientsFactory, gameVersion, cancellationToken);
                 await provider.GetRequiredService<PetFoodCatalogService>().SynchronizeAsync(cancellationToken);
                 logger.LogInformation("BestCrush database initialization completed.");
             })

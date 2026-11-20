@@ -87,6 +87,7 @@
                                             @onclick="() => Workspace.ShowHistory(MarketObjectType.Rune, row.DofusDbId, row.Name)">@row.Name</button>
                                 }
                                 else { <strong>@row.Name</strong> }
+                                <OverlayFocusButton ItemId="row.DofusDbId" Name="@row.Name" ObjectType="MarketObjectType.Rune" ServerName="@ServerName" />
                                 <StockQuantity ItemId="row.DofusDbId" ServerName="@ServerName" />
                             </td>
 

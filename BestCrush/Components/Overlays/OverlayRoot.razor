@@ -1,0 +1,278 @@
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+@using BestCrush.Domain.Services
+@using System.Globalization
+@implements IDisposable
+@inject OverlayWindowsService Host
+@inject OverlayWorkspaceService Data
+@inject IServiceProvider Services
+@using Microsoft.Extensions.DependencyInjection
+
+@if (Host.Get(WindowId) is { } window)
+{
+    <section @ref="_root" class="overlay-shell @(window.Kind==WorkspaceOverlayKind.Control ? "control-shell" : null)" @onpointerenter="()=>Host.Pointer(WindowId,true)" @onpointerleave="()=>Host.Pointer(WindowId,false)">
+    @if(window.Kind == WorkspaceOverlayKind.Control)
+    {
+        <div class="control-grip" title="Déplacer" data-overlay-hit="2">⠿</div>
+        @foreach(var kind in Kinds)
+        {
+            <button class="control-button @(Host.IsVisible(kind)?"active":null)" title="@OverlayWindowsService.Title(kind)" aria-label="@OverlayWindowsService.Title(kind)" @onclick="()=>Host.Toggle(kind)"><i class="bi @Icon(kind)"></i></button>
+        }
+        <button class="control-button" title="Masquer / réafficher · F7" @onclick="Host.ToggleAll"><i class="bi bi-eye"></i></button>
+        <button class="control-button" title="Ouvrir BestCrush" @onclick="()=>Host.OpenMain?.Invoke()"><i class="bi bi-box-arrow-up-right"></i></button>
+    }
+    else
+    {
+        <header class="overlay-titlebar" data-overlay-hit="2">
+            <span class="drag-grip">⠿</span><span class="overlay-title">@(window.Popup?.Title ?? window.Title)</span>
+            @if(window.Kind==WorkspaceOverlayKind.Popup)
+            {
+            <button class="icon-button @(window.Pinned?"active":null)" title="@(window.Pinned?"Détacher":"Épingler")" aria-label="Épingler" @onpointerdown:stopPropagation @onclick="()=>Host.TogglePin(WindowId)"><i class="bi @(window.Pinned?"bi-pin-angle-fill":"bi-pin-angle")"></i></button>
+            <button class="icon-button" title="Fermer" aria-label="Fermer" @onpointerdown:stopPropagation @onclick="()=>Host.Close(WindowId)"><i class="bi bi-x-lg"></i></button>
+            }
+        </header>
+        <main class="overlay-body">
+        @if(window.Popup is { } popup)
+        {
+            @if(popup.Comparison is { } comparison)
+            {
+                var normal=comparison.Scenario(null);var best=comparison.BestFocus;
+                <div class="comparison-scroll"><table class="runes-table"><thead><tr><th>Rune</th><th>Sans focus</th><th>Avec focus</th></tr></thead><tbody>
+                @foreach(var rune in RuneChoices(comparison))
+                {
+                    var scenario=comparison.Scenario(rune.Characteristic);
+                    var unit=comparison.Crushing?.PotentialRuneUnitValues.Where(p=>p.Key.DofusDbId==rune.DofusDbId).Select(p=>(MarketValueResult?)p.Value).FirstOrDefault();
+                    var basic=RuneQuantity(normal,rune.DofusDbId);var value=RunePrice(normal,rune.DofusDbId);
+                    var focused=RuneQuantity(scenario,rune.DofusDbId);var focusValue=RunePrice(scenario,rune.DofusDbId);
+                    <tr>
+                        <td><button class="copy-name" @onclick="()=>Copy([rune.Name])">@rune.Name</button></td>
+                        <td><button class="value-button @(best is not null && best.FocusedCharacteristic is null && normal==best?"best":null)" title="@(normal is null?MissingCrush(comparison):"Choisir sans focus")" disabled="@(normal is null)" @onclick="()=>SelectFocus(comparison,null)"><strong>@Money(value?.Value)</strong><small>@if(basic is not null){<text>× @Number(basic) · </text>}@UnitMoney(basic>0?value?.Value/basic:unit?.Value) / u</small></button></td>
+                        <td><button class="value-button @(best is not null && ReferenceEquals(best,scenario)?"best":null) @(Data.Selection.Focus==rune.Characteristic?"selected":null)" title="@(scenario is null?MissingCrush(comparison):"Choisir ce focus")" disabled="@(scenario is null)" @onclick="()=>SelectFocus(comparison,rune.Characteristic)"><strong>@Money(focusValue?.Value)</strong><small>@if(focused is not null){<text>× @Number(focused) · </text>}@UnitMoney(focused>0?focusValue?.Value/focused:unit?.Value) / u</small></button></td>
+                    </tr>
+                }
+                </tbody><tfoot><tr><td>Total sans focus</td><td><button class="value-button @(best is not null && best.FocusedCharacteristic is null?"best":null) @(Data.Selection.Focus is null?"selected":null)" disabled="@(normal is null)" @onclick="()=>SelectFocus(comparison,null)">@Money(comparison.GrossRuneValue(null))</button></td><td><small>Un focus à la fois</small></td></tr></tfoot></table></div>
+            }
+            else
+            {
+                <div class="overlay-list">
+                @foreach(var line in popup.Lines)
+                {
+                    <button class="overlay-list-row" disabled="@line.IsStatistic" @onclick="()=>Copy([line.Name])">
+                        <span>
+                            @if(line.IsStatistic && line.Stat is { } stat)
+                            {<span class="owned-roll-stat @(line.Detail=="Over"?"over":line.Detail=="Exo"?"exotic":null)"><BestCrush.Components.Pure.ForgemagingStat Stat="stat" Value="@((int?)line.Quantity)" /></span>}
+                            else
+                            {<text>@line.Name</text>@if(line.Quantity is { } q){<small>@(line.IsStatistic? q.ToString("N0") : $"× {Number(q)}")</small>}}
+                            @if(line.Detail is { } detail){<small>@detail</small>}
+                        </span>
+                        <span class="price @(line.Warning?"warning":null)">@if(line.Total is not null || line.Warning){<strong>@Money(line.Total)</strong>}@if(line.Unit is { } unit){<small>@UnitMoney(unit) / u</small>}</span>
+                    </button>
+                }
+                </div>
+            }
+        }
+        else if(window.Kind == WorkspaceOverlayKind.Profitability)
+        {
+            <div class="overlay-item-tools"><button class="text-action" @onclick="ToggleOwned"><i class="bi bi-backpack"></i> Mes équipements</button></div>
+            @if(_ownedOpen)
+            {
+                var choices=Data.InventoryChoices(_ownedItemOnly ? Data.Profitability?.Item.DofusDbId : null);
+                <div class="owned-picker"><input type="search" placeholder="Chercher un exemplaire…" @bind="_ownedSearch" @bind:event="oninput" />
+                @foreach(var choice in choices.Where(c=>c.Item.Equipment.Name.Contains(_ownedSearch,StringComparison.CurrentCultureIgnoreCase)))
+                {
+                    var detail=OwnedRoll(choice.Item);
+                    <button @onclick="()=>FocusOwned(choice)" @onpointerenter="()=>Hover(detail)" @onpointerleave="()=>Host.LeavePopup(detail.Key)">
+                        <TradeItemImage Name="@choice.Item.Equipment.Name" ItemId="choice.Item.Equipment.DofusDbId" IconId="choice.Item.Equipment.DofusDbIconId" Size="30" />
+                        <span>@choice.Item.Equipment.Name<small>
+                            @if(choice.Item.Roll is { } roll)
+                            {@foreach(var line in roll.Where(l=>l.Current!=0).Take(3)){<span class="owned-preview-stat"><BestCrush.Components.Pure.ForgemagingStat Stat="line.Characteristic" Value="line.Current" /></span>}}
+                            else{<text>Jet non relevé</text>}
+                        </small></span>
+                    </button>
+                }
+                @if(choices.Count==0){<p class="empty">Aucun exemplaire en inventaire.</p>}</div>
+            }
+            @if(Data.Profitability is { } profit)
+            {
+                var route=Data.Selection.Route;var focus=Data.Selection.Focus;var scenario=profit.Scenario(focus);
+                var crushing=ProfitabilityOverlaySnapshot.IsCrushing(route);
+                var checks=Checks(profit,route);var checkPopup=new OverlayPopup($"checks:{profit.FocusId}:{route}","Prix à actualiser",checks);
+                <div class="item-heading"><TradeItemImage Name="@profit.Item.Name" ItemId="profit.Item.DofusDbId" IconId="profit.Item.DofusDbIconId" Size="44" /><span>
+                    <span class="item-name"><strong>@profit.Item.Name</strong>@if(profit.WasCrushed){<i class="bi bi-hammer crushed-marker" tabindex="0" aria-label="Concassé" title="Concassé"></i>}</span>
+                    <small>Niv. @profit.Item.Level ·
+                    @if(Data.CanChooseInventoryRoll){<button class="roll-selector" title="Choisir un exemplaire en inventaire" @onclick="ToggleRoll">@profit.RollLabel <i class="bi bi-chevron-down"></i></button>}
+                    else{<span>@profit.RollLabel</span>}
+                    @if(crushing){if(profit.Crushing?.Coefficient is { } coefficient){<text> · @coefficient.CoefficientPercent.ToString("N2")%</text>}else{<i class="bi bi-info-circle warning" title="Coefficient non relevé : concassez un exemplaire pour le connaître."></i>}} @if(profit.ActualRollUnavailable){<i class="bi bi-exclamation-circle warning" title="Jet non reçu : ouvrez l’inventaire dans Dofus."></i>}</small>
+                </span></div>
+                <div class="main-profit"><small>@ProfitabilityOverlaySnapshot.RouteName(route)</small><div class="gain-row"><strong class="gain @Tone(profit.Gain(route,focus))" title="@MissingProfit(profit,route,focus)">@Signed(profit.Gain(route,focus)) @if(!Data.Loading && profit.Gain(route,focus) is null){<i class="bi bi-info-circle warning" style="font-size:14px"></i>}</strong>
+                @if(checks.Count>0){<button class="price-check" title="Prix à actualiser · cliquer pour copier" @onpointerenter="()=>Hover(checkPopup)" @onpointerleave="()=>Host.LeavePopup(checkPopup.Key)" @onclick="()=>Copy(checks.Select(l=>l.Name))"><i class="bi bi-arrow-repeat"></i> @checks.Count</button>}</div>
+                @if(profit.Roi(route,focus) is { } roi){<small>@roi.ToString("N1") % de rentabilité</small>}</div>
+                @if(route is OverlayRoute.CraftSale or OverlayRoute.CraftCrush)
+                {
+                    var ingredients=new OverlayPopup($"craft:{profit.FocusId}","Craft",profit.Ingredients);
+                    <button class="metric hoverable" @onpointerenter="()=>Hover(ingredients)" @onpointerleave="()=>Host.LeavePopup(ingredients.Key)" @onclick="()=>Copy(profit.Ingredients.Select(l=>l.Name))"><span>Craft</span><strong>@Money(profit.Craft)</strong></button>
+                }
+                else
+                {
+                    var purchase=new OverlayPopup($"purchase:{profit.FocusId}","Achat",profit.PurchaseDetails.Count>0?profit.PurchaseDetails:profit.PurchaseChecks);
+                    <button class="metric hoverable" @onpointerenter="()=>Hover(purchase)" @onpointerleave="()=>Host.LeavePopup(purchase.Key)" @onclick="()=>Copy([profit.Item.Name])"><span>Achat</span><strong>@Money(profit.Purchase) @if(profit.Purchase is null){<i class="bi bi-info-circle warning" title="Prix d’obtention inconnu · survoler pour voir le prix HDV."></i>}</strong></button>
+                }
+                @if(crushing)
+                {
+                    var runes=new OverlayPopup($"runes:{profit.FocusId}","Comparer les focus",[],profit);
+                    <button class="metric hoverable" @onpointerenter="()=>Hover(runes)" @onpointerleave="()=>Host.LeavePopup(runes.Key)" @onclick="()=>Copy(profit.Crushing?.PotentialRunes.Select(r=>r.Name) ?? [])"><span>Runes · @(focus is { } focused ? BestCrush.Components.Pages.ForgemagingWorkspace.StatName(focused) : "sans focus")</span><strong>@Money(profit.GrossRuneValue(focus))</strong></button>
+                    @if(profit.FmCost>0 || !profit.FmCostKnown){<div class="metric"><span>FM</span><strong>@(profit.FmCostKnown?Money(profit.FmCost):"—")</strong></div>}
+                    @if(scenario?.DiscountPercent is > 0 and var discount){<small class="muted">Décote @discount.ToString("N0") % incluse dans le gain.</small>}
+                }
+                else{<div class="metric"><span>Vente conseillée</span><strong>@Money(profit.Sale)</strong></div>}
+                <details class="possibilities" open="@_possibilities"><summary @onclick="()=>_possibilities=!_possibilities" @onclick:preventDefault>Comparer les possibilités <i class="bi @(_possibilities?"bi-chevron-up":"bi-chevron-down")"></i></summary>
+                @foreach(var possibility in Enum.GetValues<OverlayRoute>())
+                {
+                    <button class="route @(route==possibility?"selected":null)" disabled="@(profit.Crushing is null && ProfitabilityOverlaySnapshot.IsCrushing(possibility))" @onclick="()=>Data.ChooseRoute(possibility)"><span class="radio-dot"></span><span>@ProfitabilityOverlaySnapshot.RouteName(possibility)</span><small>@Signed(profit.Gain(possibility,focus))</small></button>
+                }
+                </details>
+            }
+            else{<p class="empty">Ciblez un objet depuis BestCrush, ou utilisez le clic molette en HDV.<small>Inventaire / métiers : F8 sur l’infobulle.</small></p>}
+            @if(Data.Loading){<div class="loading" aria-label="Calcul en cours"></div>}
+            @if(Data.Error is { } error){<small class="warning">@error</small>}
+        }
+        else
+        {
+            var module=Data.Module(window.Kind);
+            @if(module.Cards.Count==0){<p class="empty">@module.Empty</p>}
+            @foreach(var card in module.Cards)
+            {
+                <article class="module-card"><div class="module-heading">@if(card.ItemId>0){<TradeItemImage Name="@card.Title" ItemId="card.ItemId" IconId="card.IconId" Size="38" />}<strong class="card-title">@card.Title</strong></div>@if(card.Subtitle is { } subtitle){<small class="muted">@subtitle</small>}
+                @if(card.Gauges.Count>0)
+                {
+                    <div class="mini-gauges">@foreach(var gauge in card.Gauges){<div class="mini-gauge @gauge.Tone @(gauge.Active?"active":null)" title="@($"{gauge.Name} · {gauge.Fuel:N0} / {gauge.Capacity:N0} · {(gauge.Active?"Active":"Inactive")}")"><span class="gauge-tank"><span style="@($"height:{Math.Clamp(100d*gauge.Fuel/gauge.Capacity,0,100).ToString(CultureInfo.InvariantCulture)}%")"></span></span><i class="bi bi-@gauge.Icon"></i><small>@gauge.Fuel.ToString("N0")</small></div>}</div>
+                }
+                <div class="facts">@foreach(var fact in card.Facts){<div><small>@fact.Label</small><strong class="@fact.Tone">@fact.Value</strong></div>}</div>
+                @if(card.Forgemaging is { } table){<ForgemagingOddsTable Session="table.Session" Runes="table.Runes"
+                    ExtraSelected="stat => Data.AddFmExtraAsync(table.Session.GameRecordingId,stat)"
+                    ExtraRemoved="stat => Data.RemoveFmExtraAsync(table.Session.GameRecordingId,stat)" />}
+                @if(card.Progress is { } progress){<div class="progress"><span style="@($"width:{Math.Clamp(progress,0,100).ToString(CultureInfo.InvariantCulture)}%")"></span></div><small>@progress.ToString("N0") %</small>}
+                @if(card.Advice is { } advice){<div class="next-step"><i class="bi bi-arrow-return-right"></i> @advice @if(card.Deadline is { } deadline){<strong class="countdown">@Countdown(deadline)</strong>}</div>}
+                @if(card.Lines.Count>0)
+                {
+                    var list=new OverlayPopup($"module:{window.Kind}:{Data.TargetWindow?.Handle}:{card.Key??card.Title}",card.Title,card.Lines);
+                    @if(card.Lines.Count>5)
+                    {<button class="text-action details-link" @onpointerenter="()=>Hover(list)" @onpointerleave="()=>Host.LeavePopup(list.Key)" @onclick="()=>OpenOrCopy(list)">@card.Lines.Count éléments <i class="bi bi-list-ul"></i></button>}
+                    <div class="overlay-list compact">@foreach(var line in card.Lines.Take(5)){<button class="overlay-list-row" disabled="@line.IsStatistic" @onclick="()=>Copy([line.Name])"><span>@line.Name<small>@line.Detail</small></span><span class="price">@if(line.Total is not null || line.Warning){<strong>@Money(line.Total)</strong>}@if(line.Quantity is { } q){<small>@(line.IsStatistic? q.ToString("N0") : $"× {Number(q)}")</small>}</span></button>}</div>
+                }
+                </article>
+            }
+            @if(module.Cards.Count>0){<button class="text-action open-module" @onclick="()=>Data.OpenModule(module.ModuleSlug)">Ouvrir le module <i class="bi bi-box-arrow-up-right"></i></button>}
+        }
+        @if(_copyFeedback is not null){<div class="copy-feedback" role="status">@_copyFeedback</div>}
+        </main>
+    }
+    @foreach(var edge in Edges){<div class="resize-edge @edge.Css" title="Redimensionner" data-overlay-hit="@edge.Hit"></div>}
+    </section>
+}
+@code {
+    [Parameter] public string WindowId {get;set;}="";
+    private bool _ownedOpen,_possibilities=true,_disposed;
+    private ElementReference _root;
+    private DotNetObjectReference<OverlayRoot>? _motion;
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if(firstRender && Services.GetService<IJSRuntime>() is { } js)
+        {_motion=DotNetObjectReference.Create(this);await js.InvokeVoidAsync("overlayMotion.attach",_root,_motion);}
+    }
+    [JSInvokable] public bool StartMotion(int hit,double x,double y,double scale)=>Host.StartMotion(WindowId,hit,x,y,scale);
+    [JSInvokable] public void MoveMotion(double x,double y)=>Host.MoveMotion(WindowId,x,y);
+    [JSInvokable] public void FinishMotion()=>Host.FinishMotion(WindowId);
+    private string _ownedSearch="";
+    private bool _ownedItemOnly;
+    private Guid _lastFocusId;
+    private string? _copyFeedback;
+    private static readonly WorkspaceOverlayKind[] Kinds=[WorkspaceOverlayKind.Profitability,WorkspaceOverlayKind.Crush,WorkspaceOverlayKind.Forgemaging,WorkspaceOverlayKind.Breeding,WorkspaceOverlayKind.Pets,WorkspaceOverlayKind.Journey];
+    private static readonly (string Css,int Hit)[] Edges=[("left",10),("right",11),("top",12),("top-left",13),("top-right",14),("bottom",15),("bottom-left",16),("bottom-right",17)];
+    protected override void OnInitialized()
+    {
+        _lastFocusId=Data.Profitability?.FocusId??default;
+        _ownedItemOnly=true;
+        _ownedOpen=Data.Profitability is {ActualRollUnavailable:true} profit && Data.InventoryChoices(profit.Item.DofusDbId).Count>1;
+        Data.Changed+=Changed;Host.Changed+=Changed;
+    }
+    private void Changed()
+    {
+        if(!_disposed)_=InvokeAsync(()=>{
+            if(Data.Profitability is {FocusId:var id} profit && id!=_lastFocusId)
+            {_lastFocusId=id;_ownedItemOnly=true;_ownedOpen=profit.ActualRollUnavailable && Data.InventoryChoices(profit.Item.DofusDbId).Count>1;}
+            if(_ownedItemOnly && !Data.CanChooseInventoryRoll)_ownedOpen=false;
+            StateHasChanged();
+        });
+    }
+    private void Hover(OverlayPopup value)=>Host.HoverPopup(WindowId,value with { TargetWindow=Data.TargetWindow });
+    private async Task Copy(IEnumerable<string> names)
+    {
+        var result=await Services.GetRequiredService<MarketClipboardQueue>().CopyAsync(names,Host.Get(WindowId)?.Popup?.TargetWindow ?? Data.TargetWindow);
+        _copyFeedback=result.IsQueue?$"{result.Count} noms · Ctrl+V dans Dofus":result.Count>0?"Copié":null;
+        await Task.Delay(2000);if(!_disposed){_copyFeedback=null;await InvokeAsync(StateHasChanged);}
+    }
+    private Task OpenOrCopy(OverlayPopup popup)
+    {
+        if(popup.Lines.All(l=>l.IsStatistic)){Host.OpenPopup(WindowId,popup with{TargetWindow=Data.TargetWindow});return Task.CompletedTask;}
+        return Copy(popup.Lines.Where(l=>!l.IsStatistic).Select(l=>l.Name));
+    }
+    private async Task ToggleOwned()
+    {
+        _ownedOpen=!_ownedOpen || _ownedItemOnly;
+        _ownedItemOnly=false;_ownedSearch="";
+        if(_ownedOpen)await Data.LoadOwnedAsync(inventoryOnly:true);
+        else foreach(var choice in Data.Owned)Host.LeavePopup($"owned-roll:{choice.Item.Key}");
+    }
+    private async Task ToggleRoll()
+    {
+        if(!Data.CanChooseInventoryRoll)return;
+        _ownedOpen=!_ownedOpen || !_ownedItemOnly;
+        _ownedItemOnly=true;_ownedSearch="";
+        if(_ownedOpen)await Data.LoadOwnedAsync(inventoryOnly:true,itemId:Data.Profitability?.Item.DofusDbId);
+        else foreach(var choice in Data.Owned)Host.LeavePopup($"owned-roll:{choice.Item.Key}");
+    }
+    internal static OverlayPopup OwnedRoll(OwnedForgemagingEquipment item) => new($"owned-roll:{item.Key}",item.Equipment.Name,
+        item.Roll?.Select(line=>new OverlayPriceLine(BestCrush.Components.Pages.ForgemagingWorkspace.StatName(line.Characteristic),line.Current,null,null,
+            line.Current>line.Maximum?"Over":!line.IsNative && line.Current>0?"Exo":null){IsStatistic=true,Stat=line.Characteristic}).ToArray() ??
+            [new("Jet non relevé",null,null){IsStatistic=true}]);
+    private async Task FocusOwned(OverlayOwnedChoice choice)
+    {
+        if(!Data.InventoryChoices(_ownedItemOnly?Data.Profitability?.Item.DofusDbId:null).Any(row=>row.Item.Key==choice.Item.Key))return;
+        Host.LeavePopup($"owned-roll:{choice.Item.Key}");_ownedOpen=false;
+        await Data.FocusOwnedAsync(choice.Item,Data.OwnedServer);
+    }
+    private void SelectFocus(ProfitabilityOverlaySnapshot source,Characteristic? focus)
+    {if(Data.Profitability?.FocusId==source.FocusId)Data.ChooseFocus(focus);}
+    private static IReadOnlyList<OverlayPriceLine> Checks(ProfitabilityOverlaySnapshot value,OverlayRoute route)=>
+        (route is OverlayRoute.CraftCrush or OverlayRoute.CraftSale?value.Ingredients:value.PurchaseChecks)
+        .Concat(ProfitabilityOverlaySnapshot.IsCrushing(route)?value.RuneChecks:value.PurchaseChecks)
+        .Where(l=>l.Warning).DistinctBy(l=>l.ItemId).ToArray();
+    internal static IReadOnlyList<Rune> RuneChoices(ProfitabilityOverlaySnapshot value) =>
+        (value.Crushing?.PotentialRunes ?? []).Concat(value.Crushing?.Scenarios.SelectMany(s=>s.Runes.Keys) ?? [])
+            .DistinctBy(r=>r.DofusDbId).OrderBy(r=>r.Name).ToArray();
+    private static string MissingCrush(ProfitabilityOverlaySnapshot value)=>value.ActualRollUnavailable
+        ? "Jet réel non reçu" : value.Crushing?.Coefficient is null ? "Coefficient non relevé" : "Prix de rune manquant";
+    private static string? MissingProfit(ProfitabilityOverlaySnapshot value,OverlayRoute route,Characteristic? focus)
+    {
+        if(value.Gain(route,focus) is not null)return null;
+        var reasons=new List<string>();
+        if(ProfitabilityOverlaySnapshot.IsCrushing(route) && value.Revenue(route,focus) is null)reasons.Add(MissingCrush(value));
+        if(value.Cost(route) is null)reasons.Add(route is OverlayRoute.CraftSale or OverlayRoute.CraftCrush?"Prix du craft incomplet":"Prix d’obtention inconnu");
+        if(!value.FmCostKnown)reasons.Add("Coût de FM incomplet");
+        return string.Join(" · ",reasons);
+    }
+    internal static double? RuneQuantity(EquipmentProfitabilityScenario? scenario,long id)=>scenario?.Runes
+        .Where(r=>r.Key.DofusDbId==id).Select(r=>(double?)r.Value).FirstOrDefault();
+    internal static MarketValueResult? RunePrice(EquipmentProfitabilityScenario? scenario,long id)=>scenario?.RuneValues
+        .Where(r=>r.Key.DofusDbId==id).Select(r=>(MarketValueResult?)r.Value).FirstOrDefault();
+    private static string UnitMoney(double? value)=>value is { } v?$"{v:N2} K":"—";
+    internal static string Money(double? value)=>value is { } v?$"{v:N0} K":"—";
+    private static string Signed(double? value)=>value is { } v?$"{v:+#,0;-#,0;0} K":"—";
+    private static string Countdown(DateTime deadline)
+    {var t=deadline-DateTime.UtcNow;return t<=TimeSpan.Zero?"Maintenant":t.TotalHours>=1?$"{(int)t.TotalHours} h {t.Minutes:00}":$"{t.Minutes} min {t.Seconds:00} s";}
+    private static string Number(double? value)=>value is { } v?v.ToString(Math.Abs(v-Math.Round(v))<.000001?"N0":"N2"):"—";
+    private static string Tone(double? value)=>value is >=0?"positive":value<0?"negative":"muted";
+    private static string Icon(WorkspaceOverlayKind kind)=>kind switch{WorkspaceOverlayKind.Profitability=>"bi-graph-up-arrow",WorkspaceOverlayKind.Crush=>"bi-hammer",WorkspaceOverlayKind.Forgemaging=>"bi-tools",WorkspaceOverlayKind.Breeding=>"bi-egg",WorkspaceOverlayKind.Pets=>"bi-heart",_=>"bi-list-check"};
+    public void Dispose(){_disposed=true;Data.Changed-=Changed;Host.Changed-=Changed;_motion?.Dispose();}
+}

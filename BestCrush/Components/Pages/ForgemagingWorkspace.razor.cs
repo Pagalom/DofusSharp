@@ -16,6 +16,7 @@ public partial class ForgemagingWorkspace : IDisposable
     private CrushingPreparationPlan? _crushPlan;
     private ForgemagingSession? _session;
     private LiveForgemagingService? _live;
+    private OverlayWorkspaceService? _overlays;
     private LiveForgemagingView? _view;
     private bool _prepareCrushing, _showOwned, _latestFirst = true, _disposed;
     private string? _saveError, _validation;
@@ -27,6 +28,7 @@ public partial class ForgemagingWorkspace : IDisposable
     {
         using var scope = DataScopes.CreateScope();
         _live = scope.ServiceProvider.GetService<LiveForgemagingService>();
+        _overlays = scope.ServiceProvider.GetService<OverlayWorkspaceService>();
         if (_live is not null) _live.Changed += LiveChanged;
     }
 
@@ -53,6 +55,7 @@ public partial class ForgemagingWorkspace : IDisposable
 
     private void Recalculate()
     {
+        _overlays?.SetFmIntent(_prepareCrushing);
         _crushPlan = null;
         _coaching = new([], [], null);
         _validation = null;
@@ -86,8 +89,25 @@ public partial class ForgemagingWorkspace : IDisposable
     private async Task AddExtraAsync(Characteristic stat)
     {
         if (_session is null || _prepareCrushing || Busy || _session.Lines.Any(l => l.Characteristic == stat)) return;
-        _session.Lines.Add(new() { Characteristic = stat, Current = 0, Target = 1 });
-        await EditedAsync();
+        if(_live is null)return;
+        await _live.AddExtraLineAsync(_session.GameRecordingId,stat);
+        ReadLive();
+    }
+
+    private async Task RemoveExtraAsync(Characteristic stat)
+    {
+        if (_session is null || _live is null || _prepareCrushing || Busy) return;
+        try
+        {
+            await _live.RemoveGoalLineAsync(_session.GameRecordingId, stat);
+            _saveError = null;
+            ReadLive();
+        }
+        catch (Exception error)
+        {
+            Logger.LogWarning(error, "Could not remove unused FM goal");
+            _saveError = "L’objectif n’a pas pu être supprimé.";
+        }
     }
 
     private string CrushingLink(ForgemagingSession session)

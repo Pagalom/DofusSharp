@@ -61,6 +61,10 @@ public sealed record CrushSessionSnapshot(
 
 public sealed class CrushSessionService
 {
+    private OverlayWindowsService? _modern;
+    private OverlayWorkspaceService? _workspace;
+    internal void AttachOverlays(OverlayWindowsService windows, OverlayWorkspaceService workspace)
+    { _modern = windows; _workspace = workspace; }
     private readonly IServiceScopeFactory serviceScopeFactory;
     private readonly OverlayControlBarService overlayControlBarService;
     private readonly OverlayLayoutSettingsService overlayLayoutSettingsService;
@@ -166,6 +170,7 @@ public sealed class CrushSessionService
     {
         get
         {
+            if (_modern is not null) return _modern.IsVisible(WorkspaceOverlayKind.Crush);
 #if WINDOWS
             return
                 _window is not null &&
@@ -219,6 +224,7 @@ public sealed class CrushSessionService
 
     public void Show()
     {
+        if (_modern is not null) { _modern.Show(WorkspaceOverlayKind.Crush); return; }
         EnsureWindow();
 
 #if WINDOWS
@@ -250,6 +256,7 @@ public sealed class CrushSessionService
 
     public void Hide()
     {
+        if (_modern is not null) { _modern.Hide(WorkspaceOverlayKind.Crush.ToString()); return; }
 #if WINDOWS
         _isVisible = false;
 
@@ -869,8 +876,15 @@ public sealed class CrushSessionService
 
     private void PublishSnapshot()
     {
-        CrushSessionSnapshot snapshot =
-            CreateSnapshot();
+        CrushSessionSnapshot snapshot = CreateSnapshot();
+        string title;
+        string server;
+        lock (_stateLock)
+        {
+            title = string.Join(" · ", _sessionEquipments.Values.Select(item => item.EquipmentName));
+            server = _sessionServerName ?? "";
+        }
+        _workspace?.PublishCrush(snapshot, title, server);
 
         MainThread
             .BeginInvokeOnMainThread(
@@ -1102,6 +1116,7 @@ public sealed class CrushSessionService
                     _sessionId, networkEquipment);
         }
 
+        _workspace?.BeginCrush();
         PublishSnapshot();
         if (history is not null)
             _ = PersistHistoryAsync(capturedSessionId, history, services =>
@@ -1241,7 +1256,7 @@ public sealed class CrushSessionService
 
             // Never change the saved HistoryService write model or save
             // another session on an ordinary price update.
-            if (_page is not null)
+            if (_page is not null || _workspace is not null)
                 PublishSnapshot();
         }
         catch (Exception exception)
@@ -1385,6 +1400,10 @@ public sealed class CrushSessionService
                     scope.ServiceProvider.GetService<ILogger<CrushSessionService>>()?
                         .LogWarning(error, "Could not compare the observed crushing result; saving the original result");
                 }
+            }
+            lock (_stateLock)
+            {
+                if (sessionId == _sessionId) _workspace?.PublishCrushHistory(history, show: false);
             }
             await historyService
                 .SaveCrushSessionAsync(

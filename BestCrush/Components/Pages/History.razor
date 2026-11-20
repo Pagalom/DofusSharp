@@ -162,11 +162,11 @@
     {
         @if (_tab == HistoryTab.Crushes)
         {
-            <CrushingHistoryTable Rows="@(_crushHistory?.Rows ?? [])" SortColumn="_sortColumn" SortDirection="_sortDirection" SortRequested="SortByAsync" ResetKey="@TableResetKey" />
+            <CrushingHistoryTable ServerName="@ServerName" Rows="@(_crushHistory?.Rows ?? [])" SortColumn="_sortColumn" SortDirection="_sortDirection" SortRequested="SortByAsync" ResetKey="@TableResetKey" />
         }
         else
         {
-            <HistoryObservationTable MarketRows="@(_marketHistory?.Rows ?? [])" ItemRows="@(_itemHistory?.Rows ?? [])" IsEquipment="@(_tab == HistoryTab.Items)"
+            <HistoryObservationTable ServerName="@ServerName" MarketRows="@(_marketHistory?.Rows ?? [])" ItemRows="@(_itemHistory?.Rows ?? [])" IsEquipment="@(_tab == HistoryTab.Items)"
                 Items="_historyItems" SortColumn="_sortColumn" SortDirection="_sortDirection" SortRequested="SortByAsync" ResetKey="@TableResetKey" />
         }
 

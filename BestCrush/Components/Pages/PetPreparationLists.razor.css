@@ -1,0 +1,13 @@
+.pet-preparation-lists{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;margin:24px 0}
+.pet-preparation-lists.is-single{grid-template-columns:1fr}
+section{padding:24px;border-radius:14px;min-width:0}
+header{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:16px}
+h2{font-size:1.05rem;margin:0;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+h2 small{font-size:.8rem;opacity:.7;font-weight:400}
+ul{list-style:none;padding:0 8px 0 0;margin:0;max-height:440px;overflow:auto;scrollbar-color:var(--bc-border) transparent;scrollbar-width:thin}
+li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--bc-border)}
+li:last-child{border:0}
+.pet-test-stock{display:flex;gap:12px;align-items:center;white-space:nowrap;font-size:.85rem}
+.pet-list-more{border:0;background:none;color:var(--bc-gold);padding:12px 0 0;text-decoration:underline}
+.pet-list-more small{padding-left:6px;text-decoration:none;opacity:.7}
+@media(max-width:950px){.pet-preparation-lists{grid-template-columns:1fr}}

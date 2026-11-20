@@ -1,4 +1,4 @@
-.breeding-dashboard { padding-bottom:2rem; }
+﻿.breeding-dashboard { padding-bottom:2rem; }
 .breeding-tabs { display:flex; gap:2rem; border-bottom:1px solid #d8cfb4; margin-bottom:2rem; }
 .breeding-tabs button { border:0; border-bottom:3px solid transparent; background:none; padding:.8rem .25rem 1rem; color:#6d746d; font-size:1rem; }
 .breeding-tabs button i { margin-right:.45rem; }
@@ -156,9 +156,21 @@
 .breeding-hdv-card h2 span { color:#c5b899;font-size:.8rem; }
 .breeding-hdv-list { max-height:450px;overflow:auto;display:grid;gap:12px; }
 .breeding-hdv-list>div { display:flex;justify-content:space-between;gap:15px;padding-bottom:9px;border-bottom:1px solid #43534f; }
-.breeding-calculation-details { margin-top:28px; }
-.breeding-calculation-details>summary { color:#8b713d;cursor:pointer;padding:12px 0; }
-.breeding-calculation-details[open]>section,.breeding-calculation-details[open]>details { margin-top:20px; }
+.breeding-action-columns>div>.breeding-enclosure-actions:first-child { margin-top:0; }
+.breeding-action-columns>div>.breeding-enclosure-actions:last-child { margin-bottom:0; }
+.breeding-comparisons { margin-top:32px; }
+.breeding-comparisons>h2 { font-size:1.1rem;margin:0 0 12px; }
+.breeding-comparisons>details { margin:0!important;border-bottom:1px solid #b8ac8e55; }
+.breeding-comparisons>details>summary { cursor:pointer;padding:16px 0;color:#8b713d; }
+.breeding-comparison-body { padding:8px 0 20px; }
+.breeding-comparison-body .table { margin-bottom:0; }
+.breeding-comparison-mount { display:flex;align-items:center;gap:12px;min-width:190px; }
+.breeding-comparison-mount img { width:40px;height:40px;object-fit:contain; }
+.breeding-comparison-mount>span { display:grid;gap:3px; }
+.breeding-comparison-mount small { font-size:.8rem;font-weight:400;opacity:.75; }
+.breeding-comparison-advice { display:flex;align-items:center;gap:8px; }
+.breeding-comparison-value { white-space:nowrap; }
+
 .breeding-refill-card { padding:18px 0;border-bottom:1px solid #52625b; }
 .breeding-refill-card:last-child { border:0; }
 .breeding-refill-card h2 { color:#eec16e;margin-bottom:14px; }

@@ -4,6 +4,7 @@
 @inject BestCrush.Services.BestCrushSettingsService BestCrushSettings
 @inject ILogger<Server> Logger
 @inject BestCrush.Services.OverlayService OverlayService
+@inject IServiceProvider OverlayServices
 @inject BestCrush.Services.CurrentServerState CurrentServerState
 @inject NavigationManager NavigationManager
 @inject IDataPriorityProvider DataPriorityProvider
@@ -664,7 +665,7 @@
         );
     }
 
-    Task FocusInOverlay(Equipment equipment) => OverlayService.FocusEquipmentAndCopyNameAsync(equipment, ServerName);
+    Task FocusInOverlay(Equipment equipment) => OverlayServices.GetService<BestCrush.Services.OverlayWorkspaceService>()?.FocusAsync(equipment, ServerName) ?? Task.CompletedTask;
 
     private void LoadSessionState(
         bool useSuppliedModel)

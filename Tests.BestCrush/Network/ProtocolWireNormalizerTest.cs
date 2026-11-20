@@ -276,7 +276,7 @@ public sealed class ProtocolWireNormalizerTest
 
         string[] routeNames =
         [
-            "global_market_history_request", "global_market_history_response", "market_mean_prices",
+            "global_market_history_request", "global_market_history_response", "market_mean_prices", "personal_market_history",
             "breeding_paddock_snapshot_current",
             "breeding_stable_snapshot", "breeding_enclosure_request", "breeding_enclosure_response",
             "breeding_transfer_into_stable", "breeding_transfer_out_of_stable",

@@ -26,6 +26,8 @@ public sealed class OverlayService(
     OverlayControlBarService overlayControlBarService,
     OverlayLayoutSettingsService overlayLayoutSettingsService)
 {
+    private OverlayWindowsService? _modern;
+    private OverlayWorkspaceService? _workspace;
     private Window? _overlayWindow;
     private OverlayPage? _overlayPage;
 
@@ -39,9 +41,9 @@ public sealed class OverlayService(
     private long _equipmentFocusMutationVersion;
 
     // F8 est le seul usage OCR du produit :
-    // il capture l'infobulle actuellement survolée afin de
-    // définir le focus équipement. Le clic molette, lui,
-    // reprend le dernier équipement identifié par le réseau.
+    // il capture l'infobulle actuellement survolÃ©e afin de
+    // dÃ©finir le focus Ã©quipement. Le clic molette, lui,
+    // reprend le dernier Ã©quipement identifiÃ© par le rÃ©seau.
     private readonly Channel<TooltipReadWorkItem>
         _tooltipReadQueue =
             Channel.CreateUnbounded<TooltipReadWorkItem>(
@@ -62,16 +64,16 @@ public sealed class OverlayService(
     private Task? _tooltipReadWorkerTask;
 
     
-    // Les changements de marché peuvent déclencher plusieurs
-    // recalculs presque simultanés (notifier + capture directe).
-    // Un seul calcul de rentabilité est autorisé à la fois.
+    // Les changements de marchÃ© peuvent dÃ©clencher plusieurs
+    // recalculs presque simultanÃ©s (notifier + capture directe).
+    // Un seul calcul de rentabilitÃ© est autorisÃ© Ã  la fois.
     private readonly System.Threading.SemaphoreSlim
         _profitabilityRefreshLock =
             new(1, 1);
 
-    // Chaque demande reçoit une génération. Un calcul dont la
-    // génération n'est plus la dernière ne doit jamais écraser
-    // un résultat plus récent dans l'overlay.
+    // Chaque demande reÃ§oit une gÃ©nÃ©ration. Un calcul dont la
+    // gÃ©nÃ©ration n'est plus la derniÃ¨re ne doit jamais Ã©craser
+    // un rÃ©sultat plus rÃ©cent dans l'overlay.
     private long
         _profitabilityRefreshVersion;
 private bool _hasF7VisibilitySnapshot;
@@ -137,93 +139,26 @@ private bool _hasF7VisibilitySnapshot;
 
     public void Initialize()
     {
-        if (_overlayWindow is not null)
-        {
-            return;
-        }
-
-        // This is a singleton registered by MauiProgram. Resolve it without
-        // changing OverlayService's public DI constructor/API.
-        using (IServiceScope scope = serviceScopeFactory.CreateScope())
-        {
-            _windowEquipmentState = scope.ServiceProvider
-                .GetService<WindowScopedNetworkEquipmentState>();
-            _dofusClientsState = scope.ServiceProvider
-                .GetService<CurrentDofusClientsState>();
-        }
-
-        LoadStoredLayout();
-
-        marketDataChangeNotifier.Changed -=
-            OnMarketDataChanged;
-
-        marketDataChangeNotifier.Changed +=
-            OnMarketDataChanged;
-
-        OverlayPage page =
-            new(
-                this,
-                dofusWindowService
-            );
-        _overlayPage = page;
-
-        Window window = new(page)
-        {
-            Title = "BestCrush Overlay",
-            Width = 340,
-            Height = 432,
-            X = 40,
-            Y = 70
-        };
-
-        window.Created += (_, _) =>
-        {
-            ConfigureOverlayWindow(window);
-
-            window.Dispatcher.DispatchDelayed(
-                TimeSpan.FromMilliseconds(100),
-                Hide
-            );
-        };
-
-        window.Destroying += (_, _) =>
-        {
-            _overlayPage = null;
-            if (ReferenceEquals(
-                _overlayWindow,
-                window))
-            {
-                _overlayWindow = null;
-
+        if (_modern is not null) return;
+        using var scope = serviceScopeFactory.CreateScope();
+        _windowEquipmentState = scope.ServiceProvider.GetService<WindowScopedNetworkEquipmentState>();
+        _dofusClientsState = scope.ServiceProvider.GetService<CurrentDofusClientsState>();
+        _modern = scope.ServiceProvider.GetRequiredService<OverlayWindowsService>();
+        _workspace = scope.ServiceProvider.GetRequiredService<OverlayWorkspaceService>();
+        _modern.OpenMain = ActivateMainWindow;
+        crushSessionService.AttachOverlays(_modern, _workspace);
+        _modern.Initialize();
 #if WINDOWS
-                _appWindow = null;
-                _overlayHwnd = IntPtr.Zero;
-                _isOverlayVisible = false;
+        InstallKeyboardHook();
+        InstallMouseHook();
 #endif
-            }
-        };
-
-        _overlayWindow = window;
-
-        Application.Current?.OpenWindow(window);
-
-        overlayControlBarService.Initialize(
-            new OverlayControlBarBindings(
-                () => IsVisible,
-                ToggleProfitabilityOverlayVisibility,
-                () => marketCaptureOverlayService.IsVisible,
-                ToggleMarketOverlayVisibility,
-                () => crushSessionService.IsVisible,
-                ToggleCrushOverlayVisibility,
-                ActivateMainWindow
-            )
-        );
     }
 
     public bool IsVisible
     {
         get
         {
+            if (_modern is not null) return _modern.IsVisible(WorkspaceOverlayKind.Profitability);
 #if WINDOWS
             return
                 _overlayWindow is not null &&
@@ -236,6 +171,8 @@ private bool _hasF7VisibilitySnapshot;
 
     public void Toggle()
     {
+        if (_modern is not null) { _modern.Toggle(WorkspaceOverlayKind.Profitability); return; }
+        if (_modern is not null) { _modern.Toggle(WorkspaceOverlayKind.Profitability); return; }
         #if WINDOWS
                 if (_overlayWindow is null ||
                     _overlayHwnd == IntPtr.Zero)
@@ -256,6 +193,7 @@ private bool _hasF7VisibilitySnapshot;
 
     public void ToggleAllOverlays()
     {
+        if (_modern is not null) { _modern.ToggleAll(); return; }
 #if WINDOWS
         bool profitabilityVisible =
             IsVisible;
@@ -380,9 +318,9 @@ private bool _hasF7VisibilitySnapshot;
 
         EnsureTooltipReadWorker();
 
-        // La capture démarre immédiatement à l'appui sur F8.
+        // La capture dÃ©marre immÃ©diatement Ã  l'appui sur F8.
         // Elle n'attend jamais que l'OCR ou le calcul
-        // de la demande précédente soit terminé.
+        // de la demande prÃ©cÃ©dente soit terminÃ©.
         Task<DofusCaptureResult> captureTask =
             Task.Run(
                 async () =>
@@ -407,9 +345,9 @@ private bool _hasF7VisibilitySnapshot;
                 workItem
             ))
         {
-            // La file a été fermée alors que la
-            // capture était déjà partie : elle ne
-            // sera jamais consommée par le worker.
+            // La file a Ã©tÃ© fermÃ©e alors que la
+            // capture Ã©tait dÃ©jÃ  partie : elle ne
+            // sera jamais consommÃ©e par le worker.
             _ = CleanupAbandonedCaptureAsync(
                 captureTask
             );
@@ -460,10 +398,10 @@ private bool _hasF7VisibilitySnapshot;
 
                 try
                 {
-                    // Les captures ont déjà commencé en parallèle.
-                    // Elles sont cependant analysées dans l'ordre
+                    // Les captures ont dÃ©jÃ  commencÃ© en parallÃ¨le.
+                    // Elles sont cependant analysÃ©es dans l'ordre
                     // des demandes F8 afin de conserver un focus
-                    // déterministe.
+                    // dÃ©terministe.
                     capture =
                         await workItem
                             .CaptureTask
@@ -493,7 +431,7 @@ private bool _hasF7VisibilitySnapshot;
                 {
                     // ProcessCapturedReadAsync est le dernier
                     // consommateur de la capture et de tous
-                    // les crops générés dans son dossier.
+                    // les crops gÃ©nÃ©rÃ©s dans son dossier.
                     if (capture is not null)
                     {
                         dofusCaptureService
@@ -526,9 +464,9 @@ private bool _hasF7VisibilitySnapshot;
         }
         catch
         {
-            // Si CaptureAsync a échoué après avoir
-            // créé son dossier, DofusCaptureService
-            // effectue déjà son propre nettoyage.
+            // Si CaptureAsync a Ã©chouÃ© aprÃ¨s avoir
+            // crÃ©Ã© son dossier, DofusCaptureService
+            // effectue dÃ©jÃ  son propre nettoyage.
         }
     }
 
@@ -544,10 +482,10 @@ private bool _hasF7VisibilitySnapshot;
                     )
         );
 
-        // Le réseau est désormais la source de vérité pour
-        // les données de jeu. La capture visuelle ne sert
-        // plus qu'à identifier l'équipement sous la souris,
-        // information qu'aucun paquet n'émet lors d'un simple
+        // Le rÃ©seau est dÃ©sormais la source de vÃ©ritÃ© pour
+        // les donnÃ©es de jeu. La capture visuelle ne sert
+        // plus qu'Ã  identifier l'Ã©quipement sous la souris,
+        // information qu'aucun paquet n'Ã©met lors d'un simple
         // survol d'inventaire.
         using IServiceScope tooltipScope =
             serviceScopeFactory.CreateScope();
@@ -609,10 +547,8 @@ private bool _hasF7VisibilitySnapshot;
         Equipment equipment =
             candidate.Recognition.Equipment;
 
-        await FocusEquipmentAsync(
-            equipment
-        )
-        .ConfigureAwait(false);
+        if (_workspace is not null) await _workspace.FocusTooltipAsync(equipment).ConfigureAwait(false);
+        else await FocusEquipmentAsync(equipment).ConfigureAwait(false);
 
         PostUi(
             () =>
@@ -667,7 +603,7 @@ private bool _hasF7VisibilitySnapshot;
         // Recheck after database access: another click, closed Dofus window,
         // capture reset or server change must make the pending focus inert.
         if (previousFocusVersion !=
-                Interlocked.Read(ref _equipmentFocusMutationVersion) ||
+                CurrentEquipmentFocusVersion ||
             !IsValidMiddleClickRequest(request, requestVersion))
             return;
 
@@ -681,12 +617,14 @@ private bool _hasF7VisibilitySnapshot;
 
         if (equipment is null ||
             previousFocusVersion !=
-                Interlocked.Read(ref _equipmentFocusMutationVersion) ||
+                CurrentEquipmentFocusVersion ||
             !IsValidMiddleClickRequest(request, requestVersion))
             return;
 
         await FocusEquipmentAsync(equipment).ConfigureAwait(false);
     }
+
+    private long CurrentEquipmentFocusVersion => _workspace?.FocusVersion ?? Interlocked.Read(ref _equipmentFocusMutationVersion);
 
     private bool IsValidMiddleClickRequest(
         WindowEquipmentFocusToken request, long requestVersion)
@@ -725,6 +663,12 @@ private bool _hasF7VisibilitySnapshot;
     {
         Interlocked.Increment(ref _equipmentFocusMutationVersion);
         ClearF7VisibilitySnapshot();
+        if (_workspace is not null)
+        {
+            focusedEquipmentState.SetEquipment(equipment);
+            await _workspace.FocusAsync(equipment);
+            return;
+        }
 
         focusedEquipmentState.SetEquipment(
             equipment
@@ -740,6 +684,7 @@ private bool _hasF7VisibilitySnapshot;
 
     public async Task RefreshFocusedProfitabilityAsync()
     {
+        if (_workspace is not null) { await _workspace.RefreshAsync(); return; }
         long refreshVersion =
             Interlocked.Increment(
                 ref _profitabilityRefreshVersion
@@ -750,8 +695,8 @@ private bool _hasF7VisibilitySnapshot;
 
         try
         {
-            // Si une demande plus récente attend déjà,
-            // celle-ci est obsolète avant même de calculer.
+            // Si une demande plus rÃ©cente attend dÃ©jÃ ,
+            // celle-ci est obsolÃ¨te avant mÃªme de calculer.
             if (refreshVersion !=
                 Volatile.Read(
                     ref _profitabilityRefreshVersion
@@ -796,7 +741,7 @@ private bool _hasF7VisibilitySnapshot;
 
             // Un prix, coefficient ou focus a pu changer
             // pendant le calcul. Dans ce cas, ne jamais
-            // afficher ce résultat devenu obsolète.
+            // afficher ce rÃ©sultat devenu obsolÃ¨te.
             if (refreshVersion !=
                 Volatile.Read(
                     ref _profitabilityRefreshVersion
@@ -828,8 +773,8 @@ private bool _hasF7VisibilitySnapshot;
                 .InvokeOnMainThreadAsync(
                     () =>
                     {
-                        // Dernière vérification au moment
-                        // exact où l'UI est mise à jour.
+                        // DerniÃ¨re vÃ©rification au moment
+                        // exact oÃ¹ l'UI est mise Ã  jour.
                         if (refreshVersion !=
                             Volatile.Read(
                                 ref _profitabilityRefreshVersion
@@ -966,6 +911,7 @@ private bool _hasF7VisibilitySnapshot;
 
     public void Show()
     {
+        if (_modern is not null) { _modern.Show(WorkspaceOverlayKind.Profitability); return; }
 #if WINDOWS
         if (_overlayHwnd == IntPtr.Zero)
         {
@@ -992,6 +938,7 @@ private bool _hasF7VisibilitySnapshot;
 
     public void Hide()
     {
+        if (_modern is not null) { _modern.Hide(WorkspaceOverlayKind.Profitability.ToString()); return; }
 #if WINDOWS
         if (_overlayHwnd == IntPtr.Zero)
         {
@@ -1096,48 +1043,16 @@ private bool _hasF7VisibilitySnapshot;
 
     private void ActivateMainWindow()
     {
-        Window? mainWindow =
-            Application.Current?
-                .Windows
-                .FirstOrDefault(
-                    window =>
-                        !ReferenceEquals(
-                            window,
-                            _overlayWindow
-                        ) &&
-                        !string.Equals(
-                            window.Title,
-                            "BestCrush",
-                            StringComparison.Ordinal
-                        ) &&
-                        !string.Equals(
-                            window.Title,
-                            "BestCrush — Mise à jour marché",
-                            StringComparison.Ordinal
-                        ) &&
-                        !string.Equals(
-                            window.Title,
-                            "BestCrush — Résultat concassage",
-                            StringComparison.Ordinal
-                        ) &&
-                        !string.Equals(
-                            window.Title,
-                            "BestCrush Overlay",
-                            StringComparison.Ordinal
-                        )
-                );
-
 #if WINDOWS
-        if (mainWindow?.Handler?.PlatformView
-            is Microsoft.UI.Xaml.Window nativeWindow)
-        {
-            nativeWindow.Activate();
-        }
+        var window = Application.Current?.Windows.FirstOrDefault(w =>
+            !w.Title.StartsWith("BestCrush · ", StringComparison.Ordinal) && w is not null);
+        if (window?.Handler?.PlatformView is Microsoft.UI.Xaml.Window native) native.Activate();
 #endif
     }
 
     public void RestoreOverlayLayoutsToDefaults()
     {
+        if (_modern is not null) { overlayLayoutSettingsService.ResetAll(); _modern.RestoreLayouts(); return; }
         overlayLayoutSettingsService
             .ResetAll();
 
@@ -1176,6 +1091,7 @@ private bool _hasF7VisibilitySnapshot;
 
     public void Shutdown()
     {
+        _modern?.Shutdown(); _modern = null;
         marketDataChangeNotifier.Changed -=
             OnMarketDataChanged;
 
@@ -1190,8 +1106,8 @@ private bool _hasF7VisibilitySnapshot;
         }
         catch
         {
-            // La fermeture ne doit jamais être
-            // bloquée par le worker de lecture.
+            // La fermeture ne doit jamais Ãªtre
+            // bloquÃ©e par le worker de lecture.
         }
 
 #if WINDOWS
@@ -1339,7 +1255,7 @@ private bool _hasF7VisibilitySnapshot;
 
         _overlayHwnd = hwnd;
 
-        // On le masque immédiatement.
+        // On le masque immÃ©diatement.
         ShowWindow(
             hwnd,
             SwHide
@@ -1549,6 +1465,7 @@ private bool _hasF7VisibilitySnapshot;
         }
 
         bool overBestCrushOverlay =
+            _modern?.ContainsScreenPoint(mouseData.Point.X, mouseData.Point.Y) == true ||
             IsPointInsideMainOverlay(
                 mouseData.Point.X,
                 mouseData.Point.Y
@@ -1604,8 +1521,7 @@ private bool _hasF7VisibilitySnapshot;
             // An empty click also cancels a previous asynchronous focus.
             long requestVersion = Interlocked.Increment(
                 ref _middleFocusRequestVersion);
-            long focusVersion = Interlocked.Read(
-                ref _equipmentFocusMutationVersion);
+            long focusVersion = CurrentEquipmentFocusVersion;
             DofusClientWindowKey target = new(
                 targetWindow.Handle.ToInt64(), targetWindow.ProcessId);
             NetworkCaptureLease? lease =

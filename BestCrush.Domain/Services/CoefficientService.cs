@@ -11,7 +11,8 @@ IDataPriorityProvider dataPriorityProvider)
         string serverName,
         double coefficientPercent,
         CoefficientSource source,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        DateTime? observedAtUtc = null)
     {
         if (coefficientPercent <= 0)
         {
@@ -28,7 +29,7 @@ IDataPriorityProvider dataPriorityProvider)
             CoefficientPercent = coefficientPercent,
             Source = source,
             IsCleared = false,
-            ObservedAtUtc = DateTime.UtcNow
+            ObservedAtUtc = observedAtUtc ?? DateTime.UtcNow
         };
 
         context.CoefficientObservations.Add(observation);

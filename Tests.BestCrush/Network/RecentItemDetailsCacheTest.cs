@@ -65,6 +65,25 @@ public sealed class RecentItemDetailsCacheTest
         cache.Count.Should().Be(1);
     }
 
+    [Fact]
+    public void CrushUsesRemovedEquipmentEvenWhenYieldedRuneReusesItsUid()
+    {
+        var cache=new RecentItemDetailsCache();var at=DateTime.UtcNow;
+        cache.Remember(Item(8001,42));cache.RememberRemoval(8001,at);
+        cache.Remember(Item(8001,100));
+        Assert.Equal(42UL,cache.TakeForCrush([8001],at.AddMilliseconds(1))[8001].ItemId);
+        Assert.Equal(100UL,cache.Items[8001].ItemId);
+        Assert.Equal(100UL,cache.TakeForCrush([8001],at.AddMilliseconds(2))[8001].ItemId);
+    }
+    [Fact]
+    public void RemovedIdentityIsBoundedInTimeAndClearedWithConnectionCache()
+    {
+        var cache=new RecentItemDetailsCache();var at=DateTime.UtcNow;
+        cache.Remember(Item(8001,42));cache.RememberRemoval(8001,at);cache.Remember(Item(8001,100));
+        Assert.Equal(100UL,cache.TakeForCrush([8001],at.AddSeconds(16))[8001].ItemId);
+        cache.RememberRemoval(8001,at.AddSeconds(17));cache.Clear();
+        Assert.Empty(cache.TakeForCrush([8001],at.AddSeconds(18)));
+    }
     private static ItemDetailObservation Item(ulong uid, ulong itemId) =>
         new(uid, itemId, 1, []);
 }

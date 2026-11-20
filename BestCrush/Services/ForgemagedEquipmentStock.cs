@@ -31,6 +31,13 @@ internal static class ForgemagedEquipmentStock
         Dictionary<Characteristic, int> values = [];
         foreach (var effect in effects)
         {
+            // Effect 795 is a presence flag, encoded as zero even on native hunting weapons.
+            // Its catalogue characteristic is 0; it must not be discarded as a non-stat effect.
+            if (effect.Code == 795)
+            {
+                if (effect.Value is not (0 or 1) || !values.TryAdd(Characteristic.Hunting, 1)) return null;
+                continue;
+            }
             if (!definitions.TryGetValue(effect.Code, out var definition)) return null;
             if (definition.Stat is not { } stat) continue;
             if (effect.Value is not (>= int.MinValue and <= int.MaxValue)) return null;
@@ -40,6 +47,10 @@ internal static class ForgemagedEquipmentStock
         }
         return values;
     }
+
+    internal static Dictionary<Characteristic,int>? MapWireEffects(IReadOnlyList<byte[]> entries,
+        IReadOnlyDictionary<ulong,ForgemagingEffectDefinition> definitions) =>
+        LiveForgemagingProtocol.ReadEffects(entries) is { } effects?MapEffects(effects.Select(e=>(e.Code,e.Value)),definitions):null;
 
     internal static async Task<OwnedForgemagingEquipment[]> LoadAsync(LiveStockSource source, string server,
         ForgemagingSessionStore store, ForgemagingDataService data, ActivityCatalogService? catalog,
@@ -61,7 +72,7 @@ internal static class ForgemagedEquipmentStock
         if (stock.Length == 0) return [];
 
         Dictionary<ulong, ForgemagingEffectDefinition>? effects = null;
-        if (catalog is not null && stock.Any(row => row.Item.EffectIssue is null && row.Item.Effects is { Count: > 0 }))
+        if (catalog is not null && stock.Any(row => row.Item.EffectWire is {Length: >0} || row.Item.EffectIssue is null && row.Item.Effects is { Count: > 0 }))
         {
             try { effects = (await catalog.GetForgemagingEffectsAsync(token)).ToDictionary(effect => effect.Code); }
             catch (Exception error) when (!token.IsCancellationRequested && error is HttpRequestException or OperationCanceledException or IOException or System.Text.Json.JsonException)
@@ -89,12 +100,14 @@ internal static class ForgemagedEquipmentStock
         return rows.ToArray();
     }
 
-    private static ForgemagingLine[]? ReadStockRoll(Equipment equipment, LiveStockItem item,
+    internal static ForgemagingLine[]? ReadStockRoll(Equipment equipment, LiveStockItem item,
         IReadOnlyDictionary<ulong, ForgemagingEffectDefinition>? effects)
     {
-        if (effects is null || item.EffectIssue is not null || item.Effects is not { Count: > 0 } entries ||
-            MapEffects(entries.Select(entry => (entry.EffectCode, (long?)entry.Value)), effects) is not { } values)
-            return null;
+        if(effects is null)return null;
+        var values=item.EffectWire is { } raw?MapWireEffects(raw,effects):
+            item.EffectIssue is null && item.Effects is {Count:>0} entries
+                ?MapEffects(entries.Select(e=>(e.EffectCode,(long?)e.Value)),effects):null;
+        if(values is null)return null;
         var bounds = equipment.Characteristics.GroupBy(line => line.Characteristic).ToDictionary(group => group.Key, group => group.First());
         return bounds.Keys.Union(values.Keys).Order().Select(stat =>
         {

@@ -21,9 +21,20 @@ public sealed record BreedingProduction(int RideId, BreedingSupplyKind Kind, dec
 public sealed record BreedingMarketObjective(int RideId, long ItemId, int Generation, string Name, BreedingResaleOption Sale,
     BreedingProduction Production, BreedingMarketCapacity? Capacity)
 {
+    public int CapturesPerDay { get; init; } = 20;
+    public long? BudgetKamas { get; init; }
+    public int OwnedTargets { get; init; }
+    internal long AffordableUnits => BudgetKamas is { } budget && Production.Cost + Sale.ExperienceCost > 0
+        ? (long)Math.Min(long.MaxValue, decimal.Floor(budget / (Production.Cost + Sale.ExperienceCost))) : long.MaxValue;
     internal decimal Margin => Sale.Net - Production.Cost;
-    internal decimal? WeeklyPotential => Margin * Capacity?.WeeklyLimit;
-    internal bool CanSell => Margin > 0 && Capacity is { Remaining: > 0 };
+    internal decimal? WeeklyPotential => Capacity is null ? null : Margin * Math.Min(Math.Min(Capacity.WeeklyLimit, (decimal)OwnedTargets + AffordableUnits),
+        Production.ExpectedCaptures > 0 ? OwnedTargets + 7m * CapturesPerDay / Production.ExpectedCaptures : Capacity.WeeklyLimit);
+    internal long DailyProduction => Production.ExpectedCaptures > 0 ? (long)Math.Min(long.MaxValue,
+        decimal.Floor(CapturesPerDay / Production.ExpectedCaptures)) : long.MaxValue;
+    internal decimal CaptureDays => Production.ExpectedCaptures > 0 ? decimal.Ceiling(Production.ExpectedCaptures / CapturesPerDay) : 0;
+    internal long Today => Math.Min(Capacity?.Remaining ?? 0,
+        (long)Math.Min(long.MaxValue, (decimal)OwnedTargets + Math.Min(DailyProduction, AffordableUnits)));
+    internal bool CanSell => Margin > 0 && (AffordableUnits > 0 || OwnedTargets > 0) && Capacity is { Remaining: > 0 };
 }
 
 public sealed record BreedingGenerationReview(int Generation, int Species, int WithoutPrice, int WithoutCost, int WithoutVolume,
@@ -101,7 +112,8 @@ internal static class BreedingMarketStrategy
             if (!sales.TryGetValue(ride.ItemId, out var offers) || !names.TryGetValue(ride.ItemId, out var name)) continue;
             var liquidity = demand.GetValueOrDefault(ride.ItemId);
             options.Add(ride.Id, offers.Select(sale => new BreedingMarketObjective(ride.Id, ride.ItemId,
-                ride.Generation, name, sale, ordered[0], liquidity?.AtPrice(sale.SalePrice))).ToArray());
+                ride.Generation, name, sale, ordered[0], liquidity?.AtPrice(sale.SalePrice))
+                { CapturesPerDay = planning.CaptureBudget, BudgetKamas = planning.BudgetKamas }).ToArray());
         }
 
         // Levels and fertility share the species' observed demand. Keep one target per species.

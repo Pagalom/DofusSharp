@@ -1,4 +1,4 @@
-@using BestCrush.Domain.Models
+﻿@using BestCrush.Domain.Models
 @using BestCrush.Domain.Services
 @using BestCrush.Models
 @inject BestCrush.Services.BestCrushSettingsService BestCrushSettings
@@ -187,17 +187,9 @@
                 <option value="@BestCrush.Services.BreedingPlanningMode.Economy">Économie</option>
                 <option value="@BestCrush.Services.BreedingPlanningMode.Speed">Vitesse</option>
             </select>
-            <label class="form-label fw-bold" for="breeding-minimum-chance">Réussite minimale de la génération cible</label>
-            <div class="input-group">
-                <input id="breeding-minimum-chance" type="number" class="form-control" min="0" max="100" step="1"
-                       @bind="BestCrushSettings.BreedingMinimumChancePercent" />
-                <span class="input-group-text">%</span>
-            </div>
-            <div class="small text-muted mt-2">Les chances peuvent se partager entre plusieurs couleurs.</div>
-            @if (BestCrushSettings.BreedingMinimumChancePercent > 90)
-            {
-                <div class="small text-warning mt-2"><i class="bi bi-info-circle" aria-hidden="true"></i> Au-delà de 90 %, un bonus est nécessaire. Aucun bonus non relevé n’est supposé.</div>
-            }
+            <label class="form-label fw-bold mt-3" for="breeding-capture-budget">Captures par jour</label>
+            <input id="breeding-capture-budget" type="number" class="form-control" min="0" max="10000" step="1" @bind="BestCrushSettings.BreedingCapturesPerDay" />
+            <div class="small text-muted mt-2">0 : cadence selon le niveau d’éleveur (20 / 40 / 60 / 120). Valeurs de planification modifiables.</div>
         </div>
 
         <div class="border rounded p-3 mb-3">

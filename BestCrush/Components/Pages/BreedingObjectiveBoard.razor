@@ -10,9 +10,23 @@
                 <option value="@BreedingPlanningMode.Economy">Économie</option><option value="@BreedingPlanningMode.Speed">Vitesse</option>
             </select>
         </label>
+        <label class="d-flex align-items-center gap-2">Budget (K)
+            <input class="form-control form-control-sm" style="width:9rem" type="number" min="0" step="1"
+                   value="@Report.Planning.BudgetKamas" placeholder="À renseigner" @onchange="ChangeBudgetAsync" aria-label="Budget disponible pour les achats" />
+            <StatusIcon Tooltip="Capital de travail disponible pour les achats et la préparation. Les achats ne sont pas limités par la cadence de capture. Vide : budget non renseigné." />
+        </label>
+        <label class="d-flex align-items-center gap-2">Captures / jour
+            <input class="form-control form-control-sm" style="width:6rem" type="number" min="1" max="10000"
+                   value="@Report.Planning.CaptureBudget" @onchange="ChangeCapturesAsync" aria-label="Captures envisageables par jour" />
+            <StatusIcon Icon="info-circle" Tooltip="Cadence de planification modifiable. Elle limite la production et le bénéfice hebdomadaire des parcours par capture." />
+        </label>
         <StatusIcon Icon="info-circle" Tooltip="Économie : dépenses moyennes minimales. Vitesse : achats disponibles, moins de reproductions puis moins d’XP. La durée de capture est inconnue." />
-        <small><i class="bi bi-shield-check" aria-hidden="true"></i> @Report.Planning.MinimumGenerationChancePercent.ToString("0.#") % minimum
-            <StatusIcon Icon="info-circle" Tooltip="Chance estimée d’obtenir la génération cible à chaque croisement. Plusieurs couleurs peuvent se la partager. Seuil réglable dans Paramètres → Élevage." /></small>
+        <label class="d-flex align-items-center gap-2"><i class="bi bi-shield-check" aria-hidden="true"></i>
+            <input class="form-control form-control-sm" style="width:5rem" type="number" min="0" max="100" step="1"
+                   value="@Report.Planning.MinimumGenerationChancePercent" @onchange="ChangeMinimumChanceAsync" aria-label="Réussite minimale de la génération cible" />
+            <span>% minimum</span>
+            <StatusIcon Tooltip="Chance minimale d’obtenir la génération cible. Plusieurs couleurs peuvent se la partager. Au-delà de 90 %, un bonus relevé en jeu est nécessaire." />
+        </label>
     </div>
     @if (goal is not null && progress is not null)
     {
@@ -43,10 +57,13 @@
                 <div class="breeding-goal-profit"><small>Bénéfice estimé · avant taxe</small><strong>@goal.Margin.ToString("N0") K</strong></div>
             </div>
             <div class="breeding-goal-progress"><div role="progressbar" aria-label="Progression de l’objectif" aria-valuenow="@percent" aria-valuemin="0" aria-valuemax="100"><span style="width:@percent%"></span></div><strong>@percent %</strong><small>Cycle @(progress.Cycles + 1)</small>
+                @if (progress.PendingListings.Count > 0) { <span><StatusIcon Icon="hourglass-split" Tooltip="La mise en vente est confirmée. Le cycle attend l’encaissement réel." /> @progress.PendingListings.Count en vente</span> }
                 @if (progress.OverrideCurrentCycle) { <span class="breeding-goal-wait"><StatusIcon Icon="exclamation-triangle" Tooltip="Cycle relancé à ta demande malgré le quota ou l’attente d’écoulement. Les dépôts précédents restent comptabilisés." CssClass="text-warning" /> Risque de saturation</span> }
-                else if (available) { <span class="breeding-goal-quota" data-bs-toggle="tooltip" data-bs-title="Mises en vente restantes selon le volume observé et tes dépôts.">× @goal.Capacity!.Remaining</span> }
+                else if (available) { <span class="breeding-goal-quota" data-bs-toggle="tooltip" data-bs-title="Objectif du jour, limité par le marché et la cadence de capture.">Aujourd’hui · @goal.Today</span> }
                 else { <span class="breeding-goal-wait"><StatusIcon Icon="hourglass-split" Tooltip="La production est suspendue. Le délai estime l’écoulement ; aucune vente n’est supposée. Les quotas quotidiens et hebdomadaires continuent de s’appliquer." CssClass="text-warning" /> En attente d’écoulement @if (waiting is { } date) { <small>· Réévaluer @date.ToLocalTime().ToString("dd/MM HH:mm")</small> }<button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => ChooseAsync(BreedingObjectiveProgressStore.Key(goal), false)">Relancer quand même</button></span> }
             </div>
+            @if (goal.Production.ExpectedCaptures > 0)
+            { <small class="d-block mt-2"><i class="bi bi-geo-alt" aria-hidden="true"></i> @goal.Production.ExpectedCaptures.ToString("N1") captures prévues / monture · @goal.CaptureDays.ToString("N0") j de capture au rythme choisi <StatusIcon Tooltip="Durée de capture uniquement. La préparation des jauges et l’XP s’ajoutent ; les captures ne constituent pas une garantie de naissance." /></small> }
             <details class="breeding-route" open="@_routeOpen"><summary @onclick="() => _routeOpen = !_routeOpen" @onclick:preventDefault="true">Voir le parcours <span>@progress.Done.Count / @progress.Steps.Count étapes</span></summary>
                 <ol>
                     @for (int i = 0; i < progress.Steps.Count; i++)
@@ -60,12 +77,12 @@
             </details>
         </div>
         @if (Notices.Count > 0) { <BreedingGaugeActions Notices="Notices" ViewLocation="ViewLocation" /> }
-        @if (available && Enumerable.Range(0, progress.Steps.Count).FirstOrDefault(i => !progress.Done.Contains(i), -1) is >= 0 and var next)
+        @if (available && progress.PendingListings.Count == 0 && Enumerable.Range(0, progress.Steps.Count).FirstOrDefault(i => !progress.Done.Contains(i), -1) is >= 0 and var next)
         {
             var step = progress.Steps[next];
             <article class="breeding-next-step bc-surface"><i class="bi bi-@Icon(step.Action)" aria-hidden="true"></i><div><small>Prochaine étape</small><h2>@Title(step)</h2><p>@Detail(step)</p></div>
                 @if (step.OwnedId is { } id) { <button class="btn btn-outline-secondary" @onclick="() => ViewMount.InvokeAsync(id)">Voir la monture</button> }
-                <button type="button" class="btn btn-primary" @onclick="() => Confirm.InvokeAsync(next)">@(step.Action == BreedingObjectiveAction.Sell ? "Mise en vente effectuée" : "Fait")</button>
+                <StatusIcon Icon="broadcast" Tooltip="Progression automatique à partir des relevés en jeu. Une mise en vente confirmée termine la production ; elle ne prouve pas l’encaissement." />
             </article>
         }
     }
@@ -91,6 +108,9 @@
     [Parameter, EditorRequired] public BreedingObjectiveJournal Journal { get; set; } = null!;
     [Parameter] public EventCallback<string> Select { get; set; }
     [Parameter] public EventCallback<BreedingPlanningMode> PlanningModeChanged { get; set; }
+    [Parameter] public EventCallback<int> MinimumChanceChanged { get; set; }
+    [Parameter] public EventCallback<int> CapturesChanged { get; set; }
+    [Parameter] public EventCallback<long> BudgetChanged { get; set; }
     [Parameter] public EventCallback<string> Override { get; set; }
     [Parameter] public EventCallback<int> Confirm { get; set; }
     [Parameter] public EventCallback<Guid> ViewMount { get; set; }
@@ -98,6 +118,11 @@
     [Parameter] public EventCallback<string> ViewLocation { get; set; }
     private bool _routeOpen, _pickerOpen;
     private string? _confirmGoal;
+    private Task ChangeMinimumChanceAsync(ChangeEventArgs args) => int.TryParse(args.Value?.ToString(), out int value)
+        ? MinimumChanceChanged.InvokeAsync(Math.Clamp(value, 0, 100)) : Task.CompletedTask;
+    private Task ChangeBudgetAsync(ChangeEventArgs args) => BudgetChanged.InvokeAsync(long.TryParse(args.Value?.ToString(), out long value) ? Math.Max(0, value) : 0);
+    private Task ChangeCapturesAsync(ChangeEventArgs args) => int.TryParse(args.Value?.ToString(), out int value) && value > 0
+        ? CapturesChanged.InvokeAsync(Math.Min(10000, value)) : Task.CompletedTask;
     private Task ChangeModeAsync(ChangeEventArgs args) => Enum.TryParse<BreedingPlanningMode>(args.Value?.ToString(), out var mode)
         ? PlanningModeChanged.InvokeAsync(mode) : Task.CompletedTask;
     private Task ChooseAsync(string key, bool allowed)

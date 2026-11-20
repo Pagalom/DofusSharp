@@ -3,3 +3,5 @@
 .history-object { display: flex; align-items: center; gap: .7rem; border: 0; background: transparent; color: inherit; padding: 0; text-align: left; font-weight: 600; }
 .history-entry-details { padding: .8rem; }
 td, th { padding: .8rem; }
+
+.crush-replay{position:relative;display:inline-flex;align-items:center;justify-content:center;width:34px;height:30px;border:1px solid #92b9b4;border-radius:5px;background:transparent;color:#92b9b4;margin-left:8px;vertical-align:middle}.crush-replay .bi-clock-history{font-size:19px}.crush-replay .bi-hammer{font-size:11px;position:absolute;right:1px;bottom:1px;background:#222e34;border-radius:50%;padding:1px}.crush-replay:hover{border-color:#e4c27a;color:#e4c27a}

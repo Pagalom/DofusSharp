@@ -26,6 +26,9 @@ public static class DofusServerIdCatalog
         [355] = "Kourial"
     };
 
+    public static int? IdFor(string name) => Known.FirstOrDefault(pair =>
+        string.Equals(string.Concat(pair.Value.Where(char.IsLetterOrDigit)),string.Concat(name.Where(char.IsLetterOrDigit)),StringComparison.OrdinalIgnoreCase)) is {Key:>0} found?found.Key:null;
+
     public static string? NameFor(int id) =>
         Known.TryGetValue(id, out string? name) ? name : null;
 }
@@ -38,6 +41,7 @@ public static class DofusServerIdCatalog
 /// </summary>
 public sealed record WindowServerAttribution(int ServerId, string ServerName)
 {
+    public bool IsManual {get;init;}
     public override string ToString() => "[window server attribution: redacted window]";
 }
 
@@ -131,6 +135,46 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
         long ConnectionId, long Generation, int? LevelCandidate);
     private readonly Dictionary<DofusClientWindowKey, Loaded> _loaded = [];
     private long _nextGeneration;
+    private sealed record ManualServer(WindowServerAttribution Server,string Character,string? Class,long Generation);
+    private readonly Dictionary<DofusClientWindowKey,ManualServer> _manual=[];
+    private readonly Dictionary<DofusClientWindowKey,(long Epoch,long Connection)> _liveGameFlows=[];
+
+    /// <summary>Explicit player declaration for this live character, separate from SQL browsing.</summary>
+    public bool AssignPlayedServer(DofusClientWindow client,string serverName)
+    {
+        if(!client.HasCharacterTitle || string.IsNullOrWhiteSpace(client.DisplayName) ||
+            DofusServerIdCatalog.IdFor(serverName) is not { } id || DofusServerIdCatalog.NameFor(id) is not { } name)return false;
+        lock(_sync)
+        {
+            if(_epoch<0 || _closedWindows.Contains(client.Key) || _manual.Count>=MaximumWindows && !_manual.ContainsKey(client.Key))return false;
+            _manual[client.Key]=new(new(id,name){IsManual=true},client.DisplayName,client.ClassName,++_nextGeneration);
+        }
+        Changed?.Invoke();return true;
+    }
+    private NetworkCaptureLease? ManualLease(DofusClientWindowKey window,ManualServer assignment) =>
+        _liveGameFlows.TryGetValue(window,out var flow) && flow.Epoch==_epoch && !_closedWindows.Contains(window)
+            ?new(assignment.Server.ServerName,assignment.Generation,window,flow.Epoch,flow.Connection):null;
+
+    private bool ObserveOwnedGameFlow(DofusWireMessage message,bool ownerRevalidated)
+    {
+        if(!ownerRevalidated || message.CandidateWindow is not { } window || message.ConnectionId<=0)return false;
+        lock(_sync)
+        {
+            if(message.CaptureEpoch!=_epoch || _closedWindows.Contains(window))return false;
+            if(_liveGameFlows.TryGetValue(window,out var previous))
+            {
+                if(message.ConnectionId<previous.Connection)return false;
+                if(previous==(message.CaptureEpoch,message.ConnectionId))return false;
+                bool revoked=_manual.Remove(window);
+                if(revoked)_loaded.Remove(window);
+                _liveGameFlows[window]=(message.CaptureEpoch,message.ConnectionId);
+                return revoked;
+            }
+            if(_liveGameFlows.Count>=MaximumWindows)return false;
+            _liveGameFlows[window]=(message.CaptureEpoch,message.ConnectionId);
+            return _manual.ContainsKey(window);
+        }
+    }
     private readonly HashSet<DofusClientWindowKey> _closedWindows = [];
     // Negative title evidence only: once a window has actually displayed
     // a character title, returning to the launcher/selection title revokes
@@ -143,8 +187,8 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
     public WindowServerAttribution? ForWindow(DofusClientWindowKey window)
     {
         lock (_sync)
-            return _loaded.TryGetValue(window, out Loaded? loaded)
-                ? loaded.Server : null;
+            return _manual.TryGetValue(window,out var declared)?declared.Server:
+                _loaded.TryGetValue(window, out Loaded? loaded) ? loaded.Server : null;
     }
 
     public int? SelectedLevelCandidate(DofusClientWindowKey window)
@@ -163,25 +207,23 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
         DofusClientWindowKey window, long captureEpoch, long connectionId)
     {
         lock (_sync)
+        {
+            if(_manual.TryGetValue(window,out var assignment))
+                return ManualLease(window,assignment) is { } manual && manual.CaptureEpoch==captureEpoch && manual.ConnectionId==connectionId?manual:null;
             return _loaded.TryGetValue(window, out Loaded? loaded) &&
-                !_closedWindows.Contains(window) &&
-                loaded.CaptureEpoch == captureEpoch &&
-                loaded.ConnectionId == connectionId
-                    ? new NetworkCaptureLease(
-                        loaded.Server.ServerName, loaded.Generation,
-                        window, captureEpoch, connectionId)
-                    : null;
+                !_closedWindows.Contains(window) && loaded.CaptureEpoch == captureEpoch && loaded.ConnectionId == connectionId
+                ? new(loaded.Server.ServerName, loaded.Generation,window,captureEpoch,connectionId):null;
+        }
     }
 
     internal NetworkCaptureLease? GetWindowLease(DofusClientWindowKey window)
     {
         lock (_sync)
-            return _loaded.TryGetValue(window, out Loaded? loaded) &&
-                !_closedWindows.Contains(window)
-                ? new NetworkCaptureLease(
-                    loaded.Server.ServerName, loaded.Generation, window,
-                    loaded.CaptureEpoch, loaded.ConnectionId)
-                : null;
+        {
+            if(_manual.TryGetValue(window,out var assignment))return ManualLease(window,assignment);
+            return _loaded.TryGetValue(window, out Loaded? loaded) && !_closedWindows.Contains(window)
+                ?new(loaded.Server.ServerName,loaded.Generation,window,loaded.CaptureEpoch,loaded.ConnectionId):null;
+        }
     }
 
     internal bool IsGameLeaseActive(NetworkCaptureLease lease)
@@ -191,13 +233,12 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
             return false;
 
         lock (_sync)
-            return _loaded.TryGetValue(window, out Loaded? loaded) &&
-                !_closedWindows.Contains(window) &&
-                loaded.CaptureEpoch == lease.CaptureEpoch &&
-                loaded.ConnectionId == lease.ConnectionId &&
-                loaded.Generation == lease.Generation &&
-                string.Equals(loaded.Server.ServerName, lease.ServerName,
-                    StringComparison.Ordinal);
+        {
+            if(_manual.TryGetValue(window,out var assignment))return ManualLease(window,assignment)==lease;
+            return _loaded.TryGetValue(window,out Loaded? loaded) && !_closedWindows.Contains(window) &&
+                loaded.CaptureEpoch==lease.CaptureEpoch && loaded.ConnectionId==lease.ConnectionId && loaded.Generation==lease.Generation &&
+                string.Equals(loaded.Server.ServerName,lease.ServerName,StringComparison.Ordinal);
+        }
     }
 
     /// <summary>Only a newer capture epoch resets quarantined window keys.</summary>
@@ -208,9 +249,9 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
         {
             if (epoch <= _epoch)
                 return;
-            changed = _loaded.Count != 0;
+            changed = _loaded.Count != 0 || _manual.Count != 0;
             _epoch = epoch;
-            _loaded.Clear();
+            _loaded.Clear();_manual.Clear();_liveGameFlows.Clear();
             _selections.Clear();
             _games.Clear();
             _closedWindows.Clear();
@@ -271,6 +312,9 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
     /// </summary>
     internal void ObserveGame(DofusWireMessage message, bool ownerRevalidated)
     {
+        // Only decoded Game frames reach this worker; Connection/auth frames are excluded by the framer.
+        bool flowChanged=ObserveOwnedGameFlow(message,ownerRevalidated);
+        if(flowChanged)Changed?.Invoke();
         if (message.Direction != "S→C" ||
             message.Key is not ("ksc" or "ksb") ||
             message.CandidateWindow is not { } window)
@@ -284,15 +328,19 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
                 message.ConnectionId <= 0)
                 return;
 
+            if(_liveGameFlows.TryGetValue(window,out var latestFlow) && message.ConnectionId<latestFlow.Connection)return;
+            // A fresh character-load sequence ends the previous character's manual choice.
+            changed |= _manual.Remove(window);
             if (!ownerRevalidated)
             {
-                changed = _loaded.Remove(window);
+                changed |= _loaded.Remove(window);
                 _games.Remove(message.ConnectionId);
                 _selections.Remove(window);
             }
             else if (message.Key == "ksc")
             {
-                changed = _loaded.Remove(window);
+                changed |= _loaded.Remove(window);
+                changed |= _manual.Remove(window);_liveGameFlows.Remove(window);
                 _seenCharacterTitle.Remove(window);
                 // Even an unknown/ambiguous next Game invalidates the
                 // prior server until a fresh completed load is observed.
@@ -345,7 +393,7 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
             }
             else
             {
-                changed = _loaded.Remove(window);
+                changed |= _loaded.Remove(window);
             }
         }
         if (changed || DiagnosticsEnabled) Changed?.Invoke();
@@ -366,6 +414,12 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
         {
             foreach (DofusClientWindow client in clients)
             {
+                if(_manual.TryGetValue(client.Key,out var declared) &&
+                    (!client.HasCharacterTitle || client.DisplayName!=declared.Character || client.ClassName!=declared.Class))
+                {
+                    changed |= _manual.Remove(client.Key);
+                    _loaded.Remove(client.Key);_liveGameFlows.Remove(client.Key);
+                }
                 if (!_loaded.ContainsKey(client.Key))
                     continue;
                 if (client.HasCharacterTitle)
@@ -377,6 +431,7 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
                     continue;
 
                 changed |= _loaded.Remove(client.Key);
+                _liveGameFlows.Remove(client.Key);
                 _selections.Remove(client.Key);
                 foreach (long flow in _games
                     .Where(pair => pair.Value.Window == client.Key)
@@ -399,12 +454,13 @@ public sealed class WindowServerAttributionState(bool diagnosticsEnabled = false
         lock (_sync)
         {
             HashSet<DofusClientWindowKey> live = liveWindows.ToHashSet();
-            foreach (DofusClientWindowKey window in _loaded.Keys
+            foreach (DofusClientWindowKey window in _loaded.Keys.Concat(_manual.Keys).Concat(_liveGameFlows.Keys)
                 .Concat(_selections.Keys)
                 .Concat(_games.Values.Select(g => g.Window))
                 .Distinct().Where(w => !live.Contains(w)).ToArray())
             {
                 changed |= _loaded.Remove(window);
+                changed |= _manual.Remove(window);_liveGameFlows.Remove(window);
                 _seenCharacterTitle.Remove(window);
                 _selections.Remove(window);
                 foreach (long flow in _games.Where(g => g.Value.Window == window)

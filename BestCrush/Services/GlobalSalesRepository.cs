@@ -36,6 +36,16 @@ public sealed partial class GlobalSalesRepository
                 PRIMARY KEY(server,object_type,item_id,variant));
             CREATE TABLE IF NOT EXISTS market_history_availability(
                 server TEXT NOT NULL PRIMARY KEY,observed_at TEXT NOT NULL,available_ids TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS production_market_listings(
+                server TEXT NOT NULL, listing_uid TEXT NOT NULL, scope TEXT NOT NULL, item_id INTEGER NOT NULL,
+                instance_uid TEXT NOT NULL, level INTEGER NOT NULL, variant TEXT NOT NULL, fertile INTEGER,
+                observed_at TEXT NOT NULL, price INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(server,listing_uid));
+            CREATE TABLE IF NOT EXISTS production_market_sales(
+                server TEXT NOT NULL, scope TEXT NOT NULL, sale_uid TEXT NOT NULL, listing_uid TEXT NOT NULL,
+                sold_at TEXT NOT NULL, PRIMARY KEY(server,scope,sale_uid), UNIQUE(server,scope,listing_uid));
+            CREATE TABLE IF NOT EXISTS production_market_returns(
+                server TEXT NOT NULL, scope TEXT NOT NULL, return_uid TEXT NOT NULL, listing_uid TEXT NOT NULL,
+                returned_at TEXT NOT NULL, PRIMARY KEY(server,scope,return_uid), UNIQUE(server,scope,listing_uid));
             CREATE TABLE IF NOT EXISTS global_sales_periods(
                 server TEXT NOT NULL, object_type INTEGER NOT NULL, item_id INTEGER NOT NULL,
                 variant TEXT NOT NULL, period_start TEXT NOT NULL, period_end TEXT NOT NULL,
@@ -62,6 +72,13 @@ public sealed partial class GlobalSalesRepository
                 PRIMARY KEY(server,item_id));
             """;
         command.ExecuteNonQuery();
+        using (var schema = db.CreateCommand())
+        {
+            schema.CommandText = "PRAGMA table_info(production_market_listings)";
+            bool hasPrice = false;
+            using (var reader = schema.ExecuteReader()) while (reader.Read()) hasPrice |= reader.GetString(1) == "price";
+            if (!hasPrice) { schema.CommandText = "ALTER TABLE production_market_listings ADD COLUMN price INTEGER NOT NULL DEFAULT 0"; schema.ExecuteNonQuery(); }
+        }
         MigrateSoulPrices(db);
     }
 

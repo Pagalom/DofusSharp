@@ -1,8 +1,10 @@
 @using BestCrush.Components.Pages
 @using BestCrush.Domain.Models
 @using BestCrush.Services
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider OverlayServices
 
-<ServiceResult InitiallyExpanded="InitiallyExpanded" ExpandedChanged="SetExpanded" Focus="Focus" FocusItemName="@Equipment.Name">
+<ServiceResult InitiallyExpanded="InitiallyExpanded" ExpandedChanged="SetExpanded" Focus="EffectiveFocus" FocusItemName="@Equipment.Name">
     <Summary>
         @Identity
         @if (_expanded || RankedSummary.HasValue)
@@ -53,6 +55,9 @@
     [Parameter] public EventCallback Focus { get; set; }
     [Parameter] public string GainLabel { get; set; } = "Gain estimé";
 
+    private EventCallback EffectiveFocus => EventCallback.Factory.Create(this, () =>
+        OverlayServices.GetService<OverlayWorkspaceService>() is not { } overlays ? Task.CompletedTask : Owned is { } owned
+            ? overlays.FocusOwnedAsync(owned, ServerName) : overlays.FocusAsync(Equipment, ServerName));
     private bool? _initialExpansion;
     private bool _expanded;
     private CrushingResultSummary? _detailSummary;

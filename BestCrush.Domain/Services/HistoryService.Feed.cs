@@ -38,11 +38,18 @@ public sealed partial class HistoryService
             Value = s.DiscountedTotalValue ?? s.TotalValue,
             Quantity = s.Equipments.Count(), Source = null, IsCleared = false
         });
+        // A result already contains each destroyed item's coefficient. Suppress
+        // its second feed row, but keep independent/manual coefficient readings.
+        // New network observations share the exact result timestamp. The short
+        // interval also covers pre-fix captures stamped during the SQL write.
+        var independentCoefficients=coefficients.Where(c=>c.IsCleared || c.Source!=CoefficientSource.InGameAutomatic ||
+            !sessions.Any(s=>s.StartedAtUtc<=c.ObservedAtUtc && c.ObservedAtUtc<=s.CompletedAtUtc.AddSeconds(5) &&
+                s.Equipments.Any(e=>e.DofusDbId==c.DofusDbId && e.CoefficientSource==c.Source && e.CoefficientPercent==c.Value)));
         IQueryable<CrushHistoryEntry> query = options.CrushKind switch
         {
             CrushHistoryEntryKind.Coefficient => coefficients,
             CrushHistoryEntryKind.Operation => operations,
-            _ => coefficients.Concat(operations)
+            _ => independentCoefficients.Concat(operations)
         };
         bool descending = sortDirection == HistorySortDirection.Descending;
         IOrderedQueryable<CrushHistoryEntry> ordered = sortColumn switch

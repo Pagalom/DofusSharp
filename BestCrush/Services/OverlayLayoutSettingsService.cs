@@ -11,7 +11,16 @@ public enum OverlayLayoutKind
     Profitability,
     Market,
     Crush,
-    ControlBar
+    ControlBar,
+    Forgemaging,
+    Breeding,
+    Pets,
+    Journey,
+    PopupCraft,
+    PopupRunes,
+    PopupPurchase,
+    PopupPrices,
+    PopupDetails
 }
 
 public sealed record OverlayWindowLayout(
@@ -36,30 +45,14 @@ public sealed class OverlayLayoutSettingsService
         OverlayWindowLayout>
         _layouts;
 
-    public OverlayLayoutSettingsService()
+    public OverlayLayoutSettingsService() : this(Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "BestCrush", "Settings", SettingsFileName)) { }
+
+    internal OverlayLayoutSettingsService(string settingsPath)
     {
-        string directory =
-            Path.Combine(
-                Environment.GetFolderPath(
-                    Environment.SpecialFolder
-                        .LocalApplicationData
-                ),
-                "BestCrush",
-                "Settings"
-            );
-
-        Directory.CreateDirectory(
-            directory
-        );
-
-        _settingsPath =
-            Path.Combine(
-                directory,
-                SettingsFileName
-            );
-
-        _layouts =
-            LoadLayouts();
+        _settingsPath = settingsPath;
+        _layouts = LoadLayouts();
     }
 
     public OverlayWindowLayout GetDefaultLayout(
@@ -95,10 +88,19 @@ public sealed class OverlayLayoutSettingsService
                 new OverlayWindowLayout(
                     210,
                     5,
-                    205,
+                    340,
                     50
                 ),
 
+            OverlayLayoutKind.Forgemaging => new(440, 70, 740, 480),
+            OverlayLayoutKind.Breeding => new(850, 70, 400, 540),
+            OverlayLayoutKind.Pets => new(440, 120, 390, 540),
+            OverlayLayoutKind.Journey => new(850, 120, 390, 500),
+            OverlayLayoutKind.PopupCraft => new(500, 150, 360, 260),
+            OverlayLayoutKind.PopupRunes => new(500, 150, 500, 420),
+            OverlayLayoutKind.PopupPurchase => new(500, 150, 340, 260),
+            OverlayLayoutKind.PopupPrices => new(500, 150, 340, 320),
+            OverlayLayoutKind.PopupDetails => new(500, 150, 360, 420),
             _ =>
                 throw new ArgumentOutOfRangeException(
                     nameof(kind)

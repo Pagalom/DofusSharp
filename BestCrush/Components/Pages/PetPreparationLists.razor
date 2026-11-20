@@ -1,0 +1,68 @@
+@using BestCrush.Services
+@using BestCrush.Network.Protocol
+@inject MarketClipboardQueue CopyQueue
+
+<div class="pet-preparation-lists @(!ShowFoods ? "is-single" : null)">
+    <section class="bc-surface" aria-label="Éléments à consulter à l’HDV">
+        <header><h2><i class="bi bi-shop" aria-hidden="true"></i> À consulter à l’HDV <small>@Checks.Count</small></h2>
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(Checks.Count==0)" @onclick="()=>CopyAsync(false)" aria-label="Copier les éléments à consulter"><i class="bi bi-copy" aria-hidden="true"></i></button>
+        </header>
+        <ul>@foreach(var check in Checks.Take(_marketVisible))
+        {
+            <li @key="check.ItemId"><CopyTextButton Value="check.Name" Tooltip="Copier le nom">@check.Name</CopyTextButton>
+                <StatusIcon Icon="@(check.LastObserved is null ? "question-circle" : "clock-history")" Tooltip="@Reason(check)" CssClass="text-warning" />
+            </li>
+        }</ul>
+        @if(Checks.Count>_marketVisible)
+        {
+            <button type="button" class="pet-list-more" @onclick="()=>_marketVisible+=20">Voir plus… <small>@_marketVisible / @Checks.Count</small></button>
+        }
+        <span class="small" role="status">@_marketStatus</span>
+    </section>
+    @if(ShowFoods)
+    {
+    <section class="bc-surface" aria-label="Ressources à tester sur les familiers">
+        <header><h2><i class="bi bi-beaker" aria-hidden="true"></i> Ressources à tester <small>@Foods.Count</small>
+            <StatusIcon Tooltip="XP à relever ou à préciser par un nourrissage observé. Inventaire en priorité, puis banque. Chaque ressource peut être testée." />
+            </h2>
+            <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(Foods.Count==0)" @onclick="()=>CopyAsync(true)" aria-label="Copier les ressources à tester"><i class="bi bi-copy" aria-hidden="true"></i></button>
+        </header>
+        <ul>@foreach(var entry in Foods.Take(_visible))
+        {
+            <li @key="entry.Food.DofusDbId"><CopyTextButton Value="entry.Food.Name" Tooltip="Copier le nom">@entry.Food.Name</CopyTextButton>
+                <span class="pet-test-stock">
+                    @if(entry.Inventory>0) { <span><StatusIcon Icon="bag" Tooltip="Inventaire" /> @entry.Inventory.ToString("N0")</span> }
+                    @if(entry.Bank>0) { <span><StatusIcon Icon="bank" Tooltip="Banque" /> @entry.Bank.ToString("N0")</span> }
+                    @if(entry.Recheck) { <StatusIcon Icon="question-circle" Tooltip="Un repas a déjà été observé ; le rendement reste à préciser." CssClass="text-warning" /> }
+                </span>
+            </li>
+        }</ul>
+        @if(Foods.Count>_visible)
+        {
+            <button type="button" class="pet-list-more" @onclick="()=>_visible+=20">Voir plus… <small>@_visible / @Foods.Count</small></button>
+        }
+        <span class="small" role="status">@_foodStatus</span>
+    </section>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<BreedingPriceCheck> Checks {get;set;}=[];
+    [Parameter] public IReadOnlyList<PetFoodTest> Foods {get;set;}=[];
+    [Parameter] public DofusClientWindowKey? TargetWindow {get;set;}
+    [Parameter] public bool ShowFoods {get;set;}=true;
+    private int _visible=20,_marketVisible=20;
+    private string _marketStatus="",_foodStatus="";
+    private static string Reason(BreedingPriceCheck check)=>check.Reason+(check.LastObserved is {} at ? $" · {at.ToLocalTime():dd/MM HH:mm}" : "");
+    private async Task CopyAsync(bool foods)
+    {
+        string message;
+        try
+        {
+            var result=await CopyQueue.CopyAsync(foods ? Foods.Select(f=>f.Food.Name) : Checks.Select(c=>c.Name),TargetWindow);
+            message=result.IsQueue ? $"{result.Count} noms chargés · Ctrl+V dans Dofus." : "Liste copiée.";
+        }
+        catch { message="Copie indisponible."; }
+        if(foods) _foodStatus=message;else _marketStatus=message;
+    }
+}

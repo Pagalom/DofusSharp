@@ -61,7 +61,7 @@
                         }
                         else
                         {
-                            <ServiceResult @key="row.Key">
+                            <ServiceResult @key="row.Key" Focus="() => Services.GetRequiredService<OverlayWorkspaceService>().FocusOwnedAsync(row, ServerName)" FocusItemName="@row.Equipment.Name">
                                 <Summary>
                                     @identity
                                     @if (row.RuneCount > 0)

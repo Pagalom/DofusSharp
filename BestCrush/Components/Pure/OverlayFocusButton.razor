@@ -1,0 +1,26 @@
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+<button type="button" class="overlay-focus-button" title="@($"Afficher {Item?.Name ?? Name ?? "l’objet"} dans Rentabilité")"
+        aria-label="@($"Afficher {Item?.Name ?? Name ?? "l’objet"} dans Rentabilité")" disabled="@_busy"
+        @onclick="FocusAsync" @onclick:stopPropagation @onclick:preventDefault><i class="bi bi-bullseye" aria-hidden="true"></i></button>
+@code {
+    [Parameter] public IItem? Item {get;set;}
+    [Parameter] public long? ItemId {get;set;}
+    [Parameter] public string? Name {get;set;}
+    [Parameter] public MarketObjectType? ObjectType {get;set;}
+    [Parameter] public string? ServerName {get;set;}
+    [Parameter] public OwnedForgemagingEquipment? Owned {get;set;}
+    private bool _busy;
+    private async Task FocusAsync()
+    {
+        if(Services.GetService<OverlayWorkspaceService>() is not { } Overlays)return;
+        _busy=true;
+        try {
+            if(Owned is { } owned)await Overlays.FocusOwnedAsync(owned,ServerName);
+            else if(Item is { } item)await Overlays.FocusAsync(item,ServerName);
+            else if(ItemId is { } id)await Overlays.FocusItemAsync(id,Name,ObjectType,ServerName);
+        } finally{_busy=false;}
+    }
+}

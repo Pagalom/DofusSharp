@@ -120,3 +120,5 @@
 }
 
 .character-context { display:flex; flex-direction:column; align-items:center; gap:2px; flex:0 0 auto; }
+
+.server-choice{display:flex;align-items:center;gap:.45rem;padding-left:1rem}.server-choice input{flex:0 0 auto;cursor:pointer;accent-color:#d3ad61}.server-choice .dropdown-item{flex:1;min-width:0;padding-left:.6rem}

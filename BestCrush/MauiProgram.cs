@@ -51,6 +51,7 @@ public static class MauiProgram
             builder.Services.AddSingleton<IWorkspacePreferences, MauiWorkspacePreferences>();
             builder.Services.AddSingleton<CurrentCharacterState>();
             builder.Services.AddSingleton(new BreedingObjectiveProgressStore(Path.Combine(dataDirectory, "Data", "breeding-objectives.json")));
+            builder.Services.AddSingleton(new PetObjectiveProgressStore(Path.Combine(dataDirectory, "Data", "pet-objectives.json")));
             builder.Services.AddSingleton(new WeeklyRoutineStore(Path.Combine(dataDirectory, "Data", "weekly-routine.json")));
             builder.Services.AddSingleton<CurrentDofusClientsState>();
             builder.Services.AddSingleton(new LiveStockRepository(Path.Combine(dataDirectory, "Data", "stock-current.db")));
@@ -80,6 +81,8 @@ public static class MauiProgram
             builder.Services.AddSingleton<BestCrush.Services.MarketCaptureOverlayService>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayControlBarService>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayService>();
+            builder.Services.AddSingleton<BestCrush.Services.OverlayWorkspaceService>();
+            builder.Services.AddSingleton<BestCrush.Services.OverlayWindowsService>();
             builder.Services.AddSingleton<BestCrush.Services.CrushSessionService>();
             builder.Services.AddSingleton<BestCrush.Services.MarketDataChangeNotifier>();
             builder.Services.AddSingleton<BestCrush.Services.DofusWindowService>();

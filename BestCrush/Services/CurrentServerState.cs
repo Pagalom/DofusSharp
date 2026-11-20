@@ -2,7 +2,7 @@ namespace BestCrush.Services;
 
 /// <summary>
 /// Revocable capture scope. In the production multi-server mode this
-/// credential comes ONLY from verified network Connection+Game evidence,
+/// credential comes from automatic Game evidence or an explicit per-character player declaration,
 /// never from the server selected for SQL browsing. Legacy replay/test
 /// instances retain the older manually selected lease contract.
 /// </summary>
@@ -29,13 +29,14 @@ public sealed class CurrentServerState
         bool automaticRoutingEnabled = false)
     {
         _automaticAttributions = automaticAttributions;
-        AutomaticRoutingEnabled = automaticRoutingEnabled &&
-            automaticAttributions is not null;
+        AutomaticRoutingEnabled = automaticRoutingEnabled && automaticAttributions is not null;
+        if(AutomaticRoutingEnabled)_automaticAttributions!.Changed += ()=>PlayedServerChanged?.Invoke();
     }
 
     public bool AutomaticRoutingEnabled { get; }
 
     public event Action? ServerSelectionChanged;
+    public event Action? PlayedServerChanged;
 
     public string? ServerName
     {
@@ -50,7 +51,7 @@ public sealed class CurrentServerState
         !string.IsNullOrWhiteSpace(ServerName);
 
     /// <summary>
-    /// In production automatic mode this selects only the displayed SQL
+    /// This method only selects the displayed SQL
     /// server/calculation context, never a source for new network writes.
     /// In legacy test mode it still provides a generation-scoped lease.
     /// Re-selecting the same name leaves the generation intact.

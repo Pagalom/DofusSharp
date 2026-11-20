@@ -1,64 +1,9 @@
-﻿@using BestCrush.Network.Protocol
-@using BestCrush.Services
+﻿@using BestCrush.Services
 
-<section class="mb-3" aria-label="Objectif de rentabilité">
-    <h2 class="h5">Objectif de rentabilité</h2>
-    @if (Report.Strategy.Recommended is { } objective)
-    {
-        <p><strong>@objective.Name · G@(objective.Generation) · niveau @objective.Sale.Level</strong>
-            · @objective.Sale.SalePrice.ToString("N0") K à la vente
-            · @objective.Production.Cost.ToString("N0") K d’obtention en moyenne
-            · @objective.Sale.ExperienceCost.ToString("N0") K d’XP.</p>
-        <p><strong>@objective.Margin.ToString("N0") K de marge par monture avant taxe</strong>
-            · @objective.Capacity!.Remaining mise(s) en vente conseillée(s) maintenant
-            · jusqu’à @objective.WeeklyPotential?.ToString("N0") K par semaine au quota,
-            si la production suit.</p>
-        @if (objective.Production.Kind == BreedingSupplyKind.Cross)
-        {
-            <p>Dernier croisement · @objective.Production.SuccessChance.ToString("P1") de chance estimée ·
-                @((1m / objective.Production.SuccessChance).ToString("N1")) tentatives par réussite en moyenne.</p>
-        }
-        @if (Report.Plan.FirstOrDefault(step => !step.Ready) is { } next)
-        {
-            <p><strong>Prochaine étape</strong> · @Describe(next)</p>
-            @if (Report.Plan.Count > 1)
-            {
-                <details class="mb-2">
-                    <summary>Voir le chemin pour cet objectif</summary>
-                    <ol>
-                        @foreach (var step in Report.Plan)
-                        {
-                            <li>@Describe(step)</li>
-                        }
-                    </ol>
-                    <p>Le chemin décrit la prochaine tentative de chaque croisement. BestCrush le recalcule au prochain relevé des montures.</p>
-                </details>
-            }
-        }
-    }
-    else
-    {
-        <p>Aucun objectif de production disponible avec les prix, les coûts et les volumes relevés. Consulte le détail des générations pour voir ce qui bloque.</p>
-    }
-    @{ var alternatives = Report.Strategy.Objectives.Where(option => option.ItemId != Report.Strategy.Recommended?.ItemId).ToArray(); }
-    @if (alternatives.Length > 0)
-    {
-        <details class="mb-2">
-            <summary>Autres débouchés rentables (@alternatives.Length)</summary>
-            <ul>
-                @foreach (var alternative in alternatives)
-                {
-                    <li>@alternative.Name · G@(@alternative.Generation) · niv. @alternative.Sale.Level
-                        · @alternative.Margin.ToString("N0") K par monture · @alternative.WeeklyPotential?.ToString("N0") K par semaine au quota
-                        · @alternative.Capacity!.Remaining mise(s) en vente conseillée(s) restante(s).</li>
-                }
-            </ul>
-        </details>
-    }
-    <details class="mb-2">
-        <summary>Rentabilité et débouchés par génération</summary>
-        <p>Le plafond tient compte des ventes observées sur 7 jours au prix visé ou plus et de tes mises en vente relevées. Il s’applique à l’espèce entière. L’historique HDV ne détaille pas les ventes par niveau ou fertilité.</p>
-        <p>Les croisements sont chiffrés avec leurs issues directes et le coût moyen des tentatives. L’aperçu Dofus donne les probabilités avec la généalogie réelle. La projection valorise la cible et laisse les autres naissances et les parents stérilisés hors recette.</p>
+<details class="breeding-comparison-section">
+    <summary><i class="bi bi-bar-chart" aria-hidden="true"></i> Par génération</summary>
+    <div class="breeding-comparison-body">
+        <StatusIcon Tooltip="Marge après obtention et XP, avant taxes. La projection hebdomadaire tient compte des débouchés, de la cadence de capture et du budget renseigné. Les autres naissances et les parents stérilisés ne sont pas ajoutés aux recettes estimées." />
         <div class="table-responsive">
             <table class="table table-dark table-striped align-middle">
                 <thead>
@@ -89,27 +34,9 @@
                 </tbody>
             </table>
         </div>
-    </details>
-</section>
+    </div>
+</details>
 
 @code {
     [Parameter, EditorRequired] public BreedingTradeReport Report { get; set; } = null!;
-    [Parameter, EditorRequired] public IReadOnlyDictionary<Guid, int> MountNumbers { get; set; } = null!;
-
-    private string Describe(BreedingObjectiveStep step)
-    {
-        string sex = step.Sex switch { BreedingMountSex.Female => " femelle", BreedingMountSex.Male => " mâle", _ => "" };
-        string owned = step.OwnedId is { } id && MountNumbers.TryGetValue(id, out int number) ? $"#{number} " : "";
-        return step.Action switch
-        {
-            BreedingObjectiveAction.Capture => $"Capturer {step.Name}{sex}" + (step.Zone is { } zone ? $" · {zone}" : ""),
-            BreedingObjectiveAction.Buy => $"Chercher {step.Name}{sex} fertile au niveau 1 à l’HDV.",
-            BreedingObjectiveAction.Prepare when step.Ready => $"Utiliser {owned}{step.Name}{sex}, déjà prêt pour l’accouplement.",
-            BreedingObjectiveAction.Prepare => $"Préparer {owned}{step.Name}{sex} jusqu’au niveau {step.Level} et remplir ses jauges de reproduction.",
-            BreedingObjectiveAction.Cross => $"Accoupler {step.First} et {step.Second} pour viser {step.Name}{sex}.",
-            BreedingObjectiveAction.Train => $"Monter {owned}{step.Name} au niveau {step.Level} avant la revente.",
-            BreedingObjectiveAction.Sell => $"Vendre {owned}{step.Name} au niveau {step.Level} autour de {step.SalePrice:N0} K.",
-            _ => throw new ArgumentOutOfRangeException(nameof(step))
-        };
-    }
 }

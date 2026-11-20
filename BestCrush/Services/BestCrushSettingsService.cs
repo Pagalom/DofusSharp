@@ -186,7 +186,32 @@ public sealed class BestCrushSettingsService
         }
     }
 
-    public BreedingPlanningOptions BreedingPlanning => new(BreedingMinimumChancePercent, BreedingPlanningMode);
+    public int BreedingCapturesPerDay
+    {
+        get => Math.Clamp(BreedingPreferences.Get("Settings.BreedingCapturesPerDay", 0), 0, 10000);
+        set
+        {
+            int limit = Math.Clamp(value, 0, 10000);
+            if (limit == BreedingCapturesPerDay) return;
+            BreedingPreferences.Set("Settings.BreedingCapturesPerDay", limit);
+            BreedingSettingsChanged?.Invoke();
+        }
+    }
+
+    public long ProductionBudgetKamas
+    {
+        get => Math.Max(0, BreedingPreferences.Get("Settings.ProductionBudgetKamas", 0L));
+        set
+        {
+            long budget = Math.Max(0, value);
+            if (budget == ProductionBudgetKamas) return;
+            BreedingPreferences.Set("Settings.ProductionBudgetKamas", budget);
+            BreedingSettingsChanged?.Invoke();
+        }
+    }
+
+    public BreedingPlanningOptions BreedingPlanning => new(BreedingMinimumChancePercent, BreedingPlanningMode)
+        { CapturesPerDay = BreedingCapturesPerDay, BudgetKamas = ProductionBudgetKamas > 0 ? ProductionBudgetKamas : null };
 
     public double TargetRoiPercent
     {

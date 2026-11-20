@@ -84,7 +84,8 @@ public sealed partial class EquipmentProfitabilityService(
             bool forceRefresh = false,
             bool includeThresholds = true,
             bool includeUnpricedScenarios = false,
-            bool allowRemoteCoefficient = true)
+            bool allowRemoteCoefficient = true,
+            IReadOnlyDictionary<Characteristic, double>? observedLines = null)
     {
         HashSet<string> missingData = [];
 
@@ -131,7 +132,7 @@ public sealed partial class EquipmentProfitabilityService(
 
         Dictionary<Characteristic, double>
             estimatedLines =
-                equipment.Characteristics
+                observedLines is not null ? new(observedLines) : equipment.Characteristics
                     .ToDictionary(
                         characteristic =>
                             characteristic.Characteristic,

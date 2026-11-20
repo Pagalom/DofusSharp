@@ -38,6 +38,7 @@ internal static class RuneBaseEffects
         134 => Characteristic.ResistanceFlatNeutral,
         140 => Characteristic.DamageFlatTrap,
         141 => Characteristic.DamagePercentTrap,
+        324 => Characteristic.Hunting,
         343 => Characteristic.Dodge,
         344 => Characteristic.Lock,
         349 => Characteristic.ApDodge,

@@ -161,6 +161,31 @@ public sealed class DofusNetworkRoutingTest
     }
 
     [Fact]
+    public async Task ExplicitPlayedServerRoutesMarketMidSessionAndDoesNotFollowSqlBrowsing()
+    {
+        await using var harness=await RoutingHarness.CreateAsync(automaticRouting:true);
+        var a=new DofusClientWindowKey(101,1201);var b=new DofusClientWindowKey(102,1202);
+        byte[] Market(ulong price)=>JzsMarket(42,11,JzsOffer(42,128998,11,price,0,0,0));
+        await harness.ReplayAsync("jzs",Market(4899),ObservedAt,connectionId:21,candidateWindow:a);
+        Assert.Empty(await harness.ReadPricesAsync(MarketObjectType.Equipment,42,"Kourial"));
+        Assert.True(harness.AutomaticAttributions.AssignPlayedServer(new(a,"Alpha","Ecaflip","3.7.14.18",true),"Kourial"));
+        harness.ServerState.SelectServer("Draconiros");
+        await harness.ReplayAsync("jzs",Market(4999),ObservedAt.AddSeconds(1),connectionId:21,candidateWindow:a);
+        Assert.Single(await harness.ReadPricesAsync(MarketObjectType.Equipment,42,"Kourial"));
+        Assert.Empty(await harness.ReadPricesAsync(MarketObjectType.Equipment,42,"Draconiros"));
+        await harness.ReplayAsync("jzs",Market(5999),ObservedAt.AddSeconds(2),connectionId:22,candidateWindow:b);
+        Assert.Single(await harness.ReadPricesAsync(MarketObjectType.Equipment,42,"Kourial"));
+        var old=harness.ServerState.GetWindowCaptureLease(a)!.Value;
+        harness.AutomaticAttributions.AssignPlayedServer(new(a,"Alpha","Ecaflip","3.7.14.18",true),"Tylezia");
+        Assert.False(harness.ServerState.IsCaptureLeaseActive(old));
+        await harness.ReplayAsync("jzs",Market(6999),ObservedAt.AddSeconds(3),connectionId:21,candidateWindow:a);
+        Assert.Single(await harness.ReadPricesAsync(MarketObjectType.Equipment,42,"Tylezia"));
+        harness.AutomaticAttributions.ReconcileCharacterTitles([new(a,"Other","Ecaflip","3.7.14.18",true)]);
+        await harness.ReplayAsync("jzs",Market(7999),ObservedAt.AddSeconds(4),connectionId:21,candidateWindow:a);
+        Assert.Single(await harness.ReadPricesAsync(MarketObjectType.Equipment,42,"Tylezia"));
+    }
+
+    [Fact]
     public async Task TwoWindowsOnSameServerShareOneMarketHistory()
     {
         await using RoutingHarness harness =
@@ -1923,6 +1948,54 @@ public sealed class DofusNetworkRoutingTest
         await replay
             .Should()
             .ThrowAsync<OverflowException>();
+    }
+
+    [Fact]
+    public async Task RuneOnlyUidCorrelationCannotRecordAnEquipmentCoefficient()
+    {
+        await using var harness=await RoutingHarness.CreateAsync();var window=new DofusClientWindowKey(500,600);
+        await harness.Service.ReplayMessageAsync("S→C","iqx",Bytes(2,Bytes(1,Message(Unsigned(3,1),Unsigned(4,100),Unsigned(5,8001)))),ObservedAt,candidateWindow:window);
+        await harness.Service.ReplayMessageAsync("S→C","kag",CurrentCrush(CurrentCrushRow(8001,1f,CurrentCrushRune(100,1))),ObservedAt.AddMilliseconds(1),candidateWindow:window);
+        Assert.Empty(harness.Crushes);Assert.Empty(await harness.ReadCoefficientsAsync(100));
+    }
+
+    [Fact]
+    public async Task YieldedRuneReusingDestroyedUidCannotReplaceCrushedEquipmentIdentity()
+    {
+        await using var harness=await RoutingHarness.CreateAsync();
+        var window=new DofusClientWindowKey(500,600);const ulong uid=8001;
+        await harness.Service.ReplayMessageAsync("S→C","kch",CurrentItemDetail(uid,42,1),ObservedAt,candidateWindow:window);
+        await harness.Service.ReplayMessageAsync("S→C","iqm",Unsigned(1,uid),ObservedAt.AddSeconds(1),candidateWindow:window);
+        var runeStock=Bytes(2,Bytes(1,Message(Unsigned(3,1),Unsigned(4,100),Unsigned(5,uid))));
+        await harness.Service.ReplayMessageAsync("S→C","iqx",runeStock,ObservedAt.AddSeconds(1).AddMilliseconds(1),candidateWindow:window);
+        var at=ObservedAt.AddSeconds(1).AddMilliseconds(2);
+        await harness.Service.ReplayMessageAsync("S→C","kag",CurrentCrush(CurrentCrushRow(uid,.23438921f,CurrentCrushRune(100,1))),at,candidateWindow:window);
+        var actual=Assert.Single(Assert.Single(harness.Crushes).Lines);
+        Assert.Equal(42,actual.EquipmentDofusDbId);Assert.Equal(42UL,actual.ObservedItem!.ItemId);
+        var coefficient=Assert.Single(await harness.ReadCoefficientsAsync(42));
+        Assert.Equal(at,coefficient.ObservedAtUtc);Assert.Equal(23.438921,coefficient.CoefficientPercent,4);
+        Assert.Empty(await harness.ReadCoefficientsAsync(100));
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task WeaponEffectsReachCrushingFromWorkshopOrStock(bool workshop)
+    {
+        await using var harness=await RoutingHarness.CreateAsync();
+        var window=new DofusClientWindowKey(500,600);
+        var effects=SharedEquipmentRollTest.WeaponEffects();
+        var item=Message(Unsigned(3,1),Unsigned(4,42),Unsigned(5,8001),
+            Message(effects.Select(effect=>Bytes(7,effect)).ToArray()));
+        await harness.Service.ReplayMessageAsync("S→C",workshop?"kch":"iqx",workshop?Bytes(3,Bytes(1,item)):Bytes(2,Bytes(1,item)),ObservedAt,candidateWindow:window);
+        await harness.Service.ReplayMessageAsync("S→C","iqm",Unsigned(1,8001),ObservedAt.AddMilliseconds(1),candidateWindow:window);
+        await harness.Service.ReplayMessageAsync("S→C","kag",CurrentCrush(CurrentCrushRow(8001,.2341445f)),ObservedAt.AddMilliseconds(2),candidateWindow:window);
+        var line=Assert.Single(Assert.Single(harness.Crushes).Lines);
+        Assert.Equal(42,line.EquipmentDofusDbId);
+        var roll=CrushOperationAssessment.ResolveRoll(line,null,null,SharedEquipmentRollTest.Definitions,ObservedAt.AddSeconds(1));
+        Assert.Equal(1,roll!.Single(row=>row.Characteristic==Characteristic.DamageFlatAll).Current);
+        Assert.Equal(1,roll!.Single(row=>row.Characteristic==Characteristic.Hunting).Current);
+        Assert.Empty(line.Runes); // The real zero-rune result remains distinct from an unreadable jet.
     }
 
     [Fact]

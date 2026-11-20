@@ -64,6 +64,7 @@
                         <i class="bi @(TradeHidden ? "bi-eye-slash" : "bi-eye")" aria-hidden="true"></i>
                     </button>
                 }
+                <OverlayFocusButton ItemId="Row.ItemId" Name="@Row.Name" ObjectType="Row.ObjectType" />
                 <i class="bi @(TradeOpen ? "bi-chevron-up" : "bi-chevron-down") trade-chevron" aria-hidden="true"></i>
                 <span class="visually-hidden">@(TradeOpen ? "Masquer le détail" : "Voir le détail")</span>
             </summary>
@@ -102,7 +103,7 @@ else
 {
 <tr>
     <td>
-        <button type="button" class="btn btn-link text-body p-0 text-start fw-bold" aria-expanded="@(_expanded ? "true" : "false")" @onclick="ToggleAsync"><strong>@Row.Name</strong></button>
+        <button type="button" class="btn btn-link text-body p-0 text-start fw-bold" aria-expanded="@(_expanded ? "true" : "false")" @onclick="ToggleAsync"><strong>@Row.Name</strong></button> <OverlayFocusButton ItemId="Row.ItemId" Name="@Row.Name" ObjectType="Row.ObjectType" />
         <div class="small text-secondary">Niv. @Row.Level · @Row.Strategy · @Row.Quantity.ToString("N0") unité(s)</div>
         @if (ShowSource) { <a class="small" href="@Row.SourceUrl">Ouvrir dans @Row.OriginName</a> }
         @if (Row.Job is not null)

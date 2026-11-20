@@ -3,10 +3,13 @@ using BestCrush.Network.Protocol;
 namespace BestCrush.Services;
 
 internal sealed record ForgemagingWireEffect(ulong Code, long? Value);
-internal sealed record ForgemagingWireItem(ulong Uid, long ItemId, ulong Quantity, IReadOnlyList<ForgemagingWireEffect> Effects);
+internal sealed record ForgemagingWireItem(ulong Uid, long ItemId, ulong Quantity, IReadOnlyList<ForgemagingWireEffect> Effects)
+{
+    internal byte[][] EffectWire { get; init; } = [];
+}
 internal sealed record ForgemagingWireResult(int Code, ForgemagingWireItem? Item, double? Sink, int? PoolStatus);
 
-/// <summary>Bounded workshop-only decoding. No heuristic scan through arbitrary messages.</summary>
+/// <summary>Bounded equipment and workshop decoding. No heuristic scan through arbitrary messages.</summary>
 internal static class LiveForgemagingProtocol
 {
     internal static List<ProtoField>? Fields(byte[] body) => body.Length <= 16384 ? ProtoWire.ReadFields(body) : null;
@@ -33,19 +36,30 @@ internal static class LiveForgemagingProtocol
         ulong quantity = Scalar(fields, 3) ?? 0;
         if (quantity is 0 or > 1000000000) return null;
         var effects = fields.Where(f => f.Number == 7).ToArray();
-        if (effects.Length > 64) return null;
+        if (effects.Length > 64 || effects.Any(f => f.WireType != ProtoWireType.LengthDelimited || f.Bytes is null)) return null;
+        var raw = effects.Select(f => f.Bytes!.ToArray()).ToArray();
+        var decoded = ReadEffects(raw);
+        return decoded is null ? null : new(Scalar(fields, 5)!.Value, checked((long)Scalar(fields, 4)!.Value), quantity, decoded)
+        { EffectWire = raw };
+    }
+
+    internal static IReadOnlyList<ForgemagingWireEffect>? ReadEffects(IReadOnlyList<byte[]> entries)
+    {
+        if (entries.Count > 64) return null;
         List<ForgemagingWireEffect> decoded = [];
-        foreach (var effect in effects)
+        foreach (var bytes in entries)
         {
-            if (effect.WireType != ProtoWireType.LengthDelimited || effect.Bytes is not { Length: <= 1024 } bytes) return null;
-            var row = Fields(bytes); if (row is null || Scalar(row, 10) is not > 0) return null;
+            if (bytes.Length is 0 or > 1024) return null;
+            var row = Fields(bytes);
+            if (row is null || Scalar(row, 10) is not > 0) return null;
             var values = row.Where(f => f.Number == 5).ToArray();
             long? value = values.Length == 0 && row.All(f => f.Number == 10) ? 0 :
                 values is { Length: 1 } && values[0].WireType == ProtoWireType.Varint ? unchecked((long)values[0].Varint) : null;
-            if (value is < -100000 or > 100000) return null;
+            if (values.Length > 1 || values.Any(f => f.WireType != ProtoWireType.Varint) || value is < -100000 or > 100000) return null;
+            // Structured effects keep a null value; the catalogue decides whether they are relevant stats.
             decoded.Add(new(Scalar(row, 10)!.Value, value));
         }
-        return new(Scalar(fields, 5)!.Value, checked((long)Scalar(fields, 4)!.Value), quantity, decoded);
+        return decoded;
     }
     // Observed on Pagalom / 3.7.13.17: workshop item, absolute pool, job id.
     internal static (ForgemagingWireItem Item, double Sink)? WorkshopItem(byte[] body)

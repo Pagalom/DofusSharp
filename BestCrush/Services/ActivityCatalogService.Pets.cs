@@ -29,6 +29,21 @@ public sealed partial class ActivityCatalogService
     internal Task<ProductCraftRecipe[]> GetPetRecipesAsync(IReadOnlyCollection<long> ids,CancellationToken token) =>
         PetReference.GetProductCraftsAsync(ids,token);
 
+    // Immediate inventory view: never wait for a catalogue download or cache refresh.
+    internal async Task<PetSpecies[]> GetKnownPetSpeciesAsync(CancellationToken token)
+    {
+        if (!ReferenceEquals(PetReference,this)) return await PetReference.GetKnownPetSpeciesAsync(token);
+        string key=CacheKey("pet-species-v1");
+        if (_memory.TryGetValue(key,out var known)) return (PetSpecies[])known;
+        try
+        {
+            string path=CachePath(key);
+            return File.Exists(path) ? System.Text.Json.JsonSerializer.Deserialize<Cached<PetSpecies[]>>(
+                await File.ReadAllTextAsync(path,token))?.Data ?? [] : [];
+        }
+        catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or System.Text.Json.JsonException) { return []; }
+    }
+
     internal Task<PetSpecies[]> GetPetSpeciesAsync(CancellationToken token) => !ReferenceEquals(PetReference,this)
         ? PetReference.GetPetSpeciesAsync(token) : CachedAsync("pet-species-v1", async () =>
         (await Fetch(factory.Items(), new()

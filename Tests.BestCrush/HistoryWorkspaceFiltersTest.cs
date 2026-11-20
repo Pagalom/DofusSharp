@@ -95,6 +95,26 @@ public sealed class HistoryWorkspaceFiltersTest
         Assert.Empty(missing.Rows);
     }
 
+    [Fact]
+    public async Task OperationAndItsCapturedCoefficientShareOneFeedRowBeforePagination()
+    {
+        using var database=new TestDatabase();await using var db=database.CreateContext();
+        db.Equipments.Add(new Equipment(42){Name="Bottes"});
+        db.CoefficientObservations.AddRange(Coefficient(42,"A",At,371),Coefficient(42,"A",At.AddMilliseconds(-50),371),Coefficient(42,"A",At.AddHours(-1),371),
+            Coefficient(42,"A",At.AddMilliseconds(100),999));
+        db.CoefficientObservations.Add(new CoefficientObservation{DofusDbId=42,ServerName="A",CoefficientPercent=371,
+            ObservedAtUtc=At,Source=CoefficientSource.Manual});
+        await db.SaveChangesAsync();var service=new HistoryService(db);
+        var id=await service.SaveCrushSessionAsync(Session("A",At));db.ChangeTracker.Clear();
+        var page=await service.GetCrushingFeedAsync("A",null,null,HistorySortColumn.Date,HistorySortDirection.Descending,50);
+        Assert.Equal(4,page.Rows.Count);Assert.Single(page.Rows.Where(r=>r.Kind==CrushHistoryEntryKind.Operation));
+        Assert.Equal(id,page.Rows.Single(r=>r.Session is not null).Id);
+        Assert.DoesNotContain(page.Rows,r=>r.Kind==CrushHistoryEntryKind.Coefficient && r.Source==CoefficientSource.InGameAutomatic && r.ObservedAtUtc==At);
+        Assert.Equal(5,await db.CoefficientObservations.CountAsync());
+        var coefficients=await service.GetCrushingFeedAsync("A",null,null,HistorySortColumn.Date,HistorySortDirection.Descending,50,new(){CrushKind=CrushHistoryEntryKind.Coefficient});
+        Assert.Equal(5,coefficients.Rows.Count);
+    }
+
     private static CoefficientObservation Coefficient(long id,string server,DateTime at,double value)=>new(){DofusDbId=id,ServerName=server,CoefficientPercent=value,Source=CoefficientSource.InGameAutomatic,ObservedAtUtc=at};
     private static MarketPriceObservation Price(long id,MarketObjectType type,DateTime at,MarketPriceSource source,int lot,bool cleared=false)=>new(){DofusDbId=id,ObjectType=type,ServerName="A",Quantity=lot,Price=100,Source=source,IsCleared=cleared,ObservedAtUtc=at};
     private static CrushHistorySessionWriteModel Session(string server,DateTime at)=>new(server,at.AddSeconds(-2),at,80,5,76,[new(42,"Bottes au concassage",371,CoefficientSource.InGameAutomatic,0)],[new(100,"Rune Fo",10,80,[new(1,10,80,false,MarketPriceSource.Manual,at.AddMinutes(-1))])]);

@@ -8,9 +8,16 @@ public enum BreedingPlanningMode { Economy, Speed }
 public sealed record BreedingPlanningOptions(decimal MinimumGenerationChancePercent = 65m,
     BreedingPlanningMode Mode = BreedingPlanningMode.Economy)
 {
+    public int CapturesPerDay { get; init; }
+    public long? BudgetKamas { get; init; }
+    internal int CaptureBudget => CapturesPerDay > 0 ? CapturesPerDay : 20;
+    // Planning defaults, not game-imposed daily quotas. Area nets assume three targets per encounter.
+    internal static int DefaultCaptures(int? breederLevel) => breederLevel switch
+    { >= 200 => 120, >= 150 => 60, >= 100 => 40, _ => 20 };
+
     internal void Validate()
     {
-        if (MinimumGenerationChancePercent is < 0 or > 100 || !Enum.IsDefined(Mode))
+        if (MinimumGenerationChancePercent is < 0 or > 100 || !Enum.IsDefined(Mode) || CapturesPerDay is < 0 or > 10000)
             throw new ArgumentOutOfRangeException(nameof(MinimumGenerationChancePercent));
     }
 
@@ -31,7 +38,7 @@ public sealed record BreedingPlanningOptions(decimal MinimumGenerationChancePerc
             if (match < 0) continue;
             done.Add(i); completed.RemoveAt(match);
         }
-        progress.Steps = steps.ToList(); progress.Done = done; progress.Planning = this;
+        progress.Steps = steps.ToList(); progress.Done = done; progress.Partial.Clear(); progress.Planning = this;
     }
 
     internal IOrderedEnumerable<BreedingProduction> Order(IEnumerable<BreedingProduction> routes) => Mode == BreedingPlanningMode.Speed

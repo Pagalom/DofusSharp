@@ -5,5 +5,6 @@ public enum UpgradeKind
     Application,
     DofusDb,
     RuneCatalog,
-    PetFoodSeed
+    PetFoodSeed,
+    EquipmentEffects
 }

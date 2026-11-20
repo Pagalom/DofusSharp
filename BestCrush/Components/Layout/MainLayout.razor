@@ -1,3 +1,4 @@
+@inject BestCrush.Services.OverlayWorkspaceService OverlayWorkspace
 @using BestCrush.Domain
 @using BestCrush.Domain.Services
 @using Microsoft.EntityFrameworkCore
@@ -66,7 +67,7 @@
                         class="btn btn-outline-secondary dropdown-toggle"
                         data-bs-toggle="dropdown"
                         aria-expanded="false"
-                        title="Filtrer les prix, les coefficients et les historiques enregistrés par serveur. Cette sélection ne modifie pas les captures réseau.">
+                        title="Nom : consulter les prix · bouton radio : serveur du personnage ciblé.">
                     @if (ViewFilter.IsBrowsingManually)
                     {
                         <span>Consulter : @(_currentServer?.Name ?? "Serveur inconnu")</span>
@@ -78,17 +79,19 @@
                 </button>
                 <ul class="dropdown-menu dropdown-menu-end"
                     style="max-height: 55vh; overflow-y: auto;">
-                    <li><h6 class="dropdown-header">Consulter les données d'un serveur</h6></li>
+                    <li><h6 class="dropdown-header">Serveur joué · consulter les prix</h6></li>
                     @if (_servers is not null)
                     {
                         @foreach (DofocusServer server in _servers)
                         {
-                            <li>
+                            <li class="server-choice">
+                                <input type="radio" name="played-server" checked="@IsPlayedServer(server.Name)"
+                                       disabled="@(CurrentDofusClientsState.SelectedClient?.HasCharacterTitle!=true)"
+                                       aria-label="@($"Jouer sur {server.Name} avec le personnage ciblé")" title="Serveur du personnage ciblé"
+                                       @onclick:stopPropagation @onchange="()=>AssignPlayedServer(server.Name)" />
                                 <button type="button"
                                         class="dropdown-item @(ViewFilter.IsBrowsingManually && string.Equals(ViewFilter.ServerName, server.Name, StringComparison.OrdinalIgnoreCase) ? "active" : null)"
-                                        @onclick="() => BrowseServer(server)">
-                                    @server.Name
-                                </button>
+                                        @onclick="() => BrowseServer(server)">@server.Name</button>
                             </li>
                         }
                     }
@@ -221,6 +224,9 @@
 </CascadingValue>
 
 @code {
+    private void OpenOverlayModule(string slug) => _ = InvokeAsync(() => {
+        NavigationManager.NavigateTo("/modules/" + Uri.EscapeDataString(slug));
+    });
     private readonly WorkspaceNavigation _workspace = new();
     private bool _dataVisited;
     private string? _pendingViewport;
@@ -302,6 +308,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        OverlayWorkspace.ModuleRequested += OpenOverlayModule;
         _networkCaptureStatus = NetworkCapture.Status;
         _workspace.Changed += OnWorkspaceChanged;
         NavigationManager.LocationChanged += OnLocationChanged;
@@ -465,8 +472,8 @@
         });
 
     /// <summary>
-    /// The protocol-owned window server always wins. An independently
-    /// verified character key may supply its own server only for UI
+    /// The effective per-character server (manual choice before detection) wins.
+    /// An independently verified character key supplies a fallback only for UI
     /// targeting, never for accepting network market writes.
     /// </summary>
     private string? ServerForTargetWindow(DofusClientWindowKey window)
@@ -481,6 +488,16 @@
             CurrentCharacterState.WindowForCharacter(verified.Key) == window
                 ? verified.Key.ServerName
                 : null;
+    }
+
+    private bool IsPlayedServer(string name) => CurrentDofusClientsState.SelectedClient is { } client &&
+        WindowServerAttributionState.ForWindow(client.Key) is { } played &&
+        DofusServerIdCatalog.IdFor(name)==played.ServerId;
+
+    private void AssignPlayedServer(string name)
+    {
+        if(CurrentDofusClientsState.SelectedClient is not { } client || !WindowServerAttributionState.AssignPlayedServer(client,name))return;
+        FollowWindow(client.Key);
     }
 
     private void SyncSelectedWindowServer()
@@ -589,6 +606,7 @@
             catch (JSDisconnectedException) { }
         }
         NavigationManager.LocationChanged -= OnLocationChanged;
+        OverlayWorkspace.ModuleRequested -= OpenOverlayModule;
         CurrentCharacterState.Changed -= OnCharacterChanged;
         CurrentCharacterState.TargetRequested -= OnVerifiedCharacterTargetRequested;
         CurrentDofusClientsState.Changed -= OnDofusClientChanged;

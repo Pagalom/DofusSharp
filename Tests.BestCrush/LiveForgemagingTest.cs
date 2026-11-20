@@ -63,6 +63,35 @@ public sealed class LiveForgemagingTest
         Assert.Empty(ForgemagingPlanner.Recommend(session, [new(1, "Rune Fo", Characteristic.Strength, 1, 10)]));
     }
 
+    [Fact]
+    public async Task AddingAnExoOnlyAddsAZeroPlaceholderAndGameResultsSupplyTheRealValue()
+    {
+        string folder=Path.Combine(Path.GetTempPath(),"fm-extra-"+Guid.NewGuid());Directory.CreateDirectory(folder);
+        try
+        {
+            using var provider=new ServiceCollection().BuildServiceProvider();var servers=new CurrentServerState();servers.SelectServer("A");
+            var store=new ForgemagingSessionStore(Path.Combine(folder,"sessions.json"));
+            var catalog=new ActivityCatalogService(Mock.Of<IDofusDbClientsFactory>(),Mock.Of<IHttpClientFactory>(),folder);
+            using var live=new LiveForgemagingService(provider.GetRequiredService<IServiceScopeFactory>(),new(),servers,new(),catalog,store,NullLogger<LiveForgemagingService>.Instance);
+            var rune=new ForgemagingRune(1,"Rune Ga Pa",Characteristic.Ap,1,100);
+            var session=new ForgemagingSession{GameRecordingId="recording",ItemId=42,Level=100,Lines=[new(){Characteristic=Characteristic.Strength,Current=10,Minimum=1,Maximum=10,Target=10}]};
+            void Set(string name,object value)=>typeof(LiveForgemagingService).GetField(name,BindingFlags.Instance|BindingFlags.NonPublic)!.SetValue(live,value);
+            Set("_session",session);Set("_server","A");Set("_runes",new ForgemagingRune[]{rune});Set("_flowLease",servers.GetCaptureLease()!.Value);
+            Set("_tracker",new ForgemagingWorkshopTracker(session,new(1,42,1,[]),[rune],_=>new(){{Characteristic.Strength,10}}));
+            await live.AddExtraLineAsync("recording",Characteristic.Ap);
+            var extra=Assert.Single(session.Lines,line=>line.Characteristic==Characteristic.Ap);
+            Assert.Equal(0,extra.Current);Assert.Equal(0,extra.Target);Assert.Empty(session.Attempts);
+            await live.AddExtraLineAsync("recording",Characteristic.Ap);Assert.Equal(2,session.Lines.Count);
+            ForgemagingSessionActions.RecordObserved(session,rune,ForgemagingOutcome.Critical,
+                new Dictionary<Characteristic,int>{{Characteristic.Strength,10}},
+                new Dictionary<Characteristic,int>{{Characteristic.Strength,10},{Characteristic.Ap,1},{Characteristic.Chance,3}},"game-event",DateTime.UtcNow,0,2);
+            Assert.Equal(1,session.Lines.Single(line=>line.Characteristic==Characteristic.Ap).Current);
+            Assert.Equal(3,session.Lines.Single(line=>line.Characteristic==Characteristic.Chance).Current);
+            Assert.Equal(3,session.Lines.Count);
+        }
+        finally{Directory.Delete(folder,true);}
+    }
+
     private static byte[] V(int field, ulong value) { List<byte> b = [(byte)(field * 8)]; do { b.Add((byte)((value & 127) | (value >= 128 ? 128UL : 0))); value >>= 7; } while (value > 0); return b.ToArray(); }
     private static byte[] B(int field, byte[] bytes) => [(byte)(field * 8 + 2), (byte)bytes.Length, .. bytes];
     private static byte[] F(int field, float value) => [(byte)(field * 8 + 5), .. BitConverter.GetBytes(value)];

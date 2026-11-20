@@ -86,6 +86,14 @@
 .fm-effect-values>span ::deep .fm-stat { white-space:normal; }
 .fm-effect-values .fm-over { border:1px solid var(--bc-muted); border-radius:.25rem; }
 .fm-effect-values .fm-exotic { color:var(--bc-gold); }
+.fm-remove-goal {
+    display:inline-flex; align-items:center; justify-content:center; flex:none;
+    border:0; border-radius:.25rem; padding:.2rem; background:transparent;
+    color:var(--bc-muted); font-size:.7rem; cursor:pointer;
+}
+.fm-remove-goal:hover:not(:disabled) { color:var(--fm-loss); background:var(--bc-hover); }
+.fm-remove-goal:focus-visible { outline:2px solid var(--bc-gold); outline-offset:2px; }
+.fm-remove-goal:disabled { opacity:.5; cursor:not-allowed; }
 .fm-grid input { min-width:3.1rem; width:3.35rem; margin:auto; padding:.18rem .26rem; }
 .fm-modification { display:inline-block; padding:.1rem .3rem; border-radius:.25rem; font-weight:700; }
 .fm-modification.gain { background:#365249; }

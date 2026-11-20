@@ -18,7 +18,8 @@ public sealed record BreedingTradeReport(string Server, IReadOnlyList<string> Ma
 }
 
 internal sealed class BreedingTradeService(CurrentServerState servers, ActivityCatalogService catalog, GlobalSalesRepository history,
-    BreedingRefillService refill, ILogger<BreedingTradeService> logger, BestCrushSettingsService settings)
+    BreedingRefillService refill, ILogger<BreedingTradeService> logger, BestCrushSettingsService settings,
+    CurrentWindowProfessionsState? professions = null)
 {
     internal static IReadOnlyList<(string Zone, string[] Targets)> SearchAreas { get; } =
         [
@@ -36,6 +37,9 @@ internal sealed class BreedingTradeService(CurrentServerState servers, ActivityC
         string? server = lease?.ServerName ?? serverView;
         if (string.IsNullOrWhiteSpace(server))
             return null;
+        if (planning.CapturesPerDay == 0)
+            planning = planning with { CapturesPerDay = BreedingPlanningOptions.DefaultCaptures(
+                professions?.ForWindow(window, server)?.FirstOrDefault(p => p.Name == "Éleveur")?.Level) };
         var items = await catalog.GetBreedingMarketItemsAsync(token);
         var marketItems = items.DistinctBy(item => item.Name, StringComparer.OrdinalIgnoreCase).ToArray();
 
@@ -146,6 +150,12 @@ internal sealed class BreedingTradeService(CurrentServerState servers, ActivityC
         long? fullPreparation = preparationCosts.GetValueOrDefault(Guid.Empty);
         var strategy = await Task.Run(() => BreedingMarketStrategy.Calculate(BreedingLineage.Rides, marketNames, purchases,
             captureCosts, fullPreparation, experience.Costs, productionSales, demand, token, planning), token);
+        var objectives = strategy.Report.Objectives.Select(g => g with { OwnedTargets = owned.Count(row => row.Mount.SpeciesId == g.RideId &&
+            resale[row.Mount.Id].Options.Any(o => o.Level == g.Sale.Level && o.Fertile == g.Sale.Fertile &&
+                (planning.BudgetKamas is null || o.ExperienceCost <= planning.BudgetKamas))) })
+            .OrderByDescending(g => g.WeeklyPotential).ThenByDescending(g => g.Margin).ToArray();
+        strategy = strategy with { Report = strategy.Report with { Objectives = objectives, Recommended = objectives.FirstOrDefault(g => g.CanSell),
+            Generations = strategy.Report.Generations.Select(g => g with { Best = objectives.FirstOrDefault(o => o.Generation == g.Generation) }).ToArray() } };
         var ownedCapacity = owned.Where(row => demand.ContainsKey(row.ItemId) && resale[row.Mount.Id].Best is not null)
             .ToDictionary(row => row.Mount.Id, row => demand[row.ItemId].AtPrice(resale[row.Mount.Id].Best!.SalePrice));
         var sellable = owned.Where(row => row.Mount.Fertility.HasValue && demand.ContainsKey(row.ItemId))

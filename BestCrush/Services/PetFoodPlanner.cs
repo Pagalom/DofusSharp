@@ -27,9 +27,9 @@ public sealed record PetNutritionPlan(IReadOnlyList<PetMeal> Meals, IReadOnlyLis
 /// </summary>
 internal sealed class PetFoodPlanner(MarketPriceService prices, IReadOnlyList<PetFood> foods,
     IReadOnlyList<ProductCraftRecipe> recipes, IReadOnlyDictionary<long,BigInteger> stock,
-    EquipmentProfitabilityContext market)
+    EquipmentProfitabilityContext market,PetNutritionCache? cache=null)
 {
-    private readonly Dictionary<(int,int),PetNutritionPlan?> _cache=[];
+    private readonly PetNutritionCache _cache=cache ?? new();
     private readonly Dictionary<(MarketObjectType,long),IReadOnlyDictionary<(long,int),MarketPriceObservation>> _quotes=[];
     private readonly Dictionary<(MarketObjectType,long,int),MarketPurchaseResult?> _purchases=[];
     private readonly Dictionary<(MarketObjectType,long,int),double?> _values=[];
@@ -47,7 +47,7 @@ internal sealed class PetFoodPlanner(MarketPriceService prices, IReadOnlyList<Pe
     {
         if (needed<=0) return PetNutritionPlan.Empty;
         if (maximumExperience<needed) return null;
-        if (_cache.TryGetValue((needed,maximumExperience),out var cached)) return cached;
+        if (_cache.TryGet((needed,maximumExperience),out var cached)) return cached;
         PetNutritionPlan? best=Finish(needed,stock,token,maximumExperience);
         var prefix=PetNutritionPlan.Empty;
         var remainingStock=stock.ToDictionary();
@@ -92,7 +92,8 @@ internal sealed class PetFoodPlanner(MarketPriceService prices, IReadOnlyList<Pe
             var tail=Finish(needed-start.Experience,after,token,maximumExperience-start.Experience);
             if (tail is not null && Join(start,tail) is { } joined && joined.Experience<=maximumExperience) Consider(joined,ref best);
         }
-        return _cache[(needed,maximumExperience)]=best;
+        token.ThrowIfCancellationRequested();
+        return _cache.Store((needed,maximumExperience),best);
     }
 
     private PetNutritionPlan? Finish(int needed,IReadOnlyDictionary<long,BigInteger> available,CancellationToken token,int maximumExperience)

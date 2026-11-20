@@ -21,7 +21,7 @@
                 @if (row.Item is not null) { <ItemIcon Item="row.Item" Size="Size.Tiny" Background="IconBackground.Slot" /> }
                 <button class="history-object" type="button" aria-expanded="@expanded" @onclick="() => Toggle(row.Id)"><span aria-hidden="true">@(expanded ? "⌄" : "›")</span>
                 <span><span class="fw-semibold">@row.Name</span><span class="small text-body-secondary d-block">Niv. @row.Level @row.Type</span></span>
-            </button></div></td>
+            </button>@if(row.Item is not null){<OverlayFocusButton Item="row.Item" ServerName="@ServerName" />}</div></td>
             @if (IsEquipment) { <td>@(row.IsCoefficient ? "Coefficient" : "Prix")</td> }
             <td class="text-end text-nowrap">@(row.Quantity is int q ? $"× {q:N0}" : "—")</td>
             <td class="text-end text-nowrap">@(row.Cleared ? "—" : row.IsCoefficient ? $"{row.Value:0.##} %" : $"{row.Value:N0} K")
@@ -45,6 +45,7 @@
 @code {
     [Parameter] public IReadOnlyList<MarketHistoryRow> MarketRows { get; set; } = [];
     [Parameter] public IReadOnlyList<ItemHistoryRow> ItemRows { get; set; } = [];
+    [Parameter] public string? ServerName {get;set;}
     [Parameter] public bool IsEquipment { get; set; }
     [Parameter] public IReadOnlyDictionary<long, IItem> Items { get; set; } = new Dictionary<long, IItem>();
     [Parameter] public HistorySortColumn SortColumn { get; set; }

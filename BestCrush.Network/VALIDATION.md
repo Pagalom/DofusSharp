@@ -26,6 +26,10 @@ Noter le build de Dofus, la version de BestCrush, la date et le serveur. Démarr
 
 Marquer chaque ligne **OK**, **À corriger** ou **Non vérifié**. Pour un écart, relever l’action, l’heure, la valeur du jeu et celle de BestCrush. Corriger ensemble les routes affectées par le même changement.
 
+## Historique personnel des ventes
+
+Ouvrir l’historique de ventes depuis l’inventaire, puis comparer noms, quantités, montants, dates et compteurs vendus/invendus. Route `personal_market_history` (`kxt`), décodeur `PersonalMarketHistoryDecoder` : lignes f1, montant f1, date UTC f3, invendu f4 (absent/0 = vente, 1 = retour), objet f5 (effets f1, ItemId f2, quantité f3). Le champ f7 n’est pas utilisé pour identifier un serveur. Contrôler que deux ouvertures ne doublent pas un encaissement et qu’un invendu n’achève aucun cycle. Vérifier le rapprochement avec un dépôt suivi de même objet, prix et caractéristiques, sur le contexte joueur/serveur concerné.
+
 ## Mettre à jour et vérifier le correctif
 
 1. Pour une route du [profil](protocol-map.json), modifier son code et les champs reçus dans `field_mappings`. Les clés sont les champs attendus par le décodeur et les valeurs `wire` sont ceux reçus du client. Renseigner `verified_routes` avec le build et la date de l’observation.
@@ -39,3 +43,9 @@ dotnet build .\BestCrush.NetworkProbe\BestCrush.NetworkProbe.csproj
 ```
 
 Les tests rejouent des cas connus. La passe en jeu valide les messages que le nouveau client envoie effectivement.
+
+## Serveur joué déclaré par le joueur
+
+Dans la liste des serveurs, cliquer sur un nom ne fait que consulter ses prix. Le bouton radio déclare le serveur du personnage ciblé dans sa fenêtre Dofus. Tester ce choix avec BestCrush lancé après la connexion du personnage : consulter un objet en HDV doit alimenter le serveur déclaré, sans reconnexion. Une autre fenêtre sans attribution ne doit pas hériter de ce choix. Modifier le bouton radio révoque les anciennes écritures en attente ; consulter les prix d'un autre serveur ne modifie ni les captures ni le contexte des overlays en jeu. Changer de personnage, de connexion, fermer le client ou relancer la capture révoque la déclaration. La capture conserve sa validation exacte du propriétaire Windows, du flux Game et de son époque ; aucune identité de compte n'est déduite du bouton radio.
+
+Tests : `ManualWindowServerTest`, `ExplicitPlayedServerRoutesMarketMidSessionAndDoesNotFollowSqlBrowsing`, `OverlayOwnedTargetTest`.

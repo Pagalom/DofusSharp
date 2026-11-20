@@ -33,6 +33,7 @@ public sealed record ProtocolMap(
     public string? GlobalMarketHistoryRequest { get; init; }
     public string? GlobalMarketHistoryResponse { get; init; }
     public string? MarketMeanPrices { get; init; }
+    public string? PersonalMarketHistory { get; init; }
     public string? CurrentBreedingPaddockSnapshot { get; init; }
     public string? BreedingStableSnapshot { get; init; }
     public string? BreedingEnclosureRequest { get; init; }
@@ -53,6 +54,7 @@ public sealed record ProtocolMap(
         "global_market_history_request" => GlobalMarketHistoryRequest,
         "global_market_history_response" => GlobalMarketHistoryResponse,
         "market_mean_prices" => MarketMeanPrices,
+        "personal_market_history" => PersonalMarketHistory,
         "breeding_paddock_snapshot_current" => CurrentBreedingPaddockSnapshot,
         "breeding_stable_snapshot" => BreedingStableSnapshot,
         "breeding_enclosure_request" => BreedingEnclosureRequest,
@@ -194,6 +196,7 @@ public sealed record ProtocolMap(
             GlobalMarketHistoryRequest = root.TryGetProperty("global_market_history_request", out var gmr) ? gmr.GetString() : null,
             GlobalMarketHistoryResponse = root.TryGetProperty("global_market_history_response", out var gms) ? gms.GetString() : null,
             MarketMeanPrices = root.TryGetProperty("market_mean_prices", out var mmp) ? mmp.GetString() : null,
+            PersonalMarketHistory = root.TryGetProperty("personal_market_history", out var pmh) ? pmh.GetString() : null,
             CurrentBreedingPaddockSnapshot = root.TryGetProperty("breeding_paddock_snapshot_current", out var bps) ? bps.GetString() : null,
             BreedingStableSnapshot = root.TryGetProperty("breeding_stable_snapshot", out var bss) ? bss.GetString() : null,
             BreedingEnclosureRequest = root.TryGetProperty("breeding_enclosure_request", out var ber) ? ber.GetString() : null,
@@ -222,6 +225,9 @@ public sealed record ItemDetailObservation(
 {
     public DateTime? ObservedAtUtc { get; init; }
     public bool StatsComplete { get; init; } = true;
+    // Bounded in-memory effect entries. Never include raw wire in persisted history or logs.
+    [System.Text.Json.Serialization.JsonIgnore]
+    public byte[][]? EffectWire {get;init;}
 }
 public sealed record WorkshopSlotObservation(long Delta, ulong ItemUid);
 public sealed record InventoryQuantityObservation(ulong ItemUid, ulong NewQuantity);
