@@ -10,6 +10,7 @@
 @inject ItemsService ItemsService
 @inject MarketPriceService MarketPriceService
 @inject MarketDataChangeNotifier MarketDataChangeNotifier
+@inject MarketSourceSelectionService SourceSelection
 
 @inject ServerViewFilterState ServerViewFilter
 
@@ -52,6 +53,8 @@
         </div>
     }
 
+    <div class="d-flex justify-content-end mb-2"><SourceChoiceButtons ServerName="@ServerName" ObjectType="MarketObjectType.Equipment" Kind="DataValueKind.Price" ReadOnly="@ServerViewFilter.IsBrowsingManually" Label="Source de tout l’onglet" /></div>
+
     <DataLoadingIndicator Busy="@_background.IsLoading" Failed="@(_background.Error is not null)"
                           Label="@(_rows is null ? "Chargement des données…" : "Actualisation des données…")" Retry="ReloadFromMarketAsync" />
     @if (_rows is not null)
@@ -84,6 +87,7 @@
                                 }
                                 else { <strong>@row.Name</strong> }
                                 <OverlayFocusButton ItemId="row.DofusDbId" Name="@row.Name" ObjectType="MarketObjectType.Equipment" ServerName="@ServerName" />
+                                <SourceChoiceButtons ServerName="@ServerName" ObjectType="MarketObjectType.Equipment" Kind="DataValueKind.Price" ItemId="row.DofusDbId" ReadOnly="@ServerViewFilter.IsBrowsingManually" />
                                 <StockQuantity ItemId="row.DofusDbId" ServerName="@ServerName" />
                             </td>
 
@@ -96,7 +100,7 @@
                             </td>
 
                             <td>
-                                <SourceValueInput ReadOnly="@ServerViewFilter.IsBrowsingManually"
+                                <SourceValueInput ObjectType="MarketObjectType.Equipment" Kind="DataValueKind.Price" ServerName="@ServerName" ItemId="row.DofusDbId" Quantity="1" ReadOnly="@ServerViewFilter.IsBrowsingManually"
                                     Value="@row.Price"
                                     Min="1"
                                     SourceLetter="@GetSourceLetter(row.Source)"
@@ -312,6 +316,7 @@
                 ServerName,
                 1
             );
+            await SourceSelection.ChooseAsync(ServerName,MarketObjectType.Equipment,row.DofusDbId,1,MarketPriceSource.Manual);
 
             MarketPriceObservation? effective =
                 await MarketPriceService.GetLatestObservationAsync(
@@ -351,6 +356,8 @@
             1,
             MarketPriceSource.Manual
         );
+
+        await SourceSelection.ChooseAsync(ServerName,MarketObjectType.Equipment,row.DofusDbId,1,MarketPriceSource.Manual);
 
         row.Price = price;
         row.Source = MarketPriceSource.Manual;

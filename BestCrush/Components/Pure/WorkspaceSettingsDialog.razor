@@ -3,6 +3,7 @@
 @using BestCrush.Models
 @inject BestCrush.Services.BestCrushSettingsService BestCrushSettings
 @inject IDataPriorityProvider DataPriorityProvider
+@inject BestCrush.Services.MarketSourceSelectionService SourceSelection
 @inject BestCrush.Services.OverlayService OverlayService
 
 @if (Visible)
@@ -103,6 +104,7 @@
                     @onchange="OnDataPriorityChanged">
                 <option value="@DataPriority.Manual">Manuel</option>
                 <option value="@DataPriority.InGameAutomatic">Capture jeu</option>
+                <option value="@DataPriority.Custom">Personnalisé</option>
             </select>
         </div>
 
@@ -256,10 +258,10 @@
         OverlayService.RestoreOverlayLayoutsToDefaults();
         _overlayLayoutResetMessage = "Positions et tailles des overlays restaurées.";
     }
-    private void OnDataPriorityChanged(ChangeEventArgs args)
+    private async Task OnDataPriorityChanged(ChangeEventArgs args)
     {
         if (Enum.TryParse(args.Value?.ToString(), out DataPriority priority))
-            DataPriorityProvider.Priority = priority;
+            await SourceSelection.SetGlobalAsync(priority);
     }
     private async Task OnCrushYieldEstimationModeChanged(ChangeEventArgs args)
     {

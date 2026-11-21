@@ -1,0 +1,44 @@
+@using BestCrush.Services
+
+<section class="pet-food-selector" aria-label="Nourriture à utiliser" aria-busy="@Loading.ToString().ToLowerInvariant()">
+    <div class="food-summary">
+        <div class="food-summary-heading"><span>@(SkippedCount==0 ? "Meilleure ressource à utiliser :" : "Ressource sélectionnée :")</span><i class="bi bi-hourglass-split @(Loading ? null : "is-idle")" aria-hidden="true" title="Calcul en cours"></i></div>
+        <div class="food-summary-row @(Loading ? "is-loading" : null)">
+            <span class="food-artwork">
+                @if(_displayed is {} image){<TradeItemImage Name="@image.Food.Name" ItemId="image.Food.Id" IconId="image.Food.IconId" Size="36" />}
+                else{<i class="bi bi-box" aria-hidden="true"></i>}
+            </span>
+            <div class="food-description">
+                @if(_displayed is {} food)
+                {
+                    <CopyTextButton Value="@food.Food.Name" Tooltip="@food.Food.Name" Class="food-name">@food.Food.Name</CopyTextButton>
+                    <span class="food-unit-values">@food.ExperiencePerKama.ToString("0.#####") XP/K · @food.UnitPrice.ToString("N2") K/u</span>
+                }
+                else{<strong class="food-placeholder">@(Loading ? "Calcul en cours…" : "—")</strong><span class="food-unit-values">— XP/K · — K/u</span>}
+            </div>
+            <span class="food-freshness">
+                @if(_displayed?.ObservedAtUtc is {} at){<i class="bi bi-clock-history @(PetDataFreshness.Price(at)==BestCrush.Domain.Models.DataFreshness.Stale ? "is-stale" : null)" title="@PetDataFreshness.PriceTooltip(at)"></i>}
+            </span>
+        </div>
+    </div>
+    <PetFoodControls UseStocks="UseStocks" SkippedCount="SkippedCount" FoodId="Value?.Food.Id" Busy="Loading"
+        UseStocksChanged="UseStocksChanged" NextRequested="NextRequested" PreviousRequested="PreviousRequested" ResetRequested="ResetRequested" />
+</section>
+@code {
+    [Parameter] public PetFoodValue? Value {get;set;}
+    [Parameter] public bool Loading {get;set;}
+    [Parameter] public string? ContextKey {get;set;}
+    [Parameter] public bool UseStocks {get;set;}=true;
+    [Parameter] public int SkippedCount {get;set;}
+    [Parameter] public EventCallback<bool> UseStocksChanged {get;set;}
+    [Parameter] public EventCallback<long> NextRequested {get;set;}
+    [Parameter] public EventCallback PreviousRequested {get;set;}
+    [Parameter] public EventCallback ResetRequested {get;set;}
+    private PetFoodValue? _displayed;
+    private string? _context;
+    protected override void OnParametersSet()
+    {
+        if(_context!=ContextKey){_displayed=null;_context=ContextKey;}
+        if(Value is not null || !Loading)_displayed=Value;
+    }
+}

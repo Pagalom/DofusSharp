@@ -1,5 +1,6 @@
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
+using BestCrush.Network.Protocol;
 
 namespace BestCrush.Services;
 
@@ -22,7 +23,11 @@ public sealed record OverlayActionCard(string Title, string? Subtitle, IReadOnly
     public long? IconId { get; init; }
     public DateTime? Deadline { get; init; }
     public OverlayForgemagingTable? Forgemaging { get; init; }
+    public IReadOnlyList<OverlayMountReading> Mounts { get; init; } = [];
+    public bool OldReading { get; init; }
+    public string? TimerLabel { get; init; }
 }
+public sealed record OverlayMountReading(string Name,PaddockMountReading? Reading,int? Generation,DateTime? Deadline,bool Conditional=false);
 public sealed record OverlayForgemagingTable(ForgemagingSession Session,IReadOnlyList<ForgemagingRune> Runes);
 public sealed record OverlayGauge(string Name, string Icon, string Tone, int Fuel, int Capacity, bool Active);
 public sealed record OverlayModuleView(string Title, IReadOnlyList<OverlayActionCard> Cards, string Empty,
@@ -31,8 +36,10 @@ public sealed record OverlayPopup(string Key, string Title, IReadOnlyList<Overla
     ProfitabilityOverlaySnapshot? Comparison = null)
 {
     public DofusClientWindowKey? TargetWindow {get;init;}
+    public IReadOnlyList<OverlayMountReading> Mounts {get;init;}=[];
+    public IReadOnlyList<PetFoodDefinition>? FoodAnalysis {get;init;}
     // Layouts belong to a popup family, never to an ephemeral item/focus GUID.
-    internal OverlayLayoutKind LayoutKind => Comparison is not null ? OverlayLayoutKind.PopupRunes : Key.Split(':', 2)[0] switch
+    internal OverlayLayoutKind LayoutKind => FoodAnalysis is not null ? OverlayLayoutKind.PopupPetFood : Comparison is not null ? OverlayLayoutKind.PopupRunes : Key.Split(':', 2)[0] switch
     {
         "craft" => OverlayLayoutKind.PopupCraft,
         "purchase" => OverlayLayoutKind.PopupPurchase,

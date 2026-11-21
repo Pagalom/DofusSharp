@@ -44,7 +44,7 @@ public sealed class PetFoodDataTest
         await PetFoodCatalogService.ApplySeedAsync(db,seed,default);
         await PetFoodCatalogService.ApplySeedAsync(db,seed,default);
         Assert.Equal(2,await db.PetFoods.CountAsync());Assert.Equal(2,await db.MarketPriceObservations.CountAsync());
-        Assert.Equal(101,(await db.PetFoods.FirstAsync()).SheetExperience);
+        Assert.Equal(101.25,(await db.PetFoods.FirstAsync()).Experience);
         Assert.DoesNotContain(await db.MarketPriceObservations.ToArrayAsync(),q=>q.DofusDbId==10 && q.Source==MarketPriceSource.Manual);
         var imported=await db.MarketPriceObservations.SingleAsync(q=>q.DofusDbId==20);
         Assert.Equal(MarketObjectType.Rune,imported.ObjectType);Assert.Equal("Kourial",imported.ServerName);
@@ -101,13 +101,17 @@ public sealed class PetFoodDataTest
             Assert.False(await db.Resources.AnyAsync(r=>r.DofusDbId==20));
             Assert.Equal(0.05,(await db.PetFoods.SingleAsync(r=>r.DofusDbId==20)).Experience);
             Assert.Contains(await service.GetFoodsAsync(default),food=>food.Id==10 && food.Experience==101.25);
-            db.PetFeedingObservations.Add(new(){Id=new('C',64),FoodItemId=10,PetItemId=12133,Quantity=1,
-                ExperienceBefore=0,ExperienceAfter=80,ClientBuild="3.7.14.18",ObservedAtUtc=DateTime.UtcNow});
-            await db.SaveChangesAsync();
-            Assert.DoesNotContain(await service.GetFoodsAsync(default),food=>food.Id==10);
-            var contradicted=Assert.Single(await service.LoadTableAsync("A",default),row=>row.Food.DofusDbId==10);
-            Assert.False(contradicted.Evidence!.Matches);Assert.Null(contradicted.Quantity100);
-            Assert.Equal(101.25,contradicted.Food.Experience);
+            var old=DateTime.UtcNow.AddDays(-8);
+            Assert.True(await LivePetFeedingService.SaveAsync(db,new(1,10,12133,10,0,1012,old),default));
+            Assert.Contains(await service.GetFoodsAsync(default),food=>food.Id==10 && food.Experience==101.2);
+            var oldXp=Assert.Single(await service.LoadTableAsync("A",default),row=>row.Food.DofusDbId==10);
+            Assert.Equal(101.2,oldXp.Food.Experience);Assert.Equal(1775,oldXp.Quantity100);
+            Assert.Equal(old,oldXp.Food.ExperienceObservedAtUtc);Assert.True(PetDataFreshness.ExperienceNeedsReview(old));
+            Assert.True(await LivePetFeedingService.SaveAsync(db,new(2,10,12133,1,0,80,DateTime.UtcNow),default));
+            Assert.Contains(await service.GetFoodsAsync(default),food=>food.Id==10 && food.Experience==80);
+            var updated=Assert.Single(await service.LoadTableAsync("A",default),row=>row.Food.DofusDbId==10);
+            Assert.Equal(80,updated.Food.Experience);Assert.NotNull(updated.Quantity100);
+            Assert.Equal(80,(await db.Resources.AsNoTracking().SingleAsync(r=>r.DofusDbId==10)).PetExperience);
         }
         finally{Directory.Delete(folder,true);}
     }

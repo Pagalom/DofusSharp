@@ -32,6 +32,8 @@
 }
 
 .source-value-origin {
+    background:transparent;
+    border:0;
     flex: 0 0 38px;
 
     display: flex;
@@ -41,9 +43,13 @@
     border-left: 1px solid #495057;
 
     font-weight: 700;
-    cursor: help;
+    cursor: pointer;
     user-select: none;
 }
+.source-value-origin:disabled{cursor:help;opacity:1}
+.source-picker{display:flex;justify-content:flex-end;gap:4px;padding-top:4px}
+.source-picker button{border:1px solid #596c6a;border-radius:4px;background:transparent;padding:2px 9px;font-weight:700;cursor:pointer}
+.source-picker button:hover{background:#ffffff14}
 
 .source-manual {
     color: #ffc107;

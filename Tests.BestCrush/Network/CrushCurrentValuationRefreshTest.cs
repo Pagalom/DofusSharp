@@ -55,6 +55,19 @@ public sealed class CrushCurrentValuationRefreshTest
     }
 
     [Fact]
+    public async Task WholeTabSourceChangeRevaluesTheCurrentCrushResult()
+    {
+        using Harness harness = new();
+        await harness.StoreAsync(1523,1,100,MarketPriceSource.Manual,BaseTime);
+        await harness.StoreAsync(1523,1,200,MarketPriceSource.InGameAutomatic,BaseTime.AddMinutes(1));
+        harness.SeedNetworkCrush(1523,16,currentValue:2375);
+        harness.Priority.Priority=DataPriority.InGameAutomatic;
+        harness.Notifier.Notify(MarketObjectType.Rune,0,Server);
+        await harness.Service.LastValuationRefreshForTests;
+        harness.Snapshot().TotalValue.Should().Be(3184);
+    }
+
+    [Fact]
     public async Task WrongRuneObjectTypeOrServerLeavesSnapshotUntouched()
     {
         using Harness harness = new();

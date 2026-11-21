@@ -222,7 +222,7 @@ public class MarketPriceService(BestCrushDbContext context,
 
     private MarketPriceObservation? ResolveEffectiveObservation(
         IEnumerable<MarketPriceObservation> observations,
-        bool excludeUnavailableLots)
+        bool excludeUnavailableLots,MarketPriceSource preferred)
     {
         MarketPriceObservation[] ordered =
             observations
@@ -247,6 +247,7 @@ public class MarketPriceService(BestCrushDbContext context,
                         MarketPriceSource.InGameAutomatic
             );
 
+        // An explicitly withdrawn lot remains unavailable to purchase planners.
         if (excludeUnavailableLots && latestGame is { IsCleared: true } &&
             (manual is null || manual.ObservedAtUtc <= latestGame.ObservedAtUtc))
             return null;
@@ -257,8 +258,7 @@ public class MarketPriceService(BestCrushDbContext context,
                 ? latestGame
                 : null;
 
-        if (dataPriorityProvider.Priority ==
-            DataPriority.InGameAutomatic)
+        if (preferred == MarketPriceSource.InGameAutomatic)
         {
             return game
                 ?? manual;
@@ -285,7 +285,8 @@ public class MarketPriceService(BestCrushDbContext context,
                 .OrderByDescending(p => p.ObservedAtUtc)
                 .ToListAsync(cancellationToken);
 
-        return ResolveCurrentObservations(observations)
+        var choices=await DataSourceResolution.ReadAsync(context,dataPriorityProvider,serverName,objectType,token:cancellationToken);
+        return ResolveCurrentObservations(observations,choices)
             .FirstOrDefault(quote => quote.Quantity == quantity);
     }
 
@@ -307,15 +308,18 @@ public class MarketPriceService(BestCrushDbContext context,
                 .OrderByDescending(p => p.ObservedAtUtc)
                 .ToListAsync(cancellationToken);
 
-        return ResolveCurrentObservations(observations, excludeUnavailableLots)
+        var choices=await DataSourceResolution.ReadAsync(context,dataPriorityProvider,serverName,objectType,token:cancellationToken);
+        return ResolveCurrentObservations(observations,choices,excludeUnavailableLots)
             .ToDictionary(quote => (quote.DofusDbId, quote.Quantity));
     }
 
     private IEnumerable<MarketPriceObservation> ResolveCurrentObservations(
-        IReadOnlyList<MarketPriceObservation> observations, bool excludeUnavailableLots = false)
+        IReadOnlyList<MarketPriceObservation> observations,
+        IReadOnlyDictionary<(long Item,int Quantity),MarketPriceSource> choices,bool excludeUnavailableLots = false)
     {
         var latest = observations.GroupBy(quote => (quote.DofusDbId, quote.Quantity))
-            .Select(group => ResolveEffectiveObservation(group, excludeUnavailableLots))
+            .Select(group => ResolveEffectiveObservation(group, excludeUnavailableLots,
+                DataSourceResolution.Resolve(dataPriorityProvider,choices,group.Key.DofusDbId,group.Key.Quantity)))
             .OfType<MarketPriceObservation>();
         return MarketPriceReliability.FilterCurrent(latest, MarketPriceReliability.GetRejectedHistoryIds(observations));
     }

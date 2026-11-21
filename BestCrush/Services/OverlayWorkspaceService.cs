@@ -8,8 +8,10 @@ namespace BestCrush.Services;
 /// <summary>Shared view state for native overlays. Network identity remains with the verified capture services.</summary>
 public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes, CurrentServerState servers,
     CurrentDofusClientsState clients, LiveStockService stock, LiveForgemagingService fm,
-    MarketDataChangeNotifier prices, ILogger<OverlayWorkspaceService> logger) : IDisposable
+    MarketDataChangeNotifier prices, ILogger<OverlayWorkspaceService> logger,PetFoodPreferences? petFoods=null,
+    PetAnalysisService? petAnalysis=null) : IDisposable
 {
+    public PetFoodPreferences PetFoods {get;}=petFoods ?? new();
     public event Action? Changed;
     public event Action<WorkspaceOverlayKind>? ShowRequested;
     public ProfitabilityOverlaySnapshot? Profitability { get; private set; }
@@ -49,6 +51,7 @@ public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes,
         _contextWindow=clients.SelectedClient?.Key;_contextServer=ActiveGameServer;
         using(var scope=scopes.CreateScope())_feeding=scope.ServiceProvider.GetService<LivePetFeedingService>();
         if(_feeding is not null)_feeding.Changed+=PetFeedingChanged;
+        if(petAnalysis is not null)petAnalysis.Changed+=PetInputsChanged;
         _poll = Task.Run(()=>PollAsync(_stop.Token));
     }
     public Task FocusAsync(IItem item, string? server = null) => FocusCoreAsync(item,
@@ -162,10 +165,10 @@ public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes,
     {
         var pets=_pets;
         if(pets is not null && string.Equals(args.ServerName,pets.Server,StringComparison.OrdinalIgnoreCase) &&
-            (pets.RelevantPriceItems.Count==0 || pets.RelevantPriceItems.Contains(args.DofusDbId))) PetInputsChanged();
+            (args.DofusDbId==0 || pets.RelevantPriceItems.Count==0 || pets.RelevantPriceItems.Contains(args.DofusDbId))) PetInputsChanged();
         var focused=Profitability;
         if(string.Equals(args.ServerName,_server,StringComparison.OrdinalIgnoreCase) &&
-            (Loading || focused is null || focused.Item.DofusDbId==args.DofusDbId ||
+            (args.DofusDbId==0 || Loading || focused is null || focused.Item.DofusDbId==args.DofusDbId ||
                 focused.Ingredients.Concat(focused.RuneChecks).Any(line=>line.ItemId==args.DofusDbId))) _=RefreshAsync();
     }
     private void ClientChanged()
@@ -175,9 +178,10 @@ public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes,
         {
             _contextWindow=window;_contextServer=server; Interlocked.Increment(ref _revision);Interlocked.Increment(ref _focusIntent);
             Profitability=null;_item=null;Owned=[];OwnedServer=null;_lastFm=null;_pets=null;_modules.Clear();
-            _breedingSignature=null;_fmSignature=null;_petLoadedAt=default;_petDirty=true;Notify(); }
+            _breedingSignature=null;_fmSignature=null;PetError=null;PetInputsChanged();Notify(); }
     }
     public void Dispose()
     { _stop.Cancel(); prices.Changed-=PriceChanged;fm.Changed-=FmChanged;clients.Changed-=ClientChanged;stock.Changed-=StockInputsChanged;
-        servers.ServerSelectionChanged-=ClientChanged;servers.PlayedServerChanged-=ClientChanged;if(_feeding is not null)_feeding.Changed-=PetFeedingChanged; }
+        servers.ServerSelectionChanged-=ClientChanged;servers.PlayedServerChanged-=ClientChanged;if(_feeding is not null)_feeding.Changed-=PetFeedingChanged;
+        if(petAnalysis is not null)petAnalysis.Changed-=PetInputsChanged; }
 }

@@ -12,6 +12,7 @@ public sealed class LiveStockService : IDisposable
     private readonly ForgemagingSessionStore? _forgemaging;
     private readonly ActivityCatalogService? _catalog;
     private readonly ILogger<LiveStockService>? _logger;
+    private readonly CurrentServerState? _servers;
     private readonly HashSet<(string Source, string Container)> _reconciled = [];
     private readonly object _sync = new();
     private readonly string _run = Guid.NewGuid().ToString("N");
@@ -22,7 +23,8 @@ public sealed class LiveStockService : IDisposable
     private readonly Dictionary<DofusClientWindowKey,long> _latestConnections = [];
 
     public LiveStockService(LiveStockRepository repository, CurrentDofusClientsState clients, LiveDofusClientNetworkBindings? bindings = null,
-        ForgemagingSessionStore? forgemaging = null, ILogger<LiveStockService>? logger = null, ActivityCatalogService? catalog = null)
+        ForgemagingSessionStore? forgemaging = null, ILogger<LiveStockService>? logger = null, ActivityCatalogService? catalog = null,
+        CurrentServerState? servers = null)
     {
         this.repository = repository;
         this.clients = clients;
@@ -30,7 +32,9 @@ public sealed class LiveStockService : IDisposable
         _forgemaging = forgemaging;
         _logger = logger;
         _catalog = catalog;
+        _servers = servers;
         if (_forgemaging is not null) clients.Changed += OnClientsChanged;
+        if (_servers is not null) _servers.PlayedServerChanged += BindUnassignedSources;
     }
     public event Action? Changed;
     public IReadOnlyList<LiveStockSource> History => repository.ReadSources();
@@ -78,6 +82,9 @@ public sealed class LiveStockService : IDisposable
             var client = clients.Clients.FirstOrDefault(x=>x.Key==window);
             string label = client?.DisplayName ?? "Fenêtre Dofus";
             string? server = message.CaptureLease?.ServerName;
+            if (server is null && _servers is {AutomaticRoutingEnabled:true} &&
+                _servers.GetGameCaptureLease(window,message.CaptureEpoch,message.ConnectionId) is { } active && _servers.IsCaptureLeaseActive(active))
+                server=active.ServerName;
             if (server is not null && client is { HasCharacterTitle: true } &&
                 (message.SyntheticWindowForReplay || bindings?.IsCurrentConnection(message.CaptureEpoch, message.ConnectionId, window) == true))
                 Reconcile(flow.Id, label, server, state);
@@ -87,6 +94,31 @@ public sealed class LiveStockService : IDisposable
                 message.ObservedAtUtc,flow.Book.Containers);
         }
         Changed?.Invoke();
+    }
+
+    private void BindUnassignedSources()
+    {
+        if (_servers is not {AutomaticRoutingEnabled:true}) return;
+        bool updated=false;
+        lock (_sync)
+        {
+            foreach (var (window,id) in _windows)
+            {
+                if (!_sources.TryGetValue(id,out var source) || source.ServerName is not null ||
+                    !_latestConnections.TryGetValue(window,out long connection) ||
+                    bindings is not null && !bindings.IsCurrentConnection(_epoch,connection,window) ||
+                    _servers.GetGameCaptureLease(window,_epoch,connection) is not { } lease || !_servers.IsCaptureLeaseActive(lease) ||
+                    clients.Clients.FirstOrDefault(client=>client.Key==window) is not {HasCharacterTitle:true} client) continue;
+                foreach (var container in source.Containers)
+                {
+                    Reconcile(id,client.DisplayName,lease.ServerName,container);
+                    repository.Save(id,client.DisplayName,lease.ServerName,container);
+                }
+                _sources[id]=source with {ServerName=lease.ServerName,Label=client.DisplayName};
+                updated=true;
+            }
+        }
+        if(updated) Changed?.Invoke();
     }
 
     private void OnClientsChanged()
@@ -134,5 +166,9 @@ public sealed class LiveStockService : IDisposable
         lock(_sync) { _flows.Clear();_windows.Clear();_sources.Clear();_latestConnections.Clear();_reconciled.Clear(); }
         Changed?.Invoke();
     }
-    public void Dispose() => clients.Changed -= OnClientsChanged;
+    public void Dispose()
+    {
+        clients.Changed -= OnClientsChanged;
+        if(_servers is not null)_servers.PlayedServerChanged -= BindUnassignedSources;
+    }
 }

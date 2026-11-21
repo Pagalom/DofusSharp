@@ -10,6 +10,12 @@ public sealed partial class OverlayWorkspaceService
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<WorkspaceOverlayKind,OverlayModuleView> _modules=new();
     private PetOpportunityReport? _pets;
+    public PetOpportunityReport? PetReport => _pets;
+    public bool PetAnalysisLoading => Volatile.Read(ref _petLoading)!=0;
+    public bool PetServerKnown => ActiveGameServer is not null;
+    public string? PetError {get;private set;}
+    private long _petRevision;
+    private DateTime _petRetryAfter;
     private DateTime _petLoadedAt;
     private string? _breedingSignature, _fmSignature;
     private int _pollTicks;
@@ -45,13 +51,13 @@ public sealed partial class OverlayWorkspaceService
         catch(Exception ex) when(!_stop.IsCancellationRequested){logger.LogDebug(ex,"Owned overlay roll refresh unavailable");}
         finally{Interlocked.Exchange(ref _ownedRefreshing,0);}
     }
-    private void PetInputsChanged(){_petDirty=true;_petLoadedAt=default;}
-    private void PetFeedingChanged(string server){if(server==servers.ServerName)PetInputsChanged();}
+    private void PetInputsChanged(){Interlocked.Increment(ref _petRevision);_petDirty=true;_petLoadedAt=default;_petRetryAfter=default;}
+    private void PetFeedingChanged(string server){if(server.Length==0 || server==ActiveGameServer)PetInputsChanged();}
     public void OverlayVisibilityChanged(WorkspaceOverlayKind kind,bool visible){if(kind==WorkspaceOverlayKind.Pets)_petsRequested=visible;}
     private bool _fmPrepareCrushing=true;
     public void SetFmIntent(bool crushing)
     {if(_fmPrepareCrushing==crushing)return;_fmPrepareCrushing=crushing;_fmSignature=null;ReadFm();Notify();}
-    private IReadOnlyDictionary<int,string> _mountNames=new Dictionary<int,string>();
+    private IReadOnlyDictionary<int,BreedingSpecies> _mountSpecies=new Dictionary<int,BreedingSpecies>();
     private int _mountNamesLoading;
     private int _petLoading;
     private long _focusIntent;
@@ -181,12 +187,12 @@ public sealed partial class OverlayWorkspaceService
 
     private async Task LoadMountNamesAsync()
     {
-        if(_mountNames.Count>0 || Interlocked.Exchange(ref _mountNamesLoading,1)!=0)return;
+        if(_mountSpecies.Count>0 || Interlocked.Exchange(ref _mountNamesLoading,1)!=0)return;
         try
         {
             using var scope=scopes.CreateScope();
-            _mountNames=(await scope.ServiceProvider.GetRequiredService<ActivityCatalogService>().GetBreedingSpeciesAsync(_stop.Token))
-                .ToDictionary(m=>(int)m.Id,m=>m.Name);
+            _mountSpecies=(await scope.ServiceProvider.GetRequiredService<ActivityCatalogService>().GetBreedingSpeciesAsync(_stop.Token))
+                .ToDictionary(m=>(int)m.Id);
             _breedingSignature=null;ReadBreeding();Notify();
         }
         catch(Exception ex) when(!_stop.IsCancellationRequested){logger.LogDebug(ex,"Mount names unavailable");}
@@ -198,68 +204,52 @@ public sealed partial class OverlayWorkspaceService
         if(TargetWindow is not { } window || breeding.ViewForWindow(window) is not { } view)
         {_modules.TryRemove(WorkspaceOverlayKind.Breeding,out _);return;}
         var goals=breeding.ResaleGoalsForWindow(window);var now=DateTime.UtcNow;
-        var signature=string.Join(';',view.Enclosures.Select(e=>$"{e.Enclosure}:{e.ObservedAtUtc:O}:{e.IsLive(now)}"))+
+        var signature=string.Join(';',view.Enclosures.Select(e=>$"{e.Enclosure}:{e.ObservedAtUtc:O}:{OverlayBreedingPresentation.IsOld(e.ObservedAtUtc,now)}"))+
             $":{view.StableObservedAtUtc:O}:{view.Stable.Count}:"+string.Join(';',goals.OrderBy(g=>g.Key));
         if(signature==_breedingSignature)return;_breedingSignature=signature;
-        var cards=new List<OverlayActionCard>();
-        foreach(var reading in view.Enclosures)
-        {
-            bool live=reading.IsLive(now);var name=reading.Enclosure is { } number?$"Enclos {number}":"Enclos";
-            var plans=reading.Reading.Gauges.Where(g=>g.Gauge is PaddockGauge.Maturity or PaddockGauge.Love or PaddockGauge.Endurance or PaddockGauge.Experience)
-                .Select(g=>BreedingTrainingPlan.From(reading.Reading,g.Gauge,100,goals)).ToArray();
-            var notices=BreedingGaugeNotices.Build(name,reading.Reading,plans,goals,reading.ObservedAtUtc,now);
-            var notice=notices.OrderBy(n=>n.Deadline??DateTime.MinValue).FirstOrDefault();
-            var facts=reading.Reading.Gauges.Where(g=>g.Active).Select(g=>new OverlayFact(BreedingTrainingRules.Name(g.Gauge),$"{g.Fuel:N0}",live?null:"muted")).ToArray();
-            var lines=reading.Reading.Mounts.Select(m=>{
-                var full=plans.Select(p=>p.Mounts.GetValueOrDefault(m.Id)?.Full).OfType<TimeSpan>().DefaultIfEmpty().Max();
-                string detail=$"Sérénité {m.Serenity:N0} · End. {m.Endurance?.ToString("N0")??"—"} · Mat. {m.Maturity?.ToString("N0")??"—"} · Amour {m.Love?.ToString("N0")??"—"}";
-                if(live && full>TimeSpan.Zero)detail+=$" · {Countdown(reading.ObservedAtUtc+full-now)}";
-                return new OverlayPriceLine($"{(m.SpeciesId is { } id?_mountNames.GetValueOrDefault(id,"Monture"):"Monture")} · niv. {m.Level}",null,null,null,detail);
-            }).ToArray();
-            string? advice=live?notice is null?plans.Select(p=>p.Describe(reading.ObservedAtUtc)).FirstOrDefault(text=>text is not null):
-                notice.Title:"Relevé ancien · ouvrez cet enclos.";
-            var gauges=reading.Reading.Gauges.Select(g=>new OverlayGauge(BreedingTrainingRules.Name(g.Gauge),g.Gauge switch {
-                PaddockGauge.SerenityLoss=>"dash",PaddockGauge.SerenityGain=>"plus",PaddockGauge.Endurance=>"lightning-charge-fill",
-                PaddockGauge.Maturity=>"droplet-fill",PaddockGauge.Love=>"heart-fill",_=>"stars"},g.Gauge switch {
-                PaddockGauge.SerenityGain or PaddockGauge.SerenityLoss=>"serenity",PaddockGauge.Endurance=>"endurance",PaddockGauge.Maturity=>"maturity",
-                PaddockGauge.Love=>"love",_=>"xp"},g.Fuel,BreedingFuel.Capacity,g.Active)).ToArray();
-            cards.Add(new OverlayActionCard(name,$"{reading.Reading.Mounts.Count} montures",[],lines,advice)
-                {Gauges=gauges,Deadline=live?notice?.Deadline:null});
-        }
-        if(view.Stable.Count>0)cards.Add(new("Étable",$"{view.Stable.Count} montures",[],[],null));
+        var cards=view.Enclosures.Select(reading=>OverlayBreedingPresentation.Enclosure(reading,_mountSpecies,goals,now)).ToList();
+        if(view.Stable.Count>0)cards.Add(new("Étable",$"{view.Stable.Count} montures",[],[])
+        {Mounts=view.Stable.Select(entry=>OverlayBreedingPresentation.Mount(entry.Reading,_mountSpecies)).ToArray(),
+            OldReading=view.StableObservedAtUtc is {} stableAt && OverlayBreedingPresentation.IsOld(stableAt,now)});
         _modules[WorkspaceOverlayKind.Breeding]=new("Élevage",cards,"Ouvrez vos enclos dans Dofus.","elevage");
     }
-    private async Task LoadPetsAsync()
+    internal async Task LoadPetsAsync()
     {
         if(Interlocked.Exchange(ref _petLoading,1)!=0)return;
-        var window=TargetWindow;var server=servers.ServerName;
-        if(_pets?.Server==server && DateTime.UtcNow-_petLoadedAt<TimeSpan.FromSeconds(15)){_petLoading=0;return;}
+        var window=TargetWindow;var server=ActiveGameServer;var revision=Interlocked.Read(ref _petRevision);
+        bool Current()=>TargetWindow==window && ActiveGameServer==server && revision==Interlocked.Read(ref _petRevision);
+        if(server is null || DateTime.UtcNow<_petRetryAfter || !_petDirty && _pets?.Server==server && DateTime.UtcNow-_petLoadedAt<TimeSpan.FromSeconds(15)){_petLoading=0;return;}
         try
         {
-            _petDirty=false;
+            _petDirty=false;PetError=null;Notify();
             using var scope=scopes.CreateScope();
-            var report=await scope.ServiceProvider.GetRequiredService<PetOpportunityService>().LoadAsync(window,server,_stop.Token,partial=>{
-                if(TargetWindow==window && servers.ServerName==server)PublishPets(partial);return Task.CompletedTask;
+            var report=await scope.ServiceProvider.GetRequiredService<PetAnalysisService>().LoadAsync(window,server,_stop.Token,partial=>{
+                if(Current())PublishPets(partial);return Task.CompletedTask;
             });
-            if(report is not null && TargetWindow==window && servers.ServerName==server){PublishPets(report);_petLoadedAt=DateTime.UtcNow;}
+            if(report is not null && Current()){PublishPets(report);_petLoadedAt=DateTime.UtcNow;}
         }
-        catch(Exception ex) when(!_stop.IsCancellationRequested){logger.LogWarning(ex,"Could not load pet overlay");}
-        finally{_petLoading=0;}
+        catch(OperationCanceledException) when(!_stop.IsCancellationRequested){_petDirty=true;}
+        catch(Exception ex) when(!_stop.IsCancellationRequested)
+        {
+            if(Current()){PetError="Analyse indisponible";_petDirty=true;_petRetryAfter=DateTime.UtcNow.AddSeconds(15);}
+            logger.LogWarning(ex,"Could not load pet overlay");
+        }
+        finally{if(!Current())_petDirty=true;_petLoading=0;Notify();}
     }
     public void PublishPets(PetOpportunityReport report)
     {
-        if(!string.Equals(report.Server,servers.ServerName,StringComparison.OrdinalIgnoreCase))return;
+        if(!string.Equals(report.Server,ActiveGameServer,StringComparison.OrdinalIgnoreCase))return;
         _pets=report;
-        var cards=report.Owned.Select(p=>{
+        var cards=report.Purchases.Select(p=>{
             var plan=p.Best;var nutrition=plan?.Nutrition;
             var food=nutrition?.Meals.Select(m=>new OverlayPriceLine(m.Food.Name,m.Quantity,null,null,
                 $"Stock {m.FromStock} · craft {m.Crafted} · achat {m.Bought}",false,m.Food.Id)).ToArray()??[];
-            return new OverlayActionCard(p.Species.Name,$"Niv. {p.Owned?.Reading?.Level.ToString()??"—"} → {plan?.Level.ToString()??"—"}",
+            return new OverlayActionCard(p.Species.Name,$"Niv. {p.Purchase?.Level.ToString()??"—"} → {plan?.Level.ToString()??"—"}",
                 [new("À débourser",Money(nutrition?.CashRequired)),new("Vente conseillée",Money(plan?.SalePrice)),new("Gain estimé",Money(plan?.Margin),plan?.Margin>=0?"positive":"negative")],
                 food,plan is null?p.Issue:"Nourrir jusqu’au niveau conseillé, puis vendre.")
-                {Key=$"{p.Species.Id}:{p.Owned?.Uid}",ItemId=p.Species.Id,IconId=p.Species.IconId};
+                {Key=$"{p.Species.Id}:{p.Purchase?.Level}",ItemId=p.Species.Id,IconId=p.Species.IconId};
         }).ToArray();
-        _modules[WorkspaceOverlayKind.Pets]=new("Familiers",cards,"Synchronisez votre inventaire.","familiers-xp");Notify();
+        _modules[WorkspaceOverlayKind.Pets]=new("Familiers",cards,report.AnalysisComplete?"Achat rentable non chiffré":"Analyse en cours…","familiers-xp");Notify();
     }
     private void ReadJourney()
     {

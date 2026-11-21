@@ -1,0 +1,18 @@
+<div class="pet-food-controls" aria-busy="@Busy.ToString().ToLowerInvariant()">
+    <label><input type="checkbox" checked="@UseStocks" @onchange="args=>UseStocksChanged.InvokeAsync(args.Value is true)" /> Utiliser mes stocks</label>
+    <div class="pet-food-arrows" role="group" aria-label="Choisir la nourriture">
+        <button type="button" title="Revenir au meilleur aliment" aria-label="Revenir au meilleur aliment" disabled="@(Busy || SkippedCount==0)" @onclick="ResetRequested"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
+        <button type="button" disabled="@(Busy || SkippedCount==0)" title="Aliment précédent" aria-label="Aliment précédent" @onclick="PreviousRequested"><i class="bi bi-arrow-left" aria-hidden="true"></i></button>
+        <button type="button" disabled="@(Busy || FoodId is null)" title="Aliment suivant par coût d’XP" aria-label="Aliment suivant" @onclick="()=>NextRequested.InvokeAsync(FoodId!.Value)"><i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+    </div>
+</div>
+@code {
+    [Parameter] public bool UseStocks {get;set;}=true;
+    [Parameter] public int SkippedCount {get;set;}
+    [Parameter] public long? FoodId {get;set;}
+    [Parameter] public bool Busy {get;set;}
+    [Parameter] public EventCallback<bool> UseStocksChanged {get;set;}
+    [Parameter] public EventCallback<long> NextRequested {get;set;}
+    [Parameter] public EventCallback PreviousRequested {get;set;}
+    [Parameter] public EventCallback ResetRequested {get;set;}
+}

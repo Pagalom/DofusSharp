@@ -1,0 +1,5 @@
+.pet-food-controls{display:grid;grid-template-columns:minmax(0,1fr) 82px;align-items:center;column-gap:10px;min-height:30px;margin:8px 0 14px;font-size:.85rem}
+.pet-food-controls label{display:flex;gap:.45rem;align-items:center;margin:0;cursor:pointer;min-width:0}
+.pet-food-arrows{display:grid;grid-template-columns:repeat(3,26px);gap:2px;width:82px;justify-self:end}
+.pet-food-arrows button{display:flex;align-items:center;justify-content:center;width:26px;height:26px;background:transparent;color:inherit;border:1px solid currentColor;border-radius:4px;padding:0;line-height:1}
+.pet-food-arrows button:disabled{opacity:.35;cursor:default}

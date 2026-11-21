@@ -25,6 +25,7 @@ public sealed class LivePetFeedingServiceTest
             new DofusWindowInfo(new(222),"Two - Ecaflip - 3.7.14.18 - Release","Dofus",0,0,100,100){ProcessId=2}],one);
         var servers=new CurrentServerState();servers.SelectServer("Kourial");
         var service=new LivePetFeedingService(database,clients,servers,new(),NullLogger<LivePetFeedingService>.Instance);
+        var updates=new List<long>();service.CoefficientUpdated+=updates.Add;
         DofusWireMessage Wire(string key,byte[] body)=>new(key=="irb" ? "C→S":"S→C",key,body,DateTime.UtcNow,
             servers.GetCaptureLease(),1,ConnectionId:1,CandidateWindow:one,SyntheticWindowForReplay:true);
         await service.ObserveAsync(Wire("irl",Snapshot()),default);
@@ -42,13 +43,15 @@ public sealed class LivePetFeedingServiceTest
         if(invalid=="revoked") servers.SelectServer("Tylezia");
         if(invalid=="cleared") service.ClearLive();
         await service.ObserveAsync(consumed,default);await service.ObserveAsync(updated,default);
-        using var db=database.CreateContext();Assert.Empty(await db.PetFeedingObservations.ToArrayAsync());
+        using var db=database.CreateContext();Assert.Empty(await db.PetFoods.ToArrayAsync());
+        Assert.Empty(updates);
         service.ClearLive();
         await service.ObserveAsync(Wire("irl",Snapshot()),default);
         await service.ObserveAsync(Wire("irb",Request()),default);
         await service.ObserveAsync(Wire("irx",Quantity(9)),default);
         await service.ObserveAsync(Wire("iqy",UpdatedPet()),default);
-        var meal=Assert.Single(await db.PetFeedingObservations.ToArrayAsync());
-        Assert.Equal("3.7.14.18",meal.ClientBuild);Assert.Equal(101,meal.ExperienceAfter);
+        var food=Assert.Single(await db.PetFoods.AsNoTracking().ToArrayAsync());
+        Assert.Equal(101,food.Experience);Assert.NotNull(food.ExperienceObservedAtUtc);
+        Assert.Equal(13942,Assert.Single(updates));
     }
 }

@@ -1,0 +1,25 @@
+@using BestCrush.Services
+@using BestCrush.Network.Protocol
+
+<div class="overlay-mount-row">
+    <button type="button" class="overlay-mount-name" title="@($"Copier : {Mount.Name}")" @onclick="CopyName">@Mount.Name</button>
+    <small class="countdown" title="@(Mount.Conditional?"Prévision à sérénité stable":"Prévision issue du dernier relevé")">@if(Mount.Deadline is {} deadline){@OverlayBreedingPresentation.Countdown(deadline,DateTime.UtcNow)}</small>
+    <span class="overlay-mount-needs" title="@NeedsTitle">@((MarkupString)BreedingDashboardPresentation.MountTooltipHtml(new(Guid.Empty,0,Mount.Reading,null,null,[])))</span>
+    <i class="bi bi-@SexIcon @SexTone" title="@SexName" aria-label="@SexName"></i>
+    <span title="Niveau">Niv. @(Mount.Reading?.Level.ToString()??"?")</span>
+    <span title="Génération">G@(Mount.Generation?.ToString()??"?")</span>
+    <i class="bi bi-@FertilityIcon @FertilityTone" title="@FertilityName" aria-label="@FertilityName"></i>
+</div>
+
+@code {
+    [Parameter,EditorRequired] public OverlayMountReading Mount {get;set;}=null!;
+    [Parameter] public EventCallback<IEnumerable<string>> CopyRequested {get;set;}
+    private Task CopyName()=>CopyRequested.InvokeAsync(new[]{Mount.Name}.AsEnumerable());
+    private string SexIcon=>Mount.Reading?.Sex switch {BreedingMountSex.Male=>"gender-male",BreedingMountSex.Female=>"gender-female",_=>"question-circle"};
+    private string SexName=>Mount.Reading?.Sex switch {BreedingMountSex.Male=>"Mâle",BreedingMountSex.Female=>"Femelle",_=>"Sexe inconnu"};
+    private string SexTone=>Mount.Reading?.Sex switch {BreedingMountSex.Male=>"mount-male",BreedingMountSex.Female=>"mount-female",_=>"muted"};
+    private string FertilityIcon=>Mount.Reading?.Fertility switch {BreedingMountFertility.Sterile=>"slash-circle",BreedingMountFertility.Fertile or BreedingMountFertility.Ready=>"egg-fill",_=>"question-circle"};
+    private string FertilityTone=>Mount.Reading?.Fertility is null?"muted":Mount.Reading.Fertility==BreedingMountFertility.Sterile?"negative":BreedingDashboardPresentation.NeedsBreedingTraining(Mount.Reading)?"mount-needs-training":"positive";
+    private string FertilityName=>Mount.Reading?.Fertility switch {BreedingMountFertility.Sterile=>"Stérile",BreedingMountFertility.Ready=>"Féconde",BreedingMountFertility.Fertile=>BreedingDashboardPresentation.NeedsBreedingTraining(Mount.Reading)?"Fertile · besoins incomplets":"Fertile",_=>"Fertilité inconnue"};
+    private string NeedsTitle=>$"Sérénité {Mount.Reading?.Serenity:+0;-0;0} · Endurance {Mount.Reading?.Endurance:N0} · Maturité {Mount.Reading?.Maturity:N0} · Amour {Mount.Reading?.Love:N0}";
+}

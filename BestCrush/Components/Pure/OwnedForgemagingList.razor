@@ -234,7 +234,7 @@
     private void MarketChanged(object? sender, MarketDataChangedEventArgs change)
     {
         if (Filters is null || !string.Equals(change.ServerName, ServerName, StringComparison.OrdinalIgnoreCase)) return;
-        if (change.ObjectType == MarketObjectType.Rune ||
+        if (change.DofusDbId==0 || change.ObjectType == MarketObjectType.Rune ||
             (change.ObjectType == MarketObjectType.Equipment && _rows.Any(row => row.Equipment.DofusDbId == change.DofusDbId)) ||
             ((change.ObjectType is MarketObjectType.Resource or MarketObjectType.Equipment) &&
                 _rows.Any(row => row.Acquisition?.Kind == EquipmentAcquisitionKind.Craft)))

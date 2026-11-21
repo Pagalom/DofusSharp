@@ -1148,7 +1148,7 @@ public sealed class CrushSessionService
             // never refresh for unrelated runes or an empty session.
             if (_networkCrushCount <= 0 ||
                 _runes.Count == 0 ||
-                !_runes.ContainsKey(change.DofusDbId) ||
+                (change.DofusDbId!=0 && !_runes.ContainsKey(change.DofusDbId)) ||
                 !string.Equals(
                     _sessionServerName,
                     change.ServerName,

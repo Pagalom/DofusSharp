@@ -34,7 +34,11 @@
         <main class="overlay-body">
         @if(window.Popup is { } popup)
         {
-            @if(popup.Comparison is { } comparison)
+            @if(popup.FoodAnalysis is {} foodAnalysis)
+            {
+                <PetFoodAnalysis Foods="foodAnalysis" />
+            }
+            else if(popup.Comparison is { } comparison)
             {
                 var normal=comparison.Scenario(null);var best=comparison.BestFocus;
                 <div class="comparison-scroll"><table class="runes-table"><thead><tr><th>Rune</th><th>Sans focus</th><th>Avec focus</th></tr></thead><tbody>
@@ -51,6 +55,10 @@
                     </tr>
                 }
                 </tbody><tfoot><tr><td>Total sans focus</td><td><button class="value-button @(best is not null && best.FocusedCharacteristic is null?"best":null) @(Data.Selection.Focus is null?"selected":null)" disabled="@(normal is null)" @onclick="()=>SelectFocus(comparison,null)">@Money(comparison.GrossRuneValue(null))</button></td><td><small>Un focus à la fois</small></td></tr></tfoot></table></div>
+            }
+            else if(popup.Mounts.Count>0)
+            {
+                <div class="overlay-mount-list">@foreach(var mount in popup.Mounts){<OverlayMountRow Mount="mount" CopyRequested="Copy" />}</div>
             }
             else
             {
@@ -136,13 +144,30 @@
             @if(Data.Loading){<div class="loading" aria-label="Calcul en cours"></div>}
             @if(Data.Error is { } error){<small class="warning">@error</small>}
         }
+        else if(window.Kind==WorkspaceOverlayKind.Pets)
+        {
+            <PetMarketOverlay Report="Data.PetReport" ServerKnown="Data.PetServerKnown" Error="@Data.PetError" CopyRequested="Copy" AnalysisRequested="OpenFoodAnalysis"
+                UseStocks="Data.PetFoods.Selection.UseStocks" SkippedFoods="Data.PetFoods.Selection.Skipped.Count"
+                UseStocksChanged="Data.PetFoods.SetUseStocks" NextFoodRequested="Data.PetFoods.Skip"
+                PreviousFoodRequested="Data.PetFoods.Previous" ResetFoodsRequested="Data.PetFoods.Reset" />
+            <button class="text-action open-module" @onclick='()=>Data.OpenModule("familiers-xp")'>Ouvrir le module <i class="bi bi-box-arrow-up-right"></i></button>
+        }
         else
         {
             var module=Data.Module(window.Kind);
             @if(module.Cards.Count==0){<p class="empty">@module.Empty</p>}
             @foreach(var card in module.Cards)
             {
-                <article class="module-card"><div class="module-heading">@if(card.ItemId>0){<TradeItemImage Name="@card.Title" ItemId="card.ItemId" IconId="card.IconId" Size="38" />}<strong class="card-title">@card.Title</strong></div>@if(card.Subtitle is { } subtitle){<small class="muted">@subtitle</small>}
+                <article class="module-card"><div class="module-heading">@if(card.ItemId>0){<TradeItemImage Name="@card.Title" ItemId="card.ItemId" IconId="card.IconId" Size="38" />}<strong class="card-title">@card.Title</strong>@if(card.OldReading){<i class="bi bi-clock-history warning" title="Relevé de plus de 10 minutes · prévisions à vérifier" aria-label="Relevé ancien"></i>}</div>
+                @if(card.Subtitle is { } subtitle)
+                {
+                    if(window.Kind==WorkspaceOverlayKind.Breeding)
+                    {
+                        var mounts=new OverlayPopup($"mounts:{Data.TargetWindow?.Handle}:{card.Title}",card.Title,[]){Mounts=card.Mounts,TargetWindow=Data.TargetWindow};
+                        <button class="text-action mount-count" disabled="@(card.Mounts.Count==0)" @onclick="()=>Host.OpenPopup(WindowId,mounts)">@subtitle</button>
+                    }
+                    else{<small class="muted">@subtitle</small>}
+                }
                 @if(card.Gauges.Count>0)
                 {
                     <div class="mini-gauges">@foreach(var gauge in card.Gauges){<div class="mini-gauge @gauge.Tone @(gauge.Active?"active":null)" title="@($"{gauge.Name} · {gauge.Fuel:N0} / {gauge.Capacity:N0} · {(gauge.Active?"Active":"Inactive")}")"><span class="gauge-tank"><span style="@($"height:{Math.Clamp(100d*gauge.Fuel/gauge.Capacity,0,100).ToString(CultureInfo.InvariantCulture)}%")"></span></span><i class="bi bi-@gauge.Icon"></i><small>@gauge.Fuel.ToString("N0")</small></div>}</div>
@@ -152,7 +177,8 @@
                     ExtraSelected="stat => Data.AddFmExtraAsync(table.Session.GameRecordingId,stat)"
                     ExtraRemoved="stat => Data.RemoveFmExtraAsync(table.Session.GameRecordingId,stat)" />}
                 @if(card.Progress is { } progress){<div class="progress"><span style="@($"width:{Math.Clamp(progress,0,100).ToString(CultureInfo.InvariantCulture)}%")"></span></div><small>@progress.ToString("N0") %</small>}
-                @if(card.Advice is { } advice){<div class="next-step"><i class="bi bi-arrow-return-right"></i> @advice @if(card.Deadline is { } deadline){<strong class="countdown">@Countdown(deadline)</strong>}</div>}
+                @if(card.Advice is { } advice){<div class="next-step"><i class="bi bi-arrow-return-right"></i> @advice</div>}
+                @if(card.Deadline is { } deadline){<div class="overlay-deadline"><small>@card.TimerLabel</small><strong class="countdown">@(window.Kind==WorkspaceOverlayKind.Breeding?OverlayBreedingPresentation.Countdown(deadline,DateTime.UtcNow):Countdown(deadline))</strong></div>}
                 @if(card.Lines.Count>0)
                 {
                     var list=new OverlayPopup($"module:{window.Kind}:{Data.TargetWindow?.Handle}:{card.Key??card.Title}",card.Title,card.Lines);
@@ -206,6 +232,13 @@
         });
     }
     private void Hover(OverlayPopup value)=>Host.HoverPopup(WindowId,value with { TargetWindow=Data.TargetWindow });
+    private void OpenFoodAnalysis()
+    {
+        var popup=new OverlayPopup($"pet-food-analysis:{Data.TargetWindow?.Handle}","Ressources à tester",[])
+            {FoodAnalysis=Data.PetReport is {} report ? PetOpportunityService.FoodAnalysisFoods(report.FoodTests,DateTime.UtcNow) : [],TargetWindow=Data.TargetWindow};
+        Host.OpenPopup(WindowId,popup);
+        if(Host.Get(popup.Key) is {Pinned:false})Host.TogglePin(popup.Key);
+    }
     private async Task Copy(IEnumerable<string> names)
     {
         var result=await Services.GetRequiredService<MarketClipboardQueue>().CopyAsync(names,Host.Get(WindowId)?.Popup?.TargetWindow ?? Data.TargetWindow);

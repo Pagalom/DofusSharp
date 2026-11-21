@@ -20,7 +20,8 @@ public enum OverlayLayoutKind
     PopupRunes,
     PopupPurchase,
     PopupPrices,
-    PopupDetails
+    PopupDetails,
+    PopupPetFood
 }
 
 public sealed record OverlayWindowLayout(
@@ -39,6 +40,37 @@ public sealed class OverlayLayoutSettingsService
         new();
 
     private readonly string _settingsPath;
+
+    public OverlayWindowLayout PlacePopupBeside(OverlayWindowLayout parent,OverlayWindowLayout popup)
+    {
+#if WINDOWS
+        NativeRect bounds=new(){Left=parent.X,Top=parent.Y,Right=parent.X+parent.Width,Bottom=parent.Y+parent.Height};
+        IntPtr monitor=MonitorFromRect(ref bounds,MonitorDefaultToNearest);
+        MonitorInfo info=new(){Size=Marshal.SizeOf<MonitorInfo>()};
+        if(monitor!=IntPtr.Zero && GetMonitorInfo(monitor,ref info))
+            return CalculatePopupPlacement(parent,popup,new(info.Work.Left,info.Work.Top,
+                info.Work.Right-info.Work.Left,info.Work.Bottom-info.Work.Top));
+#endif
+        return popup with {X=parent.X+parent.Width+8,Y=parent.Y};
+    }
+
+    internal static OverlayWindowLayout CalculatePopupPlacement(OverlayWindowLayout parent,OverlayWindowLayout popup,
+        OverlayWindowLayout work,int minimumWidth=320,int minimumHeight=180)
+    {
+        const int gap=8;
+        int workWidth=Math.Max(1,work.Width),workHeight=Math.Max(1,work.Height);
+        int minWidth=Math.Min(Math.Max(1,minimumWidth),workWidth),minHeight=Math.Min(Math.Max(1,minimumHeight),workHeight);
+        int width=Math.Clamp(popup.Width,minWidth,workWidth),height=Math.Clamp(popup.Height,minHeight,workHeight);
+        int right=Math.Max(0,work.X+workWidth-(parent.X+parent.Width+gap));
+        int left=Math.Max(0,parent.X-gap-work.X);
+        bool useRight=right>=width || left<width && right>=left;
+        int available=useRight?right:left;
+        // Reduce an oversized popup only when there is a usable strip beside its parent.
+        // If the parent fills the monitor, visibility takes precedence over unavoidable overlap.
+        if(available>=minWidth)width=Math.Min(width,available);
+        int x=useRight?parent.X+parent.Width+gap:parent.X-gap-width;
+        return new(Math.Clamp(x,work.X,work.X+workWidth-width),Math.Clamp(parent.Y,work.Y,work.Y+workHeight-height),width,height);
+    }
 
     private Dictionary<
         OverlayLayoutKind,
@@ -101,6 +133,7 @@ public sealed class OverlayLayoutSettingsService
             OverlayLayoutKind.PopupPurchase => new(500, 150, 340, 260),
             OverlayLayoutKind.PopupPrices => new(500, 150, 340, 320),
             OverlayLayoutKind.PopupDetails => new(500, 150, 360, 420),
+            OverlayLayoutKind.PopupPetFood => new(500, 150, 340, 270),
             _ =>
                 throw new ArgumentOutOfRangeException(
                     nameof(kind)

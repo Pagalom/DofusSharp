@@ -123,7 +123,7 @@ IDataPriorityProvider dataPriorityProvider)
     }
 
     private CoefficientObservation? ResolveEffectiveObservation(
-        IEnumerable<CoefficientObservation> observations)
+        IEnumerable<CoefficientObservation> observations,MarketPriceSource preferred)
     {
         CoefficientObservation[] ordered =
             observations
@@ -165,8 +165,7 @@ IDataPriorityProvider dataPriorityProvider)
                     !c.IsCleared
             );
 
-        if (dataPriorityProvider.Priority ==
-            DataPriority.InGameAutomatic)
+        if (preferred == MarketPriceSource.InGameAutomatic)
         {
             return game
                 ?? manual
@@ -193,9 +192,8 @@ IDataPriorityProvider dataPriorityProvider)
                 .OrderByDescending(c => c.ObservedAtUtc)
                 .ToListAsync(cancellationToken);
 
-        return ResolveEffectiveObservation(
-            observations
-        );
+        var choices=await DataSourceResolution.ReadAsync(context,dataPriorityProvider,serverName,MarketObjectType.Equipment,DataValueKind.CrushingCoefficient,cancellationToken);
+        return ResolveEffectiveObservation(observations,DataSourceResolution.Resolve(dataPriorityProvider,choices,dofusDbId,0));
     }
 
     public async Task<Dictionary<long, CoefficientObservation>>
@@ -211,13 +209,14 @@ IDataPriorityProvider dataPriorityProvider)
                 .OrderByDescending(c => c.ObservedAtUtc)
                 .ToListAsync(cancellationToken);
 
+        var choices=await DataSourceResolution.ReadAsync(context,dataPriorityProvider,serverName,MarketObjectType.Equipment,DataValueKind.CrushingCoefficient,cancellationToken);
         return observations
             .GroupBy(c => c.DofusDbId)
             .Select(group => new
             {
                 DofusDbId = group.Key,
                 Observation =
-                    ResolveEffectiveObservation(group)
+                    ResolveEffectiveObservation(group,DataSourceResolution.Resolve(dataPriorityProvider,choices,group.Key,0))
             })
             .Where(result =>
                 result.Observation is not null)

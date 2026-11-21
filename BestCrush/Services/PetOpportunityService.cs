@@ -1,4 +1,4 @@
-﻿using System.Numerics;
+using System.Numerics;
 using BestCrush.Domain;
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
@@ -24,7 +24,13 @@ public sealed record PetOpportunityReport(string Server,IReadOnlyList<PetAssessm
     public LiveStockSource? Stock { get; init; }
     public long? BudgetKamas { get; init; }
     public IReadOnlyList<BreedingPriceCheck> OwnedChecks { get; init; } = [];
+    public IReadOnlyList<BreedingPriceCheck> FoodPriceChecks {get;init;}=[];
+    public IReadOnlyList<BreedingPriceCheck> PetPriceChecks {get;init;}=[];
+    public IReadOnlySet<long> KnownFoodExperienceItems {get;init;}=new HashSet<long>();
     public IReadOnlyList<PetFoodTest> FoodTests { get; init; } = [];
+    public IReadOnlyList<PetFoodReview> OverlayFoodReviews { get; init; } = [];
+    public PetFoodValue? BestFoodValue { get; init; }
+    public IReadOnlyList<PetAssessment> OverlayPurchases { get; init; } = [];
     public IReadOnlySet<long> RelevantPriceItems { get; init; } = new HashSet<long>();
     public bool AnalysisComplete { get; init; } = true;
     public bool OwnedAnalysisComplete { get; init; } = true;
@@ -33,7 +39,8 @@ public sealed record PetOpportunityReport(string Server,IReadOnlyList<PetAssessm
 internal sealed partial class PetOpportunityService(IDbContextFactory<BestCrushDbContext> database,IDataPriorityProvider priority,
     ActivityCatalogService catalog,LiveStockService liveStock,CurrentServerState servers,
     CurrentWindowProfessionsState professions,GlobalSalesRepository history,ILogger<PetOpportunityService> logger,
-    PetFoodCatalogService? foodCatalog=null, BestCrushSettingsService? settings=null,CurrentDofusClientsState? clients=null)
+    PetFoodCatalogService? foodCatalog=null, BestCrushSettingsService? settings=null,
+    PetFoodPreferences? foodPreferences=null)
 {
     private string? _nutritionKey;
     private PetNutritionCache _nutritionCache=new();
@@ -43,11 +50,14 @@ internal sealed partial class PetOpportunityService(IDbContextFactory<BestCrushD
         var lease=window is { } key ? servers.GetWindowCaptureLease(key) : null;
         string? server=lease?.ServerName ?? viewServer;
         if (string.IsNullOrWhiteSpace(server)) return null;
+        var foodSelection=foodPreferences?.Selection ?? PetFoodSelection.Default;
         var overview=await LoadOverviewAsync(window,server,token);
         if (publish is not null) await publish(overview);
         token.ThrowIfCancellationRequested();
         var species=(await catalog.GetPetSpeciesAsync(token)).ToDictionary(pet=>pet.Id);
         var foods=foodCatalog is null ? await catalog.GetPetFoodsAsync(token) : await foodCatalog.GetFoodsAsync(token);
+        var knownFoodExperienceItems=foods.Where(food=>double.IsFinite(food.Experience) && food.Experience>0).Select(food=>food.Id).ToHashSet();
+        foods=foods.Where(food=>!foodSelection.Skipped.Contains(food.Id)).ToArray();
         var source=window is { } stockWindow ? liveStock.ForWindow(stockWindow) : null;
         var containers=string.Equals(source?.ServerName,server,StringComparison.OrdinalIgnoreCase)
             ? source!.Containers.Where(c=>c.Complete && !c.Stale && c.Container is "inventory" or "bank").ToArray() : [];
@@ -55,7 +65,8 @@ internal sealed partial class PetOpportunityService(IDbContextFactory<BestCrushD
             .Where(item=>item.ItemId<=long.MaxValue).GroupBy(item=>(long)item.ItemId)
             .ToDictionary(group=>group.Key,group=>group.Aggregate(BigInteger.Zero,(sum,item)=>sum+item.Quantity));
         var inventory=Stock("inventory");var bank=Stock("bank");
-        var stock=inventory.Concat(bank).GroupBy(pair=>pair.Key).ToDictionary(group=>group.Key,group=>group.Aggregate(BigInteger.Zero,(sum,pair)=>sum+pair.Value));
+        var stock=foodSelection.PlanningStock(inventory.Concat(bank).GroupBy(pair=>pair.Key)
+            .ToDictionary(group=>group.Key,group=>group.Aggregate(BigInteger.Zero,(sum,pair)=>sum+pair.Value)));
         var owned=containers.SelectMany(c=>c.Items.Where(item=>item.ItemId<=long.MaxValue && species.ContainsKey((long)item.ItemId))
                 .Select(item=>new OwnedPet(species[(long)item.ItemId],item.Uid,item.Quantity,c.Container,
                     PetMarketDecoder.Read(item.EffectWire,(ulong)species[(long)item.ItemId].TypeId)))).ToArray();
@@ -84,17 +95,15 @@ internal sealed partial class PetOpportunityService(IDbContextFactory<BestCrushD
             await pricing.GetLatestObservationsForServerAsync(type,server,token,excludeUnavailableLots:true);
         var all=new EquipmentProfitabilityContext{ResourcePrices=await Quotes(MarketObjectType.Resource),
             RunePrices=await Quotes(MarketObjectType.Rune),EquipmentPrices=await Quotes(MarketObjectType.Equipment),Coefficients=[]};
-        var cutoff=DateTime.UtcNow-TimeSpan.FromHours(72);
-        Dictionary<(long,int),MarketPriceObservation> Fresh(IReadOnlyDictionary<(long,int),MarketPriceObservation> quotes) =>
-            quotes.Where(pair=>pair.Value.ObservedAtUtc>=cutoff && pair.Value.Price>0 && !pair.Value.IsCleared).ToDictionary();
-        var market=new EquipmentProfitabilityContext{ResourcePrices=Fresh(all.ResourcePrices),RunePrices=Fresh(all.RunePrices),
-            EquipmentPrices=Fresh(all.EquipmentPrices),Coefficients=[]};
+        var now=DateTimeOffset.UtcNow;
+        Dictionary<(long,int),MarketPriceObservation> Usable(IReadOnlyDictionary<(long,int),MarketPriceObservation> quotes) =>
+            quotes.Where(pair=>pair.Value.ObservedAtUtc<=now.UtcDateTime && pair.Value.Price>0 && !pair.Value.IsCleared).ToDictionary();
+        var market=new EquipmentProfitabilityContext{ResourcePrices=Usable(all.ResourcePrices),RunePrices=Usable(all.RunePrices),
+            EquipmentPrices=Usable(all.EquipmentPrices),Coefficients=[]};
         var viableRecipes=recipes.Where(recipe=>recipe.Ingredients.All(i=>stock.GetValueOrDefault(i.ItemId)>=i.Count ||
             StockCraftPlanner.PricesFor(market,i.MarketType).Keys.Any(key=>key.DofusDbId==i.ItemId))).ToArray();
-        var now=DateTimeOffset.UtcNow;
         var allPetQuotes=history.ReadPetPrices(server,now).Where(reading=>species.ContainsKey(reading.Snapshot.ItemId)).ToArray();
-        var petQuotes=allPetQuotes.Where(reading=>reading.ObservedAtUtc.UtcDateTime>=cutoff)
-            .ToDictionary(reading=>reading.Snapshot.ItemId,reading=>reading.Snapshot.Offers);
+        var petQuotes=allPetQuotes.ToDictionary(reading=>reading.Snapshot.ItemId,reading=>reading.Snapshot.Offers);
         var listedToday=history.ReadListingTotals(server,now).ByItem;
         var listedWeek=history.ReadListingTotals(server,now,7).ByItem;
         var demand=history.ReadHistories(server).Where(sales=>sales.Market.ObjectType==MarketObjectType.Equipment &&
@@ -109,21 +118,22 @@ internal sealed partial class PetOpportunityService(IDbContextFactory<BestCrushD
         foreach(var pet in species.Values)
         {
             var reading=allPetQuotes.FirstOrDefault(quote=>quote.Snapshot.ItemId==pet.Id);
-            if (!petQuotes.ContainsKey(pet.Id)) checks.Add(new(pet.Id,pet.Name,reading?.ObservedAtUtc,
+            if (reading is null || PetDataFreshness.Price(reading.ObservedAtUtc.UtcDateTime,now.UtcDateTime)==DataFreshness.Stale) checks.Add(new(pet.Id,pet.Name,reading?.ObservedAtUtc,
                 owned.Any(row=>row.Species.Id==pet.Id) ? "Comparer un familier possédé par niveau" : "Comparer achat et revente par niveau"));
             if (!demand.ContainsKey(pet.Id)) checks.Add(new(pet.Id,pet.Name,null,"Ouvrir le Cours du marché pour relever les volumes globaux"));
         }
-        foreach(var entry in foods.Select(food=>(Id:food.Id,food.Name,Type:food.MarketType,Owned:stock.GetValueOrDefault(food.Id)>0))
-            .Concat(recipes.SelectMany(recipe=>recipe.Ingredients).Select(i=>(Id:i.ItemId,i.Name,Type:i.MarketType,Owned:stock.GetValueOrDefault(i.ItemId)>0)))
-            .DistinctBy(entry=>entry.Id).OrderByDescending(entry=>entry.Owned).ThenByDescending(entry=>entry.Id==20125))
-        {
-            var observed=StockCraftPlanner.PricesFor(all,entry.Type).Values.Where(q=>q.DofusDbId==entry.Id && q.Price>0)
-                .Max(q=>(DateTime?)q.ObservedAtUtc);
-            if (observed is null || observed<cutoff) checks.Add(new(entry.Id,entry.Name,
-                observed is { } at ? new DateTimeOffset(DateTime.SpecifyKind(at,DateTimeKind.Utc)) : null,
-                entry.Owned ? "Valoriser la nourriture déjà possédée" : "Comparer le coût de la nourriture"));
-        }
         long? budget = settings?.ProductionBudgetKamas is > 0 and var amount ? amount : null;
+        overview=overview with {BestFoodValue=BestFoodValue(foods,market,budget)};
+        var priceItems=foods.Select(f=>(f.Id,f.Name,f.MarketType)).Concat(viableRecipes.SelectMany(r=>r.Ingredients)
+            .Select(i=>(Id:i.ItemId,i.Name,i.MarketType))).DistinctBy(i=>(i.Id,i.MarketType));
+        var foodPriceChecks=priceItems.Select(item=>
+        {
+            var quotes=StockCraftPlanner.PricesFor(market,item.MarketType).Values.Where(q=>q.DofusDbId==item.Id).ToArray();
+            var old=quotes.Where(q=>PetDataFreshness.Price(q.ObservedAtUtc,now.UtcDateTime)==DataFreshness.Stale)
+                .MinBy(q=>q.ObservedAtUtc);
+            return old is null ? null : new BreedingPriceCheck(item.Id,item.Name,old.ObservedAtUtc,"Actualiser le prix · dernier relevé conservé dans le calcul");
+        }).OfType<BreedingPriceCheck>().OrderByDescending(c=>stock.GetValueOrDefault(c.ItemId)>0)
+            .ThenBy(c=>c.LastObserved).ToArray();
         string nutritionKey=PetNutritionCache.Fingerprint(foods,viableRecipes,stock,market);
         if (_nutritionKey!=nutritionKey) { _nutritionKey=nutritionKey;_nutritionCache=new(); }
         var planner=new PetFoodPlanner(pricing,foods,viableRecipes,stock,market,_nutritionCache);
@@ -133,36 +143,41 @@ internal sealed partial class PetOpportunityService(IDbContextFactory<BestCrushD
         var report=await Task.Run(()=>
         {
             var purchases=new List<PetAssessment>();
+            var priceReviewPlans=new List<PetAssessment>();
+            var overlayPurchases=new List<PetAssessment>();
             foreach(var pet in species.Values)
             {
                 token.ThrowIfCancellationRequested();
                 var offers=petQuotes.GetValueOrDefault(pet.Id) ?? [];
-                // These rows could never survive the final sale-quota filter. Avoid simulating their food at all.
-                if(demand.GetValueOrDefault(pet.Id) is not { } petDemand ||
-                    !offers.Any(offer=>petDemand.AtPrice(Math.Max(1,offer.Price-1)).Remaining>0)) continue;
+                bool hasDemand=demand.GetValueOrDefault(pet.Id) is {} petDemand &&
+                    offers.Any(offer=>petDemand.AtPrice(Math.Max(1,offer.Price-1)).Remaining>0);
+                bool reviewPrice=allPetQuotes.FirstOrDefault(q=>q.Snapshot.ItemId==pet.Id) is {} last &&
+                    PetDataFreshness.Price(last.ObservedAtUtc.UtcDateTime,now.UtcDateTime)==DataFreshness.Stale;
+                // Reuse these assessments for refresh priority even if market volume needs a new reading.
+                if(!hasDemand && !reviewPrice)continue;
                 var candidates=offers.Where(offer=>PetExperience.LevelAt(offer.Experience)==offer.Level)
                     .DistinctBy(offer=>(offer.Level,offer.Experience,offer.Price,offer.Variant))
-                    .Select(offer=>Assess(pet,null,offer,offers,planner,demand.GetValueOrDefault(pet.Id),token));
-                if (candidates.Where(option=>option.Best?.Margin>0 && option.Best.RemainingListings!=0 && (budget is null || option.AcquisitionCost + option.Best.Nutrition.CashRequired <= budget)).MaxBy(option=>option.Best!.Margin) is { } best)
+                    .Select(offer=>Assess(pet,null,offer,offers,planner,demand.GetValueOrDefault(pet.Id),token)).ToArray();
+                if(reviewPrice)priceReviewPlans.AddRange(candidates);
+                if(!hasDemand)continue;
+                var profitable=candidates.Where(option=>option.Best?.Margin>0 && option.Best.RemainingListings is >0 &&
+                    (budget is null || option.AcquisitionCost + option.Best.Nutrition.CashRequired <= budget)).ToArray();
+                overlayPurchases.AddRange(profitable.GroupBy(option=>option.Purchase!.Level).Select(group=>group.MaxBy(option=>option.Best!.Margin)!));
+                if (profitable.MaxBy(option=>option.Best!.Margin) is { } best)
                     purchases.Add(best);
             }
             return new PetOpportunityReport(server,own.OrderByDescending(row=>row.Best?.Margin).ToArray(),
                 purchases.OrderByDescending(row=>row.Best?.RemainingListings is > 0).ThenByDescending(row=>row.Best?.Margin).ThenBy(row=>row.AcquisitionCost).Take(5).ToArray(),checks.DistinctBy(check=>check.ItemId).ToArray(),
                 inventory,bank,containers.Any(c=>c.Container=="inventory"),containers.Any(c=>c.Container=="bank"),
                 levels is {Count:>0},recipesKnown,foods.Length,foods.Count(food=>
-                    StockCraftPlanner.PricesFor(market,food.MarketType).Keys.Any(key=>key.DofusDbId==food.Id))) { Stock=source };
+                    StockCraftPlanner.PricesFor(market,food.MarketType).Keys.Any(key=>key.DofusDbId==food.Id))) { Stock=source,
+                    PetPriceChecks=PetPriceReviews(species.Values,allPetQuotes.ToDictionary(q=>q.Snapshot.ItemId,q=>q.ObservedAtUtc),priceReviewPlans.Concat(own),now.UtcDateTime),
+                    OverlayPurchases=overlayPurchases.GroupBy(p=>p.Purchase!.Level).OrderBy(group=>group.Key==1?0:1)
+                        .ThenByDescending(group=>group.Max(p=>p.Best!.Margin)).Take(3)
+                        .SelectMany(group=>group.OrderByDescending(p=>p.Best!.Margin).ThenBy(p=>p.AcquisitionCost).Take(3)).ToArray() };
         },token);
         var relevantPets = report.Owned.Concat(report.Purchases).ToArray();
         var relevant = relevantPets.Select(p => p.Species.Id).ToHashSet();
-        foreach (var pet in relevantPets)
-        {
-            if (pet.Best is not { } plan) continue;
-            relevant.UnionWith(plan.Nutrition.Meals.Select(m => m.Food.Id));
-            relevant.UnionWith(plan.Nutrition.Purchases.Select(p => p.ItemId));
-            relevant.UnionWith(plan.Nutrition.Crafts.SelectMany(c => c.Ingredients).Select(i => i.ItemId));
-        }
-        // Unknown food prices can still improve an owned pet's plan; do not enumerate every food in the catalogue.
-        relevant.UnionWith(foods.Where(food => stock.GetValueOrDefault(food.Id) > 0).Select(food => food.Id));
         var ownedIds = report.Owned.Select(p => p.Species.Id).ToHashSet();
 
         var affordable = report.Purchases.Select(p =>
@@ -172,6 +187,8 @@ internal sealed partial class PetOpportunityService(IDbContextFactory<BestCrushD
                 ? p with { Best = best with { RemainingListings = Math.Min(best.RemainingListings ?? long.MaxValue, available / perPet) } } : p;
         }).Where(p => p.Best?.RemainingListings is > 0).ToArray();
         report = report with { Purchases = affordable, BudgetKamas = budget,FoodTests=overview.FoodTests,
+            OverlayFoodReviews=overview.OverlayFoodReviews,BestFoodValue=overview.BestFoodValue,
+            FoodPriceChecks=foodPriceChecks,KnownFoodExperienceItems=knownFoodExperienceItems,
             OwnedChecks=overview.OwnedChecks,
             RelevantPriceItems=species.Keys.Concat(overview.FoodTests.Select(f=>f.Food.DofusDbId)).Concat(foods.Select(f=>f.Id)).Concat(recipes.SelectMany(r=>r.Ingredients).Select(i=>i.ItemId)).ToHashSet(),
             Checks = report.Checks.Where(c => relevant.Contains(c.ItemId))

@@ -9,6 +9,7 @@
 @inject ItemsService ItemsService
 @inject CoefficientService CoefficientService
 @inject MarketDataChangeNotifier MarketDataChangeNotifier
+@inject MarketSourceSelectionService SourceSelection
 
 @inject ServerViewFilterState ServerViewFilter
 @implements IDisposable
@@ -50,6 +51,8 @@
         </div>
     }
 
+    <div class="d-flex justify-content-end mb-2"><SourceChoiceButtons ServerName="@ServerName" ObjectType="MarketObjectType.Equipment" Kind="DataValueKind.CrushingCoefficient" ReadOnly="@ServerViewFilter.IsBrowsingManually" Label="Source de tout l’onglet" /></div>
+
     <DataLoadingIndicator Busy="@_background.IsLoading" Failed="@(_background.Error is not null)"
                           Label="@(_rows is null ? "Chargement des données…" : "Actualisation des données…")" Retry="ReloadFromMarketAsync" />
     @if (_rows is not null)
@@ -82,6 +85,8 @@
                                             @onclick="() => Workspace.ShowHistory(MarketObjectType.Equipment, row.DofusDbId, row.Name)">@row.Name</button>
                                 }
                                 else { <strong>@row.Name</strong> }
+                                <OverlayFocusButton ItemId="row.DofusDbId" Name="@row.Name" ObjectType="MarketObjectType.Equipment" ServerName="@ServerName" />
+                                <SourceChoiceButtons ServerName="@ServerName" ObjectType="MarketObjectType.Equipment" Kind="DataValueKind.CrushingCoefficient" ItemId="row.DofusDbId" ReadOnly="@ServerViewFilter.IsBrowsingManually" />
                             </td>
 
                             <td>
@@ -93,7 +98,7 @@
                             </td>
 
                             <td>
-                                <SourceValueInput ReadOnly="@ServerViewFilter.IsBrowsingManually"
+                                <SourceValueInput ObjectType="MarketObjectType.Equipment" Kind="DataValueKind.CrushingCoefficient" ServerName="@ServerName" ItemId="row.DofusDbId" Quantity="0" ReadOnly="@ServerViewFilter.IsBrowsingManually"
                                     Value="@row.CoefficientPercent"
                                     Min="0.01"
                                     Step="0.01"
@@ -305,6 +310,7 @@
                 row.DofusDbId,
                 ServerName
             );
+            await SourceSelection.ChooseAsync(ServerName,MarketObjectType.Equipment,row.DofusDbId,0,MarketPriceSource.Manual,DataValueKind.CrushingCoefficient);
 
             row.ManualCoefficient = null;
             row.GameCoefficient = null;
@@ -356,6 +362,8 @@
             coefficient,
             CoefficientSource.Manual
         );
+
+        await SourceSelection.ChooseAsync(ServerName,MarketObjectType.Equipment,row.DofusDbId,0,MarketPriceSource.Manual,DataValueKind.CrushingCoefficient);
 
         row.CoefficientPercent = coefficient;
         row.Source = CoefficientSource.Manual;

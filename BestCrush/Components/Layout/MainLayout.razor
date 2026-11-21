@@ -24,6 +24,7 @@
 @inject DofusNetworkCaptureService NetworkCapture
 
 @inject IDataPriorityProvider DataPriorityProvider
+@inject MarketSourceSelectionService SourceSelection
 @inject IJSRuntime JS
 
 <CascadingValue Value="_workspace" IsFixed="true">
@@ -308,6 +309,7 @@
 
     protected override async Task OnInitializedAsync()
     {
+        SourceSelection.Changed+=OnWorkspaceChanged;
         OverlayWorkspace.ModuleRequested += OpenOverlayModule;
         _networkCaptureStatus = NetworkCapture.Status;
         _workspace.Changed += OnWorkspaceChanged;
@@ -599,6 +601,7 @@
 
     public async ValueTask DisposeAsync()
     {
+        SourceSelection.Changed-=OnWorkspaceChanged;
         _workspace.Changed -= OnWorkspaceChanged;
         if (_workspaceJs is not null)
         {

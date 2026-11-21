@@ -11,7 +11,8 @@ public sealed class PetFoodDefinition : IItem
     public int Level { get; set; }
     public MarketObjectType MarketType { get; set; }
     public double? Experience { get; set; }
+    public DateTime? ExperienceObservedAtUtc { get; set; }
+    public MarketPriceSource? ExperienceOrigin { get; set; }
     public bool Craftable { get; set; }
     [MaxLength(64)] public string ExperienceSource { get; set; } = "";
-    public double? SheetExperience { get; set; }
 }

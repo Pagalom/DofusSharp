@@ -95,6 +95,7 @@ public sealed class CrushingAnalysisFlowTest
             services.AddSingleton<IDataPriorityProvider, TestDataPriorityProvider>();
             services.AddSingleton<IBestCrushSettingsProvider, Settings>();
             services.AddScoped<MarketPriceService>();
+            services.AddSingleton<MarketSourceSelectionService>();
             services.AddScoped<CoefficientService>();
             services.AddScoped<CraftCostService>();
             services.AddScoped<EquipmentProfitabilityService>();

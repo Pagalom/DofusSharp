@@ -1,4 +1,8 @@
-<div class="source-value-input">
+@using BestCrush.Domain.Models
+@using BestCrush.Services
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+<div class="source-value-container"><div class="source-value-input">
     <input type="number"
            min="@Min"
            step="@Step"
@@ -7,10 +11,20 @@
            readonly="@ReadOnly"
            @onchange="OnChange" />
 
-    <div class="source-value-origin @SourceCssClass"
-         title="@Tooltip">
+    <button type="button" class="source-value-origin @SourceCssClass"
+         disabled="@(ReadOnly || ObjectType is null)" @onclick="()=>_choosing=!_choosing" aria-expanded="@_choosing"
+         title="@(Tooltip+(ObjectType is not null && !ReadOnly ? "\nCliquer : choisir la source prioritaire J/M" : ""))">
         @SourceLetter
+    </button>
+</div>
+@if(_choosing && !ReadOnly)
+{
+    <div class="source-picker" aria-label="Choisir la source prioritaire">
+        <button type="button" class="source-game" title="Capture jeu prioritaire" @onclick="()=>Choose(MarketPriceSource.InGameAutomatic)">J</button>
+        <button type="button" class="source-manual" title="Manuel prioritaire" @onclick="()=>Choose(MarketPriceSource.Manual)">M</button>
     </div>
+}
+@if(_error){<span class="text-warning small" role="status">Choix non enregistré.</span>}
 </div>
 
 @code
@@ -39,4 +53,20 @@
 
     [Parameter]
     public EventCallback<ChangeEventArgs> OnChange { get; set; }
+    [Parameter] public MarketObjectType? ObjectType {get;set;}
+    [Parameter] public DataValueKind Kind {get;set;}
+    [Parameter] public string ServerName {get;set;}="";
+    [Parameter] public long ItemId {get;set;}
+    [Parameter] public int Quantity {get;set;}
+    private bool _choosing,_error;
+    private async Task Choose(MarketPriceSource source)
+    {
+        if(ReadOnly || ObjectType is not {} type)return;
+        try
+        {
+            await Services.GetRequiredService<MarketSourceSelectionService>().ChooseAsync(ServerName,type,ItemId,Quantity,source,Kind);
+            _choosing=false;_error=false;
+        }
+        catch{_error=true;}
+    }
 }

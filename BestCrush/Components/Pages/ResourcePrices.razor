@@ -1,3 +1,5 @@
+@using Microsoft.EntityFrameworkCore
+@inject LivePetFeedingService Feeding
 @using Microsoft.Extensions.DependencyInjection
 @inject IServiceScopeFactory DataScopes
 @page "/servers/{ServerName}/resource-prices"
@@ -10,6 +12,7 @@
 @inject ItemsService ItemsService
 @inject MarketPriceService MarketPriceService
 @inject MarketDataChangeNotifier MarketDataChangeNotifier
+@inject MarketSourceSelectionService SourceSelection
 
 @inject ServerViewFilterState ServerViewFilter
 
@@ -48,6 +51,8 @@
         </div>
     }
 
+    <div class="d-flex justify-content-end mb-2"><SourceChoiceButtons ServerName="@ServerName" ObjectType="MarketObjectType.Resource" Kind="DataValueKind.Price" ReadOnly="@ServerViewFilter.IsBrowsingManually" Label="Source de tout l’onglet" /></div>
+
     <DataLoadingIndicator Busy="@_background.IsLoading" Failed="@(_background.Error is not null)"
                           Label="@(_rows is null ? "Chargement des données…" : "Actualisation des données…")" Retry="ReloadFromMarketAsync" />
     @if (_rows is not null)
@@ -60,15 +65,16 @@
                 <ServiceSearch @bind-Value="_searchText" Placeholder="Rechercher une ressource…" />
             </div>
 
-            <table class="table table-dark table-striped table-hover align-middle">
+            <table class="table table-dark table-striped table-hover align-middle" style="table-layout:fixed;min-width:1180px;">
 
                 <thead>
                     <tr>
-                        <th style="width: 36%;">Ressource</th>
-                        <th style="width: 16%;">Prix x1</th>
-                        <th style="width: 16%;">Prix x10</th>
-                        <th style="width: 16%;">Prix x100</th>
-                        <th style="width: 16%;">Prix x1000</th>
+                        <th style="width:18%;">Ressource</th>
+                        <th style="width:14%;">Prix x1</th>
+                        <th style="width:14%;">Prix x10</th>
+                        <th style="width:14%;">Prix x100</th>
+                        <th style="width:14%;">Prix x1000</th>
+                        <th style="width:26%;">K/XP · Nourriture familier</th>
                     </tr>
                 </thead>
 
@@ -76,7 +82,7 @@
 
                     @foreach (ResourcePriceRow row in pageRows)
                     {
-                        <tr>
+                        <tr @key="row.DofusDbId">
 
                             <td>
                                 @if (Workspace is not null)
@@ -87,11 +93,12 @@
                                 }
                                 else { <strong>@row.Name</strong> }
                                 <OverlayFocusButton ItemId="row.DofusDbId" Name="@row.Name" ObjectType="MarketObjectType.Resource" ServerName="@ServerName" />
+                                <SourceChoiceButtons ServerName="@ServerName" ObjectType="MarketObjectType.Resource" Kind="DataValueKind.Price" ItemId="row.DofusDbId" ReadOnly="@ServerViewFilter.IsBrowsingManually" />
                                 <StockQuantity ItemId="row.DofusDbId" ServerName="@ServerName" />
                             </td>
 
                             <td>
-                                <SourceValueInput ReadOnly="@ServerViewFilter.IsBrowsingManually"
+                                <SourceValueInput ObjectType="MarketObjectType.Resource" Kind="DataValueKind.Price" ServerName="@ServerName" ItemId="row.DofusDbId" Quantity="1" ReadOnly="@ServerViewFilter.IsBrowsingManually"
                                     Value="@row.Price1"
                                     Min="1"
                                     SourceLetter="@GetSourceLetter(row.Source1)"
@@ -101,7 +108,7 @@
                             </td>
 
                             <td>
-                                <SourceValueInput ReadOnly="@ServerViewFilter.IsBrowsingManually"
+                                <SourceValueInput ObjectType="MarketObjectType.Resource" Kind="DataValueKind.Price" ServerName="@ServerName" ItemId="row.DofusDbId" Quantity="10" ReadOnly="@ServerViewFilter.IsBrowsingManually"
                                     Value="@row.Price10"
                                     Min="1"
                                     SourceLetter="@GetSourceLetter(row.Source10)"
@@ -111,7 +118,7 @@
                             </td>
 
                             <td>
-                                <SourceValueInput ReadOnly="@ServerViewFilter.IsBrowsingManually"
+                                <SourceValueInput ObjectType="MarketObjectType.Resource" Kind="DataValueKind.Price" ServerName="@ServerName" ItemId="row.DofusDbId" Quantity="100" ReadOnly="@ServerViewFilter.IsBrowsingManually"
                                     Value="@row.Price100"
                                     Min="1"
                                     SourceLetter="@GetSourceLetter(row.Source100)"
@@ -121,7 +128,7 @@
                             </td>
 
                             <td>
-                                <SourceValueInput ReadOnly="@ServerViewFilter.IsBrowsingManually"
+                                <SourceValueInput ObjectType="MarketObjectType.Resource" Kind="DataValueKind.Price" ServerName="@ServerName" ItemId="row.DofusDbId" Quantity="1000" ReadOnly="@ServerViewFilter.IsBrowsingManually"
                                     Value="@row.Price1000"
                                     Min="1"
                                     SourceLetter="@GetSourceLetter(row.Source1000)"
@@ -129,6 +136,8 @@
                                     Tooltip="@BuildTooltip(row, 1000)"
                                     OnChange="e => SavePriceAsync(row, 1000, e)" />
                             </td>
+
+                            <td><PetFoodExperienceEntry @key="row.DofusDbId" Food="row.Food" UnitPrice="row.UnitPrice" ShowRate="true" ReadOnly="@ServerViewFilter.IsBrowsingManually" /></td>
 
                         </tr>
                     }
@@ -191,6 +200,7 @@
     protected override void OnInitialized()
     {
         MarketDataChangeNotifier.Changed += OnMarketDataChanged;
+        Feeding.Changed+=FoodChanged;
         ServerViewFilter.Changed += OnBrowseModeChanged;
     }
     protected override async Task OnParametersSetAsync()
@@ -212,6 +222,7 @@
         }
         if (_rows is null || _reloadPending) await ReloadFromMarketAsync();
     }
+    private void FoodChanged(string server) {if(!_disposed)_=InvokeAsync(ReloadFromMarketAsync);}
     private Task RefreshAsync() => ReloadFromMarketAsync();
     private void OnMarketDataChanged(object? sender, MarketDataChangedEventArgs args)
     {
@@ -244,6 +255,7 @@
         _background.Dispose();
         ServerViewFilter.Changed -= OnBrowseModeChanged;
         MarketDataChangeNotifier.Changed -= OnMarketDataChanged;
+        Feeding.Changed-=FoodChanged;
     }
 
     private async Task<List<ResourcePriceRow>> ReadRowsAsync(string loadedFromServer, CancellationToken cancellationToken)
@@ -276,6 +288,9 @@
                         MarketObjectType.Resource,
                         loadedFromServer, cancellationToken);
 
+        var foods=await scope.ServiceProvider.GetRequiredService<BestCrush.Domain.BestCrushDbContext>().PetFoods.AsNoTracking().ToDictionaryAsync(f=>f.DofusDbId,cancellationToken);
+        var units=observations.Values.GroupBy(q=>q.DofusDbId).ToDictionary(g=>g.Key,g=>MarketPriceService.CheapestUnitQuote(g));
+
         return resources
             .OrderBy(resource => resource.Name)
             .Select(resource =>
@@ -283,7 +298,9 @@
                 ResourcePriceRow row = new()
                 {
                     DofusDbId = resource.DofusDbId,
-                    Name = resource.Name
+                    Name = resource.Name,
+                    Food=foods.GetValueOrDefault(resource.DofusDbId) ?? new(){DofusDbId=resource.DofusDbId,Name=resource.Name,MarketType=MarketObjectType.Resource,Experience=resource.PetExperience},
+                    UnitPrice=units.TryGetValue(resource.DofusDbId,out var unit) && unit is not null ? (double)unit.Price/unit.Quantity : null
                 };
 
                 if (observations.TryGetValue(
@@ -373,6 +390,7 @@
                 ServerName,
                 quantity
             );
+            await SourceSelection.ChooseAsync(ServerName,MarketObjectType.Resource,row.DofusDbId,quantity,MarketPriceSource.Manual);
 
             MarketPriceObservation? effective =
                 await MarketPriceService
@@ -424,6 +442,8 @@
             quantity,
             MarketPriceSource.Manual
         );
+
+        await SourceSelection.ChooseAsync(ServerName,MarketObjectType.Resource,row.DofusDbId,quantity,MarketPriceSource.Manual);
 
         row.SetPrice(
             quantity,
@@ -506,6 +526,8 @@
 
     private class ResourcePriceRow
     {
+        public PetFoodDefinition Food {get;init;}=null!;
+        public double? UnitPrice {get;init;}
         public required long DofusDbId { get; init; }
 
         public required string Name { get; init; }

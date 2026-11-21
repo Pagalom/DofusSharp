@@ -29,14 +29,13 @@
                 <tbody>@foreach(var row in pageRows)
                 {
                     <tr @key="row.Food.DofusDbId">
-                        <th scope="row"><ItemIcon Item="row.Food" Size="Size.Tiny" /> <CopyTextButton Value="row.Food.Name" Tooltip="Copier le nom">@row.Food.Name</CopyTextButton></th>
+                        <th scope="row"><ItemIcon Item="row.Food" Size="Size.Tiny" /> <CopyTextButton Value="@row.Food.Name" Tooltip="Copier le nom">@row.Food.Name</CopyTextButton></th>
                         <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@XpInfo(row)">@(row.Food.Experience?.ToString("0.#########") ?? "Inconnue")</span>
-                            @if(row.Evidence is { } evidence)
-                            {<StatusIcon Icon="@(evidence.Matches==true ? "check-circle" : evidence.Matches==false || !evidence.Consistent ? "exclamation-triangle" : "eye")"
-                                CssClass="@(evidence.Matches==true ? "text-success" : "text-warning")" Tooltip="@EvidenceInfo(evidence)" />}
+                            @if(row.Food.Experience is >0 && PetDataFreshness.ExperienceNeedsReview(row.Food.ExperienceObservedAtUtc))
+                            {<StatusIcon Icon="clock-history" CssClass="text-warning" Tooltip="XP conservée · aliment à retester (sans relevé ou dernier test de plus d’une semaine)." />}
                         </td>
                         <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@PriceInfo(row)">@(row.UnitPrice is { } unit ? $"{unit:0.####} K" : "—")</span>
-                            @if(row.UnitQuote is { } quote && quote.ObservedAtUtc<DateTime.UtcNow.AddHours(-72)){<i class="bi bi-clock text-warning" data-bs-toggle="tooltip" data-bs-title="Prix de plus de 72 h : consulter cet aliment à l’HDV."></i>}
+                            @if(row.UnitQuote is { } quote){<i class="bi bi-clock @(PetDataFreshness.Price(quote.ObservedAtUtc)==DataFreshness.Stale ? "text-warning" : "text-muted")" data-bs-toggle="tooltip" data-bs-title="@PetDataFreshness.PriceTooltip(quote.ObservedAtUtc)"></i>}
                         </td>
                         <td class="text-end">@(row.Quantity80?.ToString("N0") ?? "—")</td>
                         <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@Lots(row.Cost80)">@Money(row.Cost80)</span></td>
@@ -78,20 +77,14 @@
         ? string.Join(" + ",cost.Lots.OrderByDescending(lot=>lot.Key).Select(lot=>$"{lot.Value:N0} lot(s) × {lot.Key}"))+$" · {cost.PurchasedQuantity:N0} achetés, {cost.RequiredQuantity:N0} à donner"
         : "Prix d’achat à relever.";
     private static string XpInfo(PetFoodDataRow row)=>row.Food.ExperienceSource+
-        (row.Food.SheetExperience is { } xp ? $" · Fichier initial : {xp:0.#########} XP" : "")+
-        " · L’XP totale du repas est arrondie à l’entier inférieur.";
-    private static string EvidenceInfo(PetFoodEvidence evidence)=>
-        $"{evidence.Meals} repas observé(s) · Dofus {evidence.Build}\n"+
-        (!evidence.Consistent ? "Mesures incompatibles : rendement à vérifier." :
-            $"XP unitaire comprise entre {evidence.Minimum:0.#########} et moins de {evidence.Maximum:0.#########}.\n"+
-            (evidence.Matches==true ? "Valeur du catalogue compatible avec les repas observés." :
-                evidence.Matches==false ? "Écart avec le catalogue : aliment écarté des conseils." : "XP unitaire exacte encore inconnue."));
+        (row.Food.ExperienceObservedAtUtc is {} at ? $" · {at.ToLocalTime():dd/MM HH:mm}" : "")+
+        " · Coefficient XP gagnée / quantité donnée.";
     private static string PriceInfo(PetFoodDataRow row)=>row.UnitQuote is { } q
         ? $"{q.Price:N0} K / lot de {q.Quantity} · {(q.Source==MarketPriceSource.Manual ? "Manuel" : "En jeu")} · {q.ObservedAtUtc.ToLocalTime():dd/MM à HH:mm}"
         : "Prix à relever à l’HDV.";
     protected override void OnInitialized(){Prices.Changed+=Changed;Feeding.Changed+=FeedingChanged;}
     private void FeedingChanged(string server)
-    {if(!_disposed && IsActive && string.Equals(server,ServerName,StringComparison.OrdinalIgnoreCase)) _=InvokeAsync(RefreshAsync);}
+    {if(!_disposed && IsActive && (server.Length==0 || string.Equals(server,ServerName,StringComparison.OrdinalIgnoreCase))) _=InvokeAsync(RefreshAsync);}
     protected override Task OnParametersSetAsync()
     {
         bool reload=IsActive && (!_wasActive || _priority!=Priority);

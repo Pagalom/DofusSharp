@@ -13,11 +13,10 @@ internal sealed record PetFoodSeed(string Version,string SourceName,string Sourc
 internal sealed record PetFoodSeedRow(long Id,string Name,long? IconId,MarketObjectType MarketType,double? Experience,
     double? SheetExperience,string ExperienceSource,bool Craftable,long? UnitPrice,string SheetName,int SheetRow);
 public sealed record PetFoodDataRow(PetFoodDefinition Food,MarketPriceObservation? UnitQuote,double? UnitPrice,
-    int? Quantity80,MarketPurchaseResult? Cost80,int? Quantity100,MarketPurchaseResult? Cost100)
-{ public PetFoodEvidence? Evidence {get;init;} }
+    int? Quantity80,MarketPurchaseResult? Cost80,int? Quantity100,MarketPurchaseResult? Cost100);
 
 internal sealed class PetFoodCatalogService(IDbContextFactory<BestCrushDbContext> database,ActivityCatalogService catalog,
-    IDataPriorityProvider priority,ILogger<PetFoodCatalogService> logger,CurrentDofusClientsState? clients=null)
+    IDataPriorityProvider priority,ILogger<PetFoodCatalogService> logger)
 {
     internal static readonly SemaphoreSlim Gate=new(1,1);
     internal static PetFoodSeed ReadSeed()
@@ -40,7 +39,9 @@ internal sealed class PetFoodCatalogService(IDbContextFactory<BestCrushDbContext
                 {
                     if(!foods.TryGetValue(item.Id,out var food)) db.PetFoods.Add(foods[item.Id]=food=new(){DofusDbId=item.Id});
                     food.Name=item.Name;food.DofusDbIconId=item.IconId;food.MarketType=item.MarketType;
-                    food.Craftable=item.Craftable;food.Experience=item.Experience;food.ExperienceSource="Catalogue client";
+                    food.Craftable=item.Craftable;
+                    if(food.ExperienceObservedAtUtc is null)
+                    {food.Experience=item.Experience;food.ExperienceSource="Catalogue client";}
                 }
             }
             catch(Exception ex) when(!token.IsCancellationRequested)
@@ -77,7 +78,6 @@ internal sealed class PetFoodCatalogService(IDbContextFactory<BestCrushDbContext
             if(!foods.TryGetValue(row.Id,out var food)) db.PetFoods.Add(foods[row.Id]=food=new()
             {DofusDbId=row.Id,Name=row.Name,DofusDbIconId=row.IconId,MarketType=row.MarketType,Craftable=row.Craftable,
                 Experience=row.Experience,ExperienceSource=row.ExperienceSource});
-            food.SheetExperience=row.SheetExperience;
             if(row.UnitPrice is >0 && (!latest.TryGetValue((row.MarketType,row.Id),out var at) || at<seed.ObservedAtUtc.UtcDateTime))
                 db.MarketPriceObservations.Add(new(){DofusDbId=row.Id,ObjectType=row.MarketType,ServerName=seed.Server,
                     Price=row.UnitPrice.Value,Quantity=1,Source=MarketPriceSource.Manual,ObservedAtUtc=seed.ObservedAtUtc.UtcDateTime});
@@ -89,9 +89,7 @@ internal sealed class PetFoodCatalogService(IDbContextFactory<BestCrushDbContext
     internal async Task<PetFood[]> GetFoodsAsync(CancellationToken token)
     {
         var foods=await SynchronizeAsync(token);
-        await using var db=await database.CreateDbContextAsync(token);
-        var evidence=await PetFoodEvidenceReader.ReadAsync(db,foods,clients?.SelectedClient?.ClientBuild,token);
-        return foods.Where(food=>food.Experience is >0 && evidence.GetValueOrDefault(food.DofusDbId) is not {Matches:false} and not {Consistent:false})
+        return foods.Where(food=>food.Experience is >0 && double.IsFinite(food.Experience.Value))
             .Select(food=>new PetFood(food.DofusDbId,food.Name,food.DofusDbIconId,food.MarketType,food.Experience!.Value,food.Craftable)).ToArray();
     }
 
@@ -100,7 +98,6 @@ internal sealed class PetFoodCatalogService(IDbContextFactory<BestCrushDbContext
         var foods=await SynchronizeAsync(token);
         await using var db=await database.CreateDbContextAsync(token);
         var pricing=new MarketPriceService(db,priority);
-        var evidence=await PetFoodEvidenceReader.ReadAsync(db,foods,clients?.SelectedClient?.ClientBuild,token);
         var market=new EquipmentProfitabilityContext
         {
             ResourcePrices=await pricing.GetLatestObservationsForServerAsync(MarketObjectType.Resource,server,token,excludeUnavailableLots:true),
@@ -108,13 +105,7 @@ internal sealed class PetFoodCatalogService(IDbContextFactory<BestCrushDbContext
             EquipmentPrices=new Dictionary<(long,int),MarketPriceObservation>(),Coefficients=[]
         };
         var planner=new PetFoodPlanner(pricing,[],[],new Dictionary<long,BigInteger>(),market);
-        return foods.Select(food=>
-        {
-            var observation=evidence.GetValueOrDefault(food.DofusDbId);
-            var row=BuildRow(food,planner,market) with {Evidence=observation};
-            return observation is {Matches:false} or {Consistent:false}
-                ? row with {Quantity80=null,Cost80=null,Quantity100=null,Cost100=null} : row;
-        }).ToArray();
+        return foods.Select(food=>BuildRow(food,planner,market)).ToArray();
     }
 
     internal static PetFoodDataRow BuildRow(PetFoodDefinition food,PetFoodPlanner planner,EquipmentProfitabilityContext market)

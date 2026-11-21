@@ -1,7 +1,8 @@
 @using BestCrush.Services
 @using BestCrush.Network.Protocol
 @using Microsoft.Extensions.Logging
-@inject PetOpportunityService Opportunities
+@inject PetAnalysisService Opportunities
+@inject PetFoodPreferences FoodPreferences
 @inject IServiceProvider OverlayServices
 @inject PetObjectiveProgressStore ProgressStore
 @inject CurrentDofusClientsState Clients
@@ -29,13 +30,17 @@ else if (_report is null && _loading)
 {
     <div class="d-flex gap-3 align-items-center mb-3">
         <input class="form-control" aria-label="Chercher un familier" placeholder="Chercher un familier…" @bind="_search" @bind:event="oninput" />
-        <span class="text-nowrap" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Nourritures avec un prix de moins de 72 h" data-bs-custom-class="multiline-tooltip">
+        <span class="text-nowrap" tabindex="0" data-bs-toggle="tooltip" data-bs-title="Nourritures avec un prix connu · dernier relevé conservé" data-bs-custom-class="multiline-tooltip">
             <i class="bi bi-shop" aria-hidden="true"></i> @(report.AnalysisComplete ? $"{report.QuotedFoods} / {report.FoodCount}" : "—")
         </span>
         @if (!report.ProfessionsKnown) { <StatusIcon Icon="tools" Tooltip="Niveaux de métier à synchroniser." CssClass="text-warning" /> }
         @if (!report.RecipesKnown) { <StatusIcon Icon="exclamation-triangle" Tooltip="Recettes indisponibles. Comparaison limitée aux stocks et aux achats." CssClass="text-warning" /> }
         @if (_loading) { <span role="status" class="spinner-border spinner-border-sm" aria-label="Calcul en cours"></span> }
     </div>
+    <PetFoodSelector Value="report.BestFoodValue" Loading="_loading" ContextKey="@($"{ServerName}:{TargetWindow}")"
+        UseStocks="FoodPreferences.Selection.UseStocks" SkippedCount="FoodPreferences.Selection.Skipped.Count"
+        UseStocksChanged="FoodPreferences.SetUseStocks" NextRequested="FoodPreferences.Skip"
+        PreviousRequested="FoodPreferences.Previous" ResetRequested="FoodPreferences.Reset" />
     <nav class="pet-tabs" aria-label="Familiers">
         <button type="button" class="@(!_actions ? "is-selected" : "")" aria-current="@(!_actions ? "page" : null)" @onclick="() => _actions = false"><i class="bi bi-heart" aria-hidden="true"></i> Mes familiers <small>@report.Owned.Count</small></button>
         <button type="button" class="@(_actions ? "is-selected" : "")" aria-current="@(_actions ? "page" : null)" @onclick="() => _actions = true"><i class="bi bi-list-check" aria-hidden="true"></i> À faire</button>
@@ -46,7 +51,7 @@ else if (_report is null && _loading)
         <h2 class="h5">Mes familiers (@report.Owned.Count)</h2>
         @foreach (var pet in report.Owned.Where(Matches))
         {
-            <PetOpportunityRow @key="(pet.Owned!.Container,pet.Owned.Uid)" Assessment="TrackedAssessment(pet)" Report="report" TargetWindow="TargetWindow" Progress="@GoalFor(pet)?.Percent" Analyzing="@(!report.OwnedAnalysisComplete && _loading)" />
+            <PetOpportunityRow @key="(pet.Owned!.Container,pet.Owned.Uid)" Assessment="TrackedAssessment(pet)" Report="report" TargetWindow="TargetWindow" Progress="@GoalFor(pet)?.Percent" Analyzing="@(!report.OwnedAnalysisComplete && _loading)" NextFoodRequested="FoodPreferences.Skip" PreviousFoodRequested="FoodPreferences.Previous" CanChoosePrevious="@(FoodPreferences.Selection.Skipped.Count>0)" />
         }
     </section>
     <PetPreparationLists Checks="report.OwnedChecks" ShowFoods="false" TargetWindow="TargetWindow" />
@@ -76,13 +81,13 @@ else if (_report is null && _loading)
         <h2 class="h5">Acheter et monter (@PurchaseChoices.Count)</h2>
         @foreach (var pet in PurchaseChoices.Where(Matches))
         {
-            <PetOpportunityRow @key="pet.Species.Id" Assessment="TrackedAssessment(pet)" Report="report" TargetWindow="TargetWindow" Progress="@GoalFor(pet)?.Percent" />
+            <PetOpportunityRow @key="pet.Species.Id" Assessment="TrackedAssessment(pet)" Report="report" TargetWindow="TargetWindow" Progress="@GoalFor(pet)?.Percent" NextFoodRequested="FoodPreferences.Skip" PreviousFoodRequested="FoodPreferences.Previous" CanChoosePrevious="@(FoodPreferences.Selection.Skipped.Count>0)" />
         }
     </section>
     }
     @if (_actions)
     {
-        <PetPreparationLists Checks="report.Checks" Foods="report.FoodTests" TargetWindow="TargetWindow" />
+        <PetPreparationLists Checks="report.PetPriceChecks" Foods="report.FoodTests" ResourcePriceChecks="report.FoodPriceChecks" KnownFoodExperienceItems="report.KnownFoodExperienceItems" ShowResourcePrices="true" TargetWindow="TargetWindow" />
     }
 }
 </ItemCopyScope>
@@ -124,12 +129,7 @@ else if (_report is null && _loading)
     private bool Matches(PetAssessment row)=>string.IsNullOrWhiteSpace(_search) || row.Species.Name.Contains(_search,StringComparison.CurrentCultureIgnoreCase);
     protected override void OnInitialized()
     {
-        Stocks.Changed+=StockChanged;Professions.Changed+=StockChanged;
-        Settings.BreedingSettingsChanged+=StockChanged;
-        Sales.PetPricesChanged+=PricesChanged;Sales.ListingsChanged+=PricesChanged;
-        Sales.Changed+=PricesChanged;
-        Feeding.Changed+=PricesChanged;
-        MarketChanges.Changed+=MarketChanged;
+        Opportunities.Changed+=StockChanged;
     }
     protected override Task OnParametersSetAsync()
     {
@@ -140,15 +140,6 @@ else if (_report is null && _loading)
         return Task.CompletedTask;
     }
     private void StockChanged(){if(!_disposed) _=InvokeAsync(RequestRefreshAsync);}
-    private void PricesChanged(string server)
-    {
-        if(!_disposed && string.Equals(server,_report?.Server ?? ServerName,StringComparison.OrdinalIgnoreCase)) _=InvokeAsync(RequestRefreshAsync);
-    }
-    private void MarketChanged(object? sender,MarketDataChangedEventArgs change)
-    {
-        if(_report is { } report && !report.RelevantPriceItems.Contains(change.DofusDbId)) return;
-        PricesChanged(change.ServerName);
-    }
     private Task RequestRefreshAsync()
     {
         _load?.Cancel();
@@ -186,7 +177,7 @@ else if (_report is null && _loading)
                     var report=await Opportunities.LoadAsync(view.Item1,view.Item2,token,partial=>PublishAsync(partial,view,token));
                     if(view==_view && !_disposed){_report=report;_error=null;UpdateProgress();}
                 }
-                catch(OperationCanceledException) when(token.IsCancellationRequested){}
+                catch(OperationCanceledException){if(!token.IsCancellationRequested)_pending=true;}
                 catch(Exception ex)
                 {
                     Logger.LogWarning(ex,"Calcul des familiers indisponible.");
@@ -199,11 +190,7 @@ else if (_report is null && _loading)
     }
     public void Dispose()
     {
-        _disposed=true;Stocks.Changed-=StockChanged;Professions.Changed-=StockChanged;
-        Settings.BreedingSettingsChanged-=StockChanged;
-        Sales.PetPricesChanged-=PricesChanged;Sales.ListingsChanged-=PricesChanged;MarketChanges.Changed-=MarketChanged;
-        Sales.Changed-=PricesChanged;
-        Feeding.Changed-=PricesChanged;
+        _disposed=true;Opportunities.Changed-=StockChanged;
         _lifetime.Cancel();_load?.Cancel();_load?.Dispose();_lifetime.Dispose();
     }
 }

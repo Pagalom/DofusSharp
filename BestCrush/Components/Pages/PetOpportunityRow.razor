@@ -9,7 +9,7 @@
             <ItemIcon Item="Assessment.Species" Size="Size.Small" />
         </StockItemArtwork>
         <span class="flex-grow-1">
-            <strong><CopyTextButton Value="Assessment.Species.Name" Tooltip="Copier le nom">@Assessment.Species.Name</CopyTextButton></strong>
+            <strong><CopyTextButton Value="@Assessment.Species.Name" Tooltip="Copier le nom">@Assessment.Species.Name</CopyTextButton></strong>
             <span class="d-block small">@SourceDescription</span>
         </span>
         @if (Progress is { } percent)
@@ -69,7 +69,7 @@
                     <ul>
                         @foreach(var line in choice.Nutrition.Purchases)
                         {
-                            <li><CopyTextButton Value="line.Name" Tooltip="Copier le nom">@line.Name</CopyTextButton>
+                            <li><CopyTextButton Value="@line.Name" Tooltip="Copier le nom">@line.Name</CopyTextButton>
                                 · @string.Join(" + ",line.Purchase.Lots.OrderByDescending(lot=>lot.Key).Select(lot=>$"{lot.Value} lot(s) × {lot.Key}"))
                                 · @Money(line.Purchase.TotalCost)
                                 @if(line.Ingredient){<span> · ingrédient</span>}
@@ -90,9 +90,13 @@
                     {
                         var food=meal.First().Food;
                         <li><StockItemArtwork Stock="Report.Stock" ItemId="food.Id"><ItemIcon Item="food" Size="Size.Tiny" /></StockItemArtwork>
-                            <CopyTextButton Value="food.Name" Tooltip="Copier le nom">@food.Name</CopyTextButton> × @meal.Sum(line=>line.Quantity).ToString("N0")
+                            <CopyTextButton Value="@food.Name" Tooltip="Copier le nom">@food.Name</CopyTextButton> × @meal.Sum(line=>line.Quantity).ToString("N0")
                             · @BestCrush.Domain.Services.PetExperience.MealExperience(food.Experience,meal.Sum(line=>line.Quantity)).ToString("N0") XP
                             · <StatusIcon Icon="box-seam" Tooltip="Pris dans le stock" /> @meal.Sum(line=>line.FromStock).ToString("N0")
+                            <span class="d-inline-flex gap-1 ms-2">
+                                <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(!CanChoosePrevious)" title="Aliment précédent" aria-label="Aliment précédent" @onclick="PreviousFoodRequested"><i class="bi bi-arrow-left" aria-hidden="true"></i></button>
+                                <button type="button" class="btn btn-outline-primary btn-sm" title="Aliment suivant par coût d’XP" aria-label="Aliment suivant" @onclick="()=>NextFoodRequested.InvokeAsync(food.Id)"><i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+                            </span>
                         </li>
                     }
                 </ul>
@@ -126,6 +130,9 @@
     [Parameter] public DofusClientWindowKey? TargetWindow {get;set;}
     [Parameter] public int? Progress {get;set;}
     [Parameter] public bool Analyzing {get;set;}
+    [Parameter] public bool CanChoosePrevious {get;set;}
+    [Parameter] public EventCallback<long> NextFoodRequested {get;set;}
+    [Parameter] public EventCallback PreviousFoodRequested {get;set;}
     private string _copyStatus="";
     private int? CurrentLevel=>Assessment.Owned?.Reading?.Level ?? Assessment.Purchase?.Level;
     private string SourceDescription=>Assessment.Owned is { } own

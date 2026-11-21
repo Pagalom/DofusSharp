@@ -1,0 +1,65 @@
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+@implements IDisposable
+@inject LivePetFeedingService Feeding
+
+<section class="food-analysis" aria-label="Analyse de nourriture">
+    @if(_batch?.Current is {} food)
+    {
+        <div class="food-heading">
+            <TradeItemImage Name="@food.Name" ItemId="food.DofusDbId" IconId="food.DofusDbIconId" Size="40" />
+            <strong>@food.Name</strong>
+            <span class="food-navigation">
+                <button type="button" disabled="@(_saving || _batch.Remaining.Count<2)" aria-label="Ressource précédente" @onclick="()=>Move(-1)"><i class="bi bi-chevron-left"></i></button>
+                <small>@_batch.Position / @_batch.Remaining.Count</small>
+                <button type="button" disabled="@(_saving || _batch.Remaining.Count<2)" aria-label="Ressource suivante" @onclick="()=>Move(1)"><i class="bi bi-chevron-right"></i></button>
+            </span>
+        </div>
+        <div class="food-inputs">
+            <label>Quantité<input type="number" min="1" max="2147483647" step="1" disabled="@_saving" @bind="_quantity" @bind:event="oninput" /></label>
+            <label>XP obtenue<input type="number" min="0" max="9223372036854775807" step="1" disabled="@_saving" @bind="_experience" @bind:event="oninput" /></label>
+        </div>
+        <div class="food-actions">
+            <span class="food-ratio">@if(Valid){<text>@(((double)_experience!.Value/_quantity!.Value).ToString("0.#####")) XP/u</text>}</span>
+            <button type="button" class="food-save" disabled="@(!Valid || _saving)" @onclick="Save"><i class="bi bi-check-lg"></i> Enregistrer</button>
+        </div>
+    }
+    else
+    {<p class="food-finished"><i class="bi bi-check-circle"></i> Série terminée</p>}
+    @if(_message is not null){<small role="status">@_message</small>}
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<PetFoodDefinition> Foods {get;set;}=[];
+    private PetFoodAnalysisBatch? _batch;
+    private int? _quantity;
+    private long? _experience;
+    private string? _message;
+    private bool _saving,_disposed;
+    private bool Valid=>_quantity is >0 && _experience is >=0;
+    protected override void OnInitialized()=>Feeding.CoefficientUpdated+=Updated;
+    protected override void OnParametersSet()=>_batch??=new(Foods);
+    private void Reset(){_quantity=null;_experience=null;_message=null;}
+    private void Move(int direction){_batch?.Move(direction);Reset();}
+    private void Updated(long id)
+    {
+        if(!_disposed)_=InvokeAsync(()=>{
+            var previous=_batch?.Current?.DofusDbId;
+            if(_batch?.Complete(id)==true){if(previous==id)Reset();StateHasChanged();}
+        });
+    }
+    private async Task Save()
+    {
+        if(!Valid || _saving || _batch?.Current is not {} food)return;
+        _saving=true;
+        try
+        {
+            if(await Feeding.RecordAsync(food,_quantity!.Value,_experience!.Value))
+            {_batch.Complete(food.DofusDbId);Reset();_message="Enregistré";}
+            else _message="Relevé non enregistré.";
+        }
+        catch{_message="Enregistrement indisponible.";}
+        finally{_saving=false;}
+    }
+    public void Dispose(){_disposed=true;Feeding.CoefficientUpdated-=Updated;}
+}

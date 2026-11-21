@@ -92,6 +92,8 @@ public sealed class DataWorkspacePerformanceTest
         services.AddScoped(sp => new ItemsService(sp.GetRequiredService<BestCrushDbContext>(), null!, null!, null!, null!));
         services.AddSingleton<IDataPriorityProvider, TestDataPriorityProvider>();
         services.AddScoped<MarketPriceService>();
+        services.AddSingleton<MarketSourceSelectionService>();
+        services.AddSingleton(new LivePetFeedingService(database,new(),new(),new(),Microsoft.Extensions.Logging.Abstractions.NullLogger<LivePetFeedingService>.Instance));
         services.AddSingleton<MarketDataChangeNotifier>();
         services.AddSingleton<ServerViewFilterState>();
         services.AddSingleton<CurrentDofusClientsState>();
@@ -160,6 +162,7 @@ public sealed class DataWorkspacePerformanceTest
                 await Invoke(capture.Resources, "OnParametersSetAsync");
             });
             html = await renderer.Dispatcher.InvokeAsync(root.ToHtmlString);
+            Assert.Contains("data-source-server=\"B\"",html);
             Assert.Contains("value=\"333\"", html);
             Assert.DoesNotContain("value=\"222\"", html);
 

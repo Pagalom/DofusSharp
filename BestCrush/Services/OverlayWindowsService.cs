@@ -22,6 +22,7 @@ public sealed class OverlayWindowView
     public bool RequestedVisible { get; set; }
     internal bool ContextVisible(bool context) => RequestedVisible && (Kind!=WorkspaceOverlayKind.Popup || Pinned || context);
     internal bool ParentHovered, Hovered;
+    internal string? ParentId;
     internal CancellationTokenSource? LayoutSave;
     internal Window? Window;
     internal OverlayWindowLayout? MotionStart;
@@ -111,7 +112,7 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
     {
         _hover?.Cancel();_hover?.Dispose();_hover=new();var token=_hover.Token;
         _hoverKey=popup.Key;
-        if(Get(popup.Key) is { } existing){existing.ParentHovered=true;existing.Popup=popup;Changed?.Invoke();return;}
+        if(Get(popup.Key) is { } existing){existing.ParentHovered=true;existing.Popup=popup;RepositionPopup(existing,parent);Changed?.Invoke();return;}
         _=OpenAfterDelayAsync(parent,popup,token);
     }
     private async Task OpenAfterDelayAsync(string parent,OverlayPopup popup,CancellationToken token)
@@ -122,10 +123,10 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
     public void OpenPopup(string parent,OverlayPopup popup)
     {
         if(_windows.TryGetValue(popup.Key,out var existing))
-        {existing.Popup=popup;existing.ParentHovered=true;ShowWindow(existing,true);return;}
+        {existing.Popup=popup;existing.ParentHovered=true;RepositionPopup(existing,parent);ShowWindow(existing,true);return;}
         // Keep pinned popups intact; an ordinary hover opens one transient popup at a time.
         foreach(var transient in _windows.Values.Where(w=>w.Kind==WorkspaceOverlayKind.Popup && !w.Pinned).ToArray())Close(transient.Id);
-        var view=new OverlayWindowView{Id=popup.Key,Kind=WorkspaceOverlayKind.Popup,Title=popup.Title,Popup=popup,ParentHovered=true};
+        var view=new OverlayWindowView{Id=popup.Key,Kind=WorkspaceOverlayKind.Popup,Title=popup.Title,Popup=popup,ParentHovered=true,ParentId=parent};
         _windows.Add(view.Id,view);Create(view,parent);ShowWindow(view,true);
     }
     public void LeavePopup(string key)
@@ -205,7 +206,7 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
         foreach(var view in _windows.Values)
         {
 #if WINDOWS
-            if(view.App is { } app){var l=layouts.GetDefaultLayout(LayoutKind(view));app.MoveAndResize(new RectInt32(l.X,l.Y,l.Width,l.Height));}
+            if(view.App is { } app){var l=layouts.GetDefaultLayout(LayoutKind(view));app.MoveAndResize(new RectInt32(l.X,l.Y,l.Width,l.Height));RepositionPopup(view,view.ParentId);}
 #endif
         }
     }
@@ -235,7 +236,7 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
             view.Kind==WorkspaceOverlayKind.Control?46:180,true);
 #if WINDOWS
         if(parent is not null && Get(parent)?.App is { } source)
-            layout=layouts.ConstrainToVisibleScreen(layout with { X=source.Position.X+source.Size.Width-12,Y=source.Position.Y+100 },320,180);
+            layout=layouts.PlacePopupBeside(new(source.Position.X,source.Position.Y,source.Size.Width,source.Size.Height),layout);
 #endif
         var page=new ContentPage{Content=web,BackgroundColor=Colors.Transparent,Padding=0};
         var window=new Window(page){Title="BestCrush · "+view.Title,Width=layout.Width,Height=layout.Height,X=layout.X,Y=layout.Y,
@@ -292,6 +293,18 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
         });
 #endif
     }
+    private void RepositionPopup(OverlayWindowView view,string? parent)
+    {
+        if(view.Kind!=WorkspaceOverlayKind.Popup || view.Pinned)return;
+        view.ParentId=parent;
+#if WINDOWS
+        if(view.App is not { } popup || parent is null || Get(parent)?.App is not { } source)return;
+        var placement=layouts.PlacePopupBeside(new(source.Position.X,source.Position.Y,source.Size.Width,source.Size.Height),
+            new(popup.Position.X,popup.Position.Y,popup.Size.Width,popup.Size.Height));
+        popup.MoveAndResize(new RectInt32(placement.X,placement.Y,placement.Width,placement.Height));
+#endif
+    }
+
     private void SaveLayoutLater(OverlayWindowView view)
     {
         view.LayoutSave?.Cancel();view.LayoutSave?.Dispose();view.LayoutSave=new();

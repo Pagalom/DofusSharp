@@ -40,16 +40,119 @@ public sealed class PetFoodPlannerTest
     }
 
     [Fact]
-    public void MixesOwnedFoodAndPurchasedFoodAndIncludesTheOwnedOpportunityCost()
+    public void SelectsOneFoodByCostPerXpInsteadOfSearchingForACheaperMixture()
     {
         using var database=new TestDatabase();using var db=database.CreateContext();
         var planner=new PetFoodPlanner(new(db,new TestDataPriorityProvider()),[Food(10,10),Food(20,100)],[],
             new Dictionary<long,BigInteger>{{10,2}},Market(Quote(10,1,5),Quote(20,1,25)));
         var plan=Assert.IsType<PetNutritionPlan>(planner.Calculate(120));
         Assert.True(plan.Experience>=120);
-        Assert.Equal(25,plan.CashRequired);Assert.Equal(8,plan.StockValue);
-        Assert.Equal(2,plan.StockConsumed[10]);Assert.Equal(2,plan.Meals.Count);
+        Assert.Equal(50,plan.CashRequired);Assert.Equal(0,plan.StockValue);
+        Assert.Empty(plan.StockConsumed);Assert.Equal(20,Assert.Single(plan.Meals).Food.Id);
         Assert.Equal(20,Assert.Single(plan.Purchases).ItemId);
+    }
+
+    [Fact]
+    public void UsesOwnedUnitsOfTheSelectedFoodThenPurchasesTheRemainder()
+    {
+        using var database=new TestDatabase();using var db=database.CreateContext();
+        var planner=new PetFoodPlanner(new(db,new TestDataPriorityProvider()),[Food(10,10)],[],
+            new Dictionary<long,BigInteger>{{10,2}},Market(Quote(10,1,5)));
+        var plan=Assert.IsType<PetNutritionPlan>(planner.Calculate(50));
+        var meal=Assert.Single(plan.Meals);
+        Assert.Equal(5,meal.Quantity);Assert.Equal(2,meal.FromStock);Assert.Equal(3,meal.Bought);
+        Assert.Equal(8,plan.StockValue);Assert.Equal(15,plan.CashRequired);
+    }
+
+    [Fact]
+    public void ComparesXpPerKamaRatherThanTheLowestResourceUnitPrice()
+    {
+        using var database=new TestDatabase();using var db=database.CreateContext();
+        var planner=new PetFoodPlanner(new(db,new TestDataPriorityProvider()),[Food(10,1),Food(20,100)],[],
+            new Dictionary<long,BigInteger>(),Market(Quote(10,1,1),Quote(20,1,25)));
+        var plan=Assert.IsType<PetNutritionPlan>(planner.Calculate(100));
+        Assert.Equal(20,Assert.Single(plan.Meals).Food.Id);Assert.Equal(25,plan.CashRequired);
+    }
+
+    [Fact]
+    public void DoesNotRankASmallCheapStockAsAnUnlimitedSource()
+    {
+        using var database=new TestDatabase();using var db=database.CreateContext();
+        var planner=new PetFoodPlanner(new(db,new TestDataPriorityProvider()),[Food(10,10),Food(20,10)],[],
+            new Dictionary<long,BigInteger>{{10,1}},Market(Quote(10,1,2),Quote(20,1,1)));
+        var plan=Assert.IsType<PetNutritionPlan>(planner.Calculate(1000));
+        Assert.Equal(20,Assert.Single(plan.Meals).Food.Id);Assert.Equal(100,plan.CashRequired);
+    }
+
+    [Fact]
+    public void CheapestRatioCanRequireABiggerLotWithoutStartingAMixtureSearch()
+    {
+        using var database=new TestDatabase();using var db=database.CreateContext();
+        var planner=new PetFoodPlanner(new(db,new TestDataPriorityProvider()),[Food(10,10),Food(20,10)],[],
+            new Dictionary<long,BigInteger>(),Market(Quote(10,100,100),Quote(20,1,2)));
+        var plan=Assert.IsType<PetNutritionPlan>(planner.Calculate(10));
+        var meal=Assert.Single(plan.Meals);
+        Assert.Equal(10,meal.Food.Id);Assert.Equal(1,meal.Quantity);Assert.Equal(100,meal.Bought);
+        Assert.Equal(100,plan.CashRequired);
+    }
+
+    [Fact]
+    public void CanCraftTheSelectedFoodFromStockAndPurchaseTheRemainingUnits()
+    {
+        using var database=new TestDatabase();using var db=database.CreateContext();
+        var recipe=new ProductCraftRecipe(new(20,"Préparation",1,null,MarketObjectType.Resource,32,"Essence","Alchimiste",1),
+            [new(30,"Ingrédient",MarketObjectType.Resource,2,null)]);
+        var planner=new PetFoodPlanner(new(db,new TestDataPriorityProvider()),[Food(20,10)],[recipe],
+            new Dictionary<long,BigInteger>{{30,4}},Market(Quote(20,1,10),Quote(30,1,6)));
+        var plan=Assert.IsType<PetNutritionPlan>(planner.Calculate(50));
+        var meal=Assert.Single(plan.Meals);
+        Assert.Equal(2,meal.Crafted);Assert.Equal(3,meal.Bought);Assert.Equal(4,plan.StockConsumed[30]);
+        Assert.Equal(30,plan.CashRequired);Assert.Equal(20,plan.StockValue);
+    }
+
+    [Fact]
+    public void PricesMissingIngredientsWhenCraftingHasTheBestXpRatio()
+    {
+        using var database=new TestDatabase();using var db=database.CreateContext();
+        var recipe=new ProductCraftRecipe(new(20,"Préparation",1,null,MarketObjectType.Resource,32,"Essence","Alchimiste",1),
+            [new(30,"Ingrédient",MarketObjectType.Resource,2,null)]);
+        var planner=new PetFoodPlanner(new(db,new TestDataPriorityProvider()),[Food(10,10),Food(20,100)],[recipe],
+            new Dictionary<long,BigInteger>{{30,2}},Market(Quote(10,1,5),Quote(20,1,60),Quote(30,1,10)));
+        var plan=Assert.IsType<PetNutritionPlan>(planner.Calculate(200));
+        Assert.Equal(20,Assert.Single(plan.Meals).Food.Id);Assert.Equal(2,Assert.Single(plan.Crafts).Quantity);
+        Assert.Equal(2,plan.StockConsumed[30]);Assert.Equal(18,plan.StockValue);Assert.Equal(20,plan.CashRequired);
+        Assert.Equal(30,Assert.Single(plan.Purchases).ItemId);
+    }
+
+    [Fact]
+    public void MissingPricesNeverTurnOwnedFoodIntoFreeProfit()
+    {
+        using var database=new TestDatabase();using var db=database.CreateContext();
+        var planner=new PetFoodPlanner(new(db,new TestDataPriorityProvider()),[Food(10,100),Food(20,100)],[],
+            new Dictionary<long,BigInteger>{{10,100}},Market(Quote(20,1,10)));
+        var plan=Assert.IsType<PetNutritionPlan>(planner.Calculate(100));
+        Assert.Equal(20,Assert.Single(plan.Meals).Food.Id);Assert.Equal(10,plan.EconomicCost);
+        var unknown=new PetFoodPlanner(new(db,new TestDataPriorityProvider()),[Food(10,100)],[],
+            new Dictionary<long,BigInteger>{{10,100}},Market()).Calculate(100);
+        Assert.NotNull(unknown);Assert.Null(unknown.EconomicCost);
+    }
+
+    [Fact]
+    public void ManyFoodsAndTargetLevelsDoNotAccumulateIntermediateMealCombinations()
+    {
+        using var database=new TestDatabase();using var db=database.CreateContext();
+        var foods=Enumerable.Range(1,1200).Select(id=>Food(id,100)).ToArray();
+        var market=Market(foods.Select(food=>Quote(food.Id,1,food.Id+10)).ToArray());
+        var stock=foods.ToDictionary(food=>food.Id,_=>new BigInteger(50));
+        var planner=new PetFoodPlanner(new(db,new TestDataPriorityProvider()),foods,[],stock,market);
+        planner.Calculate(100); // Initialize source prices before measuring target growth.
+        long start=GC.GetAllocatedBytesForCurrentThread();
+        for(int needed=101;needed<1101;needed++)
+        {
+            var plan=Assert.IsType<PetNutritionPlan>(planner.Calculate(needed));
+            Assert.Single(plan.Meals);Assert.True(plan.Experience>=needed);
+        }
+        Assert.InRange(GC.GetAllocatedBytesForCurrentThread()-start,0,64L*1024*1024);
     }
 
     [Fact]

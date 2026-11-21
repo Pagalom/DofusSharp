@@ -1,0 +1,65 @@
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+
+<div class="pet-xp-entry">
+    @if(ShowRate)
+    {
+        <div class="xp-rate" title="@RateTooltip">
+            <output aria-label="Coût en kamas par XP">@(UnitPrice is {} price && Food.Experience is >0 ? (price/Food.Experience.Value).ToString("N4") : "—")</output>
+            <span class="xp-origin @(Food.ExperienceOrigin==MarketPriceSource.InGameAutomatic ? "source-game" : "source-manual")">@(Food.Experience is null ? "—" : Food.ExperienceOrigin==MarketPriceSource.InGameAutomatic ? "J" : "M")</span>
+        </div>
+    }
+    <span class="xp-pair">
+        <input type="number" min="1" step="1" max="2147483647" placeholder="Qté" aria-label="@($"Quantité · {Food.Name}")"
+            disabled="@ReadOnly" @bind="_quantity" @bind:event="oninput" @onblur="Save" @onkeydown="KeyDown" />
+        <input type="number" min="0" step="1" placeholder="XP" aria-label="@($"XP obtenue · {Food.Name}")"
+            disabled="@ReadOnly" @bind="_experience" @bind:event="oninput" @onblur="Save" @onkeydown="KeyDown" />
+    </span>
+    <button type="button" class="xp-save" disabled="@(ReadOnly || _saving || !Valid || AlreadySaved)"
+        aria-label="@($"Enregistrer l’XP · {Food.Name}")" title="Enregistrer" @onclick="Save"><i class="bi @(_saving ? "bi-hourglass-split" : _error ? "bi-exclamation-triangle" : "bi-check-lg")"></i></button>
+    @if(_error){<span class="visually-hidden" role="status">Enregistrement indisponible.</span>}
+</div>
+
+@code {
+    [Parameter,EditorRequired] public PetFoodDefinition Food {get;set;}=null!;
+    [Parameter] public double? UnitPrice {get;set;}
+    [Parameter] public bool ShowRate {get;set;}
+    [Parameter] public bool ReadOnly {get;set;}
+    private int? _quantity;
+    private long? _experience;
+    private (int? Quantity,long? Experience)? _saved;
+    private bool _saving,_error,_pending;
+    private bool Valid=>_quantity is >0 && _experience is >=0;
+    private bool AlreadySaved=>Valid && _saved==(_quantity,_experience) && Food.ExperienceOrigin==MarketPriceSource.Manual &&
+        Food.Experience==(double)_experience!.Value/_quantity!.Value && !PetDataFreshness.ExperienceNeedsReview(Food.ExperienceObservedAtUtc);
+    private string RateTooltip=>(Food.Experience is {} xp ? $"{xp:0.#####} XP/u" : "XP inconnue")+
+        (Food.ExperienceObservedAtUtc is {} at ? $" · {at.ToLocalTime():dd/MM HH:mm}" : "")+
+        (Food.ExperienceOrigin==MarketPriceSource.InGameAutomatic ? " · Relevé en jeu" : " · Manuel");
+    private Task KeyDown(KeyboardEventArgs e)=>e.Key=="Enter" ? Save() : Task.CompletedTask;
+    private async Task Save()
+    {
+        if(ReadOnly || !Valid || AlreadySaved)return;
+        if(_saving){_pending=true;return;}
+        _saving=true;
+        try
+        {
+            do
+            {
+                _pending=false;
+                if(ReadOnly || !Valid || AlreadySaved)break;
+                var pair=(Quantity:_quantity,Experience:_experience);
+                if(await Services.GetRequiredService<LivePetFeedingService>().RecordAsync(Food,pair.Quantity!.Value,pair.Experience!.Value))
+                {
+                    _saved=pair;_error=false;
+                    Food.Experience=(double)pair.Experience.Value/pair.Quantity.Value;
+                    Food.ExperienceObservedAtUtc=DateTime.UtcNow;Food.ExperienceOrigin=MarketPriceSource.Manual;
+                }
+                else _error=true;
+            }while(_pending);
+        }
+        catch{_error=true;}
+        finally{_saving=false;}
+    }
+}

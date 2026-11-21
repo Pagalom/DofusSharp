@@ -96,6 +96,7 @@ public static class MauiProgram
                     serviceProvider.GetRequiredService<WindowServerAttributionState>(),
                     automaticRoutingEnabled: true));
             builder.Services.AddSingleton<BestCrush.Domain.Services.IDataPriorityProvider,BestCrush.Services.DataPriorityService>();
+            builder.Services.AddSingleton<BestCrush.Services.MarketSourceSelectionService>();
             builder.Services.AddSingleton<BestCrush.Services.BestCrushSettingsService>();
             builder.Services.AddSingleton(provider => new BestCrush.Services.MarketAnalyticsPresetService(
                 provider.GetRequiredService<IWorkspacePreferences>(),
@@ -115,6 +116,8 @@ public static class MauiProgram
             builder.Services.AddScoped<BreedingRefillService>();
             builder.Services.AddScoped<BreedingTradeService>();
             builder.Services.AddScoped<PetOpportunityService>();
+            builder.Services.AddSingleton<PetFoodPreferences>();
+            builder.Services.AddSingleton<PetAnalysisService>();
             builder.Services.AddScoped<PetFoodCatalogService>();
             builder.Services.AddSingleton(new ForgemagingSessionStore(Path.Combine(dataDirectory, "Data", "fm-sessions.json")));
             builder.Services.AddScoped<CoefficientService>();

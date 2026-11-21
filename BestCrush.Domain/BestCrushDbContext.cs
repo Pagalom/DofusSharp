@@ -14,8 +14,8 @@ public class BestCrushDbContext : DbContext
     public DbSet<Rune> Runes { get; set; }
     public DbSet<Resource> Resources { get; set; }
     public DbSet<PetFoodDefinition> PetFoods { get; set; }
-    public DbSet<PetFeedingObservation> PetFeedingObservations { get; set; }
     public DbSet<MarketPriceObservation> MarketPriceObservations { get; set; }
+    public DbSet<DataSourcePreference> DataSourcePreferences { get; set; }
     public DbSet<CoefficientObservation> CoefficientObservations { get; set; }
 
     public DbSet<CrushHistorySession> CrushHistorySessions { get; set; }
@@ -79,7 +79,7 @@ public class BestCrushDbContext : DbContext
         modelBuilder.Entity<Rune>().HasAlternateKey(u => u.DofusDbId);
         modelBuilder.Entity<Resource>().HasAlternateKey(u => u.DofusDbId);
         modelBuilder.Entity<PetFoodDefinition>().Property(food=>food.DofusDbId).ValueGeneratedNever();
-        modelBuilder.Entity<PetFeedingObservation>().HasIndex(meal=>new{meal.FoodItemId,meal.ClientBuild,meal.ObservedAtUtc});
+        modelBuilder.Entity<DataSourcePreference>().HasKey(p=>new{p.ServerName,p.Kind,p.ObjectType,p.ItemId,p.Quantity});
         modelBuilder.Entity<MarketPriceObservation>()
         .HasIndex(p => new
         {

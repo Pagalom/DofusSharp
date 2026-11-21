@@ -1,0 +1,27 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Services
+@using Microsoft.Extensions.DependencyInjection
+@inject IServiceProvider Services
+
+<span class="source-choices" aria-label="@Label" data-source-server="@ServerName">
+    <button type="button" class="source-game" disabled="@ReadOnly" title="@($"{Label} · Capture jeu prioritaire")" @onclick="()=>Choose(MarketPriceSource.InGameAutomatic)">J</button>
+    <button type="button" class="source-manual" disabled="@ReadOnly" title="@($"{Label} · Manuel prioritaire")" @onclick="()=>Choose(MarketPriceSource.Manual)">M</button>
+</span>
+@if(_error){<span role="status" title="Choix non enregistré">!</span>}
+
+@code {
+    [Parameter] public string ServerName {get;set;}="";
+    [Parameter] public MarketObjectType ObjectType {get;set;}
+    [Parameter] public DataValueKind Kind {get;set;}
+    [Parameter] public long ItemId {get;set;}
+    [Parameter] public int Quantity {get;set;}
+    [Parameter] public bool ReadOnly {get;set;}
+    [Parameter] public string Label {get;set;}="Source de la ligne";
+    private bool _error;
+    private async Task Choose(MarketPriceSource source)
+    {
+        if(ReadOnly)return;
+        try{await Services.GetRequiredService<MarketSourceSelectionService>().ChooseAsync(ServerName,ObjectType,ItemId,Quantity,source,Kind);_error=false;}
+        catch{_error=true;}
+    }
+}

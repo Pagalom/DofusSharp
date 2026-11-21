@@ -21,9 +21,10 @@ public sealed record PetNutritionPlan(IReadOnlyList<PetMeal> Meals, IReadOnlyLis
 }
 
 /// <summary>
-/// Compares every quoted food, accessible craft, stock prefix and mixed-food finishing route.
-/// Stock is shared inside a plan, never duplicated between its recipe and its meals.
-/// Alternatives for different pets are independent simulations, not stock reservations.
+/// Selects one food by its estimated kamas per XP, then prices that food's actual lots.
+/// Stock, direct purchase and accessible recipes contribute to the unit-cost estimate;
+/// different foods and stock prefixes are never combined or searched recursively.
+/// Only source data and a bounded cache of completed plans survive between targets.
 /// </summary>
 internal sealed class PetFoodPlanner(MarketPriceService prices, IReadOnlyList<PetFood> foods,
     IReadOnlyList<ProductCraftRecipe> recipes, IReadOnlyDictionary<long,BigInteger> stock,
@@ -31,116 +32,109 @@ internal sealed class PetFoodPlanner(MarketPriceService prices, IReadOnlyList<Pe
 {
     private readonly PetNutritionCache _cache=cache ?? new();
     private readonly Dictionary<(MarketObjectType,long),IReadOnlyDictionary<(long,int),MarketPriceObservation>> _quotes=[];
-    private readonly Dictionary<(MarketObjectType,long,int),MarketPurchaseResult?> _purchases=[];
-    private readonly Dictionary<(MarketObjectType,long,int),double?> _values=[];
-    private readonly Dictionary<(long,int,BigInteger,string),PetNutritionPlan?> _foodPlans=[];
-    private readonly Dictionary<long,double> _lowerUnitCosts=[];
-    private PetFood[]? _orderedFoods;
+    private sealed record Supply(double? PurchaseUnit,double? StockUnit,int Available);
+    private sealed record Ingredient(Supply Supply,int Count);
+    private sealed record FoodSource(PetFood Food,Supply Supply,Ingredient[][] Recipes);
+    private readonly Dictionary<(MarketObjectType,long),Supply> _supplies=[];
+    private FoodSource[]? _sources;
     private readonly ILookup<long,ProductCraftRecipe> _recipes=recipes.ToLookup(recipe=>recipe.Product.DofusDbId);
-    private readonly Dictionary<long,long[]> _ingredients=recipes.GroupBy(recipe=>recipe.Product.DofusDbId)
-        .ToDictionary(group=>group.Key,group=>group.SelectMany(recipe=>recipe.Ingredients).Select(i=>i.ItemId).Distinct().Order().ToArray());
-    private readonly PetFood[] _foods=foods.Where(food=>stock.GetValueOrDefault(food.Id)>0 ||
+    private readonly PetFood[] _foods=foods.Where(food=>double.IsFinite(food.Experience) && food.Experience>0 && (stock.GetValueOrDefault(food.Id)>0 ||
         StockCraftPlanner.PricesFor(market,food.MarketType).Keys.Any(key=>key.DofusDbId==food.Id) ||
-        recipes.Any(recipe=>recipe.Product.DofusDbId==food.Id)).ToArray();
+        recipes.Any(recipe=>recipe.Product.DofusDbId==food.Id))).ToArray();
 
     internal PetNutritionPlan? Calculate(int needed,CancellationToken token=default,int maximumExperience=int.MaxValue)
     {
+        token.ThrowIfCancellationRequested();
         if (needed<=0) return PetNutritionPlan.Empty;
         if (maximumExperience<needed) return null;
         if (_cache.TryGet((needed,maximumExperience),out var cached)) return cached;
-        PetNutritionPlan? best=Finish(needed,stock,token,maximumExperience);
-        var prefix=PetNutritionPlan.Empty;
-        var remainingStock=stock.ToDictionary();
-        var available=_foods.Where(food=>stock.GetValueOrDefault(food.Id)>0)
-            .Select(food=>(Food:food, Value:OwnedValue(food.Id,food.MarketType,1)))
-            .OrderBy(entry=>entry.Value.HasValue ? entry.Value/entry.Food.Experience : double.MaxValue).ToArray();
-        foreach (var entry in available)
+        _sources ??= _foods.Select(food=>new FoodSource(food,SupplyFor(food.Id,food.MarketType),
+            _recipes[food.Id].Where(recipe=>recipe.Ingredients.Count>0 &&
+                recipe.Ingredients.All(i=>i.ItemId!=food.Id && i.Count>0))
+                .Select(recipe=>recipe.Ingredients.GroupBy(i=>i.ItemId)
+                    .Select(group=>new Ingredient(SupplyFor(group.Key,group.First().MarketType),checked(group.Sum(i=>i.Count)))).ToArray())
+                .ToArray())).ToArray();
+        FoodSource? selected=null;
+        int quantity=0;
+        double bestRatio=double.PositiveInfinity,bestCash=double.PositiveInfinity;
+        foreach(var source in _sources)
         {
             token.ThrowIfCancellationRequested();
-            if(best?.EconomicCost.HasValue==true && !entry.Value.HasValue) break;
-            int remainder=needed-prefix.Experience;
-            if (remainder<=0) { Consider(prefix,ref best);break; }
-            if (PetExperience.UnitsFor(entry.Food.Experience,remainder) is not { } units) continue;
-            units=(int)BigInteger.Min(units,remainingStock.GetValueOrDefault(entry.Food.Id));
-            int allowed=maximumExperience-prefix.Experience;
-            if (PetExperience.MealExperience(entry.Food.Experience,units)>allowed)
-                units=(int)Math.Min(units,Math.Floor(allowed/entry.Food.Experience));
-            if (units==0 || PetExperience.MealExperience(entry.Food.Experience,units)==0) continue;
-            var use=new PetNutritionPlan([new(entry.Food,units,units,0,0)],[],[],0,
-                OwnedValue(entry.Food.Id,entry.Food.MarketType,units),new Dictionary<long,int>{{entry.Food.Id,units}});
-            prefix=Join(prefix,use);
-            if(best?.EconomicCost is { } ceiling && prefix.EconomicCost>=ceiling) break;
-            remainingStock[entry.Food.Id]-=units;
-            var tail=Finish(needed-prefix.Experience,remainingStock,token,maximumExperience-prefix.Experience);
-            if (tail is not null && Join(prefix,tail) is { } joined && joined.Experience<=maximumExperience) Consider(joined,ref best);
+            if(PetExperience.UnitsFor(source.Food.Experience,needed) is not { } units ||
+                PetExperience.MealExperience(source.Food.Experience,units)>maximumExperience) continue;
+            var estimate=Estimate(source,units);
+            if(estimate.Cash>long.MaxValue) continue;
+            double ratio=estimate.Cost is { } cost ? cost/(units*source.Food.Experience) : double.PositiveInfinity;
+            if(selected is null || ratio<bestRatio || ratio==bestRatio && (estimate.Cash<bestCash ||
+                estimate.Cash==bestCash && source.Food.Id<selected.Food.Id))
+            {
+                selected=source;quantity=units;bestRatio=ratio;bestCash=estimate.Cash;
+            }
         }
-
-        // Whole HDV lots can make two foods cheaper than either food alone.
-        var starters=_foods.Select(food=>(Food:food,Quote:Quotes(food.Id,food.MarketType).Values
-                .MinBy(quote=>(double)quote.Price/quote.Quantity)))
-            .Where(entry=>entry.Quote is not null)
-            .OrderBy(entry=>(double)entry.Quote!.Price/entry.Quote.Quantity/entry.Food.Experience).Take(8);
-        foreach (var entry in starters)
-        foreach (int quantity in Quotes(entry.Food.Id,entry.Food.MarketType).Values.Select(quote=>quote.Quantity).Distinct())
-        {
-            int xp=PetExperience.MealExperience(entry.Food.Experience,quantity);
-            if (xp<=0 || xp>=needed) continue;
-            var start=ForFood(entry.Food,xp,stock,token,maximumExperience);
-            if (start is null || (best?.EconomicCost is { } current && start.EconomicCost>=current)) continue;
-            var after=stock.ToDictionary();
-            foreach (var used in start.StockConsumed) after[used.Key]-=used.Value;
-            var tail=Finish(needed-start.Experience,after,token,maximumExperience-start.Experience);
-            if (tail is not null && Join(start,tail) is { } joined && joined.Experience<=maximumExperience) Consider(joined,ref best);
-        }
+        var plan=selected is null ? null : BuildFood(selected.Food,quantity,stock,token);
         token.ThrowIfCancellationRequested();
-        return _cache.Store((needed,maximumExperience),best);
+        return _cache.Store((needed,maximumExperience),plan);
     }
 
-    private PetNutritionPlan? Finish(int needed,IReadOnlyDictionary<long,BigInteger> available,CancellationToken token,int maximumExperience)
+    private Supply SupplyFor(long id,MarketObjectType type)
     {
-        if (needed<=0) return PetNutritionPlan.Empty;
-        PetNutritionPlan? best=null;
-        _orderedFoods ??= _foods.OrderBy(food=>LowerUnitCost(food)/food.Experience).ToArray();
-        foreach (var food in _orderedFoods)
+        if(_supplies.TryGetValue((type,id),out var supply)) return supply;
+        var quote=Quotes(id,type).Values.MinBy(q=>(double)q.Price/q.Quantity);
+        return _supplies[(type,id)]=new(quote is null ? null : (double)quote.Price/quote.Quantity,
+            prices.CalculateValue(id,1,Quotes(id,type))?.Value,
+            (int)BigInteger.Min(int.MaxValue,BigInteger.Max(0,stock.GetValueOrDefault(id))));
+    }
+
+    // Scalar estimates only: no shopping lists, meal mixtures or quantity-dependent
+    // memoization for rejected foods. Lot rounding is applied to the selected food.
+    private static (double? Cost,double Cash) Estimate(FoodSource source,int quantity)
+    {
+        double? bestCost=null;
+        double bestCash=double.PositiveInfinity;
+        void ConsiderEstimate(double? cost,double cash)
         {
-            token.ThrowIfCancellationRequested();
-            if(best?.EconomicCost is { } ceiling && PetExperience.UnitsFor(food.Experience,needed) is { } units &&
-                units*LowerUnitCost(food)>ceiling) continue;
-            Consider(ForFood(food,needed,available,token,maximumExperience),ref best);
+            if(cost.HasValue && !bestCost.HasValue || cost<bestCost || cost==bestCost && cash<bestCash)
+            {bestCost=cost;bestCash=cash;}
         }
-        return best;
-    }
-
-    // Fractional purchases and unlimited use of existing stocks give a lower
-    // bound, not a feasible plan. It is used only to rule out costlier routes.
-    private double LowerUnitCost(PetFood food)
-    {
-        if(_lowerUnitCosts.TryGetValue(food.Id,out double cost)) return cost;
-        double Ingredient(long id,MarketObjectType type)
+        int owned=Math.Min(quantity,source.Supply.Available);
+        for(int stockChoice=0;stockChoice<(owned>0 ? 2 : 1);stockChoice++)
         {
-            var quotes=Quotes(id,type).Values.ToArray();
-            double purchase=quotes.Select(q=>(double)q.Price/q.Quantity).DefaultIfEmpty(double.PositiveInfinity).Min();
-            if(stock.GetValueOrDefault(id)<=0) return purchase;
-            double resale=quotes.Select(q=>(double)Math.Max(1,q.Price-1)/q.Quantity).DefaultIfEmpty(0).Min();
-            return Math.Min(purchase,resale);
+            int use=stockChoice==0 ? 0 : owned,missing=quantity-use;
+            double? stockValue=use==0 ? 0 : source.Supply.StockUnit*use;
+            if(missing==0 || source.Supply.PurchaseUnit.HasValue)
+            {
+                double cash=missing*(source.Supply.PurchaseUnit ?? 0);
+                ConsiderEstimate(stockValue+cash,cash);
+            }
+            foreach(var recipe in source.Recipes)
+            {
+                int free=missing;
+                foreach(var ingredient in recipe) free=Math.Min(free,ingredient.Supply.Available/ingredient.Count);
+                for(int craftChoice=0;craftChoice<(free>0 && free<missing ? 2 : 1);craftChoice++)
+                {
+                    int crafts=craftChoice==0 ? missing : free;
+                    if(crafts==0 || crafts<missing && !source.Supply.PurchaseUnit.HasValue) continue;
+                    for(int ingredientChoice=0;ingredientChoice<2;ingredientChoice++)
+                    {
+                        double cash=(missing-crafts)*(source.Supply.PurchaseUnit ?? 0);
+                        double? value=stockValue;
+                        bool valid=true;
+                        foreach(var ingredient in recipe)
+                        {
+                            long count=(long)ingredient.Count*crafts;
+                            if(count>int.MaxValue){valid=false;break;}
+                            int used=ingredientChoice==0 ? Math.Min((int)count,ingredient.Supply.Available) : 0;
+                            long buy=count-used;
+                            if(buy>0 && !ingredient.Supply.PurchaseUnit.HasValue){valid=false;break;}
+                            cash+=buy*(ingredient.Supply.PurchaseUnit ?? 0);
+                            if(used>0)value+=ingredient.Supply.StockUnit*used;
+                        }
+                        if(valid)ConsiderEstimate(value+cash,cash);
+                    }
+                }
+            }
         }
-        cost=Ingredient(food.Id,food.MarketType);
-        foreach(var recipe in _recipes[food.Id])
-            cost=Math.Min(cost,recipe.Ingredients.Sum(i=>i.Count*Ingredient(i.ItemId,i.MarketType)));
-        return _lowerUnitCosts[food.Id]=cost;
-    }
-
-    private PetNutritionPlan? ForFood(PetFood food,int needed,IReadOnlyDictionary<long,BigInteger> available,CancellationToken token,int maximumExperience)
-    {
-        if (PetExperience.UnitsFor(food.Experience,needed) is not { } quantity) return null;
-        if (PetExperience.MealExperience(food.Experience,quantity)>maximumExperience) return null;
-        // A stock-prefix simulation changes only a few resources. Reuse a food plan
-        // when neither its stock nor the stock of any of its ingredients changed.
-        string ingredients=_ingredients.TryGetValue(food.Id,out var ids)
-            ? string.Join(',',ids.Select(id=>available.GetValueOrDefault(id))) : "";
-        var key=(food.Id,quantity,BigInteger.Min(quantity,available.GetValueOrDefault(food.Id)),ingredients);
-        if(_foodPlans.TryGetValue(key,out var cached)) return cached;
-        return _foodPlans[key]=BuildFood(food,quantity,available,token);
+        return (bestCost,bestCash);
     }
 
     private PetNutritionPlan? BuildFood(PetFood food,int quantity,IReadOnlyDictionary<long,BigInteger> available,CancellationToken token)
@@ -161,7 +155,7 @@ internal sealed class PetFoodPlanner(MarketPriceService prices, IReadOnlyList<Pe
                 if (missing==0 || recipe.Ingredients.Count==0 || recipe.Ingredients.Any(i=>i.ItemId==food.Id || i.Count<=0)) continue;
                 int free=(int)BigInteger.Min(missing,recipe.Ingredients.Min(i=>
                     BigInteger.Max(0,available.GetValueOrDefault(i.ItemId)-stockUse.GetValueOrDefault(i.ItemId))/i.Count));
-                var quantities=new[]{1,10,100,1000,free,missing}.Where(q=>q>0 && q<=missing).Distinct();
+                var quantities=new[]{free,missing}.Where(q=>q>0 && q<=missing).Distinct();
                 foreach (int crafts in quantities)
                 foreach (bool ingredientsFromStock in new[]{true,false})
                 {
@@ -211,18 +205,13 @@ internal sealed class PetFoodPlanner(MarketPriceService prices, IReadOnlyList<Pe
     private double? OwnedValue(long id,MarketObjectType type,int quantity)
     {
         if(quantity==0) return 0;
-        var key=(type,id,quantity);
-        if(!_values.TryGetValue(key,out var value))
-            _values[key]=value=prices.CalculateValue(id,quantity,Quotes(id,type))?.Value;
-        return value;
+        return prices.CalculateValue(id,quantity,Quotes(id,type))?.Value;
     }
 
     internal MarketPurchaseResult? Buy(long id,MarketObjectType type,int quantity)
     {
         if (quantity==0) return new(0,0,0,new Dictionary<int,int>());
-        var key=(type,id,quantity);
-        if(_purchases.TryGetValue(key,out var cached)) return cached;
-        return _purchases[key]=CalculatePurchase(id,type,quantity);
+        return CalculatePurchase(id,type,quantity);
     }
 
     private MarketPurchaseResult? CalculatePurchase(long id,MarketObjectType type,int quantity)
@@ -265,16 +254,5 @@ internal sealed class PetFoodPlanner(MarketPriceService prices, IReadOnlyList<Pe
             candidate.EconomicCost<best.EconomicCost ||
             (candidate.EconomicCost==best.EconomicCost && candidate.CashRequired<best.CashRequired) ||
             (!candidate.EconomicCost.HasValue && !best.EconomicCost.HasValue && candidate.CashRequired<best.CashRequired)) best=candidate;
-    }
-    private PetNutritionPlan Join(PetNutritionPlan first,PetNutritionPlan second)
-    {
-        var purchases=first.Purchases.Concat(second.Purchases).GroupBy(line=>(line.Type,line.ItemId))
-            .Select(group=>new PetShoppingLine(group.Key.ItemId,group.First().Name,group.Key.Type,
-                Buy(group.Key.ItemId,group.Key.Type,checked(group.Sum(line=>line.Purchase.RequiredQuantity)))!,group.Any(line=>line.Ingredient)))
-            .ToArray();
-        return new(first.Meals.Concat(second.Meals).ToArray(),purchases,
-            first.Crafts.Concat(second.Crafts).ToArray(),purchases.Sum(line=>line.Purchase.TotalCost),
-            first.StockValue+second.StockValue,first.StockConsumed.Concat(second.StockConsumed)
-                .GroupBy(pair=>pair.Key).ToDictionary(group=>group.Key,group=>group.Sum(pair=>pair.Value)));
     }
 }

@@ -52,8 +52,9 @@ public sealed class PetOpportunityServiceTest
             var sales=new GlobalSalesRepository(Path.Combine(folder,"sales.db"));
             sales.SavePetPrices("A",new(100,[new(0,0,100,"normal",false),new(23,90,500,"normal",false)]),at);
             var server=new CurrentServerState();
+            var foodPreferences=new PetFoodPreferences();
             var service=new PetOpportunityService(database,new TestDataPriorityProvider(),catalog,stock,server,
-                new CurrentWindowProfessionsState(server),sales,NullLogger<PetOpportunityService>.Instance);
+                new CurrentWindowProfessionsState(server),sales,NullLogger<PetOpportunityService>.Instance,foodPreferences:foodPreferences);
             var report=(await service.LoadAsync(window,"A",default))!;
             Assert.True(report.InventoryKnown);Assert.True(report.BankKnown);
             var pet=Assert.Single(report.Owned);
@@ -63,6 +64,17 @@ public sealed class PetOpportunityServiceTest
             Assert.Equal(12,pet.Best.Nutrition.CashRequired);
             Assert.Equal(3,pet.Best.Nutrition.StockValue);
             Assert.Equal(385,pet.Best.Margin); // 499 - 99 - 12 - 3.
+            foodPreferences.SetUseStocks(false);
+            var withoutStock=(await service.LoadAsync(window,"A",default))!;
+            var purchasedFood=Assert.Single(withoutStock.Owned).Best!.Nutrition;
+            Assert.Empty(purchasedFood.StockConsumed);Assert.Equal(18,purchasedFood.CashRequired);
+            Assert.Equal(1,withoutStock.Inventory[10]);Assert.Equal(2,withoutStock.Bank[10]);
+            foodPreferences.Skip(10);
+            var skipped=(await service.LoadAsync(window,"A",default))!;
+            Assert.Equal(0,Assert.Single(skipped.Owned).Best!.Level);Assert.Null(skipped.BestFoodValue);
+            foodPreferences.Previous();foodPreferences.SetUseStocks(true);
+            var restored=(await service.LoadAsync(window,"A",default))!;
+            Assert.Equal(3,Assert.Single(restored.Owned).Best!.Nutrition.StockConsumed[10]);
             var other=(await service.LoadAsync(window,"B",default))!;
             Assert.Empty(other.Owned);Assert.False(other.InventoryKnown);Assert.False(other.BankKnown);
             stock.ClearLive();

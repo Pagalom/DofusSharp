@@ -197,7 +197,7 @@ public partial class CrushingItemDetail : IDisposable
     private void PricesChanged(object? sender, MarketDataChangedEventArgs change)
     {
         if (string.Equals(change.ServerName, ServerName, StringComparison.OrdinalIgnoreCase) &&
-            (change.ObjectType == MarketObjectType.Rune || change.ObjectType == MarketObjectType.Equipment && change.DofusDbId == Equipment.DofusDbId ||
+            (change.DofusDbId==0 || change.ObjectType == MarketObjectType.Rune || change.ObjectType == MarketObjectType.Equipment && change.DofusDbId == Equipment.DofusDbId ||
                 change.ObjectType == MarketObjectType.Resource && Owned is not null))
             QueueRefresh();
     }

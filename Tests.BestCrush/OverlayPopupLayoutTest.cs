@@ -4,6 +4,62 @@ namespace Tests.BestCrush;
 
 public sealed class OverlayPopupLayoutTest
 {
+    [Theory]
+    [InlineData(40,1920,448)]
+    [InlineData(1450,1920,942)]
+    [InlineData(1050,1920,542)]
+    public void OpensRightWhenItFitsOtherwiseLeftWithoutOverlap(int parentX,int workWidth,int expectedX)
+    {
+        var parent=new OverlayWindowLayout(parentX,70,400,540);
+        var popup=OverlayLayoutSettingsService.CalculatePopupPlacement(parent,new(0,0,500,420),new(0,0,workWidth,1040));
+        Assert.Equal(expectedX,popup.X);Assert.Equal(70,popup.Y);
+        Assert.Equal(500,popup.Width);Assert.Equal(420,popup.Height);
+        Assert.True(popup.X>=parent.X+parent.Width || popup.X+popup.Width<=parent.X);
+    }
+
+    [Fact]
+    public void UsesTheParentsMonitorAndKeepsPopupVisibleAboveTheTaskbar()
+    {
+        var parent=new OverlayWindowLayout(-450,850,400,230);
+        var work=new OverlayWindowLayout(-1920,40,1920,1000);
+        var popup=OverlayLayoutSettingsService.CalculatePopupPlacement(parent,new(2500,120,500,420),work);
+        Assert.Equal(-958,popup.X);Assert.Equal(620,popup.Y);
+        Assert.True(popup.X>=work.X && popup.X+popup.Width<=work.X+work.Width);
+        Assert.True(popup.Y>=work.Y && popup.Y+popup.Height<=work.Y+work.Height);
+    }
+
+    [Fact]
+    public void ReducesAnOversizedPopupToTheFreeSideInsteadOfCoveringItsParent()
+    {
+        var parent=new OverlayWindowLayout(350,70,400,540);
+        var popup=OverlayLayoutSettingsService.CalculatePopupPlacement(parent,new(0,0,900,1200),new(0,0,1200,800));
+        Assert.Equal(758,popup.X);Assert.Equal(442,popup.Width);Assert.Equal(800,popup.Height);Assert.Equal(0,popup.Y);
+    }
+
+    [Fact]
+    public void VerySmallScreensStillKeepTheEntirePopupOnScreen()
+    {
+        var popup=OverlayLayoutSettingsService.CalculatePopupPlacement(new(0,0,240,180),new(900,900,500,420),new(0,0,240,180));
+        Assert.Equal(new(0,0,240,180),popup);
+    }
+
+    [Fact]
+    public void FoodAnalysisHasItsOwnCompactLayoutInsteadOfReusingResizedDetailWindows()
+    {
+        string path=Path.Combine(Path.GetTempPath(),"food-layout-"+Guid.NewGuid()+".json");
+        try
+        {
+            var settings=new OverlayLayoutSettingsService(path);
+            settings.SaveLayout(OverlayLayoutKind.PopupDetails,new(0,0,600,420));
+            var popup=new OverlayPopup("pet-food-analysis:1","Tests XP",[]){FoodAnalysis=[]};
+            Assert.Equal(OverlayLayoutKind.PopupPetFood,popup.LayoutKind);
+            Assert.Equal(340,settings.GetLayout(popup.LayoutKind).Width);Assert.Equal(270,settings.GetLayout(popup.LayoutKind).Height);
+            var resized=new OverlayWindowLayout(50,50,350,280);settings.SaveLayout(popup.LayoutKind,resized);
+            Assert.Equal(resized,new OverlayLayoutSettingsService(path).GetLayout(popup.LayoutKind));
+        }
+        finally{if(File.Exists(path))File.Delete(path);}
+    }
+
     [Fact]
     public void PopupSizesSurviveClosingChangingItemAndRestarting()
     {

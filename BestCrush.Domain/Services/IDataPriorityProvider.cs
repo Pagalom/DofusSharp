@@ -5,4 +5,5 @@ namespace BestCrush.Domain.Services;
 public interface IDataPriorityProvider
 {
     DataPriority Priority { get; set; }
+    DataPriority CustomDefault => DataPriority.Manual;
 }

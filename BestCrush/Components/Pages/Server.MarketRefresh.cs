@@ -46,7 +46,7 @@ public partial class Server
             ScheduleMarketRefresh();
         });
     }
-    private bool DependsOnMarket(Equipment equipment, (MarketObjectType Type, long Id) change) => change.Type switch
+    private bool DependsOnMarket(Equipment equipment, (MarketObjectType Type, long Id) change) => change.Id==0 || change.Type switch
     {
         MarketObjectType.Equipment => equipment.DofusDbId == change.Id || equipment.EquipmentRecipe.Any(x => x.IngredientEquipment.DofusDbId == change.Id),
         MarketObjectType.Resource => equipment.Recipe.Any(x => x.Resource.DofusDbId == change.Id),
