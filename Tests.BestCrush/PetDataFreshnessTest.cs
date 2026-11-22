@@ -19,13 +19,5 @@ public sealed class PetDataFreshnessTest
         Assert.Equal(expected,PetDataFreshness.Price(now.AddMinutes(-minutes),now));
     }
 
-    [Fact]
-    public void XpAndPriceUseSeparateReviewClocks()
-    {
-        var now=new DateTime(2026,11,21,12,0,0,DateTimeKind.Utc);
-        Assert.False(PetDataFreshness.ExperienceNeedsReview(now.AddDays(-4),now));
-        Assert.Equal(DataFreshness.Stale,PetDataFreshness.Price(now.AddDays(-4),now));
-        Assert.True(PetDataFreshness.ExperienceNeedsReview(now.AddDays(-8),now));
-        Assert.True(PetDataFreshness.ExperienceNeedsReview(null,now));
-    }
+
 }

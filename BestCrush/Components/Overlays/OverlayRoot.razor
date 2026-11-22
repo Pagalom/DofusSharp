@@ -10,7 +10,7 @@
 
 @if (Host.Get(WindowId) is { } window)
 {
-    <section @ref="_root" class="overlay-shell @(window.Kind==WorkspaceOverlayKind.Control ? "control-shell" : null)" @onpointerenter="()=>Host.Pointer(WindowId,true)" @onpointerleave="()=>Host.Pointer(WindowId,false)">
+    <section @ref="_root" class="overlay-shell @(window.Kind==WorkspaceOverlayKind.Control ? "control-shell" : window.Kind==WorkspaceOverlayKind.Runes ? "rune-ranking-shell" : null)" @onpointerenter="()=>Host.Pointer(WindowId,true)" @onpointerleave="()=>Host.Pointer(WindowId,false)">
     @if(window.Kind == WorkspaceOverlayKind.Control)
     {
         <div class="control-grip" title="Déplacer" data-overlay-hit="2">⠿</div>
@@ -34,11 +34,7 @@
         <main class="overlay-body">
         @if(window.Popup is { } popup)
         {
-            @if(popup.FoodAnalysis is {} foodAnalysis)
-            {
-                <PetFoodAnalysis Foods="foodAnalysis" />
-            }
-            else if(popup.Comparison is { } comparison)
+            @if(popup.Comparison is { } comparison)
             {
                 var normal=comparison.Scenario(null);var best=comparison.BestFocus;
                 <div class="comparison-scroll"><table class="runes-table"><thead><tr><th>Rune</th><th>Sans focus</th><th>Avec focus</th></tr></thead><tbody>
@@ -79,9 +75,13 @@
                 </div>
             }
         }
+        else if(window.Kind == WorkspaceOverlayKind.Runes)
+        {
+            <RuneRankingOverlay Rows="Data.RuneRanking" Server="@Data.RuneRankingServer" Loading="Data.RuneRankingLoading" Error="@Data.RuneRankingError" CopyRequested="Copy" />
+        }
         else if(window.Kind == WorkspaceOverlayKind.Profitability)
         {
-            <div class="overlay-item-tools"><button class="text-action" @onclick="ToggleOwned"><i class="bi bi-backpack"></i> Mes équipements</button></div>
+            <ProfitabilitySearch OwnedOpen="_ownedOpen" OwnedRequested="ToggleOwned" SearchOpened="()=>_ownedOpen=false" />
             @if(_ownedOpen)
             {
                 var choices=Data.InventoryChoices(_ownedItemOnly ? Data.Profitability?.Item.DofusDbId : null);
@@ -146,7 +146,7 @@
         }
         else if(window.Kind==WorkspaceOverlayKind.Pets)
         {
-            <PetMarketOverlay Report="Data.PetReport" ServerKnown="Data.PetServerKnown" Error="@Data.PetError" CopyRequested="Copy" AnalysisRequested="OpenFoodAnalysis"
+            <PetMarketOverlay Report="Data.PetReport" ServerKnown="Data.PetServerKnown" Error="@Data.PetError" CopyRequested="Copy"
                 UseStocks="Data.PetFoods.Selection.UseStocks" SkippedFoods="Data.PetFoods.Selection.Skipped.Count"
                 UseStocksChanged="Data.PetFoods.SetUseStocks" NextFoodRequested="Data.PetFoods.Skip"
                 PreviousFoodRequested="Data.PetFoods.Previous" ResetFoodsRequested="Data.PetFoods.Reset" />
@@ -213,7 +213,7 @@
     private bool _ownedItemOnly;
     private Guid _lastFocusId;
     private string? _copyFeedback;
-    private static readonly WorkspaceOverlayKind[] Kinds=[WorkspaceOverlayKind.Profitability,WorkspaceOverlayKind.Crush,WorkspaceOverlayKind.Forgemaging,WorkspaceOverlayKind.Breeding,WorkspaceOverlayKind.Pets,WorkspaceOverlayKind.Journey];
+    private static readonly WorkspaceOverlayKind[] Kinds=[WorkspaceOverlayKind.Runes,WorkspaceOverlayKind.Profitability,WorkspaceOverlayKind.Crush,WorkspaceOverlayKind.Forgemaging,WorkspaceOverlayKind.Breeding,WorkspaceOverlayKind.Pets,WorkspaceOverlayKind.Journey];
     private static readonly (string Css,int Hit)[] Edges=[("left",10),("right",11),("top",12),("top-left",13),("top-right",14),("bottom",15),("bottom-left",16),("bottom-right",17)];
     protected override void OnInitialized()
     {
@@ -232,13 +232,6 @@
         });
     }
     private void Hover(OverlayPopup value)=>Host.HoverPopup(WindowId,value with { TargetWindow=Data.TargetWindow });
-    private void OpenFoodAnalysis()
-    {
-        var popup=new OverlayPopup($"pet-food-analysis:{Data.TargetWindow?.Handle}","Ressources à tester",[])
-            {FoodAnalysis=Data.PetReport is {} report ? PetOpportunityService.FoodAnalysisFoods(report.FoodTests,DateTime.UtcNow) : [],TargetWindow=Data.TargetWindow};
-        Host.OpenPopup(WindowId,popup);
-        if(Host.Get(popup.Key) is {Pinned:false})Host.TogglePin(popup.Key);
-    }
     private async Task Copy(IEnumerable<string> names)
     {
         var result=await Services.GetRequiredService<MarketClipboardQueue>().CopyAsync(names,Host.Get(WindowId)?.Popup?.TargetWindow ?? Data.TargetWindow);
@@ -306,6 +299,6 @@
     {var t=deadline-DateTime.UtcNow;return t<=TimeSpan.Zero?"Maintenant":t.TotalHours>=1?$"{(int)t.TotalHours} h {t.Minutes:00}":$"{t.Minutes} min {t.Seconds:00} s";}
     private static string Number(double? value)=>value is { } v?v.ToString(Math.Abs(v-Math.Round(v))<.000001?"N0":"N2"):"—";
     private static string Tone(double? value)=>value is >=0?"positive":value<0?"negative":"muted";
-    private static string Icon(WorkspaceOverlayKind kind)=>kind switch{WorkspaceOverlayKind.Profitability=>"bi-graph-up-arrow",WorkspaceOverlayKind.Crush=>"bi-hammer",WorkspaceOverlayKind.Forgemaging=>"bi-tools",WorkspaceOverlayKind.Breeding=>"bi-egg",WorkspaceOverlayKind.Pets=>"bi-heart",_=>"bi-list-check"};
+    private static string Icon(WorkspaceOverlayKind kind)=>kind switch{WorkspaceOverlayKind.Profitability=>"bi-graph-up-arrow",WorkspaceOverlayKind.Crush=>"bi-hammer",WorkspaceOverlayKind.Forgemaging=>"bi-tools",WorkspaceOverlayKind.Breeding=>"bi-egg",WorkspaceOverlayKind.Pets=>"bi-heart",WorkspaceOverlayKind.Runes=>"bi-hexagon",_=>"bi-list-check"};
     public void Dispose(){_disposed=true;Data.Changed-=Changed;Host.Changed-=Changed;_motion?.Dispose();}
 }

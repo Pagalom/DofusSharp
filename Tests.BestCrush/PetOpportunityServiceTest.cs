@@ -28,7 +28,6 @@ public sealed class PetOpportunityServiceTest
                 File.WriteAllText(Path.Combine(folder,file),JsonSerializer.Serialize(new{UpdatedUtc=DateTime.UtcNow,Data=data}));
             }
             Cache("pet-species-v1",new[]{new PetSpecies(100,"Familier test",null,18)});
-            Cache("pet-foods-3.7.14-v1",new[]{new PetFood(10,"Nourriture test",null,MarketObjectType.Resource,10,false)});
             var catalog=new ActivityCatalogService(DofusDbClient.Production(),Moq.Mock.Of<IHttpClientFactory>(),folder);
             var window=new DofusClientWindowKey(111,1111);
             var clients=new CurrentDofusClientsState();
@@ -41,11 +40,11 @@ public sealed class PetOpportunityServiceTest
             void Observe(string opcode,byte[] body)=>stock.Observe(new("S→C",opcode,body,at,new NetworkCaptureLease("A",1),1,
                 ConnectionId:1,CandidateWindow:window,SyntheticWindowForReplay:true));
             Observe("irl",Snapshot("irl",Item(100,1,1,Message(Unsigned(10,2821),Bytes(9,Unsigned(1,18))),
-                Message(Unsigned(10,2819),Bytes(9,Unsigned(2,1)))),Item(10,2,1)));
-            Observe("irp",Snapshot("irp",Item(10,3,2)));
+                Message(Unsigned(10,2819),Bytes(9,Unsigned(2,1)))),Item(1796,2,1)));
+            Observe("irp",Snapshot("irp",Item(1796,3,2)));
             using(var db=database.CreateContext())
             {
-                db.MarketPriceObservations.Add(new(){ObjectType=MarketObjectType.Resource,DofusDbId=10,ServerName="A",
+                db.MarketPriceObservations.Add(new(){ObjectType=MarketObjectType.Resource,DofusDbId=1796,ServerName="A",
                     Price=2,Quantity=1,Source=MarketPriceSource.InGameAutomatic,ObservedAtUtc=at});
                 await db.SaveChangesAsync();
             }
@@ -60,7 +59,7 @@ public sealed class PetOpportunityServiceTest
             var pet=Assert.Single(report.Owned);
             Assert.Equal(0,pet.Owned!.Reading!.Level);
             Assert.Equal(23,pet.Best!.Level);
-            Assert.Equal(3,pet.Best.Nutrition.StockConsumed[10]);
+            Assert.Equal(3,pet.Best.Nutrition.StockConsumed[1796]);
             Assert.Equal(12,pet.Best.Nutrition.CashRequired);
             Assert.Equal(3,pet.Best.Nutrition.StockValue);
             Assert.Equal(385,pet.Best.Margin); // 499 - 99 - 12 - 3.
@@ -68,13 +67,13 @@ public sealed class PetOpportunityServiceTest
             var withoutStock=(await service.LoadAsync(window,"A",default))!;
             var purchasedFood=Assert.Single(withoutStock.Owned).Best!.Nutrition;
             Assert.Empty(purchasedFood.StockConsumed);Assert.Equal(18,purchasedFood.CashRequired);
-            Assert.Equal(1,withoutStock.Inventory[10]);Assert.Equal(2,withoutStock.Bank[10]);
-            foodPreferences.Skip(10);
+            Assert.Equal(1,withoutStock.Inventory[1796]);Assert.Equal(2,withoutStock.Bank[1796]);
+            foodPreferences.Skip(1796);
             var skipped=(await service.LoadAsync(window,"A",default))!;
             Assert.Equal(0,Assert.Single(skipped.Owned).Best!.Level);Assert.Null(skipped.BestFoodValue);
             foodPreferences.Previous();foodPreferences.SetUseStocks(true);
             var restored=(await service.LoadAsync(window,"A",default))!;
-            Assert.Equal(3,Assert.Single(restored.Owned).Best!.Nutrition.StockConsumed[10]);
+            Assert.Equal(3,Assert.Single(restored.Owned).Best!.Nutrition.StockConsumed[1796]);
             var other=(await service.LoadAsync(window,"B",default))!;
             Assert.Empty(other.Owned);Assert.False(other.InventoryKnown);Assert.False(other.BankKnown);
             stock.ClearLive();

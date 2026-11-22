@@ -6,11 +6,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace BestCrush.Services;
 
-public sealed record PetFoodTest(PetFoodDefinition Food,BigInteger Inventory,BigInteger Bank,bool Recheck)
-{
-    public DateTime? LastObservedAtUtc { get; init; }
-}
-public sealed record PetFoodReview(PetFoodDefinition Food,BigInteger Inventory,DateTime? LastObservedAtUtc);
 public sealed record PetFoodValue(PetFood Food,long LotPrice,int LotQuantity)
 {
     public DateTime? ObservedAtUtc {get;init;}
@@ -53,19 +48,12 @@ internal sealed partial class PetOpportunityService
                 checks.Add(new(pet.Species.Id,pet.Species.Name,quote?.ObservedAtUtc,stale ? "Actualiser les offres par niveau" :
                     missing ? "Relever le prix au niveau actuel" : higher ? "Comparer les niveaux supérieurs" : "Relever le Cours du marché"));
         }
-        var definitions=await db.PetFoods.AsNoTracking().ToDictionaryAsync(f=>f.DofusDbId,token);
-        // Every resource is a possible food, even if it has no entry or XP in the food catalogue yet.
-        foreach(var resource in await db.Resources.AsNoTracking().ToArrayAsync(token))
-            definitions.TryAdd(resource.DofusDbId,new(){DofusDbId=resource.DofusDbId,Name=resource.Name,DofusDbIconId=resource.DofusDbIconId,
-                MarketType=MarketObjectType.Resource,Experience=resource.PetExperience});
-        foreach(var rune in await db.Runes.AsNoTracking().ToArrayAsync(token))
-            definitions.TryAdd(rune.DofusDbId,new(){DofusDbId=rune.DofusDbId,Name=rune.Name,DofusDbIconId=rune.DofusDbIconId,MarketType=MarketObjectType.Rune});
-        var tests=FoodTests(definitions.Values,inventory,bank,now.UtcDateTime);
+        var definitions=FixedPetFoodCatalog.All;
         var rows=owned.Select(p=>new PetAssessment(p.Species,p,null,null,[],null,null)).ToArray();
         return new(server,rows,[],checks,inventory,bank,containers.Any(c=>c.Container=="inventory"),containers.Any(c=>c.Container=="bank"),
             professions.ForWindow(window,server) is {Count:>0},true,definitions.Count,0)
         {Stock=source,BudgetKamas=settings?.ProductionBudgetKamas is >0 and var budget ? budget : null,
-            OwnedChecks=checks,PetPriceChecks=PetPriceReviews(owned.Select(p=>p.Species),quotes.ToDictionary(q=>q.Key,q=>q.Value.ObservedAtUtc),[],now.UtcDateTime),FoodTests=tests,OverlayFoodReviews=FoodReviews(definitions.Values,inventory,now.UtcDateTime),
+            OwnedChecks=checks,PetPriceChecks=PetPriceReviews(owned.Select(p=>p.Species),quotes.ToDictionary(q=>q.Key,q=>q.Value.ObservedAtUtc),[],now.UtcDateTime),
             RelevantPriceItems=species.Keys.Concat(definitions.Keys).ToHashSet(),AnalysisComplete=false,OwnedAnalysisComplete=false};
     }
 
@@ -81,24 +69,6 @@ internal sealed partial class PetOpportunityService
             .ThenBy(p=>p.LastObserved).ThenBy(p=>p.Name,StringComparer.CurrentCultureIgnoreCase).ToArray();
     }
 
-    internal static IReadOnlyList<PetFoodDefinition> FoodAnalysisFoods(IEnumerable<PetFoodTest> foods,DateTime now)
-    {
-        var rows=foods.ToArray();
-        var byName=rows.GroupBy(f=>f.Food.Name,StringComparer.CurrentCultureIgnoreCase)
-            .ToDictionary(g=>g.Key,g=>g.First().Food,StringComparer.CurrentCultureIgnoreCase);
-        return FoodTestNames(rows,now).Select(name=>byName[name]).ToArray();
-    }
-
-    internal static IReadOnlyList<PetFoodReview> FoodReviews(IEnumerable<PetFoodDefinition> definitions,
-        IReadOnlyDictionary<long,BigInteger> inventory,DateTime now) =>
-        definitions.Where(food=>food.MarketType==MarketObjectType.Resource && inventory.GetValueOrDefault(food.DofusDbId)>0)
-            .DistinctBy(food=>food.DofusDbId)
-            .Select(food=>new PetFoodReview(food,inventory[food.DofusDbId],food.ExperienceObservedAtUtc))
-            .Where(row=>PetDataFreshness.ExperienceNeedsReview(row.LastObservedAtUtc,now))
-            .OrderBy(row=>row.LastObservedAtUtc.HasValue).ThenBy(row=>row.LastObservedAtUtc)
-            .ThenBy(row=>row.Food.Name,StringComparer.CurrentCultureIgnoreCase)
-            .DistinctBy(row=>row.Food.Name,StringComparer.CurrentCultureIgnoreCase).Take(50).ToArray();
-
     internal static PetFoodValue? BestFoodValue(IEnumerable<PetFood> foods,EquipmentProfitabilityContext market,long? budget=null) =>
         foods.Where(food=>double.IsFinite(food.Experience) && food.Experience>0)
             .SelectMany(food=>StockCraftPlanner.PricesFor(market,food.MarketType).Values.Where(quote=>quote.DofusDbId==food.Id &&
@@ -108,28 +78,9 @@ internal sealed partial class PetOpportunityService
                 .Select(quote=>new PetFoodValue(food,quote.Price,quote.Quantity){ObservedAtUtc=quote.ObservedAtUtc}))
             .OrderByDescending(row=>row.ExperiencePerKama).ThenBy(row=>row.LotPrice).ThenBy(row=>row.Food.Id).FirstOrDefault();
 
-    internal static IReadOnlyList<PetFoodTest> FoodTests(IEnumerable<PetFoodDefinition> definitions,
-        IReadOnlyDictionary<long,BigInteger> inventory,IReadOnlyDictionary<long,BigInteger> bank,
-        DateTime? now=null)=>
-        definitions.Where(f=>f.MarketType==MarketObjectType.Resource).DistinctBy(f=>f.DofusDbId)
-            .Select(f=>new PetFoodTest(f,inventory.GetValueOrDefault(f.DofusDbId),bank.GetValueOrDefault(f.DofusDbId),f.ExperienceObservedAtUtc.HasValue)
-                {LastObservedAtUtc=f.ExperienceObservedAtUtc})
-            .Where(t=>PetDataFreshness.ExperienceNeedsReview(t.LastObservedAtUtc,now))
-            .OrderBy(t=>t.Inventory>0 ? 0 : t.Bank>0 ? 1 : 2)
-            .ThenBy(t=>t.LastObservedAtUtc.HasValue).ThenBy(t=>t.LastObservedAtUtc)
-            .ThenBy(t=>t.Food.Name,StringComparer.CurrentCultureIgnoreCase).ToArray();
-
     internal static IReadOnlyList<string> FoodPriceNames(IEnumerable<BreedingPriceCheck> checks,IReadOnlySet<long> knownExperienceItems)=>
         checks.OrderByDescending(check=>knownExperienceItems.Contains(check.ItemId))
             .Select(check=>check.Name).Where(name=>!string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.CurrentCultureIgnoreCase).Take(50).ToArray();
 
-    internal static IReadOnlyList<string> FoodTestNames(IEnumerable<PetFoodTest> foods,DateTime now)=>
-        foods.Where(t=>t.Food.MarketType==MarketObjectType.Resource &&
-                PetDataFreshness.ExperienceNeedsReview(t.LastObservedAtUtc,now))
-            .OrderBy(t=>t.Inventory>0 ? 0 : t.Bank>0 ? 1 : 2)
-            .ThenBy(t=>t.LastObservedAtUtc.HasValue).ThenBy(t=>t.LastObservedAtUtc)
-            .ThenBy(t=>t.Food.Name,StringComparer.CurrentCultureIgnoreCase)
-            .Select(t=>t.Food.Name).Where(name=>!string.IsNullOrWhiteSpace(name))
-            .Distinct(StringComparer.CurrentCultureIgnoreCase).Take(50).ToArray();
 }

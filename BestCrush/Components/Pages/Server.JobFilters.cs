@@ -41,7 +41,7 @@ public partial class Server
         finally
         {
             _jobFiltersBusy = false;
-            if (!_stockDisposed) await InvokeAsync(StateHasChanged);
+            if (!_stockDisposed) { await InvokeAsync(StateHasChanged); await RunPendingSharedAnalysisAsync(); }
         }
     }
 }

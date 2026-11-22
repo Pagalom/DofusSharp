@@ -1,0 +1,100 @@
+@using BestCrush.Domain.Models
+@using BestCrush.Models
+@using BestCrush.Services
+@inject OverlayWorkspaceService Data
+
+<section class="profit-search" aria-label="Recherche globale d’équipements">
+    <form @onsubmit="SearchAsync" @onsubmit:preventDefault>
+        <div class="search-toolbar">
+            <div class="search-input"><i class="bi bi-search" aria-hidden="true"></i><input type="search" aria-label="Rechercher un équipement" placeholder="Rechercher…" @bind="Search.Text" @bind:event="oninput" @bind:after="PublishFilters" @onfocus="OpenSavedResults" /></div>
+            <button type="button" class="filter-toggle @(Search.FiltersOpen ? "selected" : null)" title="Filtres avancés" aria-label="Filtres avancés" aria-expanded="@Search.FiltersOpen.ToString().ToLowerInvariant()" @onclick="ToggleFiltersAsync"><i class="bi bi-sliders" aria-hidden="true"></i>@if(Search.FilterCount>0){<sup>@Search.FilterCount</sup>}</button>
+            <button type="button" class="owned-toggle @(OwnedOpen ? "selected" : null)" @onclick="OwnedRequested"><i class="bi bi-backpack" aria-hidden="true"></i> Mes équipements</button>
+        </div>
+        @if(!OwnedOpen && Search.FiltersOpen)
+        {
+            <div class="search-filters" @onkeydown="FilterKey">
+                <div class="filter-heading"><span>Filtres</span><button type="button" title="Réinitialiser les filtres" aria-label="Réinitialiser les filtres" @onclick="ResetFilters"><i class="bi bi-arrow-counterclockwise"></i></button></div>
+                <fieldset><legend>Métiers</legend><div class="icon-choices">
+                    @foreach(var job in Search.Jobs?.Jobs ?? [])
+                    {<button type="button" class="@(Search.JobId==job.Id ? "selected" : null)" title="@job.Name" aria-label="@job.Name" aria-pressed="@((Search.JobId==job.Id).ToString().ToLowerInvariant())" @onclick="()=>SelectJob(job.Id)"><img src="@(DofusLocalArtwork.ProfessionIcon(job.Name) ?? $"img/dofus/jobs/{job.Id}.png")" onerror="@($"this.onerror=null;this.src='{ProfessionFallback(job.Id)}';")" alt="" /></button>}
+                </div>
+                @if(_preparing){<small role="status">Chargement…</small>}
+                @if(Search.JobsError is {} jobsError){<button type="button" class="retry" @onclick="PrepareFiltersAsync">@jobsError · Réessayer</button>}
+                </fieldset>
+                <fieldset><legend>Types d’objet</legend><div class="icon-choices">
+                    @foreach(var type in AvailableTypes)
+                    {<button type="button" class="@(Search.Types.Contains(type) ? "selected" : null)" title="@type.ToDisplayName()" aria-label="@type.ToDisplayName()" aria-pressed="@Search.Types.Contains(type).ToString().ToLowerInvariant()" @onclick="()=>ToggleType(type)"><img src="@EquipmentTypeFilter.TypeImage(type)" alt="" /></button>}
+                </div></fieldset>
+                <fieldset><legend>Runes</legend>
+                    <div class="rune-filter-tools"><input type="search" aria-label="Chercher une rune" placeholder="Rune…" @bind="_runeSearch" @bind:event="oninput" /><select @bind="Search.RuneMatchMode" @bind:after="PublishFilters" aria-label="Correspondance des runes"><option value="@RuneFilterMatchMode.Any">Au moins une</option><option value="@RuneFilterMatchMode.All">Toutes</option></select></div>
+                    <div class="icon-choices rune-choices">
+                        @foreach(var rune in Search.Runes.Where(r=>_runeSearch.Length==0 || r.Name.Contains(_runeSearch,StringComparison.CurrentCultureIgnoreCase)))
+                        {<button type="button" class="@(Search.RuneIds.Contains(rune.DofusDbId) ? "selected" : null)" title="@rune.Name" aria-label="@rune.Name" aria-pressed="@Search.RuneIds.Contains(rune.DofusDbId).ToString().ToLowerInvariant()" @onclick="()=>ToggleRune(rune.DofusDbId)"><MarketItemPicture IconId="rune.DofusDbIconId" /></button>}
+                    </div>
+                </fieldset>
+                <div class="level-filter"><label>Niveau <input type="number" min="0" max="200" placeholder="0" aria-label="Niveau minimum" @bind="Search.LevelMin" @bind:after="PublishFilters" /></label><span>à</span><input type="number" min="0" max="200" placeholder="200" aria-label="Niveau maximum" @bind="Search.LevelMax" @bind:after="PublishFilters" /><button type="submit" class="apply-search" disabled="@_submitting" title="Rechercher" aria-label="Lancer la recherche"><i class="bi bi-search"></i></button></div>
+            </div>
+        }
+    </form>
+    @if(!OwnedOpen && Search.Error is {} error){<p class="search-error" role="status">@error</p>}
+    @if(!OwnedOpen && Search.HasSearched)
+    {
+        <button type="button" class="results-toggle" aria-expanded="@Search.ResultsOpen.ToString().ToLowerInvariant()" @onclick="()=>Search.ResultsOpen=!Search.ResultsOpen"><i class="bi @(Search.ResultsOpen ? "bi-chevron-down" : "bi-chevron-right")"></i> Résultats <span>@Search.Results.Count</span><small>Jet moyen</small></button>
+        @if(Search.ResultsOpen && !Search.FiltersOpen)
+        {
+            <div class="search-results" aria-label="Résultats de recherche">
+                @foreach(var item in Search.Results.Take(Search.VisibleCount))
+                {<button type="button" class="search-result @(Data.Profitability?.Item.DofusDbId==item.DofusDbId ? "selected" : null)" disabled="@_submitting" title="@($"{item.Name} · Jet moyen")" @onclick="()=>FocusAsync(item.DofusDbId)"><span class="result-image"><MarketItemPicture IconId="item.DofusDbIconId" /></span><span class="result-name">@item.Name</span><small>Niv. @item.Level</small></button>}
+                @if(Search.Results.Count==0){<p class="no-results">Aucun équipement.</p>}
+                @if(Search.Results.Count>Search.VisibleCount){<button type="button" class="more-results" @onclick="()=>Search.VisibleCount+=20">Voir plus… @Math.Min(Search.VisibleCount,Search.Results.Count) / @Search.Results.Count</button>}
+            </div>
+        }
+    }
+    @if(_submitting){<small class="search-status" role="status"><i class="bi bi-hourglass-split"></i> Recherche…</small>}
+</section>
+
+@code {
+    [Parameter] public bool OwnedOpen {get;set;}
+    [Parameter] public EventCallback OwnedRequested {get;set;}
+    [Parameter] public EventCallback SearchOpened {get;set;}
+    private OverlayEquipmentSearchState Search=>Data.EquipmentSearch;
+    private static string ProfessionFallback(long id)=>id switch{16=>"img/ring.svg",15=>"img/boots.svg",27=>"img/hat.svg",11=>"img/sword.svg",13=>"img/staff.svg",60=>"img/shield.svg",_=>"img/tool.svg"};
+    private string _runeSearch="";
+    private bool _preparing,_submitting;
+    private IReadOnlyCollection<EquipmentType> AvailableTypes => Search.Jobs?.TypesFor(Search.JobId) ?? EquipmentTypesFilter.SupportedTypes;
+    private async Task ToggleFiltersAsync()
+    {
+        await SearchOpened.InvokeAsync(); Search.FiltersOpen=!Search.FiltersOpen;
+        if(Search.FiltersOpen) await PrepareFiltersAsync();
+    }
+    private async Task PrepareFiltersAsync()
+    {if(_preparing)return;_preparing=true;try{await Data.PrepareEquipmentSearchAsync(true);}finally{_preparing=false;}}
+    private async Task OpenSavedResults()
+    {await SearchOpened.InvokeAsync();if(Search.HasSearched && !Search.FiltersOpen)Search.ResultsOpen=true;}
+    private void ToggleType(EquipmentType type){if(!Search.Types.Add(type))Search.Types.Remove(type);PublishFilters();}
+    private void SelectJob(long id){Search.JobId=Search.JobId==id?null:id;Search.Types.IntersectWith(AvailableTypes);PublishFilters();}
+    private void ToggleRune(long id){if(!Search.RuneIds.Add(id))Search.RuneIds.Remove(id);PublishFilters();}
+    private void ResetFilters(){Search.ResetFilters();PublishFilters();}
+    private void PublishFilters()=>Data.PublishEquipmentSearchFilters();
+    private void FilterKey(KeyboardEventArgs args){if(args.Key=="Escape")Search.FiltersOpen=false;}
+    private async Task SearchAsync()
+    {
+        if(_submitting)return;
+        _submitting=true;
+        try
+        {
+            await SearchOpened.InvokeAsync();
+            await Data.PrepareEquipmentSearchAsync();
+            if(!Search.CatalogueReady)return;
+            Search.Apply();
+            if(Search.Error is not null)return;
+            Data.PublishEquipmentSearchFilters(analyze:true);
+            var exact=Search.Results.FirstOrDefault(e=>e.Name.Equals(Search.Text.Trim(),StringComparison.CurrentCultureIgnoreCase));
+            if(exact is not null || Search.Results.Count==1 && !string.IsNullOrWhiteSpace(Search.Text))
+            {if(await Data.FocusSearchEquipmentAsync((exact ?? Search.Results[0]).DofusDbId))Search.ResultsOpen=false;}
+        }
+        finally{_submitting=false;}
+    }
+    private async Task FocusAsync(long id)
+    {if(_submitting)return;_submitting=true;try{if(await Data.FocusSearchEquipmentAsync(id))Search.ResultsOpen=false;}finally{_submitting=false;}}
+}

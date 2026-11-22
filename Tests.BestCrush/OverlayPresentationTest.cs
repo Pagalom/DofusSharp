@@ -18,7 +18,7 @@ public sealed class OverlayPresentationTest
         null!,null!,new MarketDataChangeNotifier(),NullLogger<OverlayWorkspaceService>.Instance);
     private static void RegisterWindow(OverlayWindowsService host,OverlayWindowView window)=>
         ((Dictionary<string,OverlayWindowView>)typeof(OverlayWindowsService).GetField("_windows",BindingFlags.NonPublic|BindingFlags.Instance)!.GetValue(host)!).Add(window.Id,window);
-    [Fact] public async Task ControlExposesAllSixBusinessOverlaysWithTheirAccessibleNames()
+    [Fact] public async Task ControlExposesAllBusinessOverlaysIncludingRuneRanking()
     {
         var services=new ServiceCollection().AddLogging();using var bootstrap=services.BuildServiceProvider();
         var data=Data(bootstrap.GetRequiredService<IServiceScopeFactory>());var host=new OverlayWindowsService(data,null!);
@@ -28,7 +28,7 @@ public sealed class OverlayPresentationTest
         var html=await renderer.Dispatcher.InvokeAsync(async()=>{
             var root=await renderer.RenderComponentAsync<OverlayRoot>(ParameterView.FromDictionary(new Dictionary<string,object?>{{"WindowId","control"}}));
             return WebUtility.HtmlDecode(root.ToHtmlString());});
-        foreach(var label in new[]{"Rentabilité","Résultat du concassage","Forgemagie","Élevage","Familiers","Parcours"})Assert.Contains($"aria-label=\"{label}\"",html);
+        foreach(var label in new[]{"Rentabilité","Résultat du concassage","Forgemagie","Élevage","Familiers","Classement runes","Parcours"})Assert.Contains($"aria-label=\"{label}\"",html);
         Assert.DoesNotContain("Mise à jour marché",html);
     }
     [Fact] public void RecallingResultIsIndependentFromNewItemFocusAndLiveRepricing()

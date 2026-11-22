@@ -93,7 +93,6 @@ public sealed class DataWorkspacePerformanceTest
         services.AddSingleton<IDataPriorityProvider, TestDataPriorityProvider>();
         services.AddScoped<MarketPriceService>();
         services.AddSingleton<MarketSourceSelectionService>();
-        services.AddSingleton(new LivePetFeedingService(database,new(),new(),new(),Microsoft.Extensions.Logging.Abstractions.NullLogger<LivePetFeedingService>.Instance));
         services.AddSingleton<MarketDataChangeNotifier>();
         services.AddSingleton<ServerViewFilterState>();
         services.AddSingleton<CurrentDofusClientsState>();

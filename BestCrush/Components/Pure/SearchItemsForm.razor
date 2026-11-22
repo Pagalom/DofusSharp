@@ -10,8 +10,8 @@
         <Chips>
             @if (Model.CraftJobId is not null) { <FilterChip Label="@($"Métier : {JobOptions.FirstOrDefault(x => x.Value == Model.CraftJobId.ToString())?.Label}")" Removed="() => SelectJob(string.Empty)" Disabled="Disabled" /> }
             @foreach (var type in SelectedTypes) { <FilterChip Label="@type.ToDisplayName()" Removed="() => TypesChanged(SelectedTypes.Where(x => x != type).ToArray())" Disabled="Disabled" /> }
-            @if (Model.LevelMin is { } min) { <FilterChip Label="@($"Niveau ≥ {min}")" Removed="() => Model.LevelMin = null" Disabled="Disabled" /> }
-            @if (Model.LevelMax is { } max) { <FilterChip Label="@($"Niveau ≤ {max}")" Removed="() => Model.LevelMax = null" Disabled="Disabled" /> }
+            @if (Model.LevelMin is { } min) { <FilterChip Label="@($"Niveau ≥ {min}")" Removed="() => ClearLevelBound(true)" Disabled="Disabled" /> }
+            @if (Model.LevelMax is { } max) { <FilterChip Label="@($"Niveau ≤ {max}")" Removed="() => ClearLevelBound(false)" Disabled="Disabled" /> }
             @foreach (var criterion in Model.RuneFilters.ToArray()) { <FilterChip Label="@RuneLabel(criterion.RuneName)" Removed="() => RemoveRuneFilter(criterion)" Disabled="Disabled" /> }
             @if (!Model.OwnedOnly && Model.MinimumRoiPercent is { } roi) { <FilterChip Label="@($"ROI ≥ {roi:N0} %")" Removed="ClearMinimumRoi" Disabled="Disabled" /> }
             @if (Model.MinimumBenefit is { } gain) { <FilterChip Label="@($"{(Model.OwnedOnly ? "Gain net" : "Bénéfice")} ≥ {gain:N0} K")" Removed="ClearMinimumBenefit" Disabled="Disabled" /> }
@@ -57,7 +57,7 @@
                     <h3><i class="bi bi-gem" aria-hidden="true"></i>Runes / caractéristiques</h3>
                     <div class="rune-picker-toolbar">
                         <div class="rune-search"><ServiceSearch @bind-Value="_runeSearch" Placeholder="Chercher une rune…" Label="Chercher parmi les runes" Disabled="Disabled" /></div>
-                        <label>Correspondance<InputSelect TValue="RuneFilterMatchMode" @bind-Value="Model.RuneMatchMode" class="form-select form-select-sm" disabled="@Disabled">
+                        <label>Correspondance<InputSelect TValue="RuneFilterMatchMode" @bind-Value="Model.RuneMatchMode" @bind-Value:after="() => SearchChanged.InvokeAsync()" class="form-select form-select-sm" disabled="@Disabled">
                             <option value="@RuneFilterMatchMode.Any">Au moins une</option><option value="@RuneFilterMatchMode.All">Toutes</option>
                         </InputSelect></label>
                     </div>
@@ -165,7 +165,9 @@
         PlayerLevel, ProfessionLevels, Model.LevelMin, Model.LevelMax);
     private string? ProfessionFilterUnavailableReason => BestCrush.Services.CrushingProfessionFilterRules.UnavailableReason(
         PlayerLevel, ProfessionLevels, Model.LevelMin, Model.LevelMax);
-    private void LevelBoundsChanged() { if (!CanUseProfessionLevels) Model.RespectJobLevels = false; }
+    private void CheckLevelBounds() { if (!CanUseProfessionLevels) Model.RespectJobLevels = false; }
+    private async Task LevelBoundsChanged() { CheckLevelBounds(); await SearchChanged.InvokeAsync(); }
+    private Task ClearLevelBound(bool minimum) { if(minimum)Model.LevelMin=null;else Model.LevelMax=null;return LevelBoundsChanged(); }
     private void ToggleProfessionLevels(ChangeEventArgs args) => Model.RespectJobLevels = CanUseProfessionLevels && args.Value is true;
     private int ActiveCount => SelectedTypes.Count + Model.RuneFilters.Count +
         new[] { Model.CraftJobId is not null, Model.LevelMin is not null, Model.LevelMax is not null,
@@ -202,26 +204,29 @@
     private IReadOnlyCollection<EquipmentType> SelectedTypes => Model.EquipmentType.GetSelectedTypes();
     protected override void OnParametersSet()
     {
-        LevelBoundsChanged();
+        CheckLevelBounds();
         if (_previousModel != Model || _previousCatalog != JobCatalog || _previousJob != Model.CraftJobId)
         {
             if (Model.CraftJobId is { } job && JobCatalog?.ContainsJob(job) == true) NormalizeJobTypes();
             _previousModel = Model; _previousCatalog = JobCatalog; _previousJob = Model.CraftJobId;
         }
     }
-    private Task JobChanged()
+    private async Task JobChanged()
     {
         NormalizeJobTypes();
-        return JobSelectionChanged.InvokeAsync();
+        await JobSelectionChanged.InvokeAsync();
+        await SearchChanged.InvokeAsync();
     }
     private void NormalizeJobTypes()
     {
         if (Model.CraftJobId is { } job && JobCatalog?.ContainsJob(job) == true)
             Model.EquipmentType.SetSelectedTypes(SelectedTypes.Where(AvailableTypes.Contains));
     }
-    private void TypesChanged(IReadOnlyCollection<EquipmentType> types)
+    private Task TypesChanged(IReadOnlyCollection<EquipmentType> types)
     {
-        if (!Disabled) Model.EquipmentType.SetSelectedTypes(types.Where(AvailableTypes.Contains));
+        if (Disabled) return Task.CompletedTask;
+        Model.EquipmentType.SetSelectedTypes(types.Where(AvailableTypes.Contains));
+        return SearchChanged.InvokeAsync();
     }
 
     public void CollapseAdvanced()
@@ -243,12 +248,13 @@
         (string.IsNullOrWhiteSpace(_runeSearch) ? _runeFamily == "Toutes" || RuneFamily(rune) == _runeFamily :
             rune.Name.Contains(_runeSearch.Trim(), StringComparison.CurrentCultureIgnoreCase)))
         .OrderBy(rune => rune.Name, StringComparer.CurrentCultureIgnoreCase);
-    private void ToggleRuneFilter(Rune rune)
+    private Task ToggleRuneFilter(Rune rune)
     {
-        if (Disabled) return;
+        if (Disabled) return Task.CompletedTask;
         var existing = Model.RuneFilters.FirstOrDefault(x => x.DofusDbId == rune.DofusDbId);
         if (existing is not null) Model.RuneFilters.Remove(existing);
         else Model.RuneFilters.Add(new() { DofusDbId = rune.DofusDbId, Characteristic = rune.Characteristic, RuneName = rune.Name });
+        return SearchChanged.InvokeAsync();
     }
 
     private void ToggleAdvanced()
@@ -256,10 +262,11 @@
         _advancedVisible = !_advancedVisible;
     }
 
-    private void RemoveRuneFilter(
+    private Task RemoveRuneFilter(
         RuneFilterCriterion criterion)
     {
         Model.RuneFilters.Remove(criterion);
+        return SearchChanged.InvokeAsync();
     }
 
     private void ClearMinimumRoi()

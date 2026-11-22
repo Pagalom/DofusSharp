@@ -30,3 +30,5 @@
 .breeding-need.need-serenity { background:transparent; color:#b29bd7; font-size:1.4rem; }
 .overlay-mount-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .overlay-mount-row{display:grid;grid-template-columns:minmax(130px,1fr) 88px 116px 18px 53px 24px 18px;gap:8px;min-width:600px}.overlay-mount-name{text-align:left;font-weight:650;font-size:12px;padding:0;min-width:0}.overlay-mount-row>.countdown{font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}.overlay-mount-row>.overlay-mount-needs{justify-self:end}
+
+.rune-ranking-shell .overlay-titlebar{height:28px;min-height:28px;padding:0 8px;font-size:11px;gap:5px}.rune-ranking-shell .overlay-body{padding:5px 8px}.rune-ranking-shell .drag-grip{font-size:14px}

@@ -93,6 +93,7 @@ public partial class Server
         _rankedItems = new();
         _unrankedItems = new(failures);
         foreach (var calculation in _baseCalculations.Values) AddVisibleCalculation(calculation);
+        PublishSharedCrushingResults();
     }
 
     // This handler only switches prepared data and reapplies the local filters.

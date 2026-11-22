@@ -6,8 +6,5 @@ h2 small{font-size:.8rem;opacity:.7;font-weight:400}
 ul{list-style:none;padding:0 8px 0 0;margin:14px 0 0;max-height:440px;overflow:auto;scrollbar-color:var(--bc-border) transparent;scrollbar-width:thin}
 li{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid var(--bc-border)}
 li:last-child{border:0}
-.pet-test-stock{display:flex;gap:12px;align-items:center;white-space:nowrap;font-size:.85rem}
 .pet-list-more{border:0;background:none;color:var(--bc-gold);padding:12px 0 0;text-decoration:underline}
 .pet-list-more small{padding-left:6px;text-decoration:none;opacity:.7}
-.pet-food-test-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto}.pet-food-test-row ::deep .pet-xp-entry{margin-left:auto}
-@media(max-width:1150px){.pet-food-test-row{grid-template-columns:minmax(0,1fr) auto}.pet-food-test-row ::deep .pet-xp-entry{grid-column:1/-1;margin-left:0}}

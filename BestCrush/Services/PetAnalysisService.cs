@@ -34,7 +34,7 @@ public sealed class PetAnalysisService : IDisposable
     }
     public PetAnalysisService(IServiceScopeFactory scopes,CurrentServerState servers,CurrentDofusClientsState clients,
         LiveStockService stock,CurrentWindowProfessionsState professions,BestCrushSettingsService settings,
-        GlobalSalesRepository sales,LivePetFeedingService feeding,MarketDataChangeNotifier prices,PetFoodPreferences foods)
+        GlobalSalesRepository sales,MarketDataChangeNotifier prices,PetFoodPreferences foods)
         :this(async(window,server,token,publish)=>
         {
             using var scope=scopes.CreateScope();
@@ -45,13 +45,13 @@ public sealed class PetAnalysisService : IDisposable
         stock.Changed+=Invalidate;professions.Changed+=Invalidate;settings.BreedingSettingsChanged+=Invalidate;
         servers.PlayedServerChanged+=Invalidate;servers.ServerSelectionChanged+=ServerSelectionChanged;
         sales.PetPricesChanged+=ServerChanged;sales.ListingsChanged+=ServerChanged;sales.Changed+=ServerChanged;
-        feeding.Changed+=ServerChanged;prices.Changed+=PriceChanged;foods.Changed+=Invalidate;
+        prices.Changed+=PriceChanged;foods.Changed+=Invalidate;
         _unsubscribe=()=>
         {
             stock.Changed-=Invalidate;professions.Changed-=Invalidate;settings.BreedingSettingsChanged-=Invalidate;
             servers.PlayedServerChanged-=Invalidate;servers.ServerSelectionChanged-=ServerSelectionChanged;
             sales.PetPricesChanged-=ServerChanged;sales.ListingsChanged-=ServerChanged;sales.Changed-=ServerChanged;
-            feeding.Changed-=ServerChanged;prices.Changed-=PriceChanged;foods.Changed-=Invalidate;
+            prices.Changed-=PriceChanged;foods.Changed-=Invalidate;
         };
     }
     public async Task<PetOpportunityReport?> LoadAsync(DofusClientWindowKey? window,string? server,CancellationToken token,

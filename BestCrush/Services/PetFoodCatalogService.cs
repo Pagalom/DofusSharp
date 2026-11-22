@@ -4,7 +4,6 @@ using BestCrush.Domain;
 using BestCrush.Domain.Models;
 using BestCrush.Domain.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace BestCrush.Services;
 
@@ -15,8 +14,7 @@ internal sealed record PetFoodSeedRow(long Id,string Name,long? IconId,MarketObj
 public sealed record PetFoodDataRow(PetFoodDefinition Food,MarketPriceObservation? UnitQuote,double? UnitPrice,
     int? Quantity80,MarketPurchaseResult? Cost80,int? Quantity100,MarketPurchaseResult? Cost100);
 
-internal sealed class PetFoodCatalogService(IDbContextFactory<BestCrushDbContext> database,ActivityCatalogService catalog,
-    IDataPriorityProvider priority,ILogger<PetFoodCatalogService> logger)
+internal sealed class PetFoodCatalogService(IDbContextFactory<BestCrushDbContext> database,IDataPriorityProvider priority)
 {
     internal static readonly SemaphoreSlim Gate=new(1,1);
     internal static PetFoodSeed ReadSeed()
@@ -33,23 +31,24 @@ internal sealed class PetFoodCatalogService(IDbContextFactory<BestCrushDbContext
             await using var db=await database.CreateDbContextAsync(token);
             await ApplySeedAsync(db,ReadSeed(),token);
             var foods=await db.PetFoods.ToDictionaryAsync(food=>food.DofusDbId,token);
-            try
+            foreach(var item in FixedPetFoodCatalog.All.Values)
             {
-                foreach(var item in await catalog.GetPetFoodsAsync(token))
-                {
-                    if(!foods.TryGetValue(item.Id,out var food)) db.PetFoods.Add(foods[item.Id]=food=new(){DofusDbId=item.Id});
-                    food.Name=item.Name;food.DofusDbIconId=item.IconId;food.MarketType=item.MarketType;
-                    food.Craftable=item.Craftable;
-                    if(food.ExperienceObservedAtUtc is null)
-                    {food.Experience=item.Experience;food.ExperienceSource="Catalogue client";}
-                }
+                if(!foods.TryGetValue(item.Id,out var food)) db.PetFoods.Add(foods[item.Id]=food=new(){DofusDbId=item.Id});
+                food.Name=item.Name;food.DofusDbIconId=item.IconId;food.MarketType=item.MarketType;
+                food.Craftable=item.Craftable;food.Experience=item.Experience;
+                food.ExperienceSource=FixedPetFoodCatalog.Source;
+                food.ExperienceObservedAtUtc=null;food.ExperienceOrigin=null;
             }
-            catch(Exception ex) when(!token.IsCancellationRequested)
+            foreach(var food in foods.Values.Where(food=>!FixedPetFoodCatalog.All.ContainsKey(food.DofusDbId)))
             {
-                logger.LogWarning(ex,"Catalogue des nourritures indisponible : utilisation des données enregistrées.");
+                // Old manual values and learned, rounded meals must never survive as fallback XP.
+                food.Experience=null;food.ExperienceSource="";
+                food.ExperienceObservedAtUtc=null;food.ExperienceOrigin=null;
             }
             var resources=await db.Resources.ToDictionaryAsync(resource=>resource.DofusDbId,token);
             var equipmentIds=(await db.Equipments.Select(e=>e.DofusDbId).ToArrayAsync(token)).ToHashSet();
+            foreach(var resource in resources.Values)
+                resource.PetExperience=FixedPetFoodCatalog.All.GetValueOrDefault(resource.DofusDbId)?.Experience;
             foreach(var food in foods.Values.Where(food=>food.MarketType==MarketObjectType.Resource && !equipmentIds.Contains(food.DofusDbId)))
             {
                 if(!resources.TryGetValue(food.DofusDbId,out var resource))

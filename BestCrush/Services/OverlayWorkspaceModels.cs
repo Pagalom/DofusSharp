@@ -4,7 +4,7 @@ using BestCrush.Network.Protocol;
 
 namespace BestCrush.Services;
 
-public enum WorkspaceOverlayKind { Profitability, Crush, Forgemaging, Breeding, Pets, Journey, Control, Popup }
+public enum WorkspaceOverlayKind { Profitability, Crush, Forgemaging, Breeding, Pets, Journey, Control, Popup, Runes }
 public enum OverlayAcquisition { Purchase, Craft }
 public enum OverlayRoute { PurchaseSale, PurchaseCrush, CraftSale, CraftCrush }
 public sealed record OverlayPriceLine(string Name, double? Quantity, double? Total, double? Unit = null,
@@ -37,9 +37,8 @@ public sealed record OverlayPopup(string Key, string Title, IReadOnlyList<Overla
 {
     public DofusClientWindowKey? TargetWindow {get;init;}
     public IReadOnlyList<OverlayMountReading> Mounts {get;init;}=[];
-    public IReadOnlyList<PetFoodDefinition>? FoodAnalysis {get;init;}
     // Layouts belong to a popup family, never to an ephemeral item/focus GUID.
-    internal OverlayLayoutKind LayoutKind => FoodAnalysis is not null ? OverlayLayoutKind.PopupPetFood : Comparison is not null ? OverlayLayoutKind.PopupRunes : Key.Split(':', 2)[0] switch
+    internal OverlayLayoutKind LayoutKind => Comparison is not null ? OverlayLayoutKind.PopupRunes : Key.Split(':', 2)[0] switch
     {
         "craft" => OverlayLayoutKind.PopupCraft,
         "purchase" => OverlayLayoutKind.PopupPurchase,

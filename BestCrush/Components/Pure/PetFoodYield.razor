@@ -1,0 +1,13 @@
+@using BestCrush.Domain.Models
+
+<div class="pet-food-yield" title="@Food.ExperienceSource">
+    <span><output aria-label="XP par ressource">@(Food.Experience?.ToString("0.#####") ?? "—")</output> <small>XP/u</small></span>
+    <span title="@CostTooltip"><output aria-label="XP par kama">@(UnitPrice is >0 && Food.Experience is >0 ? (Food.Experience.Value/UnitPrice.Value).ToString("0.#####") : "—")</output> <small>XP/K</small></span>
+</div>
+
+@code {
+    [Parameter,EditorRequired] public PetFoodDefinition Food {get;set;}=null!;
+    [Parameter] public double? UnitPrice {get;set;}
+    private string CostTooltip=>UnitPrice is >0 && Food.Experience is >0
+        ? $"{UnitPrice.Value/Food.Experience.Value:0.#####} K/XP" : "Prix à relever à l’HDV";
+}

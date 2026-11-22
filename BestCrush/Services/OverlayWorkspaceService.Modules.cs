@@ -52,8 +52,7 @@ public sealed partial class OverlayWorkspaceService
         finally{Interlocked.Exchange(ref _ownedRefreshing,0);}
     }
     private void PetInputsChanged(){Interlocked.Increment(ref _petRevision);_petDirty=true;_petLoadedAt=default;_petRetryAfter=default;}
-    private void PetFeedingChanged(string server){if(server.Length==0 || server==ActiveGameServer)PetInputsChanged();}
-    public void OverlayVisibilityChanged(WorkspaceOverlayKind kind,bool visible){if(kind==WorkspaceOverlayKind.Pets)_petsRequested=visible;}
+    public void OverlayVisibilityChanged(WorkspaceOverlayKind kind,bool visible){if(kind==WorkspaceOverlayKind.Pets)_petsRequested=visible;if(kind==WorkspaceOverlayKind.Runes)_runesRequested=visible;}
     private bool _fmPrepareCrushing=true;
     public void SetFmIntent(bool crushing)
     {if(_fmPrepareCrushing==crushing)return;_fmPrepareCrushing=crushing;_fmSignature=null;ReadFm();Notify();}
@@ -74,6 +73,7 @@ public sealed partial class OverlayWorkspaceService
             _=>"Choisissez un objectif dans BestCrush."},kind switch{WorkspaceOverlayKind.Forgemaging=>"forgemagie",WorkspaceOverlayKind.Breeding=>"elevage",WorkspaceOverlayKind.Pets=>"familiers-xp",_=>"routine"});
     public void RefreshModule(WorkspaceOverlayKind kind)
     {
+        if(kind==WorkspaceOverlayKind.Runes){_runesRequested=true;RuneInputsChanged();_=LoadRuneRankingAsync();}
         if(kind==WorkspaceOverlayKind.Pets){_petsRequested=true;_=Task.Run(LoadPetsAsync);}
         if(kind==WorkspaceOverlayKind.Breeding){ReadBreeding();_=LoadMountNamesAsync();}
         if(kind==WorkspaceOverlayKind.Forgemaging)ReadFm();
@@ -89,6 +89,7 @@ public sealed partial class OverlayWorkspaceService
                 try
                 {
                     ReadFm(); ReadBreeding();
+                    if(_runesRequested && _runesDirty)_=LoadRuneRankingAsync();
                     if(_ownedStockDirty)_=RefreshOwnedFocusAsync();
                     if(++_pollTicks%5==0)ReadJourney();
                     if(_petsRequested && _petDirty)_=Task.Run(LoadPetsAsync);

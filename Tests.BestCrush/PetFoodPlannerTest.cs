@@ -220,16 +220,5 @@ public sealed class PetFoodPlannerTest
         Assert.Equal(23,PetExperience.LevelAt(result.Best.Nutrition.Experience));
     }
 
-    [Fact]
-    public void ReadsCurrentResourceYieldAndRejectsLegendaryCroquettesAsXpFood()
-    {
-        var resource=JsonSerializer.Deserialize<DofusDbItem>("""
-            {"id":13942,"name":{"fr":"Bec de Dodox"},"typeId":47,"recyclingNuggets":10.125}
-            """,JsonSerializerOptions.Web)!;
-        Assert.Equal(101.25,ActivityCatalogService.ReadPetFood(resource,new HashSet<long>{47})!.Experience);
-        var legendary=JsonSerializer.Deserialize<DofusDbItem>("""
-            {"id":26994,"name":{"fr":"Croquette infusée"},"typeId":209,"possibleEffects":[{"effectId":2864,"value":1}]}
-            """,JsonSerializerOptions.Web)!;
-        Assert.Null(ActivityCatalogService.ReadPetFood(legendary,new HashSet<long>{47}));
-    }
+
 }

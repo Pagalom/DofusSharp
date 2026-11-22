@@ -29,13 +29,8 @@ public sealed class PetProgressiveLoadingTest
         Assert.Equal("Familier possédé",Assert.Single(report.Owned).Species.Name);
         Assert.Null(report.Owned[0].Best);
         Assert.Single(report.OwnedChecks);
-        Assert.Equal(new long[]{20,30,40},report.FoodTests.Select(t=>t.Food.DofusDbId));
-        Assert.Null(report.FoodTests[0].Food.Experience);
-        Assert.Equal(new long[]{20},report.OverlayFoodReviews.Select(row=>row.Food.DofusDbId));
-        Assert.Equal(4,report.FoodTests[0].Inventory);Assert.Equal(6,report.FoodTests[1].Bank);
         var other=await h.Service.LoadOverviewAsync(h.Window,"B",default);
         Assert.Empty(other.Owned);Assert.False(other.InventoryKnown);Assert.False(other.BankKnown);
-        Assert.All(other.FoodTests,t=>{Assert.Equal(0,t.Inventory);Assert.Equal(0,t.Bank);});
     }
 
     [Fact]
@@ -59,8 +54,6 @@ public sealed class PetProgressiveLoadingTest
         Assert.Equal(23,Assert.Single(stages[1].Owned).Best!.Level);
         Assert.True(result.AnalysisComplete);Assert.True(result.OwnedAnalysisComplete);
         Assert.Equal(23,Assert.Single(result.Owned).Best!.Level);
-        Assert.Equal(overview.FoodTests,result.FoodTests);
-        Assert.Equal(overview.OverlayFoodReviews,result.OverlayFoodReviews);
         Assert.All(result.Checks,check=>Assert.Equal(100,check.ItemId));
         Assert.DoesNotContain(result.Checks,check=>check.ItemId is 10 or 20 or 30 or 40);
         Assert.NotNull(result.BestFoodValue);
@@ -105,8 +98,8 @@ public sealed class PetProgressiveLoadingTest
         var pet=Assert.Single(report.Owned);
         Assert.Equal(23,pet.Best!.Level);Assert.Equal(18,pet.Best.Nutrition.CashRequired);
         Assert.NotNull(report.BestFoodValue);Assert.Equal(old.UtcDateTime,report.BestFoodValue.ObservedAtUtc);
-        Assert.Equal(10,Assert.Single(report.FoodPriceChecks).ItemId);
-        Assert.Contains(10,report.KnownFoodExperienceItems);
+        Assert.Equal(1796,Assert.Single(report.FoodPriceChecks).ItemId);
+        Assert.Contains(1796,report.KnownFoodExperienceItems);
         Assert.Equal(old,Assert.Single(report.OwnedChecks).LastObserved);
         Assert.Contains(report.Checks,check=>check.ItemId==100);
         Assert.DoesNotContain(report.Checks,check=>check.ItemId==10); // Pet and food-price lists stay separate.
@@ -119,39 +112,11 @@ public sealed class PetProgressiveLoadingTest
         h.SetFoodPriceAge(DateTime.UtcNow.AddDays(-4));
         var report=(await h.Service.LoadAsync(h.Window,"A",default))!;
         Assert.Equal(23,Assert.Single(report.Owned).Best!.Level);
-        Assert.Equal(10,Assert.Single(report.FoodPriceChecks).ItemId);
+        Assert.Equal(1796,Assert.Single(report.FoodPriceChecks).ItemId);
         Assert.NotNull(report.BestFoodValue);
     }
 
-    [Fact]
-    public async Task PreparationListsEscapeNamesAndOnlyRenderTheFirstPageOfFoods()
-    {
-        var services=new ServiceCollection();services.AddLogging();
-        services.AddSingleton(new MarketClipboardQueue(new DofusWindowService(),NullLogger<MarketClipboardQueue>.Instance));
-        await using var provider=services.BuildServiceProvider();
-        await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
-        PetFoodTest[] foods=Enumerable.Range(1,25).Select(i=>new PetFoodTest(new(){DofusDbId=i,Name=i==1?"Bec <Dodox>":$"Ressource {i}",MarketType=MarketObjectType.Resource},i==1?10:0,i==2?20:0,false)).ToArray();
-        var root=await renderer.Dispatcher.InvokeAsync(()=>renderer.RenderComponentAsync<PetPreparationLists>(ParameterView.FromDictionary(new Dictionary<string,object?>
-        {
-            [nameof(PetPreparationLists.Foods)]=foods,
-            [nameof(PetPreparationLists.Checks)]=new BreedingPriceCheck[]{new(100,"Serpète",null,"Relever les prix par niveau"),new(101,"Pioute bleue",DateTimeOffset.UtcNow.AddDays(-4),"Actualiser les offres par niveau")}
-        })));
-        string html=await renderer.Dispatcher.InvokeAsync(root.ToHtmlString);
-        Assert.Contains("Bec &lt;Dodox&gt;",html);Assert.DoesNotContain("Bec <Dodox>",html);
-        Assert.Contains("Ressource 20",html);Assert.DoesNotContain("Ressource 21",html);
-        Assert.Contains("Inventaire",html);Assert.Contains("Banque",html);
-        Assert.Contains("Copier les &#xE9;l&#xE9;ments",html);Assert.Contains("Copier les ressources",html);
-        Assert.Contains("XP obtenue",System.Net.WebUtility.HtmlDecode(html));
-        string decoded=System.Net.WebUtility.HtmlDecode(html);
-        Assert.Contains("aria-label=\"Copier Bec <Dodox>\"",decoded);
-        Assert.Contains("aria-label=\"Copier Serpète\"",decoded);
-        Assert.DoesNotContain("Copier entry.Food.Name",decoded);
-        Assert.DoesNotContain("Copier check.Name",decoded);
-        if(Environment.GetEnvironmentVariable("PET_PREPARATION_PREVIEW") is { } folder)
-        {
-            Directory.CreateDirectory(folder);await File.WriteAllTextAsync(Path.Combine(folder,"lists.html"),html);
-        }
-    }
+
 
     private sealed class PreparationCapture:IComponentActivator
     {
@@ -160,90 +125,13 @@ public sealed class PetProgressiveLoadingTest
         {var component=(IComponent)Activator.CreateInstance(type)!;if(component is PetPreparationLists lists)Lists=lists;return component;}
     }
 
-    [Fact]
-    public async Task PreparationSearchesAreIndependentAndFindItemsBeyondTheFirstPage()
-    {
-        var capture=new PreparationCapture();
-        using var provider=new ServiceCollection().AddLogging().AddSingleton<IComponentActivator>(capture)
-            .AddSingleton(new MarketClipboardQueue(new DofusWindowService(),NullLogger<MarketClipboardQueue>.Instance)).BuildServiceProvider();
-        await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
-        var root=await renderer.Dispatcher.InvokeAsync(()=>renderer.RenderComponentAsync<PetPreparationLists>(ParameterView.FromDictionary(new Dictionary<string,object?>
-        {
-            [nameof(PetPreparationLists.Foods)]=Enumerable.Range(1,45).Select(i=>new PetFoodTest(new(){DofusDbId=i,Name=$"Aliment {i:00}",MarketType=MarketObjectType.Resource},0,0,false)).ToArray(),
-            [nameof(PetPreparationLists.Checks)]=new BreedingPriceCheck[]{new(100,"Serpète",null,"Prix manquant"),new(101,"Pioute bleue",null,"Prix manquant")},
-            [nameof(PetPreparationLists.ResourcePriceChecks)]=new BreedingPriceCheck[]{new(200,"Fer",null,"Ancien"),new(201,"Cuivre",null,"Ancien")},
-            [nameof(PetPreparationLists.ShowResourcePrices)]=true
-        })));
-        async Task Search(string kind,string query)=>await renderer.Dispatcher.InvokeAsync(()=>
-        {
-            const System.Reflection.BindingFlags flags=System.Reflection.BindingFlags.Instance|System.Reflection.BindingFlags.NonPublic;
-            var key=Enum.Parse(typeof(PetPreparationLists).GetNestedType("ListKind",System.Reflection.BindingFlags.NonPublic)!,kind);
-            typeof(PetPreparationLists).GetMethod("SetSearch",flags)!.Invoke(capture.Lists,[key,query]);
-            typeof(ComponentBase).GetMethod("StateHasChanged",flags)!.Invoke(capture.Lists,null);
-        });
-        await Search("FoodTests","  aLiMeNt 45  ");await Search("PetPrices","pioute");await Search("ResourcePrices","cuivre");
-        string html=System.Net.WebUtility.HtmlDecode(await renderer.Dispatcher.InvokeAsync(root.ToHtmlString));
-        Assert.Contains("Copier Aliment 45",html);Assert.DoesNotContain("Copier Aliment 01",html);
-        Assert.Contains("Copier Pioute bleue",html);Assert.DoesNotContain("Copier Serpète",html);
-        Assert.Contains("Copier Cuivre",html);Assert.DoesNotContain("Copier Fer",html);
-        Assert.Equal(3,html.Split("type=\"search\"").Length-1);
-        await Search("FoodTests","");
-        html=System.Net.WebUtility.HtmlDecode(await renderer.Dispatcher.InvokeAsync(root.ToHtmlString));
-        Assert.Contains("Copier Aliment 01",html);Assert.Contains("Copier Aliment 20",html);Assert.DoesNotContain("Copier Aliment 21",html);
-        Assert.Contains("Copier Pioute bleue",html);Assert.Contains("Copier Cuivre",html);
-    }
 
-    [Fact]
-    public async Task NonEmptyPreparationCardsPrecedeEmptyCardsAndAllThreeRemainVisible()
-    {
-        using var provider=new ServiceCollection().AddLogging()
-            .AddSingleton(new MarketClipboardQueue(new DofusWindowService(),NullLogger<MarketClipboardQueue>.Instance)).BuildServiceProvider();
-        await using var renderer=new HtmlRenderer(provider,provider.GetRequiredService<ILoggerFactory>());
-        var root=await renderer.Dispatcher.InvokeAsync(()=>renderer.RenderComponentAsync<PetPreparationLists>(ParameterView.FromDictionary(new Dictionary<string,object?>
-        {
-            [nameof(PetPreparationLists.Foods)]=new[]{new PetFoodTest(new(){DofusDbId=1,Name="Aliment",MarketType=MarketObjectType.Resource},0,0,false)},
-            [nameof(PetPreparationLists.ResourcePriceChecks)]=new BreedingPriceCheck[]{new(200,"Fer",null,"Ancien")},
-            [nameof(PetPreparationLists.ShowResourcePrices)]=true
-        })));
-        string html=System.Net.WebUtility.HtmlDecode(await renderer.Dispatcher.InvokeAsync(root.ToHtmlString));
-        Assert.True(html.IndexOf("aria-label=\"Ressources à tester\"",StringComparison.Ordinal)<html.IndexOf("aria-label=\"Prix ressources à actualiser\"",StringComparison.Ordinal));
-        Assert.True(html.IndexOf("aria-label=\"Prix ressources à actualiser\"",StringComparison.Ordinal)<html.IndexOf("aria-label=\"Prix familiers à actualiser\"",StringComparison.Ordinal));
-        Assert.Equal(3,html.Split("type=\"search\"").Length-1);
-        Assert.DoesNotContain("Sans relevé ou dernier test",html);
-    }
 
-    [Fact]
-    public void FoodTestsUseOnlyTheDateOfTheLatestCoefficient()
-    {
-        var now=DateTime.UtcNow;
-        var dates=new Dictionary<long,DateTime>
-        {
-            [1]=now.AddDays(-8),[2]=now,[4]=now.AddDays(-7),[5]=now.AddDays(-20)
-        };
-        PetFoodDefinition Food(long id)=>new(){DofusDbId=id,Name="Aliment "+id,Experience=10,MarketType=MarketObjectType.Resource,
-            ExperienceObservedAtUtc=dates.TryGetValue(id,out var at) ? at : null};
-        var list=PetOpportunityService.FoodTests(new[]{Food(1),Food(2),Food(3),Food(4),Food(5),Food(6)},
-            new Dictionary<long,BigInteger>{{1,1},{2,1},{3,1},{4,1},{5,1}},new Dictionary<long,BigInteger>{{6,2}},now);
-        Assert.Equal(new long[]{3,5,1,6},list.Select(t=>t.Food.DofusDbId));
-        Assert.True(list[1].Recheck);
-        Assert.Equal(now.AddDays(-20),list[1].LastObservedAtUtc);
-    }
 
-    [Fact]
-    public void FoodTestCopyUsesAtMostFiftyDistinctEligibleResourcesInStockPriorityOrder()
-    {
-        var now=DateTime.UtcNow;
-        PetFoodTest Row(long id,string name,int inventory,int bank,DateTime? at=null,MarketObjectType type=MarketObjectType.Resource)=>
-            new(new(){DofusDbId=id,Name=name,MarketType=type},inventory,bank,at.HasValue){LastObservedAtUtc=at};
-        var rows=new[]{Row(1,"Récent",1,0,now.AddDays(-6)),Row(2,"Sept jours",1,0,now.AddDays(-7)),
-            Row(3,"Vieux",1,0,now.AddDays(-9)),Row(4,"Plus vieux",1,0,now.AddDays(-20)),
-            Row(5,"Inconnu",1,0),Row(6,"INCONNU",1,0),Row(7,"Banque",0,1),Row(8,"Catalogue",0,0),
-            Row(9,"Rune",1,0,type:MarketObjectType.Rune)};
-        Assert.Equal(new[]{"Inconnu","Plus vieux","Vieux","Banque","Catalogue"},PetOpportunityService.FoodTestNames(rows,now),StringComparer.CurrentCultureIgnoreCase);
-        var many=Enumerable.Range(1,70).Select(i=>Row(i,$"Ressource {i:00}",1,0));
-        var copied=PetOpportunityService.FoodTestNames(many,now);
-        Assert.Equal(50,copied.Count);Assert.Equal("Ressource 01",copied[0]);Assert.Equal("Ressource 50",copied[^1]);
-    }
+
+
+
+
 
     [Fact]
     public void FoodPriceCopyPrioritizesKnownExperienceAndKeepsFiftyDistinctNames()
@@ -317,14 +205,12 @@ public sealed class PetProgressiveLoadingTest
             if(cache)
             {
                 Cache("pet-species-v1",new[]{new PetSpecies(100,"Familier possédé",null,18)});
-                Cache("pet-foods-3.7.14-v1",new[]{new PetFood(10,"Aliment connu",null,MarketObjectType.Resource,10,false),
-                    new PetFood(20,"Inventaire sans prix",null,MarketObjectType.Resource,1,false)});
             }
             using(var db=_db.CreateContext())
             {
                 db.Equipments.Add(new(100){Name="Familier possédé",Type=EquipmentType.Pet});
                 db.Resources.AddRange(new Resource(20){Name="Inventaire"},new Resource(30){Name="Banque"},new Resource(40){Name="Autre"});
-                db.MarketPriceObservations.Add(new(){ObjectType=MarketObjectType.Resource,DofusDbId=10,ServerName="A",Price=2,Quantity=1,Source=MarketPriceSource.InGameAutomatic,ObservedAtUtc=DateTime.UtcNow});
+                db.MarketPriceObservations.Add(new(){ObjectType=MarketObjectType.Resource,DofusDbId=1796,ServerName="A",Price=2,Quantity=1,Source=MarketPriceSource.InGameAutomatic,ObservedAtUtc=DateTime.UtcNow});
                 db.SaveChanges();
             }
             var clients=new CurrentDofusClientsState();clients.Update([new(new IntPtr(Window.Handle),"Test - Ecaflip - 3.7.14.18 - Release","Dofus",0,0,100,100){ProcessId=Window.ProcessId}],Window);

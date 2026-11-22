@@ -6,7 +6,6 @@
 @using Microsoft.Extensions.Logging
 @inject PetFoodCatalogService Foods
 @inject MarketDataChangeNotifier Prices
-@inject LivePetFeedingService Feeding
 @inject ILogger<PetFoodPrices> Logger
 @implements IDisposable
 
@@ -31,8 +30,6 @@
                     <tr @key="row.Food.DofusDbId">
                         <th scope="row"><ItemIcon Item="row.Food" Size="Size.Tiny" /> <CopyTextButton Value="@row.Food.Name" Tooltip="Copier le nom">@row.Food.Name</CopyTextButton></th>
                         <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@XpInfo(row)">@(row.Food.Experience?.ToString("0.#########") ?? "Inconnue")</span>
-                            @if(row.Food.Experience is >0 && PetDataFreshness.ExperienceNeedsReview(row.Food.ExperienceObservedAtUtc))
-                            {<StatusIcon Icon="clock-history" CssClass="text-warning" Tooltip="XP conservée · aliment à retester (sans relevé ou dernier test de plus d’une semaine)." />}
                         </td>
                         <td class="text-end"><span data-bs-toggle="tooltip" data-bs-title="@PriceInfo(row)">@(row.UnitPrice is { } unit ? $"{unit:0.####} K" : "—")</span>
                             @if(row.UnitQuote is { } quote){<i class="bi bi-clock @(PetDataFreshness.Price(quote.ObservedAtUtc)==DataFreshness.Stale ? "text-warning" : "text-muted")" data-bs-toggle="tooltip" data-bs-title="@PetDataFreshness.PriceTooltip(quote.ObservedAtUtc)"></i>}
@@ -78,13 +75,11 @@
         : "Prix d’achat à relever.";
     private static string XpInfo(PetFoodDataRow row)=>row.Food.ExperienceSource+
         (row.Food.ExperienceObservedAtUtc is {} at ? $" · {at.ToLocalTime():dd/MM HH:mm}" : "")+
-        " · Coefficient XP gagnée / quantité donnée.";
+        " · Rendement de base calculé, arrondi en fin de repas.";
     private static string PriceInfo(PetFoodDataRow row)=>row.UnitQuote is { } q
         ? $"{q.Price:N0} K / lot de {q.Quantity} · {(q.Source==MarketPriceSource.Manual ? "Manuel" : "En jeu")} · {q.ObservedAtUtc.ToLocalTime():dd/MM à HH:mm}"
         : "Prix à relever à l’HDV.";
-    protected override void OnInitialized(){Prices.Changed+=Changed;Feeding.Changed+=FeedingChanged;}
-    private void FeedingChanged(string server)
-    {if(!_disposed && IsActive && (server.Length==0 || string.Equals(server,ServerName,StringComparison.OrdinalIgnoreCase))) _=InvokeAsync(RefreshAsync);}
+    protected override void OnInitialized(){Prices.Changed+=Changed;}
     protected override Task OnParametersSetAsync()
     {
         bool reload=IsActive && (!_wasActive || _priority!=Priority);
@@ -107,5 +102,5 @@
         catch(Exception ex){_failed=true;Logger.LogWarning(ex,"Chargement de la nourriture indisponible.");}
         finally{_loading=false;if(!_disposed) StateHasChanged();}
     }
-    public void Dispose(){_disposed=true;Prices.Changed-=Changed;Feeding.Changed-=FeedingChanged;_lifetime.Cancel();_lifetime.Dispose();}
+    public void Dispose(){_disposed=true;Prices.Changed-=Changed;_lifetime.Cancel();_lifetime.Dispose();}
 }

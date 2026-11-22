@@ -57,7 +57,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
     private readonly LiveBreedingService? _liveBreeding;
     private readonly LiveStockService? _liveStock;
     private readonly LiveForgemagingService? _liveForgemaging;
-    private readonly LivePetFeedingService? _livePetFeeding;
     private readonly LiveDofusClientNetworkBindings? _clientBindings;
     private readonly DofusWindowService? _dofusWindowService;
     // The observer remains null in standard builds and normal Debug runs.
@@ -177,7 +176,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
         {
             _liveStock = scope.ServiceProvider.GetService<LiveStockService>();
             _liveForgemaging = scope.ServiceProvider.GetService<LiveForgemagingService>();
-            _livePetFeeding = scope.ServiceProvider.GetService<LivePetFeedingService>();
             _liveBreeding = scope.ServiceProvider.GetService<LiveBreedingService>();
             _windowEquipmentState = scope.ServiceProvider
                 .GetService<WindowScopedNetworkEquipmentState>();
@@ -390,7 +388,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
             long epoch = Interlocked.Increment(ref _captureEpoch);
             _clientBindings?.Reset(epoch);
             _liveStock?.ClearLive();
-            _livePetFeeding?.ClearLive();
             _liveForgemaging?.ClearLive();
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(epoch);
@@ -466,7 +463,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
                 long stoppedEpoch = Interlocked.Increment(ref _captureEpoch);
                 _clientBindings?.Reset(stoppedEpoch);
                 _liveStock?.ClearLive();
-                _livePetFeeding?.ClearLive();
                 _liveForgemaging?.ClearLive();
                 _windowEquipmentState?.Clear();
                 _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
@@ -495,7 +491,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
             long stoppedEpoch = Interlocked.Increment(ref _captureEpoch);
             _clientBindings?.Reset(stoppedEpoch);
             _liveStock?.ClearLive();
-            _livePetFeeding?.ClearLive();
             _liveForgemaging?.ClearLive();
             _windowEquipmentState?.Clear();
             _rosterWireObserver?.OnCaptureEpochChanged(stoppedEpoch);
@@ -1087,7 +1082,6 @@ public sealed class DofusNetworkCaptureService : IDisposable
                         }
 
                         _liveStock?.Observe(routed);
-                        if(_livePetFeeding is not null) await _livePetFeeding.ObserveAsync(routed,cancellationToken);
                         _liveForgemaging?.Observe(routed);
                         _liveBreeding?.Observe(_map, routed);
 

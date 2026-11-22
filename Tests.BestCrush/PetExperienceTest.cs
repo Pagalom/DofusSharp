@@ -21,7 +21,7 @@ public sealed class PetExperienceTest
     {
         Assert.Equal(0, PetExperience.MealExperience(.004999999888241291 * 10, 1));
         int quantity = PetExperience.UnitsFor(.004999999888241291 * 10, 1)!.Value;
-        Assert.Equal(21, quantity);
+        Assert.Equal(20, quantity);
         Assert.Equal(1, PetExperience.MealExperience(.004999999888241291 * 10, quantity));
         Assert.Equal(360, PetExperience.UnitsFor(500, PetExperience.RequiredAtLevel(100)));
         Assert.Null(PetExperience.UnitsFor(0, 1));

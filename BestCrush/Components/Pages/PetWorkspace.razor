@@ -10,7 +10,6 @@
 @inject LiveStockService Stocks
 @inject CurrentWindowProfessionsState Professions
 @inject GlobalSalesRepository Sales
-@inject LivePetFeedingService Feeding
 @inject MarketDataChangeNotifier MarketChanges
 @inject ILogger<PetWorkspace> Logger
 @implements IDisposable
@@ -37,7 +36,7 @@ else if (_report is null && _loading)
         @if (!report.RecipesKnown) { <StatusIcon Icon="exclamation-triangle" Tooltip="Recettes indisponibles. Comparaison limitée aux stocks et aux achats." CssClass="text-warning" /> }
         @if (_loading) { <span role="status" class="spinner-border spinner-border-sm" aria-label="Calcul en cours"></span> }
     </div>
-    <PetFoodSelector Value="report.BestFoodValue" Loading="_loading" ContextKey="@($"{ServerName}:{TargetWindow}")"
+    <PetFoodSelector PriceTooltip="@(report.BestFoodValue is {} foodValue ? report.FoodPriceTooltip(foodValue.Food.Id) : null)" Value="report.BestFoodValue" Loading="_loading" ContextKey="@($"{ServerName}:{TargetWindow}")"
         UseStocks="FoodPreferences.Selection.UseStocks" SkippedCount="FoodPreferences.Selection.Skipped.Count"
         UseStocksChanged="FoodPreferences.SetUseStocks" NextRequested="FoodPreferences.Skip"
         PreviousRequested="FoodPreferences.Previous" ResetRequested="FoodPreferences.Reset" />
@@ -51,10 +50,10 @@ else if (_report is null && _loading)
         <h2 class="h5">Mes familiers (@report.Owned.Count)</h2>
         @foreach (var pet in report.Owned.Where(Matches))
         {
-            <PetOpportunityRow @key="(pet.Owned!.Container,pet.Owned.Uid)" Assessment="TrackedAssessment(pet)" Report="report" TargetWindow="TargetWindow" Progress="@GoalFor(pet)?.Percent" Analyzing="@(!report.OwnedAnalysisComplete && _loading)" NextFoodRequested="FoodPreferences.Skip" PreviousFoodRequested="FoodPreferences.Previous" CanChoosePrevious="@(FoodPreferences.Selection.Skipped.Count>0)" />
+            <PetOpportunityRow @key="(pet.Owned!.Container,pet.Owned.Uid)" Assessment="TrackedAssessment(pet)" Report="report" TargetWindow="TargetWindow" Progress="@GoalFor(pet)?.Percent" Analyzing="@(!report.OwnedAnalysisComplete && _loading)" NextFoodRequested="FoodPreferences.Skip" PreviousFoodRequested="FoodPreferences.Previous" ResetFoodsRequested="FoodPreferences.Reset" CanChoosePrevious="@(FoodPreferences.Selection.Skipped.Count>0)" />
         }
     </section>
-    <PetPreparationLists Checks="report.OwnedChecks" ShowFoods="false" TargetWindow="TargetWindow" />
+    <PetPreparationLists Checks="report.OwnedChecks" TargetWindow="TargetWindow" />
     }
     else
     {
@@ -81,13 +80,13 @@ else if (_report is null && _loading)
         <h2 class="h5">Acheter et monter (@PurchaseChoices.Count)</h2>
         @foreach (var pet in PurchaseChoices.Where(Matches))
         {
-            <PetOpportunityRow @key="pet.Species.Id" Assessment="TrackedAssessment(pet)" Report="report" TargetWindow="TargetWindow" Progress="@GoalFor(pet)?.Percent" NextFoodRequested="FoodPreferences.Skip" PreviousFoodRequested="FoodPreferences.Previous" CanChoosePrevious="@(FoodPreferences.Selection.Skipped.Count>0)" />
+            <PetOpportunityRow @key="pet.Species.Id" Assessment="TrackedAssessment(pet)" Report="report" TargetWindow="TargetWindow" Progress="@GoalFor(pet)?.Percent" NextFoodRequested="FoodPreferences.Skip" PreviousFoodRequested="FoodPreferences.Previous" ResetFoodsRequested="FoodPreferences.Reset" CanChoosePrevious="@(FoodPreferences.Selection.Skipped.Count>0)" />
         }
     </section>
     }
     @if (_actions)
     {
-        <PetPreparationLists Checks="report.PetPriceChecks" Foods="report.FoodTests" ResourcePriceChecks="report.FoodPriceChecks" KnownFoodExperienceItems="report.KnownFoodExperienceItems" ShowResourcePrices="true" TargetWindow="TargetWindow" />
+        <PetPreparationLists Checks="report.PetPriceChecks" ResourcePriceChecks="report.FoodPriceChecks" KnownFoodExperienceItems="report.KnownFoodExperienceItems" ShowResourcePrices="true" TargetWindow="TargetWindow" />
     }
 }
 </ItemCopyScope>

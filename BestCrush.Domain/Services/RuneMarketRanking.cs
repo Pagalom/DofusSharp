@@ -4,6 +4,10 @@ namespace BestCrush.Domain.Services;
 
 public static class RuneMarketRanking
 {
+    public static double? Ratio(double? weight, long? price1, long? price10, long? price100, long? price1000) =>
+        weight is > 0 && double.IsFinite(weight.Value) && Reference(price1, price10, price100, price1000) is { } quote
+            ? quote.Price / (double)quote.Lot / weight.Value : null;
+
     public static double? Weight(Rune rune)
     {
         if (!Enum.IsDefined(rune.Characteristic)) return null;

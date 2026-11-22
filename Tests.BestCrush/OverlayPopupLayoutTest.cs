@@ -43,22 +43,7 @@ public sealed class OverlayPopupLayoutTest
         Assert.Equal(new(0,0,240,180),popup);
     }
 
-    [Fact]
-    public void FoodAnalysisHasItsOwnCompactLayoutInsteadOfReusingResizedDetailWindows()
-    {
-        string path=Path.Combine(Path.GetTempPath(),"food-layout-"+Guid.NewGuid()+".json");
-        try
-        {
-            var settings=new OverlayLayoutSettingsService(path);
-            settings.SaveLayout(OverlayLayoutKind.PopupDetails,new(0,0,600,420));
-            var popup=new OverlayPopup("pet-food-analysis:1","Tests XP",[]){FoodAnalysis=[]};
-            Assert.Equal(OverlayLayoutKind.PopupPetFood,popup.LayoutKind);
-            Assert.Equal(340,settings.GetLayout(popup.LayoutKind).Width);Assert.Equal(270,settings.GetLayout(popup.LayoutKind).Height);
-            var resized=new OverlayWindowLayout(50,50,350,280);settings.SaveLayout(popup.LayoutKind,resized);
-            Assert.Equal(resized,new OverlayLayoutSettingsService(path).GetLayout(popup.LayoutKind));
-        }
-        finally{if(File.Exists(path))File.Delete(path);}
-    }
+
 
     [Fact]
     public void PopupSizesSurviveClosingChangingItemAndRestarting()

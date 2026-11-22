@@ -2,17 +2,13 @@
 @using BestCrush.Components.Pure
 
 <section class="pet-market-overlay" aria-label="Achats et nourriture des familiers">
-    <PetFoodSelector Value="Report?.BestFoodValue" Loading="@(Report is null || !Report.AnalysisComplete)" ContextKey="@Report?.Server"
+    <PetFoodSelector PriceTooltip="@(Report?.BestFoodValue is {} foodValue ? Report.FoodPriceTooltip(foodValue.Food.Id) : null)" Value="Report?.BestFoodValue" Loading="@(Report is null || !Report.AnalysisComplete)" ContextKey="@Report?.Server"
         UseStocks="UseStocks" SkippedCount="SkippedFoods" UseStocksChanged="UseStocksChanged" NextRequested="NextFoodRequested"
         PreviousRequested="PreviousFoodRequested" ResetRequested="ResetFoodsRequested" />
     <nav class="pet-copy-tools" aria-label="Listes à actualiser">
         <button disabled="@(Report?.PetPriceChecks.Count is not >0)" aria-label="Copier les prix des familiers à actualiser"
             title="@($"Prix familier ({Report?.PetPriceChecks.Count??0})")" @onclick="CopyPetPrices">
             <i class="bi bi-heart" aria-hidden="true"></i><span>@(Report?.PetPriceChecks.Count??0)</span>
-        </button>
-        <button disabled="@(Report?.FoodTests.Count is not >0)" aria-label="Analyser les ressources à tester"
-            title="@($"Test XP ({Report?.FoodTests.Count??0})")" @onclick="CopyFoodTests">
-            <i class="bi bi-beaker" aria-hidden="true"></i><span>@(Report?.FoodTests.Count??0)</span>
         </button>
         <button disabled="@(Report?.FoodPriceChecks.Count is not >0)" aria-label="Copier les prix des ressources à actualiser"
             title="@($"Prix ressources ({Report?.FoodPriceChecks.Count??0})")" @onclick="CopyResourcePrices">
@@ -34,18 +30,20 @@
             {
                 var plan=pet.Best!;
                 <article class="pet-buy-card">
-                    <div class="module-heading"><TradeItemImage Name="@pet.Species.Name" ItemId="pet.Species.Id" IconId="pet.Species.IconId" Size="34" /><strong>@pet.Species.Name</strong><span class="positive">+@Money(plan.Margin)</span></div>
+                    <div class="pet-buy-heading"><TradeItemImage Name="@pet.Species.Name" ItemId="pet.Species.Id" IconId="pet.Species.IconId" Size="34" /><strong>@pet.Species.Name</strong><span class="positive">+@Money(plan.Margin)</span></div>
                     <div class="pet-buy-route"><small>Niv. @group.Key → @plan.Level</small><small>Achat @Money(pet.AcquisitionCost) · Revente @Money(plan.SalePrice)</small></div>
-                    <div class="pet-feed-cost"><small>Nourrissage</small><strong>@Money(plan.Nutrition.CashRequired)</strong></div>
-                    @foreach(var meal in plan.Nutrition.Meals)
-                    {
-                        <div class="pet-meal-choice"><button class="pet-meal" @onclick="()=>CopyRequested.InvokeAsync(new[]{meal.Food.Name}.AsEnumerable())"
-                                title="@($"Stock {meal.FromStock:N0} · Fabriquer {meal.Crafted:N0} · Acheter {meal.Bought:N0}")">
-                            <TradeItemImage Name="@meal.Food.Name" ItemId="meal.Food.Id" IconId="meal.Food.IconId" Size="22" />
-                            <span>@meal.Food.Name</span><strong>× @meal.Quantity.ToString("N0")</strong>
-                        </button><button disabled="@(SkippedFoods==0)" title="Aliment précédent" aria-label="Aliment précédent" @onclick="PreviousFoodRequested"><i class="bi bi-arrow-left" aria-hidden="true"></i></button>
-                        <button title="Aliment suivant par coût d’XP" aria-label="Aliment suivant" @onclick="()=>NextFoodRequested.InvokeAsync(meal.Food.Id)"><i class="bi bi-arrow-right" aria-hidden="true"></i></button></div>
-                    }
+                    <div class="pet-feed-cost">
+                        <small>Nourrissage :</small>
+                        @foreach(var meal in plan.Nutrition.Meals)
+                        {
+                            <span class="pet-feed-food" title="@report.FoodPriceTooltip(meal.Food.Id)">
+                                <TradeItemImage Name="@meal.Food.Name" ItemId="meal.Food.Id" IconId="meal.Food.IconId" Tooltip="@report.FoodPriceTooltip(meal.Food.Id)" Size="18" />
+                                <button class="pet-feed-name" title="@report.FoodPriceTooltip(meal.Food.Id)" @onclick="()=>CopyRequested.InvokeAsync(new[]{meal.Food.Name}.AsEnumerable())">@meal.Food.Name</button>
+                                <span class="pet-feed-quantity">× @meal.Quantity.ToString("N0")</span>
+                            </span>
+                        }
+                        <strong class="pet-feed-total">- @Money(plan.Nutrition.CashRequired)</strong>
+                    </div>
                     @if(plan.Nutrition.Crafts.Count>0)
                     {
                         <details class="pet-craft-details"><summary>Achats et fabrication</summary>
@@ -68,7 +66,6 @@
     [Parameter] public bool ServerKnown {get;set;}
     [Parameter] public string? Error {get;set;}
     [Parameter] public EventCallback<IEnumerable<string>> CopyRequested {get;set;}
-    [Parameter] public EventCallback AnalysisRequested {get;set;}
     [Parameter] public bool UseStocks {get;set;}=true;
     [Parameter] public int SkippedFoods {get;set;}
     [Parameter] public EventCallback<bool> UseStocksChanged {get;set;}
@@ -78,12 +75,5 @@
     private Task CopyPetPrices()=>CopyRequested.InvokeAsync(Report?.PetPriceChecks.Select(c=>c.Name) ?? []);
     private Task CopyResourcePrices()=>CopyRequested.InvokeAsync(Report is {} report
         ? PetOpportunityService.FoodPriceNames(report.FoodPriceChecks,report.KnownFoodExperienceItems) : []);
-    private async Task CopyFoodTests()
-    {
-        if(Report is not {} report)return;
-        var names=PetOpportunityService.FoodTestNames(report.FoodTests,DateTime.UtcNow);
-        await AnalysisRequested.InvokeAsync();
-        await CopyRequested.InvokeAsync(names);
-    }
     private static string Money(double? amount)=>amount is {} value?$"{value:N0} K":"—";
 }

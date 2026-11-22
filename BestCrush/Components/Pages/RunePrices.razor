@@ -524,7 +524,7 @@
         public required string Name { get; init; }
         public double? Weight { get; init; }
         private (int Lot, long Price)? Reference => RuneMarketRanking.Reference(Price1, Price10, Price100, Price1000);
-        public double? Ratio => Weight is > 0 && Reference is { } reference ? reference.Price / (double)reference.Lot / Weight : null;
+        public double? Ratio => RuneMarketRanking.Ratio(Weight,Price1,Price10,Price100,Price1000);
         public string? ReferenceTooltip => Ratio.HasValue && Reference is { } quote
             ? $"Lot ×{quote.Lot:N0} à {quote.Price:N0} K · {quote.Price / (double)quote.Lot:N2} K par rune" : null;
 

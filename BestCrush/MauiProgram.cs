@@ -81,6 +81,7 @@ public static class MauiProgram
             builder.Services.AddSingleton<BestCrush.Services.MarketCaptureOverlayService>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayControlBarService>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayService>();
+            builder.Services.AddSingleton<RuneRankingPreferences>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayWorkspaceService>();
             builder.Services.AddSingleton<BestCrush.Services.OverlayWindowsService>();
             builder.Services.AddSingleton<BestCrush.Services.CrushSessionService>();
@@ -111,7 +112,6 @@ public static class MauiProgram
             builder.Services.AddScoped<MarketAnalyticsService>();
             builder.Services.AddScoped<ForgemagingDataService>();
             builder.Services.AddSingleton<LiveForgemagingService>();
-            builder.Services.AddSingleton<LivePetFeedingService>();
             builder.Services.AddSingleton<LiveBreedingService>();
             builder.Services.AddScoped<BreedingRefillService>();
             builder.Services.AddScoped<BreedingTradeService>();

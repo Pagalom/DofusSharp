@@ -44,39 +44,7 @@ public sealed class PetFoodCoefficientTest
         Assert.False(db.Database.HasPendingModelChanges());
     }
 
-    [Theory]
-    [InlineData(3,1,1.0/3)]
-    [InlineData(10,1012,101.2)]
-    [InlineData(1,101,101)]
-    [InlineData(1,0,0)]
-    public async Task StoresOnlyTheComputedCoefficientAndDateAndUpdatesTheResource(int quantity,long gain,double expected)
-    {
-        using var database=new TestDatabase();using var db=database.CreateContext();
-        var at=DateTime.UtcNow;
-        var meal=new global::BestCrush.Network.Protocol.PetFeedingObservation(1,13942,12133,quantity,100,100+gain,at);
-        Assert.True(await LivePetFeedingService.SaveAsync(db,meal,default));
-        using var reopened=database.CreateContext();
-        var food=Assert.Single(await reopened.PetFoods.ToArrayAsync());
-        Assert.Equal(expected,food.Experience);Assert.Equal(at,food.ExperienceObservedAtUtc);
-        Assert.Equal(expected,Assert.Single(await reopened.Resources.ToArrayAsync()).PetExperience);
-        Assert.DoesNotContain(reopened.Model.GetEntityTypes(),type=>type.GetTableName()=="PetFeedingObservations");
-        Assert.False(await LivePetFeedingService.SaveAsync(db,meal,default));
-    }
 
-    [Fact]
-    public async Task LatestMealReplacesThePreviousCoefficientWithoutHistoryOrAverages()
-    {
-        using var database=new TestDatabase();using var db=database.CreateContext();
-        db.PetFoods.Add(new(){DofusDbId=13942,Name="Bec",MarketType=MarketObjectType.Resource,Experience=101.25});await db.SaveChangesAsync();
-        var first=new global::BestCrush.Network.Protocol.PetFeedingObservation(1,13942,12133,1,0,101,DateTime.UtcNow);
-        Assert.True(await LivePetFeedingService.SaveAsync(db,first,default));
-        var next=first with{Sequence=2,Quantity=10,ExperienceAfter=1012,ObservedAtUtc=first.ObservedAtUtc.AddSeconds(1)};
-        Assert.True(await LivePetFeedingService.SaveAsync(db,next,default));
-        Assert.False(await LivePetFeedingService.SaveAsync(db,first,default));
-        Assert.Equal(101.2,Assert.Single(await db.PetFoods.ToArrayAsync()).Experience);
-        Assert.True(await LivePetFeedingService.SaveAsync(db,next with{ObservedAtUtc=next.ObservedAtUtc.AddDays(1)},default));
-        Assert.Equal(1,await db.PetFoods.CountAsync());
-        Assert.False(await LivePetFeedingService.SaveAsync(db,next with{ExperienceAfter=179592},default));
-        Assert.False(await LivePetFeedingService.SaveAsync(db,next with{Quantity=0},default));
-    }
+
+
 }

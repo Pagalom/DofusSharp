@@ -21,7 +21,8 @@ public enum OverlayLayoutKind
     PopupPurchase,
     PopupPrices,
     PopupDetails,
-    PopupPetFood
+    PopupPetFood,
+    Runes
 }
 
 public sealed record OverlayWindowLayout(
@@ -127,6 +128,7 @@ public sealed class OverlayLayoutSettingsService
             OverlayLayoutKind.Forgemaging => new(440, 70, 740, 480),
             OverlayLayoutKind.Breeding => new(850, 70, 400, 540),
             OverlayLayoutKind.Pets => new(440, 120, 390, 540),
+            OverlayLayoutKind.Runes => new(850, 120, 280, 200),
             OverlayLayoutKind.Journey => new(850, 120, 390, 500),
             OverlayLayoutKind.PopupCraft => new(500, 150, 360, 260),
             OverlayLayoutKind.PopupRunes => new(500, 150, 500, 420),

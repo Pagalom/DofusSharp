@@ -182,11 +182,11 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
         {
             bool west=view.MotionEdge is 10 or 13 or 16,east=view.MotionEdge is 11 or 14 or 17;
             bool north=view.MotionEdge is 12 or 13 or 14,south=view.MotionEdge is 15 or 16 or 17;
-            width=Math.Max(view.Kind==WorkspaceOverlayKind.Control?340:320,start.Width+(east?dx:west?-dx:0));
-            height=Math.Max(view.Kind==WorkspaceOverlayKind.Control?46:180,start.Height+(south?dy:north?-dy:0));
+            width=Math.Max(MinimumWidth(view.Kind),start.Width+(east?dx:west?-dx:0));
+            height=Math.Max(MinimumHeight(view.Kind),start.Height+(south?dy:north?-dy:0));
             if(west)left=start.X+start.Width-width;if(north)top=start.Y+start.Height-height;
         }
-        var bounds=layouts.ConstrainToVisibleScreen(new(left,top,width,height),view.Kind==WorkspaceOverlayKind.Control?340:320,view.Kind==WorkspaceOverlayKind.Control?46:180);
+        var bounds=layouts.ConstrainToVisibleScreen(new(left,top,width,height),MinimumWidth(view.Kind),MinimumHeight(view.Kind));
         if(view.MotionEdge==2 && (app.Position.X!=bounds.X || app.Position.Y!=bounds.Y))
             SetWindowPos(view.Handle,IntPtr.Zero,bounds.X,bounds.Y,0,0,0x0001|0x0004|0x0010|0x0200);
         else if(app.Position.X!=bounds.X || app.Position.Y!=bounds.Y || app.Size.Width!=bounds.Width || app.Size.Height!=bounds.Height)
@@ -216,6 +216,8 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
         foreach(var view in _windows.Values.ToArray()){SaveLayoutNow(view);if(view.Window is { } window)Application.Current?.CloseWindow(window);}
         _windows.Clear();
     });
+    private static int MinimumWidth(WorkspaceOverlayKind kind) => kind switch { WorkspaceOverlayKind.Control => 340, WorkspaceOverlayKind.Runes => 240, _ => 320 };
+    private static int MinimumHeight(WorkspaceOverlayKind kind) => kind switch { WorkspaceOverlayKind.Control => 46, WorkspaceOverlayKind.Runes => 180, _ => 180 };
     private void Create(OverlayWindowView view,string? parent=null)
     {
 #if WINDOWS
@@ -232,15 +234,15 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
             e.WebView.FocusVisualSecondaryThickness=new Microsoft.UI.Xaml.Thickness(0);
         };
 #endif
-        var layout=layouts.GetValidatedLayout(LayoutKind(view),view.Kind==WorkspaceOverlayKind.Control?340:320,
-            view.Kind==WorkspaceOverlayKind.Control?46:180,true);
+        var layout=layouts.GetValidatedLayout(LayoutKind(view),MinimumWidth(view.Kind),
+            MinimumHeight(view.Kind),true);
 #if WINDOWS
         if(parent is not null && Get(parent)?.App is { } source)
             layout=layouts.PlacePopupBeside(new(source.Position.X,source.Position.Y,source.Size.Width,source.Size.Height),layout);
 #endif
         var page=new ContentPage{Content=web,BackgroundColor=Colors.Transparent,Padding=0};
         var window=new Window(page){Title="BestCrush · "+view.Title,Width=layout.Width,Height=layout.Height,X=layout.X,Y=layout.Y,
-            MinimumWidth=view.Kind==WorkspaceOverlayKind.Control?300:280,MinimumHeight=view.Kind==WorkspaceOverlayKind.Control?40:150};
+            MinimumWidth=MinimumWidth(view.Kind),MinimumHeight=MinimumHeight(view.Kind)};
         view.Window=window;
         window.Created+=(_,_)=>{
 #if WINDOWS
@@ -366,12 +368,12 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
     public static string Title(WorkspaceOverlayKind kind)=>kind switch{
         WorkspaceOverlayKind.Profitability=>"Rentabilité",WorkspaceOverlayKind.Crush=>"Résultat du concassage",
         WorkspaceOverlayKind.Forgemaging=>"Forgemagie",WorkspaceOverlayKind.Breeding=>"Élevage",WorkspaceOverlayKind.Pets=>"Familiers",
-        WorkspaceOverlayKind.Journey=>"Parcours",_=>"Panneau de contrôle"};
+        WorkspaceOverlayKind.Runes=>"Classement runes",WorkspaceOverlayKind.Journey=>"Parcours",_=>"Panneau de contrôle"};
     private static OverlayLayoutKind LayoutKind(WorkspaceOverlayKind kind)=>kind switch{
         WorkspaceOverlayKind.Profitability=>OverlayLayoutKind.Profitability,WorkspaceOverlayKind.Crush=>OverlayLayoutKind.Crush,
         WorkspaceOverlayKind.Control=>OverlayLayoutKind.ControlBar,WorkspaceOverlayKind.Forgemaging=>OverlayLayoutKind.Forgemaging,
         WorkspaceOverlayKind.Breeding=>OverlayLayoutKind.Breeding,WorkspaceOverlayKind.Pets=>OverlayLayoutKind.Pets,
-        WorkspaceOverlayKind.Popup=>OverlayLayoutKind.PopupDetails,_=>OverlayLayoutKind.Journey};
+        WorkspaceOverlayKind.Runes=>OverlayLayoutKind.Runes,WorkspaceOverlayKind.Popup=>OverlayLayoutKind.PopupDetails,_=>OverlayLayoutKind.Journey};
     private static void Dispatch(Action action){if(MainThread.IsMainThread)action();else MainThread.BeginInvokeOnMainThread(action);}
 #if WINDOWS
     private static readonly WindowSubclassProc FrameProc=FrameMessage;

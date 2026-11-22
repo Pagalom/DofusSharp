@@ -1,2 +1,11 @@
 .pet-goal-progress{display:flex;align-items:center;gap:.6rem;white-space:nowrap}.pet-goal-progress progress{width:5rem;height:.5rem;accent-color:var(--bs-primary)}
 @media(max-width:650px){.pet-goal-progress progress{width:3rem}}
+
+.pet-feeding-route{border-top:1px solid var(--bs-border-color);padding-top:1rem;margin-top:.5rem}
+.pet-feeding-route p{margin-bottom:.75rem}
+.pet-food-line,.pet-food-item{display:flex;align-items:center;flex-wrap:wrap;gap:.35rem}
+.pet-food-line{margin-bottom:.75rem}
+
+.pet-route-icon{display:inline-flex;align-items:center;justify-content:center;width:1.1rem;flex:none}
+.pet-route-arrows{display:inline-grid;grid-template-columns:repeat(3,26px);gap:2px;margin-left:.35rem;flex:none}
+.pet-route-arrows button{display:flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;line-height:1}

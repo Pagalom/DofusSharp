@@ -6,76 +6,47 @@
     @foreach(var kind in Sections)
     {
         var state=_states[kind];
-        var foods=kind==ListKind.FoodTests ? FilteredFoods() : [];
-        var prices=kind==ListKind.FoodTests ? [] : FilteredChecks(kind);
-        int count=kind==ListKind.FoodTests ? foods.Count : prices.Count;
+        var prices=FilteredChecks(kind);
+        int count=prices.Count;
         int total=Total(kind);
         <section @key="kind" class="bc-surface" aria-label="@Title(kind)">
             <header>
-                <h2><i class="bi @(kind==ListKind.FoodTests ? "bi-beaker" : "bi-shop")" aria-hidden="true"></i>
-                    @Title(kind) <small>@(count==total ? total.ToString() : $"{count} / {total}")</small>
-                </h2>
+                <h2><i class="bi bi-shop" aria-hidden="true"></i> @Title(kind) <small>@(count==total ? total.ToString() : $"{count} / {total}")</small></h2>
                 <button type="button" class="btn btn-sm btn-outline-secondary" disabled="@(count==0)" @onclick="()=>CopyAsync(kind)"
-                    aria-label="@(kind==ListKind.FoodTests ? "Copier les ressources à tester" : "Copier les éléments à consulter")"
-                    title="@(kind==ListKind.PetPrices ? "Copier la liste filtrée" : "Copier 50 ressources parmi les résultats")"><i class="bi bi-copy" aria-hidden="true"></i></button>
+                    aria-label="Copier les éléments à consulter" title="@(kind==ListKind.PetPrices ? "Copier la liste filtrée" : "Copier 50 ressources parmi les résultats")"><i class="bi bi-copy" aria-hidden="true"></i></button>
             </header>
             <ServiceSearch Value="@state.Search" ValueChanged="value=>SetSearch(kind,value)" Label="@($"Rechercher · {Title(kind)}")" Placeholder="Rechercher…" />
             <ul>
-                @if(kind==ListKind.FoodTests)
+                @foreach(var check in prices.Take(state.Visible))
                 {
-                    @foreach(var entry in foods.Take(state.Visible))
-                    {
-                        <li class="pet-food-test-row" @key="entry.Food.DofusDbId">
-                            <CopyTextButton Value="@entry.Food.Name" Tooltip="Copier le nom">@entry.Food.Name</CopyTextButton>
-                            <span class="pet-test-stock">
-                                @if(entry.Inventory>0){<span><StatusIcon Icon="bag" Tooltip="Inventaire" /> @entry.Inventory.ToString("N0")</span>}
-                                @if(entry.Bank>0){<span><StatusIcon Icon="bank" Tooltip="Banque" /> @entry.Bank.ToString("N0")</span>}
-                                @if(entry.LastObservedAtUtc is {} at){<StatusIcon Icon="clock-history" Tooltip="@($"Dernier test : {at.ToLocalTime():dd/MM HH:mm}")" CssClass="text-warning" />}
-                            </span>
-                            <PetFoodExperienceEntry Food="entry.Food" />
-                        </li>
-                    }
-                }
-                else
-                {
-                    @foreach(var check in prices.Take(state.Visible))
-                    {
-                        <li @key="check.ItemId"><CopyTextButton Value="@check.Name" Tooltip="Copier le nom">@check.Name</CopyTextButton>
-                            <StatusIcon Icon="@(check.LastObserved is null ? "question-circle" : "clock-history")" Tooltip="@Reason(check)" CssClass="text-warning" />
-                        </li>
-                    }
+                    <li @key="check.ItemId"><CopyTextButton Value="@check.Name" Tooltip="Copier le nom">@check.Name</CopyTextButton>
+                        <StatusIcon Icon="@(check.LastObserved is null ? "question-circle" : "clock-history")" Tooltip="@Reason(check)" CssClass="text-warning" />
+                    </li>
                 }
             </ul>
             @if(state.Message is not null){<small class="d-block mt-2" role="status">@state.Message</small>}
             @if(count>state.Visible)
-            {
-                <button type="button" class="pet-list-more" @onclick="()=>state.Visible+=20">Voir plus… <small>@state.Visible / @count</small></button>
-            }
+            {<button type="button" class="pet-list-more" @onclick="()=>state.Visible+=20">Voir plus… <small>@state.Visible / @count</small></button>}
         </section>
     }
 </div>
 
 @code {
     [Parameter] public IReadOnlyList<BreedingPriceCheck> Checks {get;set;}=[];
-    [Parameter] public IReadOnlyList<PetFoodTest> Foods {get;set;}=[];
     [Parameter] public IReadOnlyList<BreedingPriceCheck> ResourcePriceChecks {get;set;}=[];
     [Parameter] public IReadOnlySet<long> KnownFoodExperienceItems {get;set;}=new HashSet<long>();
     [Parameter] public DofusClientWindowKey? TargetWindow {get;set;}
-    [Parameter] public bool ShowFoods {get;set;}=true;
     [Parameter] public bool ShowResourcePrices {get;set;}
     [Parameter] public string MarketTitle {get;set;}="Prix familiers à actualiser";
-    private enum ListKind { PetPrices,FoodTests,ResourcePrices }
+    private enum ListKind { PetPrices,ResourcePrices }
     private sealed class ListState { public string Search="";public int Visible=20;public string? Message; }
     private readonly Dictionary<ListKind,ListState> _states=Enum.GetValues<ListKind>().ToDictionary(kind=>kind,_=>new ListState());
-    // Search does not move the section being edited; actual empty lists stay at the bottom.
     private IEnumerable<ListKind> Sections=>new[]{ListKind.PetPrices}
-        .Concat(ShowFoods ? [ListKind.FoodTests] : Array.Empty<ListKind>())
         .Concat(ShowResourcePrices ? [ListKind.ResourcePrices] : Array.Empty<ListKind>())
         .OrderBy(kind=>Total(kind)==0);
-    private int Total(ListKind kind)=>kind switch {ListKind.PetPrices=>Checks.Count,ListKind.FoodTests=>Foods.Count,_=>ResourcePriceChecks.Count};
-    private string Title(ListKind kind)=>kind switch {ListKind.PetPrices=>MarketTitle,ListKind.FoodTests=>"Ressources à tester",_=>"Prix ressources à actualiser"};
+    private int Total(ListKind kind)=>kind==ListKind.PetPrices ? Checks.Count : ResourcePriceChecks.Count;
+    private string Title(ListKind kind)=>kind==ListKind.PetPrices ? MarketTitle : "Prix ressources à actualiser";
     private static bool Matches(string name,string search)=>name.Contains(search.Trim(),StringComparison.CurrentCultureIgnoreCase);
-    private IReadOnlyList<PetFoodTest> FilteredFoods()=>Foods.Where(entry=>Matches(entry.Food.Name,_states[ListKind.FoodTests].Search)).ToArray();
     private IReadOnlyList<BreedingPriceCheck> FilteredChecks(ListKind kind)=>(kind==ListKind.PetPrices ? Checks : ResourcePriceChecks)
         .Where(entry=>Matches(entry.Name,_states[kind].Search)).ToArray();
     private void SetSearch(ListKind kind,string value)
@@ -85,12 +56,9 @@
     {
         try
         {
-            var names=kind switch
-            {
-                ListKind.FoodTests=>PetOpportunityService.FoodTestNames(FilteredFoods(),DateTime.UtcNow),
-                ListKind.ResourcePrices=>PetOpportunityService.FoodPriceNames(FilteredChecks(kind),KnownFoodExperienceItems),
-                _=>FilteredChecks(kind).Select(c=>c.Name)
-            };
+            var names=kind==ListKind.ResourcePrices
+                ? PetOpportunityService.FoodPriceNames(FilteredChecks(kind),KnownFoodExperienceItems)
+                : FilteredChecks(kind).Select(c=>c.Name);
             var result=await CopyQueue.CopyAsync(names,TargetWindow);
             _states[kind].Message=result.IsQueue ? $"{result.Count} noms · Ctrl+V dans Dofus" : "Liste copiée.";
         }

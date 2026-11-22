@@ -1,9 +1,13 @@
-.pet-meal-choice{display:flex;align-items:center;gap:5px}
-.pet-meal-choice>.pet-meal{flex:1;min-width:0}
-.pet-meal-choice>button:not(.pet-meal){border:1px solid var(--line);border-radius:4px;padding:3px 5px;flex:none}
-.pet-meal-choice>button:disabled{opacity:.35}
-
 .pet-overlay-tools{margin-bottom:12px}
 .pet-copy-tools{display:flex;align-items:center;justify-content:flex-end;gap:7px;margin:12px 0}
 .pet-copy-tools button{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--line);border-radius:5px;padding:6px 9px;font-size:11px}
 .pet-copy-tools button:hover:not(:disabled){background:var(--raised);border-color:var(--gold)}
+
+.pet-buy-heading{display:flex;align-items:center;justify-content:flex-start;gap:8px;margin-bottom:8px}
+.pet-buy-heading>strong{min-width:0;flex:1;text-align:left}
+.pet-buy-heading>.positive{margin-left:auto;white-space:nowrap;font-size:12px}
+.pet-feed-cost{display:flex;align-items:center;gap:4px;font-size:11px;margin:8px 0}
+.pet-feed-cost>small,.pet-feed-total,.pet-feed-quantity{flex:none;white-space:nowrap}
+.pet-feed-food{display:flex;align-items:center;gap:4px;min-width:0;flex:1}
+.pet-feed-name{flex:1;min-width:0;padding:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pet-feed-total{font-size:11px}

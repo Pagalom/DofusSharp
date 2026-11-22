@@ -1,5 +1,4 @@
 @using Microsoft.EntityFrameworkCore
-@inject LivePetFeedingService Feeding
 @using Microsoft.Extensions.DependencyInjection
 @inject IServiceScopeFactory DataScopes
 @page "/servers/{ServerName}/resource-prices"
@@ -74,7 +73,7 @@
                         <th style="width:14%;">Prix x10</th>
                         <th style="width:14%;">Prix x100</th>
                         <th style="width:14%;">Prix x1000</th>
-                        <th style="width:26%;">K/XP · Nourriture familier</th>
+                        <th style="width:26%;">XP/u · XP/K</th>
                     </tr>
                 </thead>
 
@@ -137,7 +136,7 @@
                                     OnChange="e => SavePriceAsync(row, 1000, e)" />
                             </td>
 
-                            <td><PetFoodExperienceEntry @key="row.DofusDbId" Food="row.Food" UnitPrice="row.UnitPrice" ShowRate="true" ReadOnly="@ServerViewFilter.IsBrowsingManually" /></td>
+                            <td><PetFoodYield @key="row.DofusDbId" Food="row.Food" UnitPrice="row.UnitPrice" /></td>
 
                         </tr>
                     }
@@ -200,7 +199,6 @@
     protected override void OnInitialized()
     {
         MarketDataChangeNotifier.Changed += OnMarketDataChanged;
-        Feeding.Changed+=FoodChanged;
         ServerViewFilter.Changed += OnBrowseModeChanged;
     }
     protected override async Task OnParametersSetAsync()
@@ -222,7 +220,6 @@
         }
         if (_rows is null || _reloadPending) await ReloadFromMarketAsync();
     }
-    private void FoodChanged(string server) {if(!_disposed)_=InvokeAsync(ReloadFromMarketAsync);}
     private Task RefreshAsync() => ReloadFromMarketAsync();
     private void OnMarketDataChanged(object? sender, MarketDataChangedEventArgs args)
     {
@@ -255,7 +252,6 @@
         _background.Dispose();
         ServerViewFilter.Changed -= OnBrowseModeChanged;
         MarketDataChangeNotifier.Changed -= OnMarketDataChanged;
-        Feeding.Changed-=FoodChanged;
     }
 
     private async Task<List<ResourcePriceRow>> ReadRowsAsync(string loadedFromServer, CancellationToken cancellationToken)
@@ -288,7 +284,6 @@
                         MarketObjectType.Resource,
                         loadedFromServer, cancellationToken);
 
-        var foods=await scope.ServiceProvider.GetRequiredService<BestCrush.Domain.BestCrushDbContext>().PetFoods.AsNoTracking().ToDictionaryAsync(f=>f.DofusDbId,cancellationToken);
         var units=observations.Values.GroupBy(q=>q.DofusDbId).ToDictionary(g=>g.Key,g=>MarketPriceService.CheapestUnitQuote(g));
 
         return resources
@@ -299,7 +294,7 @@
                 {
                     DofusDbId = resource.DofusDbId,
                     Name = resource.Name,
-                    Food=foods.GetValueOrDefault(resource.DofusDbId) ?? new(){DofusDbId=resource.DofusDbId,Name=resource.Name,MarketType=MarketObjectType.Resource,Experience=resource.PetExperience},
+                    Food=FixedPetFoodCatalog.Definition(resource.DofusDbId,resource.Name,resource.DofusDbIconId),
                     UnitPrice=units.TryGetValue(resource.DofusDbId,out var unit) && unit is not null ? (double)unit.Price/unit.Quantity : null
                 };
 

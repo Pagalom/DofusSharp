@@ -1,7 +1,6 @@
 @using BestCrush.Services
 @using BestCrush.Models
 @using BestCrush.Network.Protocol
-@inject MarketClipboardQueue CopyQueue
 
 <details class="card mb-2">
     <summary class="card-header d-flex align-items-center gap-3">
@@ -44,7 +43,7 @@
     <div class="card-body">
         @if(Assessment.Best is { } choice)
         {
-            <div class="d-flex flex-wrap gap-4 mb-3">
+            <div class="d-flex flex-wrap gap-4 mb-3 pet-price-summary">
                 <span>@(Assessment.Owned is null ? "Prix d’achat" : "Vente au niveau actuel")<br /><strong>@Money(Assessment.Owned is null ? Assessment.AcquisitionCost : Assessment.CurrentResale)</strong></span>
                 <span>À débourser en nourriture<br /><strong>@Money(choice.Nutrition.CashRequired)</strong></span>
                 <span>Valeur du stock consommé<br /><strong>@Money(choice.Nutrition.StockValue)</strong></span>
@@ -59,48 +58,28 @@
             }
             else
             {
-                <p><strong>Objectif : niveau @choice.Level</strong> · @choice.Nutrition.Experience.ToString("N0") XP prévues.</p>
-                @if(Assessment.Owned is null){<p><i class="bi bi-cart" aria-hidden="true"></i> Niveau @Assessment.Purchase!.Level · @Money(Assessment.Purchase.Price)</p>}
-                @if(choice.Nutrition.Purchases.Count>0)
-                {
-                    <div class="d-flex align-items-center gap-2 mb-2"><strong>À acheter</strong>
-                        <button class="btn btn-outline-primary btn-sm" @onclick="CopyShoppingAsync">Copier la liste</button><span role="status">@_copyStatus</span>
-                    </div>
-                    <ul>
-                        @foreach(var line in choice.Nutrition.Purchases)
+                <div class="pet-feeding-route">
+                    <p><i class="bi bi-cart pet-route-icon" role="img" aria-label="Achat" title="Achat"></i> Niveau @CurrentLevel · <strong>@Money(Assessment.Owned is null ? Assessment.AcquisitionCost : Assessment.CurrentResale)</strong></p>
+                    <div class="pet-food-line">
+                        <i class="bi bi-fork-knife pet-route-icon" role="img" aria-label="Nourriture" title="Nourriture"></i>
+                        @foreach(var meal in choice.Nutrition.Meals.GroupBy(meal=>meal.Food.Id))
                         {
-                            <li><CopyTextButton Value="@line.Name" Tooltip="Copier le nom">@line.Name</CopyTextButton>
-                                · @string.Join(" + ",line.Purchase.Lots.OrderByDescending(lot=>lot.Key).Select(lot=>$"{lot.Value} lot(s) × {lot.Key}"))
-                                · @Money(line.Purchase.TotalCost)
-                                @if(line.Ingredient){<span> · ingrédient</span>}
-                            </li>
-                        }
-                    </ul>
-                }
-                @foreach(var craft in choice.Nutrition.Crafts)
-                {
-                    <p><strong>Fabriquer @craft.Quantity.ToString("N0") × @craft.Recipe.Product.Name</strong> · @craft.Recipe.Product.Job niveau @craft.Recipe.Product.JobLevel</p>
-                    <ul>@foreach(var ingredient in craft.Ingredients)
-                        {<li>@ingredient.Name × @ingredient.Required.ToString("N0") · <StatusIcon Icon="box-seam" Tooltip="Pris dans le stock" /> @ingredient.Used.ToString("N0") · <StatusIcon Icon="cart" Tooltip="À acheter" /> @ingredient.Missing.ToString("N0")</li>}
-                    </ul>
-                }
-                <strong>À donner</strong> <StatusIcon Tooltip="Regroupez chaque aliment en un seul repas pour conserver l’XP prévue." />
-                <ul>
-                    @foreach(var meal in choice.Nutrition.Meals.GroupBy(meal=>meal.Food.Id))
-                    {
-                        var food=meal.First().Food;
-                        <li><StockItemArtwork Stock="Report.Stock" ItemId="food.Id"><ItemIcon Item="food" Size="Size.Tiny" /></StockItemArtwork>
-                            <CopyTextButton Value="@food.Name" Tooltip="Copier le nom">@food.Name</CopyTextButton> × @meal.Sum(line=>line.Quantity).ToString("N0")
-                            · @BestCrush.Domain.Services.PetExperience.MealExperience(food.Experience,meal.Sum(line=>line.Quantity)).ToString("N0") XP
-                            · <StatusIcon Icon="box-seam" Tooltip="Pris dans le stock" /> @meal.Sum(line=>line.FromStock).ToString("N0")
-                            <span class="d-inline-flex gap-1 ms-2">
-                                <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(!CanChoosePrevious)" title="Aliment précédent" aria-label="Aliment précédent" @onclick="PreviousFoodRequested"><i class="bi bi-arrow-left" aria-hidden="true"></i></button>
-                                <button type="button" class="btn btn-outline-primary btn-sm" title="Aliment suivant par coût d’XP" aria-label="Aliment suivant" @onclick="()=>NextFoodRequested.InvokeAsync(food.Id)"><i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+                            var food=meal.First().Food;
+                            <span class="pet-food-item">
+                                <StockItemArtwork Stock="Report.Stock" ItemId="food.Id"><ItemIcon Item="food" Size="Size.Tiny" Tooltip="@Report.FoodPriceTooltip(food.Id)" /></StockItemArtwork>
+                                <CopyTextButton Value="@food.Name" Tooltip="@Report.FoodPriceTooltip(food.Id)">@food.Name</CopyTextButton>
+                                <span>× @meal.Sum(line=>line.Quantity).ToString("N0")</span>
                             </span>
-                        </li>
-                    }
-                </ul>
-                <p><i class="bi bi-shop" aria-hidden="true"></i> Niveau @choice.Level · <strong>@Money(choice.SalePrice)</strong></p>
+                        }
+                        <span>- <strong>@Money(choice.Nutrition.CashRequired)</strong></span>
+                        <span class="pet-route-arrows" role="group" aria-label="Choisir la nourriture">
+                            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(!CanChoosePrevious || Analyzing)" title="Revenir au meilleur aliment" aria-label="Revenir au meilleur aliment" @onclick="ResetFoodsRequested"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(!CanChoosePrevious || Analyzing)" title="Aliment précédent" aria-label="Aliment précédent" @onclick="PreviousFoodRequested"><i class="bi bi-arrow-left" aria-hidden="true"></i></button>
+                            <button type="button" class="btn btn-outline-primary btn-sm" disabled="@(Analyzing || choice.Nutrition.Meals.Count==0)" title="Aliment suivant par coût d’XP" aria-label="Aliment suivant" @onclick="()=>NextFoodRequested.InvokeAsync(choice.Nutrition.Meals[0].Food.Id)"><i class="bi bi-arrow-right" aria-hidden="true"></i></button>
+                        </span>
+                    </div>
+                    <p><i class="bi bi-shop pet-route-icon" role="img" aria-label="Revente" title="Revente"></i> Niveau @choice.Level · <strong>@Money(choice.SalePrice)</strong></p>
+                </div>
             }
             @if(choice.Nutrition.StockConsumed.Count>0)
             {
@@ -133,7 +112,7 @@
     [Parameter] public bool CanChoosePrevious {get;set;}
     [Parameter] public EventCallback<long> NextFoodRequested {get;set;}
     [Parameter] public EventCallback PreviousFoodRequested {get;set;}
-    private string _copyStatus="";
+    [Parameter] public EventCallback ResetFoodsRequested {get;set;}
     private int? CurrentLevel=>Assessment.Owned?.Reading?.Level ?? Assessment.Purchase?.Level;
     private string SourceDescription=>Assessment.Owned is { } own
         ? $"{(own.Container=="bank" ? "Banque" : "Inventaire")} · niveau {own.Reading?.Level.ToString() ?? "inconnu"} · {own.Reading?.Experience?.ToString("N0") ?? "—"} XP · × {own.Quantity}"
@@ -141,13 +120,4 @@
     private static string Money(double? value)=>value is { } amount ? $"{amount:N0} K" : "—";
     private string StockName(long id)=>Assessment.Best?.Nutrition.Meals.FirstOrDefault(line=>line.Food.Id==id)?.Food.Name ??
         Assessment.Best?.Nutrition.Crafts.SelectMany(craft=>craft.Ingredients).FirstOrDefault(line=>line.ItemId==id)?.Name ?? $"Objet #{id}";
-    private async Task CopyShoppingAsync()
-    {
-        try
-        {
-            var result=await CopyQueue.CopyAsync(Assessment.Best?.Nutrition.Purchases.Select(line=>line.Name) ?? [],TargetWindow);
-            _copyStatus=result.IsQueue ? $"{result.Count} noms chargés · Ctrl+V dans Dofus." : "Liste copiée.";
-        }
-        catch{_copyStatus="Copie indisponible.";}
-    }
 }

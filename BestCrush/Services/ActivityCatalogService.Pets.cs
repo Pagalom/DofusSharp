@@ -53,32 +53,9 @@ public sealed partial class ActivityCatalogService
         }, token)).Where(item => item.Id > 0 && item.EvolutiveEffectIds is { Count: > 0 } && item.Name?.Fr is not null)
             .Select(item => new PetSpecies(item.Id!.Value, item.Name!.Fr!, item.IconId, item.TypeId!.Value)).ToArray(), token);
 
-    internal Task<PetFood[]> GetPetFoodsAsync(CancellationToken token) => !ReferenceEquals(PetReference,this)
-        ? PetReference.GetPetFoodsAsync(token) : CachedAsync("pet-foods-3.7.14-v1", async () =>
+    internal Task<PetFood[]> GetPetFoodsAsync(CancellationToken token)
     {
-        var types = await Fetch(factory.ItemTypes(), new()
-        {
-            Select = ["id", "superTypeId"]
-        }, token);
-        var allowed = types.Where(type => type.SuperTypeId == 9 && type.Id > 0).Select(type => type.Id!.Value).ToHashSet();
-        var foods = await Fetch(factory.Items(), new()
-        {
-            Predicates = [new DofusDbSearchPredicate.In("typeId", allowed.Append(209).Select(id => id.ToString()).ToArray())],
-            Select = ["id", "name", "iconId", "typeId", "recyclingNuggets", "possibleEffects", "hasRecipe"]
-        }, token);
-        var result = foods.Select(item => ReadPetFood(item, allowed)).OfType<PetFood>().DistinctBy(item => item.Id).ToArray();
-        if (!result.Any(food => food.Id == 20125 && food.Experience == 500))
-            throw new InvalidDataException("Le catalogue des nourritures ne permet pas d’identifier la Croquette enrichie.");
-        return result;
-    }, token);
-
-    internal static PetFood? ReadPetFood(DofusDbItem item, IReadOnlySet<long> resourceTypes)
-    {
-        if (item.Id is not > 0 || item.Name?.Fr is not { Length: > 0 } name || item.TypeId is not { } type) return null;
-        double xp = item.TypeId == 209
-            ? item.PossibleEffects?.FirstOrDefault(effect => (effect.EffectId ?? effect.ActionId) == 2820)?.Value ?? 0
-            : resourceTypes.Contains(type) ? (item.RecyclingNuggets ?? 0) * PetExperience.ResourceMultiplier : 0;
-        return double.IsFinite(xp) && xp > 0 ? new(item.Id.Value, name, item.IconId,
-            type == 78 ? MarketObjectType.Rune : MarketObjectType.Resource, xp, item.HasRecipe == true) : null;
+        token.ThrowIfCancellationRequested();
+        return Task.FromResult(FixedPetFoodCatalog.Foods);
     }
 }

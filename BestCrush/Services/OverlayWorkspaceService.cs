@@ -32,7 +32,6 @@ public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes,
     private bool _wasCrushed;
     private DofusClientWindowKey? _window, _contextWindow;
     private string? _contextServer;
-    private LivePetFeedingService? _feeding;
     private IReadOnlyDictionary<Characteristic,double>? _roll;
     private OverlayAcquisition? _origin;
     private long? _paid;
@@ -49,8 +48,7 @@ public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes,
         stock.Changed += StockInputsChanged;
         servers.ServerSelectionChanged += ClientChanged;servers.PlayedServerChanged += ClientChanged;
         _contextWindow=clients.SelectedClient?.Key;_contextServer=ActiveGameServer;
-        using(var scope=scopes.CreateScope())_feeding=scope.ServiceProvider.GetService<LivePetFeedingService>();
-        if(_feeding is not null)_feeding.Changed+=PetFeedingChanged;
+        _=CrushingSearch;ReconcileEquipmentSearchServer();
         if(petAnalysis is not null)petAnalysis.Changed+=PetInputsChanged;
         _poll = Task.Run(()=>PollAsync(_stop.Token));
     }
@@ -163,6 +161,7 @@ public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes,
     public void Request(WorkspaceOverlayKind kind) => ShowRequested?.Invoke(kind);
     private void PriceChanged(object? sender,MarketDataChangedEventArgs args)
     {
+        if(args.ObjectType==MarketObjectType.Rune && string.Equals(args.ServerName,ActiveGameServer,StringComparison.OrdinalIgnoreCase))RuneInputsChanged();
         var pets=_pets;
         if(pets is not null && string.Equals(args.ServerName,pets.Server,StringComparison.OrdinalIgnoreCase) &&
             (args.DofusDbId==0 || pets.RelevantPriceItems.Count==0 || pets.RelevantPriceItems.Contains(args.DofusDbId))) PetInputsChanged();
@@ -177,11 +176,14 @@ public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes,
         if(_contextWindow != window || _contextServer != server)
         {
             _contextWindow=window;_contextServer=server; Interlocked.Increment(ref _revision);Interlocked.Increment(ref _focusIntent);
+            ReconcileEquipmentSearchServer();
+            RuneRanking=[];RuneRankingServer=null;RuneInputsChanged();
             Profitability=null;_item=null;Owned=[];OwnedServer=null;_lastFm=null;_pets=null;_modules.Clear();
             _breedingSignature=null;_fmSignature=null;PetError=null;PetInputsChanged();Notify(); }
     }
     public void Dispose()
     { _stop.Cancel(); prices.Changed-=PriceChanged;fm.Changed-=FmChanged;clients.Changed-=ClientChanged;stock.Changed-=StockInputsChanged;
-        servers.ServerSelectionChanged-=ClientChanged;servers.PlayedServerChanged-=ClientChanged;if(_feeding is not null)_feeding.Changed-=PetFeedingChanged;
+        _crushingSearch.Changed-=SharedCrushingSearchChanged;
+        servers.ServerSelectionChanged-=ClientChanged;servers.PlayedServerChanged-=ClientChanged;
         if(petAnalysis is not null)petAnalysis.Changed-=PetInputsChanged; }
 }

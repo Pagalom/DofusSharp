@@ -18,7 +18,7 @@ public static class PetExperience
     {
         if (!double.IsFinite(perUnit) || perUnit <= 0 || quantity < 0)
             throw new ArgumentOutOfRangeException(nameof(perUnit));
-        double value = Math.Floor(perUnit * quantity);
+        double value = Math.Floor((float)(perUnit * quantity));
         return value >= int.MaxValue ? int.MaxValue : (int)value;
     }
     public static int? UnitsFor(double perUnit, int experience)

@@ -205,26 +205,8 @@ public partial class Server
 
         if (useCatalogueRunes && criteria.Count > 0)
         {
-            result = result.Where(
-                equipment =>
-                {
-                    bool Matches(
-                        RuneFilterCriterion criterion)
-                    {
-                        return equipment.Characteristics
-                            .Any(
-                                candidate =>
-                                    candidate.Characteristic ==
-                                    criterion.Characteristic
-                            );
-                    }
-
-                    return Model!.RuneMatchMode ==
-                        RuneFilterMatchMode.All
-                            ? criteria.All(Matches)
-                            : criteria.Any(Matches);
-                }
-            );
+            var stats=criteria.Select(c=>c.Characteristic).Distinct().ToArray();
+            result=result.Where(equipment=>BestCrush.Services.CrushingSearchFilters.MatchesRunes(equipment,stats,Model!.RuneMatchMode));
         }
 
         return result;

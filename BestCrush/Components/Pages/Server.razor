@@ -150,7 +150,7 @@
     }
     <form method="post" @onsubmit="AnalyzeAsync" @onsubmit:preventDefault @formname="search-form">
         <SearchItemsForm @ref="_searchForm" Model="Model" AvailableRunes="_availableRunes" Disabled="_searching"
-            JobCatalog="_crushingJobCatalog" JobsLoading="_jobFiltersBusy" JobsError="@_jobFiltersError" RetryJobs="LoadCrushingJobsAsync" JobSelectionChanged="OnCrushingJobSelectionChanged" SearchChanged="StateHasChanged"
+            JobCatalog="_crushingJobCatalog" JobsLoading="_jobFiltersBusy" JobsError="@_jobFiltersError" RetryJobs="LoadCrushingJobsAsync" JobSelectionChanged="OnCrushingJobSelectionChanged" SearchChanged="CommonCrushingFiltersEdited"
             PlayerLevel="DetectedPlayerLevel" ProfessionLevels="DetectedProfessionLevels">
             <Actions>
                 @if (Model?.OwnedOnly != true)
@@ -234,7 +234,7 @@
                 <div class="d-flex align-items-center justify-content-end gap-2 mb-2 px-3">
                     <div class="d-flex gap-2">
                         <label for="sort-order" class="col-form-label col-form-label-sm text-nowrap">Tri par</label>
-                        <InputSelect TValue="SortOrder" @bind-Value="_sortOrder" class="form-select form-select-sm" id="sort-order">
+                        <InputSelect TValue="SortOrder" @bind-Value="_sortOrder" @bind-Value:after="PublishSharedCrushingResults" class="form-select form-select-sm" id="sort-order">
                             <option value="@SortOrder.BestBenefit">@(UseStockCalculation ? "Gain après achats — meilleur mode" : "Bénéfice — meilleur mode")</option>
                             <option value="@SortOrder.BestYield">ROI — meilleur mode</option>
                             <option value="@SortOrder.PurchaseBenefit">@(UseStockCalculation ? "Gain après achat de l’équipement" : "Bénéfice achat")</option>
@@ -512,6 +512,7 @@
     {
         InitializeProfessionTracking();
         InitializeMarketTracking();
+        InitializeSharedCrushingSearch();
         if (Workspace is not null) Workspace.CrushSettingsChanged += OnWorkspaceCrushSettingsChanged;
         Stocks.Changed += OnCrushingStockChanged;
         Clients.Changed += OnCrushingStockChanged;
@@ -557,6 +558,7 @@
             SaveSessionState();
             _loadedServerName = ServerName;
             LoadSessionState(useSuppliedModel: firstLoad);
+            ReconcileSharedCrushingSearch();
             await PrepareStocksAsync(force: true);
             CatchUpMarketChanges();
         }
@@ -581,6 +583,7 @@
         // Links from Opportunities open the existing filtered screen, never a second menu.
         if (((itemChanged || serverChanged) && StockItemId is not null) || (itemChanged && _allItems is not null))
             await Search(false);
+        await RunPendingSharedAnalysisAsync();
     }
 
     private static string MarketSourceLabel(
@@ -788,6 +791,7 @@
         if (Workspace is not null) Workspace.CrushSettingsChanged -= OnWorkspaceCrushSettingsChanged;
         _stockDisposed = true;
         DisposeMarketTracking();
+        if(_sharedSearchHost is not null)_sharedSearchHost.CrushingSearch.Changed-=OnSharedCrushingSearch;
         _jobFiltersStop.Cancel();
         _stockPreparationVersion++;
         Stocks.Changed -= OnCrushingStockChanged;
@@ -835,6 +839,7 @@
         _searchForm?.CollapseAdvanced();
         if (Model?.OwnedOnly == true)
         {
+            PublishCommonCrushingFilters(analyze:true);
             _ownedRefreshVersion++;
             return Task.CompletedTask;
         }
@@ -858,6 +863,8 @@
             return;
         }
 
+        PublishCommonCrushingFilters(analyze:true);
+        long commonSearchVersion=_commonSearchVersion;
         _marketGeneration++;
         _allItems = null;
         _rankedItems = null;
@@ -874,7 +881,7 @@
         _preparingStocks = false;
         string analysisServer = ServerName;
         long analysisMarketRevision = _marketChanges?.Revision ?? 0;
-        bool IsCurrent() => !_stockDisposed && ServerName == analysisServer &&
+        bool IsCurrent() => !_stockDisposed && ServerName == analysisServer && commonSearchVersion==_commonSearchVersion &&
             (!respectProfessions || professionInputs?.Key == CaptureProfessionInputs()?.Key);
         await InvokeAsync(StateHasChanged);
 
@@ -892,6 +899,7 @@
                 return (Items: all, Market: market);
             });
             if (!IsCurrent()) return;
+            OverlayServices.GetService<OverlayWorkspaceService>()?.PublishEquipmentSearchCatalogue(loaded.Items);
             if (respectProfessions)
                 await LoadProfessionRecipesAsync(FilterItemsCore(loaded.Items), scope.ServiceProvider);
             if (!IsCurrent()) return;
@@ -938,6 +946,8 @@
                 }
             }
             _marketRevision = analysisMarketRevision;
+            _analyzedCommonSearchVersion=commonSearchVersion;
+            PublishSharedCrushingResults();
             SaveSessionState();
         }
         catch (Exception exn)
@@ -949,7 +959,7 @@
         {
             _searching = false;
             _analyzing = false;
-            if (!_stockDisposed) { await InvokeAsync(StateHasChanged); CatchUpMarketChanges(); }
+            if (!_stockDisposed) { await InvokeAsync(StateHasChanged); CatchUpMarketChanges(); await RunPendingSharedAnalysisAsync(); }
         }
     }
 

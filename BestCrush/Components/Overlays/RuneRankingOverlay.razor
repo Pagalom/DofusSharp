@@ -1,0 +1,53 @@
+@using BestCrush.Services
+@using BestCrush.Components.Pure
+@inject RuneRankingPreferences Preferences
+
+@{var hidden=Preferences.Hidden(Server);var visible=Rows.Where(row=>row.Ratio.HasValue && !hidden.Contains(row.Rune.DofusDbId)).Take(5).ToArray();}
+
+<section class="rune-ranking" aria-label="Classement des runes par poids">
+    <header>
+        <small>K / point de poids</small>
+        <div class="ranking-tools">
+            <button type="button" disabled="@(hidden.Count==0)" class="@(_showHidden?"selected":null)" title="@(_showHidden?"Masquer les runes écartées":"Afficher les runes masquées")" aria-label="Afficher les runes masquées" aria-pressed="@_showHidden.ToString().ToLowerInvariant()" @onclick="()=>_showHidden=!_showHidden"><i class="bi @(_showHidden?"bi-eye-fill":"bi-eye")" aria-hidden="true"></i></button>
+            <button type="button" disabled="@(hidden.Count==0)" title="Réinitialiser le classement" aria-label="Réinitialiser le classement" @onclick="Reset"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
+        </div>
+    </header>
+    @if(Error is not null){<p class="warning" role="status">@Error</p>}
+    @if(visible.Length==0)
+    {<p class="empty" role="status">@(Loading?"Chargement…":Server is null?"Sélectionnez le serveur joué.":"Aucune rune chiffrée visible.")</p>}
+    <ol>
+        @foreach(var row in visible)
+        {
+            <li @key="row.Rune.DofusDbId">
+                <button type="button" class="rune-name" title="@row.Rune.Name" @onclick="()=>CopyRequested.InvokeAsync(new[]{row.Rune.Name}.AsEnumerable())">
+                    <span class="rune-image"><MarketItemPicture IconId="row.Rune.DofusDbIconId" /></span><span>@row.Rune.Name</span>
+                </button>
+                <strong title="@row.Tooltip">@row.Ratio?.ToString("N2")</strong>
+                <button type="button" class="visibility" title="Masquer cette rune" aria-label="@($"Masquer {row.Rune.Name}")" @onclick="()=>Hide(row.Rune.DofusDbId)"><i class="bi bi-eye-slash" aria-hidden="true"></i></button>
+            </li>
+        }
+    </ol>
+    @if(_showHidden && hidden.Count>0)
+    {
+        <div class="hidden-runes"><small>Runes masquées · @hidden.Count</small>
+            @foreach(var row in Rows.Where(row=>hidden.Contains(row.Rune.DofusDbId)))
+            {
+                <div class="hidden-row" @key="row.Rune.DofusDbId"><span title="@row.Rune.Name">@row.Rune.Name</span><button type="button" title="Réafficher cette rune" aria-label="@($"Réafficher {row.Rune.Name}")" @onclick="()=>Restore(row.Rune.DofusDbId)"><i class="bi bi-eye" aria-hidden="true"></i></button></div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    [Parameter] public IReadOnlyList<RuneRankingEntry> Rows {get;set;}=[];
+    [Parameter] public string? Server {get;set;}
+    [Parameter] public bool Loading {get;set;}
+    [Parameter] public string? Error {get;set;}
+    [Parameter] public EventCallback<IEnumerable<string>> CopyRequested {get;set;}
+    private bool _showHidden;
+    private string? _server;
+    protected override void OnParametersSet(){if(_server!=Server){_server=Server;_showHidden=false;}}
+    private void Hide(long id){if(Server is {} server)Preferences.Hide(server,id);}
+    private void Restore(long id){if(Server is {} server){Preferences.Restore(server,id);if(Preferences.Hidden(server).Count==0)_showHidden=false;}}
+    private void Reset(){if(Server is {} server)Preferences.Reset(server);_showHidden=false;}
+}
