@@ -2,11 +2,10 @@
 @using BestCrush.Components.Pure
 @inject RuneRankingPreferences Preferences
 
-@{var hidden=Preferences.Hidden(Server);var visible=Rows.Where(row=>row.Ratio.HasValue && !hidden.Contains(row.Rune.DofusDbId)).Take(5).ToArray();}
+@{var hidden=Preferences.Hidden(Server);var visible=Rows.Where(row=>row.Ratio.HasValue && !hidden.Contains(row.Rune.DofusDbId)).ToArray();}
 
-<section class="rune-ranking" aria-label="Classement des runes par poids">
+<section class="rune-ranking" aria-label="Classement des runes par K/densité">
     <header>
-        <small>K / point de poids</small>
         <div class="ranking-tools">
             <button type="button" disabled="@(hidden.Count==0)" class="@(_showHidden?"selected":null)" title="@(_showHidden?"Masquer les runes écartées":"Afficher les runes masquées")" aria-label="Afficher les runes masquées" aria-pressed="@_showHidden.ToString().ToLowerInvariant()" @onclick="()=>_showHidden=!_showHidden"><i class="bi @(_showHidden?"bi-eye-fill":"bi-eye")" aria-hidden="true"></i></button>
             <button type="button" disabled="@(hidden.Count==0)" title="Réinitialiser le classement" aria-label="Réinitialiser le classement" @onclick="Reset"><i class="bi bi-arrow-counterclockwise" aria-hidden="true"></i></button>
@@ -19,10 +18,10 @@
         @foreach(var row in visible)
         {
             <li @key="row.Rune.DofusDbId">
-                <button type="button" class="rune-name" title="@row.Rune.Name" @onclick="()=>CopyRequested.InvokeAsync(new[]{row.Rune.Name}.AsEnumerable())">
+                <button type="button" class="rune-name" title="@row.Tooltip" @onclick="()=>CopyRequested.InvokeAsync(new[]{row.Rune.Name}.AsEnumerable())">
                     <span class="rune-image"><MarketItemPicture IconId="row.Rune.DofusDbIconId" /></span><span>@row.Rune.Name</span>
                 </button>
-                <strong title="@row.Tooltip">@row.Ratio?.ToString("N2")</strong>
+                <strong>@row.Ratio?.ToString("N2")</strong>
                 <button type="button" class="visibility" title="Masquer cette rune" aria-label="@($"Masquer {row.Rune.Name}")" @onclick="()=>Hide(row.Rune.DofusDbId)"><i class="bi bi-eye-slash" aria-hidden="true"></i></button>
             </li>
         }

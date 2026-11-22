@@ -8,7 +8,7 @@ namespace BestCrush.Services;
 public sealed record RuneRankingEntry(Rune Rune,double? Weight,double? Ratio,(int Lot,long Price)? Reference)
 {
     public string Tooltip=>Reference is {} quote
-        ? $"Lot ×{quote.Lot:N0} à {quote.Price:N0} K · {quote.Price/(double)quote.Lot:N2} K/rune · Poids {Weight:0.##}"
+        ? $"{quote.Price/(double)quote.Lot:N2} K/u · Densité {Weight:0.##}"
         : "Prix à relever à l’HDV";
 }
 

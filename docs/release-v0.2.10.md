@@ -1,0 +1,2 @@
+- Classement des runes complet et défilant.
+- Densité et info-bulles simplifiées.

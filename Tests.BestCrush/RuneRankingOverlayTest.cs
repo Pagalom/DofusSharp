@@ -55,7 +55,7 @@ public sealed class RuneRankingOverlayTest
     }
 
     [Fact]
-    public async Task ShowsFiveThenBackfillsHiddenRowsSupportsIndividualRestoreAndReset()
+    public async Task ShowsAllRankedRunesSupportsHidingIndividualRestoreAndReset()
     {
         string path=Path.Combine(Path.GetTempPath(),"rune-ranking-ui-"+Guid.NewGuid()+".json");
         try
@@ -68,13 +68,13 @@ public sealed class RuneRankingOverlayTest
             const BindingFlags flags=BindingFlags.Instance|BindingFlags.NonPublic;
             async Task Click(string method,params object[] args)=>await renderer.Dispatcher.InvokeAsync(()=>
             {typeof(RuneRankingOverlay).GetMethod(method,flags)!.Invoke(capture.Overlay,args);typeof(ComponentBase).GetMethod("StateHasChanged",flags)!.Invoke(capture.Overlay,null);});
-            string html=await Html();Assert.Contains("Masquer Rune Fo 5",html);Assert.DoesNotContain("Masquer Rune Fo 6",html);
-            await Click("Hide",1L);html=await Html();Assert.DoesNotContain("Masquer Rune Fo 1",html);Assert.Contains("Masquer Rune Fo 6",html);
+            string html=await Html();Assert.Contains("K/d",html);Assert.DoesNotContain("point de poids",html);Assert.Contains("Masquer Rune Fo 8",html);Assert.Equal(8,System.Text.RegularExpressions.Regex.Matches(html,"aria-label=\"Masquer Rune Fo ").Count);
+            await Click("Hide",1L);html=await Html();Assert.DoesNotContain("Masquer Rune Fo 1",html);Assert.Contains("Masquer Rune Fo 8",html);Assert.Equal(7,System.Text.RegularExpressions.Regex.Matches(html,"aria-label=\"Masquer Rune Fo ").Count);
             await renderer.Dispatcher.InvokeAsync(()=>{typeof(RuneRankingOverlay).GetField("_showHidden",flags)!.SetValue(capture.Overlay,true);typeof(ComponentBase).GetMethod("StateHasChanged",flags)!.Invoke(capture.Overlay,null);});
             Assert.Contains("Réafficher Rune Fo 1",await Html());
             await Click("Restore",1L);Assert.Contains("Masquer Rune Fo 1",await Html());
             await Click("Hide",1L);await Click("Reset");html=await Html();
-            Assert.Contains("Masquer Rune Fo 1",html);Assert.DoesNotContain("Masquer Rune Fo 6",html);Assert.Empty(preferences.Hidden("Kourial"));
+            Assert.Contains("Masquer Rune Fo 1",html);Assert.Contains("Masquer Rune Fo 8",html);Assert.Equal(8,System.Text.RegularExpressions.Regex.Matches(html,"aria-label=\"Masquer Rune Fo ").Count);Assert.Empty(preferences.Hidden("Kourial"));
         }
         finally{if(File.Exists(path))File.Delete(path);}
     }
