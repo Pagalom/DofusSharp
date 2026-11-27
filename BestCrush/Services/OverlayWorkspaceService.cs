@@ -111,10 +111,7 @@ public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes,
                 crushing=AddDisplayScenarios(crushing,lines,context,pricing,scope.ServiceProvider);
                 if (rollLabel == "Jet réel indisponible") crushing=crushing with { Scenarios=[] };
                 craft=equipment.Recipe.Count+equipment.EquipmentRecipe.Count>0?crushing.CraftCost.TotalCost:null;
-                ingredients=crushing.CraftCost.Resources.Select(r=>new OverlayPriceLine(r.ResourceName,r.RequiredQuantity,
-                    r.Cost,r.PurchasedQuantity is > 0 ? r.Cost/(double)r.PurchasedQuantity : null,
-                    r.SurplusQuantity is > 0 ? $"{r.PurchasedQuantity} achetés · {r.SurplusQuantity} conservés" : null,
-                    !r.HasPrice || r.Purchase?.Freshness != DataFreshness.Fresh,r.DofusDbId)).ToArray();
+                ingredients=crushing.CraftCost.Resources.Select(OverlayMarketFreshness.Ingredient).ToArray();
             }
             else
             {
@@ -129,20 +126,22 @@ public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes,
             if (origin == OverlayAcquisition.Purchase && (paid is not null || rollLabel.StartsWith("Jet réel",StringComparison.Ordinal))) buy=paid;
             if (origin == OverlayAcquisition.Craft && paid is not null) craft=paid;
             var checks=new[]{new OverlayPriceLine(item.Name,1,sale?.Value,sale?.Value,null,
-                sale is null || sale.Value.Freshness != DataFreshness.Fresh,item.DofusDbId)};
+                sale is null || sale.Value.Freshness != DataFreshness.Fresh,item.DofusDbId)
+                {ObservedAtUtc=OverlayMarketFreshness.Oldest(sale?.UsedObservations)}};
             var runeChecks=crushing?.PotentialRunes.Select(r=>{
                 var value=crushing.PotentialRuneUnitValues.GetValueOrDefault(r);
                 bool known=crushing.PotentialRuneUnitValues.ContainsKey(r);
-                return new OverlayPriceLine(r.Name,1,known?value.Value:null,known?value.Value:null,null,
-                    !known || value.Freshness!=DataFreshness.Fresh,r.DofusDbId);
+                return OverlayMarketFreshness.Rune(r,known?value:null);
             }).ToArray() ?? [];
             if(item is Equipment {Type:EquipmentType.Pet or EquipmentType.Petsmount or EquipmentType.Mount})crushing=null;
             var purchaseDetails=quotes.Where(q=>q.Key.DofusDbId==item.DofusDbId && q.Value.Price>0)
                 .OrderBy(q=>q.Key.Quantity).Select(q=>new OverlayPriceLine(item.Name,q.Key.Quantity,q.Value.Price,
                     q.Value.Price/(double)q.Key.Quantity,$"HDV · lot × {q.Key.Quantity}",
-                    DataFreshnessEvaluator.Evaluate(q.Value.ObservedAtUtc)!=DataFreshness.Fresh,item.DofusDbId)).ToList();
+                    DataFreshnessEvaluator.Evaluate(q.Value.ObservedAtUtc)!=DataFreshness.Fresh,item.DofusDbId)
+                    {ObservedAtUtc=q.Value.ObservedAtUtc}).ToList();
             if(origin==OverlayAcquisition.Purchase)
-                purchaseDetails.Insert(0,new(item.Name,1,buy,buy,"Prix d’obtention",buy is null,item.DofusDbId));
+                purchaseDetails.Insert(0,new(item.Name,1,buy,buy,"Prix d’obtention",buy is null,item.DofusDbId)
+                    {Freshness=buy is not null?DataFreshness.Fresh:DataFreshness.Stale});
             if(purchaseDetails.Count==0)purchaseDetails.Add(new(item.Name,1,buy,buy,null,buy is null,item.DofusDbId));
             var value=new ProfitabilityOverlaySnapshot(item,server,rollLabel,crushing,buy,craft,sale?.Value,
                 ingredients,checks,runeChecks,fmCost,fmKnown){FocusId=focusId,PurchaseDetails=purchaseDetails,WasCrushed=_wasCrushed};
@@ -161,6 +160,7 @@ public sealed partial class OverlayWorkspaceService(IServiceScopeFactory scopes,
     public void Request(WorkspaceOverlayKind kind) => ShowRequested?.Invoke(kind);
     private void PriceChanged(object? sender,MarketDataChangedEventArgs args)
     {
+        SearchIndicatorPricesChanged(args);
         if(args.ObjectType==MarketObjectType.Rune && string.Equals(args.ServerName,ActiveGameServer,StringComparison.OrdinalIgnoreCase))RuneInputsChanged();
         var pets=_pets;
         if(pets is not null && string.Equals(args.ServerName,pets.Server,StringComparison.OrdinalIgnoreCase) &&

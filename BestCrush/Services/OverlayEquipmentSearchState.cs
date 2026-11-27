@@ -10,6 +10,7 @@ public sealed class OverlayEquipmentSearchState
     private Equipment[] _catalogue = [];
     private CraftingJob[] _jobs = [];
     private Query? _applied;
+    private CrushingSearchFilters? _moduleResultFilters;
     private RuneFilterCriterion[] _importedRunes=[];
     public string Text { get; set; } = "";
     public int? LevelMin { get; set; }
@@ -21,6 +22,7 @@ public sealed class OverlayEquipmentSearchState
     public bool FiltersOpen { get; set; }
     public bool ResultsOpen { get; set; }
     public bool HasSearched => _applied is not null;
+    public bool AnalysisPending {get;private set;}
     public bool CatalogueReady { get; private set; }
     public bool JobsReady { get; private set; }
     public string? Error { get; internal set; }
@@ -28,8 +30,27 @@ public sealed class OverlayEquipmentSearchState
     public IReadOnlyList<Rune> Runes { get; private set; } = [];
     public EquipmentJobFilterCatalog? Jobs { get; private set; }
     public IReadOnlyList<Equipment> Results { get; private set; } = [];
+    public IReadOnlyDictionary<long,OverlayEquipmentIndicators> Indicators {get;private set;} = new Dictionary<long,OverlayEquipmentIndicators>();
     public int VisibleCount { get; set; } = 20;
     public int FilterCount => Types.Count + RuneIds.Count + (JobId.HasValue ? 1 : 0) + (LevelMin.HasValue ? 1 : 0) + (LevelMax.HasValue ? 1 : 0);
+    public string? IndicatorError {get;internal set;}
+    internal long[] MissingIndicatorIds(IEnumerable<long>? additional=null)
+    {lock(_gate)return Results.Take(VisibleCount).Select(item=>item.DofusDbId).Concat(additional??[]).Distinct()
+        .Where(id=>!Indicators.TryGetValue(id,out var value)||!value.Loaded).ToArray();}
+    internal void MergeIndicators(IReadOnlyDictionary<long,OverlayEquipmentIndicators> updates)
+    {
+        lock(_gate)
+        {
+            var merged=Indicators.ToDictionary();
+            foreach(var entry in updates)merged[entry.Key]=entry.Value;
+            Indicators=merged;IndicatorError=null;
+        }
+    }
+    internal void InvalidateIndicators(MarketDataChangedEventArgs change)
+    {
+        lock(_gate)Indicators=Indicators.Where(entry=>change.DofusDbId!=0 && !entry.Value.Groups.Any(group=>
+            group.Lines.Any(line=>line.ItemId==change.DofusDbId))).ToDictionary();
+    }
 
     internal void Load(IEnumerable<Equipment> items, IEnumerable<Rune> runes)
     {
@@ -64,6 +85,8 @@ public sealed class OverlayEquipmentSearchState
         lock (_gate)
         {
             Error = null;
+            if (_moduleResultFilters is not null && !_moduleResultFilters.EquivalentTo(ExportFilters()))
+            { _moduleResultFilters = null; Indicators=new Dictionary<long,OverlayEquipmentIndicators>(); }
             _applied = new(Text.Trim(), LevelMin, LevelMax, JobId, Types.ToHashSet(),
                 Runes.Where(r => RuneIds.Contains(r.DofusDbId)).Select(r => r.Characteristic).Distinct().ToArray(), RuneMatchMode);
             VisibleCount = 20; ResultsOpen = true; FiltersOpen = false;
@@ -84,23 +107,36 @@ public sealed class OverlayEquipmentSearchState
         Types.Clear();Types.UnionWith(filters.Types);RuneIds.Clear();RuneIds.UnionWith(filters.Runes.Select(r=>r.DofusDbId));
         _importedRunes=filters.Runes;RuneMatchMode=filters.RuneMatchMode;Error=null;
     }
-    internal void UseModuleResults(IReadOnlyList<Equipment> results)
+    internal void UseModuleResults(IReadOnlyList<Equipment> results,IReadOnlyDictionary<long,OverlayEquipmentIndicators>? indicators=null)
     {
         lock(_gate)
         {
             bool first=_applied is null;
             var filters=ExportFilters();
+            _moduleResultFilters=filters;
             _applied=new(filters.Text.Trim(),filters.LevelMin,filters.LevelMax,filters.JobId,filters.Types.ToHashSet(),
                 filters.Runes.Select(r=>r.Characteristic).Distinct().ToArray(),filters.RuneMatchMode);
-            Results=results;VisibleCount=Math.Max(20,VisibleCount);Error=null;
+            Results=results;VisibleCount=Math.Max(20,VisibleCount);Error=null;AnalysisPending=false;
+            Indicators=indicators??new Dictionary<long,OverlayEquipmentIndicators>();
             if(first)ResultsOpen=true;
         }
     }
+    internal void SetAnalysisStatus(bool pending,string? error=null)
+    {
+        lock(_gate)
+        {
+            AnalysisPending=pending;
+            Error=error;
+            if(error is not null){Results=[];_moduleResultFilters=ExportFilters();}
+        }
+    }
     internal void ResetServer()
-    {lock(_gate){ResetFilters();Text="";Results=[];_applied=null;Error=null;ResultsOpen=false;}}
+    {lock(_gate){ResetFilters();Text="";Results=[];Indicators=new Dictionary<long,OverlayEquipmentIndicators>();IndicatorError=null;_applied=null;_moduleResultFilters=null;Error=null;AnalysisPending=false;ResultsOpen=false;}}
     private void Rebuild()
     {
         if (JobsReady) Jobs = new(_jobs, _catalogue);
+        // Once analysed, the page owns membership and order until another query is applied.
+        if (AnalysisPending || _moduleResultFilters is not null) return;
         if (_applied is not { } query) return;
         Results = _catalogue.Where(e =>
             (query.Text.Length == 0 || e.Name.Contains(query.Text, StringComparison.CurrentCultureIgnoreCase)) &&

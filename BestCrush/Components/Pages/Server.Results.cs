@@ -151,6 +151,21 @@ public partial class Server
         };
     }
 
+    private IEnumerable<Equipment> OrderUnrankedItems(IEnumerable<Equipment> items) =>
+        (_sortOrder switch
+        {
+            SortOrder.NameAscending => items.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
+            SortOrder.HighestCoefficient => items
+                .OrderByDescending(item => _coefficients.TryGetValue(item.DofusDbId, out var coefficient)
+                    ? coefficient.CoefficientPercent : double.MinValue)
+                .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
+            SortOrder.LevelAscending => items.OrderBy(item => item.Level)
+                .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
+            SortOrder.LevelDescending => items.OrderByDescending(item => item.Level)
+                .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase),
+            _ => items
+        }).Where(MatchesSearchText);
+
     IEnumerable<Equipment> FilterItemsCore(IReadOnlyCollection<Equipment> items, bool useCatalogueRunes = true)
     {
         IEnumerable<Equipment> result = items;

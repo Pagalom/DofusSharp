@@ -1,0 +1,3 @@
+- Recherche synchronisée et objets sans données visibles.
+- Prix, FM et bénéfice clarifiés dans les résultats de concassage.
+- Indicateurs de fraîcheur et popups compacts actualisés en direct.

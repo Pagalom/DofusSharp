@@ -79,20 +79,38 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
     });
     private void RefreshCurrentPopups() => Dispatch(()=>
     {
-        if(workspace.Profitability is not { } current)return;
         bool changed=false;
-        foreach(var window in _windows.Values.Where(w=>w.Kind==WorkspaceOverlayKind.Popup))
+        foreach(var window in _windows.Values.Where(w=>w.Kind==WorkspaceOverlayKind.Popup).ToArray())
         {
             if(window.Popup is not { } popup)continue;
-            if(popup.Comparison is { } previous && previous.FocusId==current.FocusId && !ReferenceEquals(previous,current))
-            {window.Popup=popup with{Comparison=current};changed=true;}
-            else if(popup.Key==$"purchase:{current.FocusId}" && !ReferenceEquals(popup.Lines,current.PurchaseDetails))
-            {window.Popup=popup with{Lines=current.PurchaseDetails};changed=true;}
-            else if(popup.Key==$"craft:{current.FocusId}" && !ReferenceEquals(popup.Lines,current.Ingredients))
-            {window.Popup=popup with{Lines=current.Ingredients};changed=true;}
+            var updated=ResolvePopup(popup);
+            if(!ReferenceEquals(updated,popup)){window.Popup=updated;changed=true;}
         }
         if(changed)Changed?.Invoke();
     });
+    internal OverlayPopup ResolvePopup(OverlayPopup popup)
+    {
+        if(popup.MarketItemId is {} id && popup.MarketGroup is {} group)
+        {
+            if(!string.Equals(popup.MarketServer,workspace.EquipmentSearchServer,StringComparison.OrdinalIgnoreCase) ||
+                popup.TargetWindow!=workspace.TargetWindow)return popup;
+            if(workspace.EquipmentSearch.Indicators.TryGetValue(id,out var indicators) && indicators.Loaded &&
+                indicators.Groups.FirstOrDefault(indicator=>indicator.Key==group) is {} indicator)
+                return WithLines(popup,indicator.Lines);
+            return popup;
+        }
+        if(workspace.Profitability is not {} current)return popup;
+        if(popup.Comparison is {} previous && previous.FocusId==current.FocusId && !ReferenceEquals(previous,current))
+            return popup with{Comparison=current};
+        if(popup.Key==$"purchase:{current.FocusId}" || popup.Key==$"purchase:{current.FocusId}:sale")
+            return WithLines(popup,current.PurchaseDetails.Count>0?current.PurchaseDetails:current.PurchaseChecks);
+        if(popup.Key==$"craft:{current.FocusId}")return WithLines(popup,current.Ingredients);
+        if(popup.CheckRoute is {} route && popup.Key==$"checks:{current.FocusId}:{route}")
+            return WithLines(popup,current.Checks(route));
+        return popup;
+    }
+    private static OverlayPopup WithLines(OverlayPopup popup,IReadOnlyList<OverlayPriceLine> lines) =>
+        ReferenceEquals(popup.Lines,lines) || popup.Lines.SequenceEqual(lines) ? popup : popup with{Lines=lines};
     public void Toggle(WorkspaceOverlayKind kind)
     { if(IsVisible(kind)) Hide(kind.ToString());else Show(kind); }
     public void Hide(string id) => Dispatch(()=>
@@ -110,6 +128,7 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
     { if(Get(id) is { Kind:WorkspaceOverlayKind.Popup } w){w.Pinned=!w.Pinned;RefreshContextVisibility();Changed?.Invoke();} }
     public void HoverPopup(string parent, OverlayPopup popup)
     {
+        popup=ResolvePopup(popup);
         _hover?.Cancel();_hover?.Dispose();_hover=new();var token=_hover.Token;
         _hoverKey=popup.Key;
         if(Get(popup.Key) is { } existing){existing.ParentHovered=true;existing.Popup=popup;RepositionPopup(existing,parent);Changed?.Invoke();return;}
@@ -122,11 +141,13 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
     }
     public void OpenPopup(string parent,OverlayPopup popup)
     {
+        popup=ResolvePopup(popup);
         if(_windows.TryGetValue(popup.Key,out var existing))
         {existing.Popup=popup;existing.ParentHovered=true;RepositionPopup(existing,parent);ShowWindow(existing,true);return;}
         // Keep pinned popups intact; an ordinary hover opens one transient popup at a time.
         foreach(var transient in _windows.Values.Where(w=>w.Kind==WorkspaceOverlayKind.Popup && !w.Pinned).ToArray())Close(transient.Id);
         var view=new OverlayWindowView{Id=popup.Key,Kind=WorkspaceOverlayKind.Popup,Title=popup.Title,Popup=popup,ParentHovered=true,ParentId=parent};
+        workspace.RetainIndicatorPopup(popup);
         _windows.Add(view.Id,view);Create(view,parent);ShowWindow(view,true);
     }
     public void LeavePopup(string key)
@@ -147,6 +168,7 @@ public sealed class OverlayWindowsService(OverlayWorkspaceService workspace,
     {
         if(!_windows.TryGetValue(id,out var view))return;
         if(view.Kind!=WorkspaceOverlayKind.Popup){Hide(id);return;}
+        if(view.Popup is {} popup)workspace.ReleaseIndicatorPopup(popup);
         SaveLayoutNow(view);_windows.Remove(id);if(view.Window is { } window) Application.Current?.CloseWindow(window);Changed?.Invoke();
     }
     public bool StartMotion(string id,int edge,double x,double y,double scale)

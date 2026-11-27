@@ -288,22 +288,23 @@ public sealed partial class OverlayWorkspaceService
         }
         var lines=snapshot.Runes.Select(r=>new OverlayPriceLine(r.Name,r.Quantity,r.Value,r.Quantity>0?r.Value/r.Quantity:null)).ToArray();
         _modules[WorkspaceOverlayKind.Crush]=new("Résultat du concassage",[new(title,$"{snapshot.NetworkCrushCount} objet(s) · {server}",
-            [new("Runes obtenues",Money(snapshot.TotalValue)),new("Après décote",Money(snapshot.DiscountedTotalValue))],lines)],"","concassage");Notify();
+            [],lines){Crush=new(null,null,null,snapshot.DiscountedTotalValue)}],"","concassage");Notify();
     }
     public void PublishCrushHistory(CrushHistorySessionWriteModel session,bool show=true)
     {
         if(_replayingCrush && !show)return;
         if(!show)_currentCrush=session;
         var results=session.Equipments.Select(e=>e.Comparison).ToArray();
+        double? purchase=results.Length>0 && results.All(c=>(c?.RecordedAcquisitionCost??c?.EstimatedCraftCost) is not null)
+            ? results.Sum(c=>(double)(c!.RecordedAcquisitionCost??c.EstimatedCraftCost)!.Value):null;
+        double? fm=results.Length>0 && results.All(c=>c?.UnpricedFmRunes==0)
+            ? results.Sum(c=>c!.KnownFmCost):null;
+        bool estimatedPrice=results.Any(c=>c?.RecordedAcquisitionCost is null && c?.EstimatedCraftCost is not null);
         double? estimate=results.Length>0 && results.All(c=>c?.EstimatedValue is not null)?results.Sum(c=>c!.EstimatedValue):null;
-        double? margin=results.Length>0 && results.All(c=>c?.UnpricedFmRunes==0 && (c.RecordedAcquisitionCost??c.EstimatedCraftCost) is not null)
-            ? session.DiscountedTotalValue-results.Sum(c=>c!.KnownFmCost+(c.RecordedAcquisitionCost??c.EstimatedCraftCost??0)):null;
         var lines=session.Runes.Select(r=>new OverlayPriceLine(r.RuneName,r.Quantity,r.Value,r.Quantity>0?r.Value/r.Quantity:null)).ToArray();
-        var facts=new List<OverlayFact>{new("Runes obtenues",Money(session.TotalValue))};
-        if(estimate is not null)facts.Add(new("Estimation",Money(estimate)));
-        if(margin is not null)facts.Add(new("Gain estimé",Money(margin),margin>=0?"positive":"negative"));
         _modules[WorkspaceOverlayKind.Crush]=new("Résultat du concassage",[new(string.Join(" · ",session.Equipments.Select(e=>e.EquipmentName)),
-            session.CompletedAtUtc.ToLocalTime().ToString("dd/MM HH:mm")+" · "+session.ServerName,facts,lines)],"","concassage");Notify();
+            session.CompletedAtUtc.ToLocalTime().ToString("dd/MM HH:mm")+" · "+session.ServerName,[],lines)
+            {Crush=new(purchase,fm,estimate,session.DiscountedTotalValue,estimatedPrice)}],"","concassage");Notify();
         if(show)ShowRequested?.Invoke(WorkspaceOverlayKind.Crush);
     }
     public void RecallCrush(CrushHistorySession session)

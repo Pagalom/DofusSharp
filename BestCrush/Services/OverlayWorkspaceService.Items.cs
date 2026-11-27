@@ -88,7 +88,8 @@ public sealed partial class OverlayWorkspaceService
             var purchase=pricing.CalculateMinimumPurchaseCost(r.ItemId,r.Count,StockCraftPlanner.PricesFor(context,r.MarketType));
             return new OverlayPriceLine(r.Name,r.Count,purchase?.TotalCost,purchase is {PurchasedQuantity:>0}?(double)purchase.TotalCost/purchase.PurchasedQuantity:null,
                 purchase?.SurplusQuantity>0?$"{purchase.PurchasedQuantity} achetés · {purchase.SurplusQuantity} conservés":null,
-                purchase is null || purchase.Freshness!=DataFreshness.Fresh,r.ItemId);
+                purchase is null || purchase.Freshness!=DataFreshness.Fresh,r.ItemId)
+                {ObservedAtUtc=OverlayMarketFreshness.Oldest(purchase?.UsedObservations)};
         }).ToArray();
         return(lines.All(l=>l.Total.HasValue)?lines.Sum(l=>l.Total):null,lines);
     }

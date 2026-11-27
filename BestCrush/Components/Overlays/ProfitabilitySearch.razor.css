@@ -32,6 +32,9 @@ legend{float:none;width:auto;padding:0;margin:0 0 4px;font-size:10px;color:var(-
 .search-results{max-height:220px;overflow:auto;scrollbar-width:thin;margin-top:3px;border:1px solid var(--line);border-radius:5px;padding:3px 6px}
 .search-result{display:flex;align-items:center;gap:7px;width:100%;padding:5px 0;text-align:left;border-bottom:1px solid var(--line);font-size:11px}
 .search-result:last-child{border-bottom:0}
+.search-result-row{display:flex;align-items:center;gap:3px;border-bottom:1px solid var(--line)}
+.search-result-row:last-child{border-bottom:0}
+.search-result-row .search-result{flex:1;min-width:0;border-bottom:0}
 .result-image{width:26px;height:26px;display:flex;align-items:center;justify-content:center;flex:none}
 .result-image ::deep img{width:26px;height:26px;object-fit:contain}
 .result-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

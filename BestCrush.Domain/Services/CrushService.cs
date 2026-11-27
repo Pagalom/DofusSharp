@@ -148,13 +148,16 @@ public class CrushService(
     private static Rune? GetBasicRune(
         BestCrushDbContext context,
         Characteristic characteristic)
+        => GetBasicRune(context.Runes.Where(rune=>rune.Characteristic==characteristic).ToArray(),characteristic);
+
+    public static Rune? GetBasicRune(IEnumerable<Rune> runes,Characteristic characteristic)
     {
         // Le catalogue local contient désormais les variantes
         // normales, Pa et Ra. Le calcul de concassage doit
         // continuer à valoriser le résultat en équivalent de
         // rune de base, comme auparavant.
         Rune[] candidates =
-            context.Runes
+            runes
                 .Where(rune =>
                     rune.Characteristic ==
                     characteristic)

@@ -57,7 +57,7 @@ public sealed class OverlayPresentationTest
         var html=await renderer.Dispatcher.InvokeAsync(async()=>{
             var root=await renderer.RenderComponentAsync<OverlayRoot>(ParameterView.FromDictionary(new Dictionary<string,object?>{{"WindowId","popup"}}));
             return WebUtility.HtmlDecode(root.ToHtmlString());});
-        Assert.Contains("300 K",html);Assert.Contains(10d.ToString("N2")+" K / u",html);Assert.Contains("30 achetés",html);
+        Assert.Contains("300 K",html);Assert.Contains("("+10d.ToString("N2")+" K/u)",html);Assert.Contains("30 achetés",html);
         Assert.Contains("Épingler",html);Assert.DoesNotContain("Copier la liste",html);
         Assert.Equal(8,System.Text.RegularExpressions.Regex.Matches(html,"class=\"resize-edge ").Count);
     }

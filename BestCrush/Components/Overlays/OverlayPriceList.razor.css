@@ -1,0 +1,7 @@
+.price-list{display:flex;flex-direction:column;min-width:0}
+.price-row{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;padding:7px 0;text-align:left;font-size:11px;border-bottom:1px solid var(--line)}
+.price-row:last-child{border-bottom:0}
+.line-name{display:flex;align-items:center;gap:5px;min-width:0;flex:1}
+.name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.quantity{white-space:nowrap;font-size:9px;flex:none}
+.line-price{display:flex;align-items:baseline;justify-content:flex-end;flex-wrap:wrap;column-gap:5px;flex:none;max-width:56%;text-align:right}
+.line-price strong{font-size:11px;white-space:nowrap}.line-price small{font-size:9px;white-space:nowrap;color:var(--muted)}

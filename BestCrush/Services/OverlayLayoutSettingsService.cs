@@ -130,11 +130,11 @@ public sealed class OverlayLayoutSettingsService
             OverlayLayoutKind.Pets => new(440, 120, 390, 540),
             OverlayLayoutKind.Runes => new(850, 120, 280, 200),
             OverlayLayoutKind.Journey => new(850, 120, 390, 500),
-            OverlayLayoutKind.PopupCraft => new(500, 150, 360, 260),
-            OverlayLayoutKind.PopupRunes => new(500, 150, 500, 420),
-            OverlayLayoutKind.PopupPurchase => new(500, 150, 340, 260),
-            OverlayLayoutKind.PopupPrices => new(500, 150, 340, 320),
-            OverlayLayoutKind.PopupDetails => new(500, 150, 360, 420),
+            OverlayLayoutKind.PopupCraft => new(500, 150, 360, 180),
+            OverlayLayoutKind.PopupRunes => new(500, 150, 500, 320),
+            OverlayLayoutKind.PopupPurchase => new(500, 150, 340, 180),
+            OverlayLayoutKind.PopupPrices => new(500, 150, 340, 220),
+            OverlayLayoutKind.PopupDetails => new(500, 150, 360, 260),
             OverlayLayoutKind.PopupPetFood => new(500, 150, 340, 270),
             _ =>
                 throw new ArgumentOutOfRangeException(

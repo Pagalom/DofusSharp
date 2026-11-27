@@ -1,0 +1,23 @@
+@using BestCrush.Services
+<span class="market-indicators">
+    @foreach(var indicator in Indicators.Groups)
+    {
+        var popup=new OverlayPopup($"{indicator.Key}:{ItemId}:market:{Server}",indicator.Title,indicator.Lines)
+            {MarketItemId=ItemId,MarketGroup=indicator.Key,MarketServer=Server};
+        <button type="button" disabled="@(!Indicators.Loaded || !indicator.Applicable)" aria-label="@indicator.Title" title="@(Indicators.Loaded?indicator.Title:"Chargement…")"
+            @onpointerenter="()=>PopupHovered.InvokeAsync(popup)" @onpointerleave="()=>PopupLeft.InvokeAsync(popup.Key)"
+            @onclick="()=>CopyRequested.InvokeAsync(OverlayMarketFreshness.OutdatedNames(indicator.Lines))">
+            <MarketFreshnessIcon Icon="@indicator.Icon" Freshness="@(Indicators.Loaded?indicator.Freshness:null)" LabelOverride="@StateLabel(indicator)" />
+        </button>
+    }
+</span>
+@code {
+    [Parameter,EditorRequired] public OverlayEquipmentIndicators Indicators {get;set;}=new([]);
+    [Parameter] public long ItemId {get;set;}
+    [Parameter] public string? Server {get;set;}
+    [Parameter] public EventCallback<OverlayPopup> PopupHovered {get;set;}
+    [Parameter] public EventCallback<string> PopupLeft {get;set;}
+    [Parameter] public EventCallback<IEnumerable<string>> CopyRequested {get;set;}
+    private string? StateLabel(OverlayMarketIndicator indicator)=>!Indicators.Loaded?"Chargement…"
+        :indicator.Applicable?null:indicator.Key=="craft"?"Pas de recette":"Aucune rune obtenable";
+}

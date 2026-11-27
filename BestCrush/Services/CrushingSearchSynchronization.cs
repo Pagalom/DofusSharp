@@ -30,6 +30,9 @@ public sealed record CrushingSearchFilters(string Text, int? LevelMin, int? Leve
 public sealed record CrushingSearchUpdate(string Server, CrushingSearchFilters Filters, long Version, bool Analyze, Guid Origin)
 {
     public IReadOnlyList<Equipment>? Results {get;init;}
+    public IReadOnlyDictionary<long,OverlayEquipmentIndicators> Indicators {get;init;} = new Dictionary<long,OverlayEquipmentIndicators>();
+    public bool IsAnalyzing {get;init;}
+    public string? Error {get;init;}
 }
 public sealed class CrushingSearchSynchronization
 {
@@ -48,13 +51,25 @@ public sealed class CrushingSearchSynchronization
         }
         Changed?.Invoke(update);return update;
     }
-    public bool PublishResults(string server,long version,IEnumerable<Equipment> results)
+    public bool PublishResults(string server,long version,IEnumerable<Equipment> results,IReadOnlyDictionary<long,OverlayEquipmentIndicators>? indicators=null)
     {
         CrushingSearchUpdate update;
         lock(_gate)
         {
             if(!_states.TryGetValue(server,out var state) || state.Version!=version)return false;
-            update=state with{Results=results.DistinctBy(e=>e.DofusDbId).Select(OverlayEquipmentSearchState.Lightweight).ToArray()};_states[server]=update;
+            update=state with{Results=results.DistinctBy(e=>e.DofusDbId).Select(OverlayEquipmentSearchState.Lightweight).ToArray(),Indicators=indicators??new Dictionary<long,OverlayEquipmentIndicators>(),IsAnalyzing=false,Error=null};_states[server]=update;
+        }
+        Changed?.Invoke(update);return true;
+    }
+    public bool BeginAnalysis(string server,long version) => SetAnalysisStatus(server,version,true,null);
+    public bool FailAnalysis(string server,long version,string error) => SetAnalysisStatus(server,version,false,error);
+    private bool SetAnalysisStatus(string server,long version,bool analyzing,string? error)
+    {
+        CrushingSearchUpdate update;
+        lock(_gate)
+        {
+            if(!_states.TryGetValue(server,out var state) || state.Version!=version || (!analyzing && !state.IsAnalyzing))return false;
+            update=state with{Results=null,IsAnalyzing=analyzing,Error=error};_states[server]=update;
         }
         Changed?.Invoke(update);return true;
     }

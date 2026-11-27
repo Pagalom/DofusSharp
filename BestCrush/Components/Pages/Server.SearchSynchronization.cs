@@ -18,7 +18,7 @@ public partial class Server
     }
     private void OnSharedCrushingSearch(CrushingSearchUpdate update)
     {
-        if(_stockDisposed || update.Origin==_sharedSearchOrigin || update.Results is not null ||
+        if(_stockDisposed || update.Origin==_sharedSearchOrigin || update.Results is not null || update.IsAnalyzing || update.Error is not null ||
             !string.Equals(update.Server,ServerName,StringComparison.OrdinalIgnoreCase) || _loadedServerName!=ServerName)return;
         _=InvokeAsync(async()=>
         {
@@ -35,7 +35,11 @@ public partial class Server
             bool changed=!update.Filters.EquivalentTo(CrushingSearchFilters.From(Model));
             update.Filters.ApplyTo(Model);_commonSearchVersion=update.Version;
             _pendingSharedAnalysis=update.Analyze && (_allItems is null || changed);
-            if(_allItems is not null && !changed)_analyzedCommonSearchVersion=update.Version;
+            if(_allItems is not null && !changed && !update.IsAnalyzing && update.Error is null)
+            {
+                _analyzedCommonSearchVersion=update.Version;
+                PublishSharedCrushingResults();
+            }
         }
         else PublishCommonCrushingFilters();
     }
@@ -70,7 +74,8 @@ public partial class Server
         var ordered=OrderResults(_rankedItems.GroupBy(i=>i.Equipment).Select(SelectBestScenarioForCurrentSort))
             .Where(i=>MatchesSearchText(i.Equipment)).ToArray();
         var ranked=ordered.Where(i=>!IsPartial(i)).Concat(ordered.Where(IsPartial)).Select(i=>i.Equipment);
-        _sharedSearchHost.CrushingSearch.PublishResults(ServerName,_commonSearchVersion,
-            ranked.Concat(_unrankedItems.Where(MatchesSearchText)));
+        var results=ranked.Concat(OrderUnrankedItems(_unrankedItems)).ToArray();
+        var indicators=results.ToDictionary(item=>item.DofusDbId,item=>OverlayMarketFreshness.From(item,_baseCalculations.GetValueOrDefault(item.DofusDbId)));
+        _sharedSearchHost.CrushingSearch.PublishResults(ServerName,_commonSearchVersion,results,indicators);
     }
 }

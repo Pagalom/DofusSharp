@@ -31,19 +31,6 @@ public partial class Server
         );
     }
 
-    private bool HasEconomicFilters()
-    {
-        return Model is not null &&
-            (
-                Model.MinimumRoiPercent is not null ||
-                Model.MinimumBenefit is not null ||
-                Model.CompleteDataOnly ||
-                Model.FreshDataOnly ||
-                Model.RequireCoefficient ||
-                Model.RuneFilters.Count > 0
-            );
-    }
-
     private bool MatchesExactRuneFilters(
         ItemCrushResult item)
     {

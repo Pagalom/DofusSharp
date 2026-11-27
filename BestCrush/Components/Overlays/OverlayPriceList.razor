@@ -1,0 +1,33 @@
+@using BestCrush.Services
+@using BestCrush.Domain.Models
+<div class="price-list">
+    @foreach(var line in Lines)
+    {
+        <button class="price-row" disabled="@line.IsStatistic" title="@line.Detail" @onclick="()=>CopyRequested.InvokeAsync(new[]{line.Name}.AsEnumerable())">
+            <span class="line-name">
+                @if(line.IsStatistic && line.Stat is { } stat)
+                {<span class="owned-roll-stat @(line.Detail=="Over"?"over":line.Detail=="Exo"?"exotic":null)"><BestCrush.Components.Pure.ForgemagingStat Stat="stat" Value="@((int?)line.Quantity)" /></span>}
+                else
+                {
+                    @if(line.ItemId is not null || line.Total is not null || line.Unit is not null || line.Warning){<MarketFreshnessIcon Freshness="@(line.CurrentFreshness??DataFreshness.Stale)" />}
+                    <span class="name">@line.Name</span>
+                    @if(line.Quantity is { } quantity){<small class="quantity">@(line.IsStatistic?"":"× ")@quantity.ToString("#,##0.##")</small>}
+                }
+                @if(line.IsStatistic && line.Detail is { } detail){<small>@detail</small>}
+            </span>
+            @if(!line.IsStatistic)
+            {
+                <span class="line-price">
+                    @if(line.DisplayValue is { } display){<strong>@display</strong>}
+                    else if(line.Total is not null || line.Warning){<strong>@Money(line.Total)</strong>}
+                    @if(line.Unit is { } unit){<small>(@unit.ToString("N2") K/u)</small>}
+                </span>
+            }
+        </button>
+    }
+</div>
+@code {
+    [Parameter] public IReadOnlyList<OverlayPriceLine> Lines {get;set;}=[];
+    [Parameter] public EventCallback<IEnumerable<string>> CopyRequested {get;set;}
+    private static string Money(double? value)=>value is { } amount?$"{amount:N0} K":"—";
+}

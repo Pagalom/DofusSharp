@@ -333,53 +333,9 @@
             </div>
         }
 
-        @if (_unrankedItems is { Count: > 0 } unrankedItems && !HasEconomicFilters())
+        @if (_unrankedItems is { Count: > 0 })
         {
-            IEnumerable<Equipment> unrankedItemsOrdered =
-                _sortOrder switch
-                {
-                    SortOrder.NameAscending =>
-                        unrankedItems.OrderBy(
-                            item => item.Name,
-                            StringComparer.CurrentCultureIgnoreCase
-                        ),
-
-                    SortOrder.HighestCoefficient =>
-                        unrankedItems
-                            .OrderByDescending(
-                                item =>
-                                    _coefficients.TryGetValue(
-                                        item.DofusDbId,
-                                        out CoefficientObservation? coefficient
-                                    )
-                                        ? coefficient.CoefficientPercent
-                                        : double.MinValue
-                            )
-                            .ThenBy(
-                                item => item.Name,
-                                StringComparer.CurrentCultureIgnoreCase
-                            ),
-
-                    SortOrder.LevelAscending =>
-                        unrankedItems
-                            .OrderBy(item => item.Level)
-                            .ThenBy(
-                                item => item.Name,
-                                StringComparer.CurrentCultureIgnoreCase
-                            ),
-
-                    SortOrder.LevelDescending =>
-                        unrankedItems
-                            .OrderByDescending(item => item.Level)
-                            .ThenBy(
-                                item => item.Name,
-                                StringComparer.CurrentCultureIgnoreCase
-                            ),
-
-                    _ =>
-                        unrankedItems
-                };
-            unrankedItemsOrdered = unrankedItemsOrdered.Where(MatchesSearchText);
+            var unrankedItemsOrdered = OrderUnrankedItems(_unrankedItems);
 
             <div class="my-4">
 
@@ -425,7 +381,7 @@
         }
 
         @if (!_searching && _analysisError is null && _rankedItems.Count == 0 &&
-            (HasEconomicFilters() || _unrankedItems.Count == 0))
+            _unrankedItems.Count == 0)
         {
             <div class="text-center text-secondary border rounded py-4 my-4" role="status">
                 @if (_allItems is { Length: 0 })
@@ -865,6 +821,7 @@
 
         PublishCommonCrushingFilters(analyze:true);
         long commonSearchVersion=_commonSearchVersion;
+        _sharedSearchHost?.CrushingSearch.BeginAnalysis(ServerName,commonSearchVersion);
         _marketGeneration++;
         _allItems = null;
         _rankedItems = null;
@@ -953,10 +910,15 @@
         catch (Exception exn)
         {
             Logger.LogError(exn, "An error occured while searching for best crush.");
-            if (IsCurrent()) _analysisError = "L’analyse n’a pas pu aboutir. Réessayez avec le bouton Analyser.";
+            if (IsCurrent())
+            {
+                _analysisError = "L’analyse n’a pas pu aboutir. Réessayez avec le bouton Analyser.";
+                _sharedSearchHost?.CrushingSearch.FailAnalysis(analysisServer,commonSearchVersion,_analysisError);
+            }
         }
         finally
         {
+            _sharedSearchHost?.CrushingSearch.FailAnalysis(analysisServer,commonSearchVersion,"Analyse interrompue. Relancez l’analyse.");
             _searching = false;
             _analyzing = false;
             if (!_stockDisposed) { await InvokeAsync(StateHasChanged); CatchUpMarketChanges(); await RunPendingSharedAnalysisAsync(); }

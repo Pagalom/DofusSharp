@@ -10,6 +10,7 @@ namespace BestCrush.Services;
 public sealed partial class OverlayWorkspaceService
 {
     public OverlayEquipmentSearchState EquipmentSearch { get; } = new();
+    public string? EquipmentSearchServer => _searchSyncServer??ActiveGameServer;
     private readonly CrushingSearchSynchronization _crushingSearch=new();
     private readonly Guid _overlaySearchOrigin=Guid.NewGuid();
     private int _searchSyncInitialized;
@@ -35,7 +36,10 @@ public sealed partial class OverlayWorkspaceService
     private void SharedCrushingSearchChanged(CrushingSearchUpdate update)
     {
         if(!string.Equals(update.Server,ActiveGameServer,StringComparison.OrdinalIgnoreCase))return;
-        if(update.Results is {} results){EquipmentSearch.ImportFilters(update.Filters);EquipmentSearch.UseModuleResults(results);Notify();return;}
+        if(update.Results is {} results){EquipmentSearch.ImportFilters(update.Filters);EquipmentSearch.UseModuleResults(results,update.Indicators);Notify();_=PrepareEquipmentIndicatorsAsync();return;}
+        if(update.IsAnalyzing || update.Error is not null)
+        {EquipmentSearch.ImportFilters(update.Filters);EquipmentSearch.SetAnalysisStatus(update.IsAnalyzing,update.Error);Notify();return;}
+        EquipmentSearch.SetAnalysisStatus(false);
         if(update.Origin==_overlaySearchOrigin)return;
         EquipmentSearch.ImportFilters(update.Filters);Notify();
         if(update.Analyze)_=ApplySharedCrushingSearchAsync(update);
@@ -45,8 +49,10 @@ public sealed partial class OverlayWorkspaceService
         await PrepareEquipmentSearchAsync(update.Filters.JobId.HasValue);
         if(!string.Equals(update.Server,ActiveGameServer,StringComparison.OrdinalIgnoreCase) ||
             CrushingSearch.ForServer(update.Server)?.Version!=update.Version || !EquipmentSearch.CatalogueReady)return;
+        var current=CrushingSearch.ForServer(update.Server);
+        if(current?.IsAnalyzing==true || current?.Error is not null)return;
         EquipmentSearch.ImportFilters(update.Filters);EquipmentSearch.Apply();
-        if(CrushingSearch.ForServer(update.Server)?.Results is {} results)EquipmentSearch.UseModuleResults(results);
+        if(CrushingSearch.ForServer(update.Server) is {Results:{} results} completed)EquipmentSearch.UseModuleResults(results,completed.Indicators);
         Notify();
     }
     private readonly SemaphoreSlim _searchCatalogueGate = new(1, 1);

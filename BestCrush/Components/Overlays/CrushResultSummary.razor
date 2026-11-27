@@ -1,0 +1,29 @@
+@using BestCrush.Services
+
+<div class="crush-summary">
+    <div class="amount cost" title="@PriceDetail">
+        <small>Prix</small>
+        <strong>@(Summary.Price is { } price ? $"−{Money(price)}" : "—")</strong>
+        <div class="cost-parts"><span title="achat">@Money(Summary.AcquisitionCost)</span><span title="FM">@Money(Summary.FmCost)</span></div>
+    </div>
+    <div class="comparison">
+        <div class="amount initial"><small>Estimation initiale</small><strong title="@Money(Summary.InitialEstimate)">@Money(Summary.InitialEstimate)</strong></div>
+        <span class="separator" aria-hidden="true"></span>
+        <div class="amount obtained"><small>Gain</small><strong title="@Money(Summary.Gain)">@Money(Summary.Gain)</strong></div>
+        <div class="difference @Tone(Summary.Difference)" title="Écart entre le gain et l’estimation initiale">
+            <span>@SignedMoney(Summary.Difference)</span>
+        </div>
+    </div>
+    <div class="amount benefit" title="Gain moins prix des objets et FM">
+        <small>Bénéfice</small><strong class="@Tone(Summary.Benefit)">@SignedMoney(Summary.Benefit)</strong>
+    </div>
+</div>
+
+@code {
+    [Parameter] public OverlayCrushSummary Summary {get;set;} = new(null,null,null,null);
+    private string PriceDetail => Summary.Price is null ? "Prix d’obtention ou de FM incomplet"
+        : (Summary.EstimatedPrice ? "Coût de craft estimé + FM connue : " : "Prix des objets + FM : ") + Money(Summary.Price);
+    private static string Money(double? value) => value is { } amount ? $"{amount:N0} K" : "—";
+    private static string SignedMoney(double? value) => value is { } amount ? $"{(amount>0?"+":"")}{amount:N0} K" : "—";
+    private static string? Tone(double? value) => value>0 ? "positive" : value<0 ? "negative" : null;
+}

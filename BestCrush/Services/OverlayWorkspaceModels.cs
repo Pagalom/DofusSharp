@@ -12,8 +12,19 @@ public sealed record OverlayPriceLine(string Name, double? Quantity, double? Tot
 {
     public bool IsStatistic { get; init; }
     public Characteristic? Stat { get; init; }
+    public DateTime? ObservedAtUtc { get; init; }
+    public DataFreshness? Freshness { get; init; }
+    public string? DisplayValue { get; init; }
+    public DataFreshness? CurrentFreshness => ObservedAtUtc is { } at ? PetDataFreshness.Price(at,DateTime.UtcNow) : Freshness ?? (Warning ? DataFreshness.Stale : null);
+    public bool NeedsUpdate => CurrentFreshness != DataFreshness.Fresh;
 }
 public sealed record OverlayFact(string Label, string Value, string? Tone = null);
+public sealed record OverlayCrushSummary(double? AcquisitionCost, double? FmCost, double? InitialEstimate, double? Gain, bool EstimatedPrice = false)
+{
+    public double? Price => AcquisitionCost + FmCost;
+    public double? Difference => Gain - InitialEstimate;
+    public double? Benefit => Gain - Price;
+}
 public sealed record OverlayActionCard(string Title, string? Subtitle, IReadOnlyList<OverlayFact> Facts,
     IReadOnlyList<OverlayPriceLine> Lines, string? Advice = null, double? Progress = null)
 {
@@ -23,6 +34,7 @@ public sealed record OverlayActionCard(string Title, string? Subtitle, IReadOnly
     public long? IconId { get; init; }
     public DateTime? Deadline { get; init; }
     public OverlayForgemagingTable? Forgemaging { get; init; }
+    public OverlayCrushSummary? Crush { get; init; }
     public IReadOnlyList<OverlayMountReading> Mounts { get; init; } = [];
     public bool OldReading { get; init; }
     public string? TimerLabel { get; init; }
@@ -35,6 +47,10 @@ public sealed record OverlayModuleView(string Title, IReadOnlyList<OverlayAction
 public sealed record OverlayPopup(string Key, string Title, IReadOnlyList<OverlayPriceLine> Lines,
     ProfitabilityOverlaySnapshot? Comparison = null)
 {
+    public long? MarketItemId {get;init;}
+    public string? MarketGroup {get;init;}
+    public string? MarketServer {get;init;}
+    public OverlayRoute? CheckRoute {get;init;}
     public DofusClientWindowKey? TargetWindow {get;init;}
     public IReadOnlyList<OverlayMountReading> Mounts {get;init;}=[];
     // Layouts belong to a popup family, never to an ephemeral item/focus GUID.
@@ -43,6 +59,7 @@ public sealed record OverlayPopup(string Key, string Title, IReadOnlyList<Overla
         "craft" => OverlayLayoutKind.PopupCraft,
         "purchase" => OverlayLayoutKind.PopupPurchase,
         "checks" => OverlayLayoutKind.PopupPrices,
+        "runes" or "coefficient" => OverlayLayoutKind.PopupPrices,
         _ => OverlayLayoutKind.PopupDetails
     };
 }
@@ -56,6 +73,10 @@ public sealed record ProfitabilityOverlaySnapshot(IItem Item, string Server, str
     public bool WasCrushed { get; init; }
     public IReadOnlyList<OverlayPriceLine> PurchaseDetails { get; init; } = [];
     public bool ActualRollUnavailable => RollLabel == "Jet réel indisponible";
+    public IReadOnlyList<OverlayPriceLine> Checks(OverlayRoute route) =>
+        (route is OverlayRoute.CraftSale or OverlayRoute.CraftCrush?Ingredients:PurchaseChecks)
+        .Concat(IsCrushing(route)?RuneChecks:PurchaseChecks)
+        .Where(line=>line.NeedsUpdate).DistinctBy(line=>line.ItemId).ToArray();
     public EquipmentProfitabilityScenario? BestFocus => Crushing?.Scenarios
         .Where(s => FullyPriced(s))
         .MaxBy(s => s.EstimatedRuneValue);

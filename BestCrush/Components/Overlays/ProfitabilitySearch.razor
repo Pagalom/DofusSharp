@@ -37,16 +37,25 @@
         }
     </form>
     @if(!OwnedOpen && Search.Error is {} error){<p class="search-error" role="status">@error</p>}
-    @if(!OwnedOpen && Search.HasSearched)
+    @if(!OwnedOpen && Search.AnalysisPending)
+    {<small class="search-status" role="status"><i class="bi bi-hourglass-split" aria-hidden="true"></i> Analyse en cours…</small>}
+    else if(!OwnedOpen && Search.HasSearched && Search.Error is null)
     {
         <button type="button" class="results-toggle" aria-expanded="@Search.ResultsOpen.ToString().ToLowerInvariant()" @onclick="()=>Search.ResultsOpen=!Search.ResultsOpen"><i class="bi @(Search.ResultsOpen ? "bi-chevron-down" : "bi-chevron-right")"></i> Résultats <span>@Search.Results.Count</span><small>Jet moyen</small></button>
         @if(Search.ResultsOpen && !Search.FiltersOpen)
         {
             <div class="search-results" aria-label="Résultats de recherche">
                 @foreach(var item in Search.Results.Take(Search.VisibleCount))
-                {<button type="button" class="search-result @(Data.Profitability?.Item.DofusDbId==item.DofusDbId ? "selected" : null)" disabled="@_submitting" title="@($"{item.Name} · Jet moyen")" @onclick="()=>FocusAsync(item.DofusDbId)"><span class="result-image"><MarketItemPicture IconId="item.DofusDbIconId" /></span><span class="result-name">@item.Name</span><small>Niv. @item.Level</small></button>}
+                {
+                    <div class="search-result-row">
+                        <button type="button" class="search-result @(Data.Profitability?.Item.DofusDbId==item.DofusDbId ? "selected" : null)" disabled="@_submitting" title="@($"{item.Name} · Jet moyen")" @onclick="()=>FocusAsync(item.DofusDbId)"><span class="result-image"><MarketItemPicture IconId="item.DofusDbIconId" /></span><span class="result-name">@item.Name</span><small>Niv. @item.Level</small></button>
+                        <OverlayMarketIndicators ItemId="item.DofusDbId" Server="@Data.EquipmentSearchServer" Indicators="@(Search.Indicators.GetValueOrDefault(item.DofusDbId)??OverlayMarketFreshness.From(item,null))"
+                            PopupHovered="PopupHovered" PopupLeft="PopupLeft" CopyRequested="CopyRequested" />
+                    </div>
+                }
                 @if(Search.Results.Count==0){<p class="no-results">Aucun équipement.</p>}
-                @if(Search.Results.Count>Search.VisibleCount){<button type="button" class="more-results" @onclick="()=>Search.VisibleCount+=20">Voir plus… @Math.Min(Search.VisibleCount,Search.Results.Count) / @Search.Results.Count</button>}
+                @if(Search.Results.Count>Search.VisibleCount){<button type="button" class="more-results" @onclick="ShowMoreAsync">Voir plus… @Math.Min(Search.VisibleCount,Search.Results.Count) / @Search.Results.Count</button>}
+                @if(Search.IndicatorError is {} indicatorError){<small class="search-error" role="status">@indicatorError</small>}
             </div>
         }
     }
@@ -57,6 +66,9 @@
     [Parameter] public bool OwnedOpen {get;set;}
     [Parameter] public EventCallback OwnedRequested {get;set;}
     [Parameter] public EventCallback SearchOpened {get;set;}
+    [Parameter] public EventCallback<OverlayPopup> PopupHovered {get;set;}
+    [Parameter] public EventCallback<string> PopupLeft {get;set;}
+    [Parameter] public EventCallback<IEnumerable<string>> CopyRequested {get;set;}
     private OverlayEquipmentSearchState Search=>Data.EquipmentSearch;
     private static string ProfessionFallback(long id)=>id switch{16=>"img/ring.svg",15=>"img/boots.svg",27=>"img/hat.svg",11=>"img/sword.svg",13=>"img/staff.svg",60=>"img/shield.svg",_=>"img/tool.svg"};
     private string _runeSearch="";
@@ -70,7 +82,9 @@
     private async Task PrepareFiltersAsync()
     {if(_preparing)return;_preparing=true;try{await Data.PrepareEquipmentSearchAsync(true);}finally{_preparing=false;}}
     private async Task OpenSavedResults()
-    {await SearchOpened.InvokeAsync();if(Search.HasSearched && !Search.FiltersOpen)Search.ResultsOpen=true;}
+    {await SearchOpened.InvokeAsync();if(Search.HasSearched && !Search.FiltersOpen)Search.ResultsOpen=true;await Data.PrepareEquipmentIndicatorsAsync();}
+    private async Task ShowMoreAsync()
+    {Search.VisibleCount+=20;await Data.PrepareEquipmentIndicatorsAsync();}
     private void ToggleType(EquipmentType type){if(!Search.Types.Add(type))Search.Types.Remove(type);PublishFilters();}
     private void SelectJob(long id){Search.JobId=Search.JobId==id?null:id;Search.Types.IntersectWith(AvailableTypes);PublishFilters();}
     private void ToggleRune(long id){if(!Search.RuneIds.Add(id))Search.RuneIds.Remove(id);PublishFilters();}
@@ -89,6 +103,7 @@
             Search.Apply();
             if(Search.Error is not null)return;
             Data.PublishEquipmentSearchFilters(analyze:true);
+            await Data.PrepareEquipmentIndicatorsAsync();
             var exact=Search.Results.FirstOrDefault(e=>e.Name.Equals(Search.Text.Trim(),StringComparison.CurrentCultureIgnoreCase));
             if(exact is not null || Search.Results.Count==1 && !string.IsNullOrWhiteSpace(Search.Text))
             {if(await Data.FocusSearchEquipmentAsync((exact ?? Search.Results[0]).DofusDbId))Search.ResultsOpen=false;}

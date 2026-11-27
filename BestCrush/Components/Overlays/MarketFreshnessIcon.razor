@@ -1,0 +1,9 @@
+@using BestCrush.Domain.Models
+<i class="bi @Icon freshness-icon @Tone" title="@Label" aria-label="@Label"></i>
+@code {
+    [Parameter] public DataFreshness? Freshness {get;set;}
+    [Parameter] public string Icon {get;set;}="bi-circle-fill";
+    [Parameter] public string? LabelOverride {get;set;}
+    private string Tone=>Freshness switch{DataFreshness.Fresh=>"fresh",DataFreshness.Aging=>"aging",DataFreshness.Stale=>"stale",_=>"unknown"};
+    private string Label=>LabelOverride??(Freshness switch{DataFreshness.Fresh=>"À jour",DataFreshness.Aging=>"À actualiser",DataFreshness.Stale=>"Obsolète ou absent",_=>"Non renseigné"});
+}
